@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>@kamangir31 - آوا</title>
+<style>
+  :root{
+    --paper:#f7f3ea; --panel:#fffdf7; --ink:#20242e; --muted:#6b7080;
+    --line:#e3dcc9; --tile:#0e7a83; --tile-deep:#0a5d64; --gold:#b98a2e;
+    --danger:#b3402f; --shadow:0 10px 30px rgba(32,36,46,.08); --radius:18px;
+  }
+  [data-theme="dark"]{
+    --paper:#101522; --panel:#171e30; --ink:#eef0f6; --muted:#9aa2b8;
+    --line:#2a3350; --tile:#2fbfc9; --tile-deep:#1d99a3; --gold:#d8ad55;
+    --danger:#e57358; --shadow:0 12px 34px rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:'Vazirmatn',Tahoma,system-ui,sans-serif;
+    background:radial-gradient(1200px 500px at 15% -10%, color-mix(in srgb, var(--tile) 14%, transparent), transparent 60%),var(--paper);
+    color:var(--ink);min-height:100vh;transition:background .35s,color .35s;
+  }
+  .wrap{max-width:880px;margin:0 auto;padding:24px 20px 48px}
+  header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:24px}
+  .brand{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .brand .fa{font-weight:700;font-size:1.9rem;color:var(--tile);line-height:1.2;unicode-bidi:isolate}
+  .brand .tagline{font-weight:400;font-size:.98rem;color:var(--muted)}
+  #themeBtn{border:1px solid var(--line);background:var(--panel);color:var(--ink);width:44px;height:44px;border-radius:50%;cursor:pointer;font-size:1.15rem;display:grid;place-items:center;box-shadow:var(--shadow);flex:none}
+  #themeBtn:hover{border-color:var(--tile)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px;margin-bottom:20px;transition:background .35s,border-color .35s}
+  .manuscript{position:relative;padding:0;overflow:hidden}
+  .manuscript::before{content:"";position:absolute;inset:0;pointer-events:none;border-radius:var(--radius);border:2px solid color-mix(in srgb, var(--gold) 55%, transparent)}
+  .manuscript::after{content:"";position:absolute;left:0;right:0;top:0;height:6px;pointer-events:none;background:repeating-linear-gradient(90deg,var(--tile) 0 14px,transparent 14px 20px,var(--gold) 20px 26px,transparent 26px 32px);opacity:.85}
+  textarea{display:block;width:100%;min-height:170px;resize:vertical;border:none;outline:none;background:transparent;color:var(--ink);font-family:inherit;font-size:1.25rem;line-height:2.1;direction:rtl;text-align:right;padding:26px 22px 14px}
+  textarea::placeholder{color:var(--muted);opacity:.75}
+  .meta{display:flex;justify-content:space-between;align-items:center;padding:8px 18px 14px;color:var(--muted);font-size:.82rem}
+  .meta button{background:none;border:none;color:var(--tile);cursor:pointer;font:inherit;font-weight:600}
+  h2{font-size:1.08rem;font-weight:700;margin-bottom:4px}
+  .sub{color:var(--muted);font-size:.86rem;margin-bottom:16px;line-height:1.9}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px 20px}
+  @media (max-width:640px){.grid{grid-template-columns:1fr}}
+  label{display:flex;justify-content:space-between;align-items:baseline;font-size:.8rem;font-weight:600;color:var(--muted);margin-bottom:6px}
+  label small{font-weight:400;font-size:.72rem}
+  select{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font:inherit;font-size:.95rem}
+  select:focus,textarea:focus{outline:2px solid var(--tile);outline-offset:1px}
+  .slider-row{display:flex;align-items:center;gap:12px}
+  input[type="range"]{flex:1;accent-color:var(--tile);direction:ltr}
+  .slider-val{min-width:48px;text-align:left;direction:ltr;font-variant-numeric:tabular-nums;font-size:.9rem;color:var(--muted)}
+  .btnrow{display:flex;flex-wrap:wrap;gap:12px;margin-top:18px}
+  .btn{border:none;border-radius:12px;padding:13px 22px;font:inherit;font-weight:600;font-size:.95rem;cursor:pointer;display:inline-flex;align-items:center;gap:9px}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn-gold{background:var(--gold);color:#fff}
+  .btn-primary{background:var(--tile);color:#fff}
+  .status{margin-top:14px;font-size:.88rem;color:var(--muted);min-height:1.2em;line-height:1.9}
+  .status.err{color:var(--danger)}
+  .status.ok{color:var(--tile)}
+  .bar{height:8px;border-radius:6px;background:var(--line);overflow:hidden;margin-top:12px;display:none}
+  .bar.show{display:block}
+  .bar > div{height:100%;width:0%;background:linear-gradient(90deg,var(--tile),var(--gold));transition:width .25s}
+  .result{margin-top:16px;display:none;align-items:center;gap:14px;flex-wrap:wrap}
+  .result.show{display:flex}
+  audio{flex:1;min-width:220px;height:44px}
+  .spin{width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;animation:sp .7s linear infinite;display:none}
+  .spin.show{display:inline-block}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  footer{color:var(--muted);font-size:.82rem;text-align:center;margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <span class="fa" dir="ltr">@kamangir31 - آوا</span>
+      <span class="tagline">تبدیل متن فارسی به گفتار</span>
+    </div>
+    <button id="themeBtn">🌙</button>
+  </header>
+
+  <div class="card manuscript">
+    <textarea id="text" dir="rtl" lang="fa" spellcheck="false" placeholder="متن فارسی خود را اینجا بنویسید یا جای‌گذاری کنید…"></textarea>
+    <div class="meta">
+      <button id="sampleBtn" type="button">درج متن نمونه</button>
+      <span id="count">۰ نویسه</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>صدا و تنظیمات</h2>
+    <p class="sub">همهٔ صداها متن‌باز و رایگان‌اند و کاملاً روی همین دستگاه اجرا می‌شوند. برای هر صدا، بار اول مدل آن یک‌بار دانلود می‌شود و از آن پس بدون اینترنت کار می‌کند.</p>
+    <div class="grid">
+      <div style="grid-column:1/-1">
+        <label for="voiceSel">صدای فارسی</label>
+        <select id="voiceSel">
+          <option value="chatterbox" selected>چترباکس فارسی — طبیعی‌ترین لحن (کندتر، ~۲ گیگابایت)</option>
+          <option value="mana">مانا — سریع و سبک (ManaTTS)</option>
+          <option value="gyro">ژیرو — مرد، سریع و سبک</option>
+          <option value="amir">امیر — مرد، سریع و سبک</option>
+        </select>
+      </div>
+
+      <!-- تنظیمات چترباکس -->
+      <div class="cbx">
+        <label for="exag"><span>شدت بیان و احساس</span><small>۰٫۵ طبیعی</small></label>
+        <div class="slider-row"><input type="range" id="exag" min="0" max="1" step="0.05" value="0.5"><span class="slider-val" id="exagVal">0.50</span></div>
+      </div>
+      <div class="cbx">
+        <label for="cfg"><span>پایبندی به متن</span><small>بیشتر = دقیق‌تر و آرام‌تر</small></label>
+        <div class="slider-row"><input type="range" id="cfg" min="0" max="1" step="0.05" value="0.5"><span class="slider-val" id="cfgVal">0.50</span></div>
+      </div>
+      <div class="cbx">
+        <label for="temp"><span>تنوع و خلاقیت</span><small>کمتر = پایدارتر</small></label>
+        <div class="slider-row"><input type="range" id="temp" min="0.1" max="1.5" step="0.05" value="0.8"><span class="slider-val" id="tempVal">0.80</span></div>
+      </div>
+
+      <!-- تنظیمات صداهای سبک -->
+      <div class="ppr" hidden>
+        <label for="speed"><span>سرعت گفتار</span><small>۱× طبیعی</small></label>
+        <div class="slider-row"><input type="range" id="speed" min="0.5" max="2" step="0.05" value="1"><span class="slider-val" id="speedVal">1.00×</span></div>
+      </div>
+      <div class="ppr" hidden>
+        <label for="noise"><span>آهنگ و حالت گفتار</span><small>بیشتر = پرحالت‌تر</small></label>
+        <div class="slider-row"><input type="range" id="noise" min="0.1" max="1.3" step="0.05" value="0.667"><span class="slider-val" id="noiseVal">0.67</span></div>
+      </div>
+      <div class="ppr" hidden>
+        <label for="noisew"><span>کشش و تنوع هجاها</span><small>ریتم واژه‌ها</small></label>
+        <div class="slider-row"><input type="range" id="noisew" min="0.1" max="1.5" step="0.05" value="0.8"><span class="slider-val" id="noisewVal">0.80</span></div>
+      </div>
+    </div>
+
+    <div class="btnrow">
+      <button class="btn btn-gold" id="genBtn"><span class="spin" id="spin"></span>♪ تبدیل به گفتار و ساخت MP3</button>
+    </div>
+    <div class="bar" id="bar"><div id="barFill"></div></div>
+    <div class="status" id="status">آماده — متن را بنویسید و دکمه را بزنید.</div>
+    <div class="result" id="result">
+      <audio id="player" controls></audio>
+      <button class="btn btn-primary" id="saveBtn">⬇ ذخیرهٔ MP3</button>
+    </div>
+  </div>
+
+  <footer>Built by @kamangir31 - آوا</footer>
+</div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const faNum = n => String(n).replace(/\d/g, d => "۰۱۲۳۴۵۶۷۸۹"[d]);
+
+  const root = document.documentElement, themeBtn = $("themeBtn");
+  function setTheme(t){ root.setAttribute("data-theme", t); themeBtn.textContent = t === "dark" ? "☀️" : "🌙"; }
+  setTheme(matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  themeBtn.onclick = () => setTheme(root.getAttribute("data-theme") === "dark" ? "light" : "dark");
+
+  const textEl = $("text"), countEl = $("count");
+  textEl.addEventListener("input", () => countEl.textContent = faNum(textEl.value.length) + " نویسه");
+  $("sampleBtn").onclick = () => { textEl.value = "به نام خداوند جان و خرد، کزین برتر اندیشه برنگذرد. زندگی زیباست و هر روز فرصتی تازه برای آموختن است."; textEl.dispatchEvent(new Event("input")); };
+
+  // نمایش لغزنده‌های مناسب هر موتور
+  const voiceSel = $("voiceSel");
+  function syncSliders(){
+    const cbx = voiceSel.value === "chatterbox";
+    document.querySelectorAll(".cbx").forEach(e => e.hidden = !cbx);
+    document.querySelectorAll(".ppr").forEach(e => e.hidden = cbx);
+  }
+  voiceSel.onchange = syncSliders; syncSliders();
+
+  // مقادیر لغزنده‌ها
+  const pairs = [["exag","exagVal",""],["cfg","cfgVal",""],["temp","tempVal",""],["speed","speedVal","×"],["noise","noiseVal",""],["noisew","noisewVal",""]];
+  pairs.forEach(([a,b,suf]) => { const el = $(a); const out = $(b);
+    const f = () => out.textContent = Number(el.value).toFixed(2) + suf; el.oninput = f; f(); });
+
+  const statusEl = $("status"), bar = $("bar"), barFill = $("barFill");
+  function say(msg, cls){ statusEl.className = "status" + (cls ? " " + cls : ""); statusEl.textContent = msg; }
+  window.avaStatus = ({msg, pct}) => { say(msg, "ok");
+    if(pct == null){ bar.classList.remove("show"); } else { bar.classList.add("show"); barFill.style.width = pct + "%"; } };
+
+  const genBtn = $("genBtn"), spin = $("spin"), result = $("result"), player = $("player"), saveBtn = $("saveBtn");
+  let lastB64 = null, busy = false;
+
+  genBtn.onclick = async () => {
+    if(busy) return;
+    const txt = textEl.value.trim();
+    if(!txt){ say("اول متن فارسی را بنویسید یا جای‌گذاری کنید.", "err"); return; }
+    busy = true; genBtn.disabled = true; spin.classList.add("show"); result.classList.remove("show");
+    say("در حال آماده‌سازی…", "ok");
+    try{
+      const payload = { engine: voiceSel.value, text: txt,
+        exaggeration: +$("exag").value, cfg_weight: +$("cfg").value, temperature: +$("temp").value,
+        speed: +$("speed").value, noise: +$("noise").value, noisew: +$("noisew").value };
+      const res = await window.pywebview.api.generate(payload);
+      bar.classList.remove("show");
+      if(!res.ok) throw new Error(res.error || "خطای ناشناخته");
+      lastB64 = res.b64;
+      player.src = "data:audio/mpeg;base64," + res.b64;
+      result.classList.add("show");
+      say("آماده شد — فایل MP3 با حجم " + faNum(res.kb) + " کیلوبایت. پخش کنید یا ذخیره کنید.", "ok");
+    }catch(e){
+      say(e.message || String(e), "err");
+    }finally{
+      busy = false; genBtn.disabled = false; spin.classList.remove("show");
+    }
+  };
+
+  saveBtn.onclick = async () => {
+    if(!lastB64) return;
+    const res = await window.pywebview.api.save_mp3(lastB64);
+    if(res.ok) say("ذخیره شد: " + res.path, "ok");
+  };
+</script>
+</body>
+</html>
