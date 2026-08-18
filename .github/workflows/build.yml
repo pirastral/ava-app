@@ -1,0 +1,61 @@
+name: Build Ava
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macOS
+          - os: windows-latest
+            name: Windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Put the Hugging Face token into the app
+        shell: bash
+        run: printf '%s' "${{ secrets.HF_TOKEN }}" > token.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Make macOS icon (.icns)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir icon.iconset
+          for s in 16 32 64 128 256 512; do
+            sips -z $s $s icon.png --out icon.iconset/icon_${s}x${s}.png
+            sips -z $((s*2)) $((s*2)) icon.png --out icon.iconset/icon_${s}x${s}@2x.png
+          done
+          iconutil -c icns icon.iconset -o icon.icns
+
+      - name: Build the app
+        run: pyinstaller build.spec --noconfirm
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: ditto -c -k --sequesterRsrc --keepParent "dist/Ava.app" Ava-macOS.zip
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path dist/Ava -DestinationPath Ava-Windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ava-${{ matrix.name }}
+          path: Ava-*.zip
+          retention-days: 30
