@@ -7,7 +7,8 @@ datas, binaries, hiddenimports = [("ui", "ui"), ("token.txt", "."), ("icon.png",
 for pkg in ["torch", "torchaudio", "chatterbox", "transformers", "tokenizers",
             "piper", "onnxruntime", "lameenc", "perth", "s3tokenizer",
             "librosa", "safetensors", "huggingface_hub", "numpy", "requests",
-            "espeakng_loader", "pysbd", "diffusers", "conformer", "webview"]:
+            "espeakng_loader", "pysbd", "diffusers", "conformer", "webview",
+            "sentencepiece"]:
     try:
         d, b, h = collect_all(pkg)
         datas += d; binaries += b; hiddenimports += h
@@ -18,7 +19,7 @@ for meta in ["requests", "tqdm", "regex", "packaging", "filelock", "pyyaml",
              "numpy", "tokenizers", "safetensors", "huggingface-hub",
              "transformers", "torch", "torchaudio", "charset-normalizer",
              "idna", "urllib3", "certifi", "fsspec", "typing-extensions",
-             "onnxruntime", "piper-tts"]:
+             "onnxruntime", "piper-tts", "sentencepiece"]:
     try:
         datas += copy_metadata(meta)
     except Exception:

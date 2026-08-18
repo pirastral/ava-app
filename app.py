@@ -1,9 +1,20 @@
 """Ava — Persian text-to-speech desktop app."""
-import base64, faulthandler, json, sys, threading, traceback
+import multiprocessing
+multiprocessing.freeze_support()  # stops helper processes from opening new app windows
+
+import base64, faulthandler, json, os, sys, traceback
 from datetime import datetime
 from pathlib import Path
 
-# Crash log: if anything goes wrong, the reason is written to AvaModels/ava.log
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
+# Helper-process mode: light-voice synthesis runs here, isolated from the app.
+if len(sys.argv) > 2 and sys.argv[1] == "--piper-worker":
+    import engines
+    engines.piper_worker_main(sys.argv[2])
+    sys.exit(0)
+
+# Crash log: anything fatal is written to AvaModels/ava.log
 _logdir = Path.home() / "AvaModels"
 _logdir.mkdir(exist_ok=True)
 if getattr(sys, "frozen", False):
@@ -19,6 +30,11 @@ def _res_path(name: str) -> Path:
     return base / name
 
 
+def _downloads_dir() -> str:
+    d = Path.home() / "Downloads"
+    return str(d if d.is_dir() else Path.home())
+
+
 class Api:
     def __init__(self):
         self._window = None
@@ -31,7 +47,6 @@ class Api:
             pass
 
     def generate(self, payload):
-        """Called from JS. Runs in a worker thread (pywebview does this for us)."""
         try:
             import engines
             mp3 = engines.generate(payload, self._status)
@@ -45,7 +60,7 @@ class Api:
         try:
             name = "ava-" + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + ".mp3"
             result = self._window.create_file_dialog(
-                webview.SAVE_DIALOG, directory=str(Path.home()), save_filename=name)
+                webview.SAVE_DIALOG, directory=_downloads_dir(), save_filename=name)
             if not result:
                 return {"ok": False, "error": "cancelled"}
             path = result if isinstance(result, str) else result[0]
@@ -60,7 +75,7 @@ def main():
     window = webview.create_window(
         "آوا — تبدیل متن فارسی به گفتار",
         url=str(_res_path("ui") / "index.html"),
-        js_api=api, width=980, height=860, min_size=(420, 640))
+        js_api=api, width=980, height=880, min_size=(420, 640))
     api._window = window
     webview.start()
 

@@ -34,7 +34,8 @@
   .manuscript::after{content:"";position:absolute;left:0;right:0;top:0;height:6px;pointer-events:none;background:repeating-linear-gradient(90deg,var(--tile) 0 14px,transparent 14px 20px,var(--gold) 20px 26px,transparent 26px 32px);opacity:.85}
   textarea{display:block;width:100%;min-height:170px;resize:vertical;border:none;outline:none;background:transparent;color:var(--ink);font-family:inherit;font-size:1.25rem;line-height:2.1;direction:rtl;text-align:right;padding:26px 22px 14px}
   textarea::placeholder{color:var(--muted);opacity:.75}
-  .meta{display:flex;justify-content:space-between;align-items:center;padding:8px 18px 14px;color:var(--muted);font-size:.82rem}
+  .meta{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 18px 14px;color:var(--muted);font-size:.82rem;flex-wrap:wrap}
+  .meta .links{display:flex;gap:16px}
   .meta button{background:none;border:none;color:var(--tile);cursor:pointer;font:inherit;font-weight:600}
   h2{font-size:1.08rem;font-weight:700;margin-bottom:4px}
   .sub{color:var(--muted);font-size:.86rem;margin-bottom:16px;line-height:1.9}
@@ -47,13 +48,16 @@
   .slider-row{display:flex;align-items:center;gap:12px}
   input[type="range"]{flex:1;accent-color:var(--tile);direction:ltr}
   .slider-val{min-width:48px;text-align:left;direction:ltr;font-variant-numeric:tabular-nums;font-size:.9rem;color:var(--muted)}
+  .check{display:flex;align-items:center;gap:10px;font-size:.88rem;color:var(--ink)}
+  .check input{width:18px;height:18px;accent-color:var(--tile)}
+  .check small{color:var(--muted)}
   .btnrow{display:flex;flex-wrap:wrap;gap:12px;margin-top:18px}
   .btn{border:none;border-radius:12px;padding:13px 22px;font:inherit;font-weight:600;font-size:.95rem;cursor:pointer;display:inline-flex;align-items:center;gap:9px}
   .btn:disabled{opacity:.45;cursor:not-allowed}
   .btn-gold{background:var(--gold);color:#fff}
   .btn-primary{background:var(--tile);color:#fff}
   .status{margin-top:14px;font-size:.88rem;color:var(--muted);min-height:1.2em;line-height:1.9}
-  .status.err{color:var(--danger)}
+  .status.err{color:var(--danger);white-space:pre-wrap}
   .status.ok{color:var(--tile)}
   .bar{height:8px;border-radius:6px;background:var(--line);overflow:hidden;margin-top:12px;display:none}
   .bar.show{display:block}
@@ -65,6 +69,22 @@
   .spin.show{display:inline-block}
   @keyframes sp{to{transform:rotate(360deg)}}
   footer{color:var(--muted);font-size:.82rem;text-align:center;margin-top:8px}
+
+  /* راهنمای حرکت‌گذاری */
+  .overlay{position:fixed;inset:0;background:rgba(10,14,22,.55);display:none;align-items:center;justify-content:center;padding:20px;z-index:50}
+  .overlay.show{display:flex}
+  .dialog{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);max-width:720px;width:100%;max-height:86vh;overflow:auto;position:relative;padding:24px}
+  .dialog h3{font-size:1.05rem;margin-bottom:6px}
+  .dialog .close{position:absolute;top:12px;left:12px;width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:var(--paper);color:var(--ink);font-size:1rem;cursor:pointer}
+  .dialog .close:hover{border-color:var(--danger);color:var(--danger)}
+  .dtable{width:100%;border-collapse:collapse;margin-top:14px;font-size:.88rem}
+  .dtable th,.dtable td{border-bottom:1px solid var(--line);padding:10px 8px;text-align:right;vertical-align:middle}
+  .dtable th{color:var(--muted);font-size:.78rem;font-weight:600}
+  .mark{font-size:1.5rem;color:var(--tile);font-weight:700}
+  .kbd{direction:ltr;unicode-bidi:embed;display:inline-block;background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:2px 8px;font-size:.8rem}
+  .ins{border:1px solid var(--tile);background:transparent;color:var(--tile);border-radius:8px;padding:5px 12px;font:inherit;font-size:.8rem;font-weight:600;cursor:pointer}
+  .ins:hover{background:var(--tile);color:#fff}
+  .dnote{color:var(--muted);font-size:.8rem;line-height:1.9;margin-top:12px}
 </style>
 </head>
 <body>
@@ -80,14 +100,17 @@
   <div class="card manuscript">
     <textarea id="text" dir="rtl" lang="fa" spellcheck="false" placeholder="متن فارسی خود را اینجا بنویسید یا جای‌گذاری کنید…"></textarea>
     <div class="meta">
-      <button id="sampleBtn" type="button">درج متن نمونه</button>
+      <div class="links">
+        <button id="sampleBtn" type="button">درج متن نمونه</button>
+        <button id="guideBtn" type="button">راهنمای حرکت‌گذاری</button>
+      </div>
       <span id="count">۰ نویسه</span>
     </div>
   </div>
 
   <div class="card">
     <h2>صدا و تنظیمات</h2>
-    <p class="sub">همهٔ صداها متن‌باز و رایگان‌اند و کاملاً روی همین دستگاه اجرا می‌شوند. برای هر صدا، بار اول مدل آن یک‌بار دانلود می‌شود و از آن پس بدون اینترنت کار می‌کند.</p>
+    <p class="sub">همهٔ صداها متن‌باز و رایگان‌اند و کاملاً روی همین دستگاه اجرا می‌شوند. برای هر صدا، بار اول مدل آن یک‌بار دانلود و برای همیشه روی دستگاه ذخیره می‌شود.</p>
     <div class="grid">
       <div style="grid-column:1/-1">
         <label for="voiceSel">صدای فارسی</label>
@@ -97,6 +120,11 @@
           <option value="gyro">ژیرو — مرد، سریع و سبک</option>
           <option value="amir">امیر — مرد، سریع و سبک</option>
         </select>
+      </div>
+
+      <div style="grid-column:1/-1" class="check">
+        <input type="checkbox" id="ezafe" checked>
+        <label for="ezafe" style="margin:0;display:inline"> حرکت‌گذاری خودکار کسرهٔ اضافه <small>— هوش مصنوعی پیش از خواندن، کسره‌های نانوشته (کتابِ من) را حدس می‌زند و می‌افزاید</small></label>
       </div>
 
       <!-- تنظیمات چترباکس -->
@@ -142,6 +170,26 @@
   <footer>Built by @kamangir31 - آوا</footer>
 </div>
 
+<!-- راهنمای حرکت‌گذاری -->
+<div class="overlay" id="guideOverlay">
+  <div class="dialog" role="dialog" aria-modal="true">
+    <button class="close" id="guideClose" aria-label="بستن">✕</button>
+    <h3>راهنمای حرکت‌گذاری فارسی</h3>
+    <p class="dnote">حرکت‌ها تلفظ واژه‌های هم‌نویسه را روشن می‌کنند (گُل / گِل) و آهنگ جمله را طبیعی‌تر می‌سازند. دکمهٔ «درج» علامت را همان‌جا که مکان‌نما در متن است می‌گذارد — حرکت را بعد از حرف موردنظر درج کنید.</p>
+    <table class="dtable">
+      <tr><th>علامت</th><th>نام و نمونه</th><th>ویندوز</th><th>مک</th><th></th></tr>
+      <tr><td class="mark">ـَ</td><td>فتحه — بَد</td><td><span class="kbd">Shift+A</span></td><td><span class="kbd">Shift+A</span></td><td><button class="ins" data-ch="&#x064E;">درج</button></td></tr>
+      <tr><td class="mark">ـِ</td><td>کسره — کِتاب، کتابِ من</td><td><span class="kbd">Shift+D</span></td><td><span class="kbd">Shift+D</span></td><td><button class="ins" data-ch="&#x0650;">درج</button></td></tr>
+      <tr><td class="mark">ـُ</td><td>ضمه — گُل</td><td><span class="kbd">Shift+S</span></td><td><span class="kbd">Shift+S</span></td><td><button class="ins" data-ch="&#x064F;">درج</button></td></tr>
+      <tr><td class="mark">ـّ</td><td>تشدید — بنّا</td><td><span class="kbd">Shift+F</span></td><td><span class="kbd">Shift+F</span></td><td><button class="ins" data-ch="&#x0651;">درج</button></td></tr>
+      <tr><td class="mark">ـْ</td><td>سکون — مکث بی‌صدا</td><td><span class="kbd">Shift+X</span></td><td><span class="kbd">Shift+X</span></td><td><button class="ins" data-ch="&#x0652;">درج</button></td></tr>
+      <tr><td class="mark">ـً</td><td>تنوین فتحه — لطفاً</td><td><span class="kbd">Shift+Q</span></td><td><span class="kbd">Shift+Q</span></td><td><button class="ins" data-ch="&#x064B;">درج</button></td></tr>
+      <tr><td class="mark">هٔ</td><td>همزهٔ اضافه — خانهٔ ما</td><td><span class="kbd">Shift+G</span></td><td><span class="kbd">Shift+G</span></td><td><button class="ins" data-ch="&#x0654;">درج</button></td></tr>
+    </table>
+    <p class="dnote">میان‌برها برای چیدمان «فارسی استاندارد» (ISIRI 9147) در هر دو سیستم است؛ اگر چیدمان صفحه‌کلید دیگری دارید (مثل Persian – QWERTY در مک)، ترکیب‌ها متفاوت‌اند — در آن صورت از دکمهٔ «درج» استفاده کنید که همیشه کار می‌کند.</p>
+  </div>
+</div>
+
 <script>
   const $ = id => document.getElementById(id);
   const faNum = n => String(n).replace(/\d/g, d => "۰۱۲۳۴۵۶۷۸۹"[d]);
@@ -155,6 +203,19 @@
   textEl.addEventListener("input", () => countEl.textContent = faNum(textEl.value.length) + " نویسه");
   $("sampleBtn").onclick = () => { textEl.value = "به نام خداوند جان و خرد، کزین برتر اندیشه برنگذرد. زندگی زیباست و هر روز فرصتی تازه برای آموختن است."; textEl.dispatchEvent(new Event("input")); };
 
+  // راهنمای حرکت‌گذاری
+  const overlay = $("guideOverlay");
+  $("guideBtn").onclick = () => overlay.classList.add("show");
+  $("guideClose").onclick = () => overlay.classList.remove("show");
+  overlay.addEventListener("click", e => { if(e.target === overlay) overlay.classList.remove("show"); });
+  document.querySelectorAll(".ins").forEach(b => b.onclick = () => {
+    const ch = b.dataset.ch;
+    const s = textEl.selectionStart ?? textEl.value.length, e = textEl.selectionEnd ?? s;
+    textEl.value = textEl.value.slice(0, s) + ch + textEl.value.slice(e);
+    textEl.focus(); textEl.selectionStart = textEl.selectionEnd = s + ch.length;
+    textEl.dispatchEvent(new Event("input"));
+  });
+
   // نمایش لغزنده‌های مناسب هر موتور
   const voiceSel = $("voiceSel");
   function syncSliders(){
@@ -164,7 +225,6 @@
   }
   voiceSel.onchange = syncSliders; syncSliders();
 
-  // مقادیر لغزنده‌ها
   const pairs = [["exag","exagVal",""],["cfg","cfgVal",""],["temp","tempVal",""],["speed","speedVal","×"],["noise","noiseVal",""],["noisew","noisewVal",""]];
   pairs.forEach(([a,b,suf]) => { const el = $(a); const out = $(b);
     const f = () => out.textContent = Number(el.value).toFixed(2) + suf; el.oninput = f; f(); });
@@ -184,7 +244,7 @@
     busy = true; genBtn.disabled = true; spin.classList.add("show"); result.classList.remove("show");
     say("در حال آماده‌سازی…", "ok");
     try{
-      const payload = { engine: voiceSel.value, text: txt,
+      const payload = { engine: voiceSel.value, text: txt, ezafe: $("ezafe").checked,
         exaggeration: +$("exag").value, cfg_weight: +$("cfg").value, temperature: +$("temp").value,
         speed: +$("speed").value, noise: +$("noise").value, noisew: +$("noisew").value };
       const res = await window.pywebview.api.generate(payload);
