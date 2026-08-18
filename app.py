@@ -1,7 +1,15 @@
 """Ava — Persian text-to-speech desktop app."""
-import base64, json, sys, threading, traceback
+import base64, faulthandler, json, sys, threading, traceback
 from datetime import datetime
 from pathlib import Path
+
+# Crash log: if anything goes wrong, the reason is written to AvaModels/ava.log
+_logdir = Path.home() / "AvaModels"
+_logdir.mkdir(exist_ok=True)
+if getattr(sys, "frozen", False):
+    _logfile = open(_logdir / "ava.log", "a", buffering=1, encoding="utf-8")
+    sys.stdout = sys.stderr = _logfile
+    faulthandler.enable(_logfile)
 
 import webview
 
