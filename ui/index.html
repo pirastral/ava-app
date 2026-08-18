@@ -102,6 +102,7 @@
     <div class="meta">
       <div class="links">
         <button id="sampleBtn" type="button">درج متن نمونه</button>
+        <button id="ezafeBtn" type="button">حرکت‌گذاری خودکار</button>
         <button id="guideBtn" type="button">راهنمای حرکت‌گذاری</button>
       </div>
       <span id="count">۰ نویسه</span>
@@ -122,10 +123,6 @@
         </select>
       </div>
 
-      <div style="grid-column:1/-1" class="check">
-        <input type="checkbox" id="ezafe" checked>
-        <label for="ezafe" style="margin:0;display:inline"> حرکت‌گذاری خودکار کسرهٔ اضافه <small>— هوش مصنوعی پیش از خواندن، کسره‌های نانوشته (کتابِ من) را حدس می‌زند و می‌افزاید</small></label>
-      </div>
 
       <!-- تنظیمات چترباکس -->
       <div class="cbx">
@@ -178,15 +175,16 @@
     <p class="dnote">حرکت‌ها تلفظ واژه‌های هم‌نویسه را روشن می‌کنند (گُل / گِل) و آهنگ جمله را طبیعی‌تر می‌سازند. دکمهٔ «درج» علامت را همان‌جا که مکان‌نما در متن است می‌گذارد — حرکت را بعد از حرف موردنظر درج کنید.</p>
     <table class="dtable">
       <tr><th>علامت</th><th>نام و نمونه</th><th>ویندوز</th><th>مک</th><th></th></tr>
-      <tr><td class="mark">ـَ</td><td>فتحه — بَد</td><td><span class="kbd">Shift+A</span></td><td><span class="kbd">Shift+A</span></td><td><button class="ins" data-ch="&#x064E;">درج</button></td></tr>
-      <tr><td class="mark">ـِ</td><td>کسره — کِتاب، کتابِ من</td><td><span class="kbd">Shift+D</span></td><td><span class="kbd">Shift+D</span></td><td><button class="ins" data-ch="&#x0650;">درج</button></td></tr>
-      <tr><td class="mark">ـُ</td><td>ضمه — گُل</td><td><span class="kbd">Shift+S</span></td><td><span class="kbd">Shift+S</span></td><td><button class="ins" data-ch="&#x064F;">درج</button></td></tr>
-      <tr><td class="mark">ـّ</td><td>تشدید — بنّا</td><td><span class="kbd">Shift+F</span></td><td><span class="kbd">Shift+F</span></td><td><button class="ins" data-ch="&#x0651;">درج</button></td></tr>
-      <tr><td class="mark">ـْ</td><td>سکون — مکث بی‌صدا</td><td><span class="kbd">Shift+X</span></td><td><span class="kbd">Shift+X</span></td><td><button class="ins" data-ch="&#x0652;">درج</button></td></tr>
-      <tr><td class="mark">ـً</td><td>تنوین فتحه — لطفاً</td><td><span class="kbd">Shift+Q</span></td><td><span class="kbd">Shift+Q</span></td><td><button class="ins" data-ch="&#x064B;">درج</button></td></tr>
-      <tr><td class="mark">هٔ</td><td>همزهٔ اضافه — خانهٔ ما</td><td><span class="kbd">Shift+G</span></td><td><span class="kbd">Shift+G</span></td><td><button class="ins" data-ch="&#x0654;">درج</button></td></tr>
+      <tr><td class="mark">ـَ</td><td>فتحه — بَد</td><td><span class="kbd">Shift+U</span></td><td><span class="kbd">Shift+U</span></td><td><button class="ins" data-ch="&#x064E;">درج</button></td></tr>
+      <tr><td class="mark">ـِ</td><td>کسره — کِتاب، کتابِ من</td><td><span class="kbd">Shift+Y</span></td><td><span class="kbd">Shift+Y</span></td><td><button class="ins" data-ch="&#x0650;">درج</button></td></tr>
+      <tr><td class="mark">ـُ</td><td>ضمه — گُل</td><td><span class="kbd">Shift+T</span></td><td><span class="kbd">Shift+T</span></td><td><button class="ins" data-ch="&#x064F;">درج</button></td></tr>
+      <tr><td class="mark">ـّ</td><td>تشدید — بنّا</td><td><span class="kbd">Shift+I</span></td><td><span class="kbd">Shift+I</span></td><td><button class="ins" data-ch="&#x0651;">درج</button></td></tr>
+      <tr><td class="mark">ـْ</td><td>سکون — مکث بی‌صدا</td><td><span class="kbd">Shift+Q</span></td><td><span class="kbd">Shift+Q</span></td><td><button class="ins" data-ch="&#x0652;">درج</button></td></tr>
+      <tr><td class="mark">ـً</td><td>تنوین فتحه — لطفاً</td><td><span class="kbd">Shift+R</span></td><td><span class="kbd">Shift+R</span></td><td><button class="ins" data-ch="&#x064B;">درج</button></td></tr>
+      <tr><td class="mark">ـٍ</td><td>تنوین کسره — واقعاً کم‌کاربرد</td><td><span class="kbd">Shift+E</span></td><td><span class="kbd">Shift+E</span></td><td><button class="ins" data-ch="&#x064D;">درج</button></td></tr>
+      <tr><td class="mark">هٔ</td><td>همزهٔ اضافه — خانهٔ ما</td><td>—</td><td>—</td><td><button class="ins" data-ch="&#x0654;">درج</button></td></tr>
     </table>
-    <p class="dnote">میان‌برها برای چیدمان «فارسی استاندارد» (ISIRI 9147) در هر دو سیستم است؛ اگر چیدمان صفحه‌کلید دیگری دارید (مثل Persian – QWERTY در مک)، ترکیب‌ها متفاوت‌اند — در آن صورت از دکمهٔ «درج» استفاده کنید که همیشه کار می‌کند.</p>
+    <p class="dnote">میان‌برها برای چیدمان استاندارد ملی (ISIRI 9147) است که در ویندوز «Persian (Standard)» و در مک «Persian – Standard» نام دارد و در هر دو یکسان است. چیدمان قدیمی «Persian» در ویندوز و «Persian – QWERTY» در مک متفاوت‌اند — در آن صورت از دکمهٔ «درج» استفاده کنید که روی هر صفحه‌کلیدی کار می‌کند. برای «هٔ» کلید استانداردِ واحدی وجود ندارد؛ ه را بنویسید و دکمهٔ درج را بزنید.</p>
   </div>
 </div>
 
@@ -202,6 +200,26 @@
   const textEl = $("text"), countEl = $("count");
   textEl.addEventListener("input", () => countEl.textContent = faNum(textEl.value.length) + " نویسه");
   $("sampleBtn").onclick = () => { textEl.value = "به نام خداوند جان و خرد، کزین برتر اندیشه برنگذرد. زندگی زیباست و هر روز فرصتی تازه برای آموختن است."; textEl.dispatchEvent(new Event("input")); };
+
+  // حرکت‌گذاری خودکار — پیشنهادها را داخل ویرایشگر می‌گذارد تا قابل ویرایش باشند
+  const ezafeBtn = $("ezafeBtn");
+  ezafeBtn.onclick = async () => {
+    const txt = textEl.value.trim();
+    if(!txt){ say("اول متن فارسی را بنویسید یا جای‌گذاری کنید.", "err"); return; }
+    ezafeBtn.disabled = true;
+    say("در حال حرکت‌گذاری خودکار…", "ok");
+    try{
+      const res = await window.pywebview.api.ezafe(textEl.value);
+      if(!res.ok) throw new Error(res.error || "خطای ناشناخته");
+      textEl.value = res.text;
+      textEl.dispatchEvent(new Event("input"));
+      say("حرکت‌های پیشنهادی در متن گذاشته شد — پیش از ساخت گفتار می‌توانید آن‌ها را ویرایش کنید.", "ok");
+    }catch(e){
+      say(e.message || String(e), "err");
+    }finally{
+      ezafeBtn.disabled = false;
+    }
+  };
 
   // راهنمای حرکت‌گذاری
   const overlay = $("guideOverlay");
@@ -244,7 +262,7 @@
     busy = true; genBtn.disabled = true; spin.classList.add("show"); result.classList.remove("show");
     say("در حال آماده‌سازی…", "ok");
     try{
-      const payload = { engine: voiceSel.value, text: txt, ezafe: $("ezafe").checked,
+      const payload = { engine: voiceSel.value, text: txt,
         exaggeration: +$("exag").value, cfg_weight: +$("cfg").value, temperature: +$("temp").value,
         speed: +$("speed").value, noise: +$("noise").value, noisew: +$("noisew").value };
       const res = await window.pywebview.api.generate(payload);

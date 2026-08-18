@@ -56,6 +56,16 @@ class Api:
             traceback.print_exc()
             return {"ok": False, "error": str(e)}
 
+    def ezafe(self, text):
+        """Run the ezafe model and return the marked text for the editor."""
+        try:
+            import engines
+            marked = engines.ezafe_apply(text, self._status)
+            return {"ok": True, "text": marked}
+        except Exception as e:
+            traceback.print_exc()
+            return {"ok": False, "error": str(e)}
+
     def save_mp3(self, b64):
         try:
             name = "ava-" + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + ".mp3"

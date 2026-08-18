@@ -179,12 +179,16 @@ PIPER_VOICES = {
 def piper_worker_main(task_path: str) -> None:
     """Runs inside the helper process."""
     task = json.loads(Path(task_path).read_text(encoding="utf-8"))
+    import piper as _piper
     from piper import PiperVoice
-    kwargs = {}
-    bundled = _res_path("piper") / "espeak-ng-data"
-    if bundled.is_dir():
-        kwargs["espeak_data_dir"] = str(bundled)
-    voice = PiperVoice.load(task["onnx"], **kwargs)
+    candidates = [
+        _res_path("piper") / "espeak-ng-data",
+        Path(_piper.__file__).parent / "espeak-ng-data",
+    ]
+    data_dir = next((c for c in candidates if c.is_dir()), None)
+    if data_dir is None:
+        raise RuntimeError("espeak-ng-data not found in app bundle")
+    voice = PiperVoice.load(task["onnx"], espeak_data_dir=str(data_dir))
     length_scale = 1.0 / max(0.25, float(task["speed"]))
     with wave.open(task["out"], "wb") as wf:
         try:
@@ -316,8 +320,6 @@ def chatterbox_generate(text, exaggeration, cfg_weight, temperature, status):
 def generate(payload, status) -> bytes:
     engine = payload["engine"]
     text = payload["text"].strip()
-    if payload.get("ezafe", True):
-        text = ezafe_apply(text, status)
     if engine == "chatterbox":
         mp3, _ = chatterbox_generate(text, payload.get("exaggeration", 0.5),
                                      payload.get("cfg_weight", 0.5),
