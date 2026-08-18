@@ -56,11 +56,11 @@ class Api:
             traceback.print_exc()
             return {"ok": False, "error": str(e)}
 
-    def ezafe(self, text):
-        """Run the ezafe model and return the marked text for the editor."""
+    def ezafe(self, text, tool="local", key=""):
+        """Run the chosen diacritization tool and return marked text for the editor."""
         try:
             import engines
-            marked = engines.ezafe_apply(text, self._status)
+            marked = engines.ezafe_apply(text, self._status, tool=tool, key=key)
             return {"ok": True, "text": marked}
         except Exception as e:
             traceback.print_exc()
@@ -83,7 +83,7 @@ class Api:
 def main():
     api = Api()
     window = webview.create_window(
-        "آوا — تبدیل متن فارسی به گفتار",
+        "آوای جاویدشاه — تبدیل متن فارسی به گفتار",
         url=str(_res_path("ui") / "index.html"),
         js_api=api, width=980, height=880, min_size=(420, 640))
     api._window = window

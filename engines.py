@@ -98,8 +98,37 @@ def _hook_hf_progress(status):
 # Automatic ezafe (kasre-ye ezafe) insertion — abreza/persian-ezafe-albert
 # ---------------------------------------------------------------------------
 _ezafe = None
-_PUNCT = "،؛؟!.:…»)\"'٫٬,;"
+_PUNCT = "\u060c\u061b\u061f!.:\u2026\u00bb)\"'\u066b\u066c,;"
 _DIACRITICS = "\u064b\u064c\u064d\u064e\u064f\u0650\u0651\u0652\u0654"
+_KEYS_FILE = MODELS_DIR / "ezafe_keys.json"
+
+_LLM_PROMPT = (
+    "You are a Persian (Farsi) diacritization engine for text-to-speech. "
+    "Add Persian diacritics to the user's text: kasre-ye ezafe (\u0650) on words linked "
+    "to the next word (including \u0647\u0654 after final \u0647 and \u06cc after "
+    "final \u0627/\u0648), plus fatha, kasra, damma, tashdid and sukun wherever they "
+    "resolve ambiguity (e.g. \u06af\u064f\u0644 vs \u06af\u0650\u0644) or guide "
+    "natural reading. Do NOT change, add, remove or reorder any word, letter, digit, "
+    "punctuation or line break. Return ONLY the diacritized text, nothing else."
+)
+
+
+def save_key(tool: str, key: str):
+    try:
+        data = {}
+        if _KEYS_FILE.exists():
+            data = json.loads(_KEYS_FILE.read_text(encoding="utf-8"))
+        data[tool] = key
+        _KEYS_FILE.write_text(json.dumps(data), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def load_key(tool: str) -> str:
+    try:
+        return json.loads(_KEYS_FILE.read_text(encoding="utf-8")).get(tool, "")
+    except Exception:
+        return ""
 
 
 def _load_ezafe(status):
@@ -107,7 +136,7 @@ def _load_ezafe(status):
     if _ezafe is not None:
         return _ezafe
     _hook_hf_progress(status)
-    status("در حال آماده‌سازی هوش کسرهٔ اضافه… (بار اول حدود ۷۰ مگابایت دانلود می‌شود)")
+    status("در حال آماده‌سازی مدل محلی حرکت‌گذاری… (بار اول حدود ۷۰ مگابایت دانلود می‌شود)")
     from transformers import AutoTokenizer, AutoModelForTokenClassification
     tok = AutoTokenizer.from_pretrained("abreza/persian-ezafe-albert")
     mdl = AutoModelForTokenClassification.from_pretrained("abreza/persian-ezafe-albert")
@@ -122,47 +151,106 @@ def _mark_word(word: str) -> str:
     if not core or core[-1] in _DIACRITICS:
         return word
     last = core[-1]
-    if last == "ه":
-        add = "\u0654"          # هٔ
-    elif last in "اآو":
-        add = "ی"               # پایِ / پای
-    elif last == "ی":
-        add = ""                # ezafe already sounds through the final ye
+    if last == "\u0647":
+        add = "\u0654"
+    elif last in "\u0627\u0622\u0648":
+        add = "\u06cc"
+    elif last == "\u06cc":
+        add = ""
     else:
-        add = "\u0650"          # کسره
+        add = "\u0650"
     return core + add + tail
 
 
-def ezafe_apply(text: str, status) -> str:
-    try:
-        import torch
-        tok, mdl = _load_ezafe(status)
-        status("در حال حرکت‌گذاری خودکار متن…")
-        out_lines = []
-        for line in text.split("\n"):
-            words = line.split()
-            if not words:
-                out_lines.append(line)
-                continue
-            marked = list(words)
-            for start in range(0, len(words), 150):
-                batch = words[start:start + 150]
-                enc = tok(batch, is_split_into_words=True, return_tensors="pt",
-                          truncation=True, max_length=512)
-                with torch.no_grad():
-                    pred = mdl(**enc).logits.argmax(-1)[0].tolist()
-                wids = enc.word_ids(0)
-                flagged = set()
-                for i, w in enumerate(wids):
-                    if w is not None and pred[i] == 1:
-                        flagged.add(w)
-                for w in flagged:
+def _ezafe_local(text: str, status) -> str:
+    import torch
+    tok, mdl = _load_ezafe(status)
+    status("در حال حرکت‌گذاری با مدل محلی…")
+    out_lines = []
+    for line in text.split("\n"):
+        words = line.split()
+        if not words:
+            out_lines.append(line)
+            continue
+        marked = list(words)
+        for start in range(0, len(words), 150):
+            batch = words[start:start + 150]
+            enc = tok(batch, is_split_into_words=True, return_tensors="pt",
+                      truncation=True, max_length=512)
+            with torch.no_grad():
+                pred = mdl(**enc).logits.argmax(-1)[0].tolist()
+            wids = enc.word_ids(0)
+            for i, w in enumerate(wids):
+                if w is not None and pred[i] == 1:
                     marked[start + w] = _mark_word(marked[start + w])
-            out_lines.append(" ".join(marked))
-        return "\n".join(out_lines)
-    except Exception:
-        status("حرکت‌گذاری خودکار در دسترس نبود — متن بدون تغییر خوانده می‌شود.")
-        return text
+        out_lines.append(" ".join(marked))
+    return "\n".join(out_lines)
+
+
+def _llm_chunks(text, max_len=1500):
+    return _split_sentences(text, max_len=max_len)
+
+
+def _ezafe_openai(text, key, status):
+    out = []
+    chunks = _llm_chunks(text)
+    for i, ch in enumerate(chunks, 1):
+        status(f"حرکت‌گذاری با OpenAI… بخش {i} از {len(chunks)}")
+        r = requests.post("https://api.openai.com/v1/chat/completions",
+                          headers={"Authorization": "Bearer " + key},
+                          json={"model": "gpt-4o-mini", "temperature": 0.2,
+                                "messages": [{"role": "system", "content": _LLM_PROMPT},
+                                             {"role": "user", "content": ch}]},
+                          timeout=120)
+        if r.status_code != 200:
+            raise RuntimeError("OpenAI: " + r.json().get("error", {}).get("message", f"HTTP {r.status_code}"))
+        out.append(r.json()["choices"][0]["message"]["content"].strip())
+    return "\n".join(out) if "\n" in text else " ".join(out)
+
+
+def _ezafe_gemini(text, key, status):
+    out = []
+    chunks = _llm_chunks(text)
+    for i, ch in enumerate(chunks, 1):
+        status(f"حرکت‌گذاری با Gemini… بخش {i} از {len(chunks)}")
+        r = requests.post(
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + key,
+            json={"contents": [{"parts": [{"text": _LLM_PROMPT + "\n\n" + ch}]}]},
+            timeout=120)
+        if r.status_code != 200:
+            raise RuntimeError("Gemini: " + r.json().get("error", {}).get("message", f"HTTP {r.status_code}"))
+        r = r.json()
+        out.append(r["candidates"][0]["content"]["parts"][0]["text"].strip())
+    return "\n".join(out) if "\n" in text else " ".join(out)
+
+
+def _ezafe_anthropic(text, key, status):
+    out = []
+    chunks = _llm_chunks(text)
+    for i, ch in enumerate(chunks, 1):
+        status(f"حرکت‌گذاری با Claude… بخش {i} از {len(chunks)}")
+        r = requests.post("https://api.anthropic.com/v1/messages",
+                          headers={"x-api-key": key, "anthropic-version": "2023-06-01"},
+                          json={"model": "claude-3-5-haiku-latest", "max_tokens": 4000,
+                                "system": _LLM_PROMPT,
+                                "messages": [{"role": "user", "content": ch}]},
+                          timeout=120)
+        if r.status_code != 200:
+            raise RuntimeError("Claude: " + r.json().get("error", {}).get("message", f"HTTP {r.status_code}"))
+        out.append(r.json()["content"][0]["text"].strip())
+    return "\n".join(out) if "\n" in text else " ".join(out)
+
+
+def ezafe_apply(text: str, status, tool: str = "local", key: str = "") -> str:
+    tool = tool or "local"
+    if tool != "local":
+        key = (key or "").strip() or load_key(tool)
+        if not key:
+            raise RuntimeError("برای این ابزار، کلید API لازم است — آن را در کادر کلید وارد کنید (فقط یک‌بار).")
+        save_key(tool, key)
+        fn = {"openai": _ezafe_openai, "gemini": _ezafe_gemini, "anthropic": _ezafe_anthropic}[tool]
+        return fn(text, key, status)
+    return _ezafe_local(text, status)
 
 
 # ---------------------------------------------------------------------------
@@ -176,18 +264,34 @@ PIPER_VOICES = {
 }
 
 
+def _find_espeak_data():
+    """Find the espeak-ng pronunciation data wherever the bundle put it."""
+    bases = [Path(getattr(sys, "_MEIPASS", Path(__file__).parent))]
+    try:
+        import piper as _piper
+        bases.append(Path(_piper.__file__).parent.parent)
+    except Exception:
+        pass
+    quick = [bases[0] / "piper" / "espeak-ng-data", bases[0] / "espeak-ng-data"]
+    for c in quick:
+        if (c / "phontab").exists():
+            return c
+    for base in bases:
+        for root, dirs, files in os.walk(base):
+            if root.endswith("espeak-ng-data") and "phontab" in files:
+                return Path(root)
+    return None
+
+
 def piper_worker_main(task_path: str) -> None:
     """Runs inside the helper process."""
     task = json.loads(Path(task_path).read_text(encoding="utf-8"))
-    import piper as _piper
-    from piper import PiperVoice
-    candidates = [
-        _res_path("piper") / "espeak-ng-data",
-        Path(_piper.__file__).parent / "espeak-ng-data",
-    ]
-    data_dir = next((c for c in candidates if c.is_dir()), None)
+    data_dir = _find_espeak_data()
     if data_dir is None:
-        raise RuntimeError("espeak-ng-data not found in app bundle")
+        raise RuntimeError("espeak-ng-data missing from the app bundle — rebuild needed")
+    # espeak-ng itself honours this variable; set it before piper loads.
+    os.environ["ESPEAK_DATA_PATH"] = str(data_dir)
+    from piper import PiperVoice
     voice = PiperVoice.load(task["onnx"], espeak_data_dir=str(data_dir))
     length_scale = 1.0 / max(0.25, float(task["speed"]))
     with wave.open(task["out"], "wb") as wf:

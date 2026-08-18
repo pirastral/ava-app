@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>@kamangir31 - آوا</title>
+<title>@kamangir31 - آوای جاویدشاه</title>
 <style>
   :root{
     --paper:#f7f3ea; --panel:#fffdf7; --ink:#20242e; --muted:#6b7080;
@@ -37,6 +37,11 @@
   .meta{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 18px 14px;color:var(--muted);font-size:.82rem;flex-wrap:wrap}
   .meta .links{display:flex;gap:16px}
   .meta button{background:none;border:none;color:var(--tile);cursor:pointer;font:inherit;font-weight:600}
+  .tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:0 18px 16px}
+  .tools select{flex:2;min-width:200px;width:auto}
+  .tools input{flex:2;min-width:200px;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font:inherit;font-size:.85rem;direction:ltr;text-align:left}
+  .tools input::placeholder{direction:rtl;text-align:right}
+  .tools .btn{flex:1;min-width:150px;padding:11px 16px;font-size:.88rem;justify-content:center}
   h2{font-size:1.08rem;font-weight:700;margin-bottom:4px}
   .sub{color:var(--muted);font-size:.86rem;margin-bottom:16px;line-height:1.9}
   .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px 20px}
@@ -91,7 +96,7 @@
 <div class="wrap">
   <header>
     <div class="brand">
-      <span class="fa" dir="ltr">@kamangir31 - آوا</span>
+      <span class="fa" dir="ltr">@kamangir31 - آوای جاویدشاه</span>
       <span class="tagline">تبدیل متن فارسی به گفتار</span>
     </div>
     <button id="themeBtn">🌙</button>
@@ -102,10 +107,19 @@
     <div class="meta">
       <div class="links">
         <button id="sampleBtn" type="button">درج متن نمونه</button>
-        <button id="ezafeBtn" type="button">حرکت‌گذاری خودکار</button>
         <button id="guideBtn" type="button">راهنمای حرکت‌گذاری</button>
       </div>
       <span id="count">۰ نویسه</span>
+    </div>
+    <div class="tools">
+      <select id="ezafeTool" title="ابزار حرکت‌گذاری">
+        <option value="local" selected>مدل محلی — آفلاین، فقط کسرهٔ اضافه</option>
+        <option value="gemini">Google Gemini — دقیق، کلید رایگان</option>
+        <option value="openai">OpenAI GPT — دقیق، کلید لازم</option>
+        <option value="anthropic">Anthropic Claude — دقیق، کلید لازم</option>
+      </select>
+      <input type="password" id="ezafeKey" placeholder="کلید API — یک‌بار وارد کنید، روی دستگاه ذخیره می‌شود" hidden>
+      <button class="btn btn-primary" id="ezafeBtn" type="button">حرکت‌گذاری خودکار</button>
     </div>
   </div>
 
@@ -164,7 +178,7 @@
     </div>
   </div>
 
-  <footer>Built by @kamangir31 - آوا</footer>
+  <footer>Built by @kamangir31 - آوای جاویدشاه</footer>
 </div>
 
 <!-- راهنمای حرکت‌گذاری -->
@@ -199,17 +213,19 @@
 
   const textEl = $("text"), countEl = $("count");
   textEl.addEventListener("input", () => countEl.textContent = faNum(textEl.value.length) + " نویسه");
-  $("sampleBtn").onclick = () => { textEl.value = "به نام خداوند جان و خرد، کزین برتر اندیشه برنگذرد. زندگی زیباست و هر روز فرصتی تازه برای آموختن است."; textEl.dispatchEvent(new Event("input")); };
+  $("sampleBtn").onclick = () => { textEl.value = "به نام خداوندِ جان و خِرَد، کزینْ برترْ اندیشه بر نَگْذَرَدْ. زندگی، زیباست و هر روز فرصتی تازه برای آموختن است."; textEl.dispatchEvent(new Event("input")); };
 
   // حرکت‌گذاری خودکار — پیشنهادها را داخل ویرایشگر می‌گذارد تا قابل ویرایش باشند
-  const ezafeBtn = $("ezafeBtn");
+  const ezafeBtn = $("ezafeBtn"), ezafeTool = $("ezafeTool"), ezafeKey = $("ezafeKey");
+  function syncEzafeTool(){ ezafeKey.hidden = ezafeTool.value === "local"; }
+  ezafeTool.onchange = syncEzafeTool; syncEzafeTool();
   ezafeBtn.onclick = async () => {
     const txt = textEl.value.trim();
     if(!txt){ say("اول متن فارسی را بنویسید یا جای‌گذاری کنید.", "err"); return; }
     ezafeBtn.disabled = true;
     say("در حال حرکت‌گذاری خودکار…", "ok");
     try{
-      const res = await window.pywebview.api.ezafe(textEl.value);
+      const res = await window.pywebview.api.ezafe(textEl.value, ezafeTool.value, ezafeKey.value);
       if(!res.ok) throw new Error(res.error || "خطای ناشناخته");
       textEl.value = res.text;
       textEl.dispatchEvent(new Event("input"));
