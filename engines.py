@@ -104,12 +104,22 @@ _KEYS_FILE = MODELS_DIR / "ezafe_keys.json"
 
 _LLM_PROMPT = (
     "You are a Persian (Farsi) diacritization engine for text-to-speech. "
-    "Add Persian diacritics to the user's text: kasre-ye ezafe (\u0650) on words linked "
+    "FIRST read and fully comprehend the ENTIRE text: its meaning, grammar and context, "
+    "as if you were translating it. Only AFTER understanding it, decide each word's "
+    "diacritics from that context. Never judge a word in isolation or jump to the most "
+    "common reading: homographs (\u06af\u0644، \u0645\u0647\u0631، \u0633\u06a9\u0647، "
+    "\u06a9\u0631\u0645) and ezafe links must follow what the sentence actually means. "
+    "Then add Persian diacritics to the user's text: kasre-ye ezafe (\u0650) on every word linked "
     "to the next word (including \u0647\u0654 after final \u0647 and \u06cc after "
     "final \u0627/\u0648), plus fatha, kasra, damma, tashdid and sukun wherever they "
     "resolve ambiguity (e.g. \u06af\u064f\u0644 vs \u06af\u0650\u0644) or guide "
-    "natural reading. Do NOT change, add, remove or reorder any word, letter, digit, "
-    "punctuation or line break. Return ONLY the diacritized text, nothing else."
+    "natural reading rhythm. Preserve any diacritics already present in the input. "
+    "Do NOT change, add, remove or reorder any word, letter, digit, "
+    "punctuation or line break. Return ONLY the diacritized text, nothing else.\n"
+    "Example input: \u06a9\u062a\u0627\u0628 \u0645\u0646 \u0631\u0648\u06cc "
+    "\u0645\u06cc\u0632 \u0686\u0648\u0628\u06cc \u0627\u0633\u062a.\n"
+    "Example output: \u06a9\u062a\u0627\u0628\u0650 \u0645\u0646 \u0631\u0648\u06cc\u0650 "
+    "\u0645\u06cc\u0632\u0650 \u0686\u0648\u0628\u06cc \u0627\u0633\u062a."
 )
 
 
@@ -187,7 +197,7 @@ def _ezafe_local(text: str, status) -> str:
     return "\n".join(out_lines)
 
 
-def _llm_chunks(text, max_len=1500):
+def _llm_chunks(text, max_len=4000):
     return _split_sentences(text, max_len=max_len)
 
 
@@ -239,7 +249,7 @@ def _ezafe_anthropic(text, key, status):
         status(f"حرکت‌گذاری با Claude… بخش {i} از {len(chunks)}")
         r = requests.post("https://api.anthropic.com/v1/messages",
                           headers={"x-api-key": key, "anthropic-version": "2023-06-01"},
-                          json={"model": "claude-3-5-haiku-latest", "max_tokens": 4000,
+                          json={"model": "claude-3-5-haiku-latest", "max_tokens": 8000,
                                 "system": _LLM_PROMPT,
                                 "messages": [{"role": "user", "content": ch}]},
                           timeout=120)

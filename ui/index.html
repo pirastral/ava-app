@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>@kamangir31 - آوای جاویدشاه</title>
+<title>@kamangir31 - آوای جاوید شاه</title>
 <style>
   :root{
     --paper:#f7f3ea; --panel:#fffdf7; --ink:#20242e; --muted:#6b7080;
@@ -38,9 +38,8 @@
   .meta .links{display:flex;gap:16px}
   .meta button{background:none;border:none;color:var(--tile);cursor:pointer;font:inherit;font-weight:600}
   .tools{display:flex;gap:10px;align-items:stretch;flex-wrap:wrap;padding:0 18px 16px}
-  .tools select,.tools input,.tools .btn{height:46px;box-sizing:border-box;border-radius:12px}
-  .tools select{flex:2;min-width:200px;width:auto;padding:0 12px}
-  .tools input{flex:2;min-width:200px;padding:0 12px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font:inherit;font-size:.85rem;direction:ltr;text-align:left}
+  .tools select{flex:2;min-width:200px;width:auto}
+  .tools input{flex:2;min-width:200px;height:46px;box-sizing:border-box;border-radius:12px;padding:0 12px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font:inherit;font-size:.85rem;direction:ltr;text-align:left}
   .tools input::placeholder{direction:rtl;text-align:right}
   .tools .btn{flex:1;min-width:150px;padding:0 16px;font-size:.88rem;justify-content:center}
   h2{font-size:1.08rem;font-weight:700;margin-bottom:4px}
@@ -49,7 +48,7 @@
   @media (max-width:640px){.grid{grid-template-columns:1fr}}
   label{display:flex;justify-content:space-between;align-items:baseline;font-size:.8rem;font-weight:600;color:var(--muted);margin-bottom:6px}
   label small{font-weight:400;font-size:.72rem}
-  select{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font:inherit;font-size:.95rem}
+  select{width:100%;height:46px;padding:0 12px;border-radius:12px;box-sizing:border-box;border:1px solid var(--line);background:var(--paper);color:var(--ink);font:inherit;font-size:.95rem}
   select:focus,textarea:focus{outline:2px solid var(--tile);outline-offset:1px}
   .slider-row{display:flex;align-items:center;gap:12px}
   input[type="range"]{flex:1;accent-color:var(--tile);direction:ltr}
@@ -58,7 +57,7 @@
   .check input{width:18px;height:18px;accent-color:var(--tile)}
   .check small{color:var(--muted)}
   .btnrow{display:flex;flex-wrap:wrap;gap:12px;margin-top:18px}
-  .btn{border:none;border-radius:12px;padding:13px 22px;font:inherit;font-weight:600;font-size:.95rem;cursor:pointer;display:inline-flex;align-items:center;gap:9px}
+  .btn{border:none;border-radius:12px;height:46px;padding:0 22px;box-sizing:border-box;font:inherit;font-weight:600;font-size:.95rem;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:9px}
   .btn:disabled{opacity:.45;cursor:not-allowed}
   .btn-gold{background:var(--gold);color:#182238}
   .btn-gold .spin{border-color:rgba(24,34,56,.35);border-top-color:#182238}
@@ -71,7 +70,7 @@
   .bar > div{height:100%;width:0%;background:linear-gradient(90deg,var(--tile),var(--gold));transition:width .25s}
   .result{margin-top:16px;display:none;align-items:center;gap:14px;flex-wrap:wrap}
   .result.show{display:flex}
-  audio{flex:1;min-width:220px;height:44px}
+  audio{flex:1;min-width:220px;height:46px;border-radius:12px}
   .spin{width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;animation:sp .7s linear infinite;display:none}
   .spin.show{display:inline-block}
   @keyframes sp{to{transform:rotate(360deg)}}
@@ -98,7 +97,7 @@
 <div class="wrap">
   <header>
     <div class="brand">
-      <span class="fa" dir="ltr">@kamangir31 - آوای جاویدشاه</span>
+      <span class="fa" dir="ltr">@kamangir31 - آوای جاوید شاه</span>
       <span class="tagline">تبدیل متن فارسی به گفتار</span>
     </div>
     <button id="themeBtn">🌙</button>
@@ -181,7 +180,7 @@
     </div>
   </div>
 
-  <footer>Built by @kamangir31 - آوای جاویدشاه</footer>
+  <footer>Built by @kamangir31 - آوای جاوید شاه</footer>
 </div>
 
 <!-- راهنمای حرکت‌گذاری -->

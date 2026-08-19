@@ -83,7 +83,7 @@ class Api:
 def main():
     api = Api()
     window = webview.create_window(
-        "آوای جاویدشاه — تبدیل متن فارسی به گفتار",
+        "آوای جاوید شاه — تبدیل متن فارسی به گفتار",
         url=str(_res_path("ui") / "index.html"),
         js_api=api, width=980, height=880, min_size=(420, 640))
     api._window = window

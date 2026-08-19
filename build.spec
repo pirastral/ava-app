@@ -41,12 +41,13 @@ a = Analysis(["app.py"], datas=datas, binaries=binaries, hiddenimports=hiddenimp
 pyz = PYZ(a.pure)
 
 icon_file = "icon.icns" if sys.platform == "darwin" else "icon.ico"
-exe = EXE(pyz, a.scripts, exclude_binaries=True, name="Ava",
+exe = EXE(pyz, a.scripts, exclude_binaries=True, name="Avaye Javid Shah",
           console=False, icon=icon_file)
-coll = COLLECT(exe, a.binaries, a.datas, name="Ava")
+coll = COLLECT(exe, a.binaries, a.datas, name="Avaye Javid Shah")
 
 if sys.platform == "darwin":
-    app = BUNDLE(coll, name="Ava.app", icon="icon.icns",
+    app = BUNDLE(coll, name="Avaye Javid Shah.app", icon="icon.icns",
                  bundle_identifier="ir.kamangir31.ava",
-                 info_plist={"CFBundleDisplayName": "آوای جاویدشاه",
+                 info_plist={"CFBundleName": "Avaye Javid Shah",
+                             "CFBundleDisplayName": "آوای جاوید شاه",
                              "NSHighResolutionCapable": True})
