@@ -233,63 +233,97 @@ def _llm_chunks(text, max_len=4000):
     return _split_sentences(text, max_len=max_len)
 
 
-def _ezafe_openai(text, key, status):
+_MARKS_RE = re.compile(r"[\u064b-\u0655\u0670]")
+_DIRCTRL_RE = re.compile(r"[\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff\u00ad]")
+
+
+def _clean_llm(s: str) -> str:
+    """Normalize LLM output: no code fences, no invisible direction chars,
+    and every diacritic must sit directly on a real letter."""
+    s = s.strip()
+    if s.startswith("```"):
+        s = re.sub(r"^```[^\n]*\n?", "", s)
+        s = re.sub(r"\n?```$", "", s.strip())
+    s = _DIRCTRL_RE.sub("", s)
     out = []
+    for ch in s:
+        if _MARKS_RE.match(ch):
+            if not out:
+                continue
+            p = out[-1]
+            if not ("\u0621" <= p <= "\u064a" or "\u066e" <= p <= "\u06d3" or _MARKS_RE.match(p)):
+                continue  # orphaned mark (after space/ZWNJ/punct) — drop it
+        out.append(ch)
+    return "".join(out)
+
+
+def _skeleton(s: str) -> str:
+    """The letters of the text with all diacritics removed — must never change."""
+    return re.sub(r"\s+", " ", _MARKS_RE.sub("", s)).strip()
+
+
+def _llm_map(text, status, label, call_one):
+    """Run chunks through the LLM with a hard letter-integrity guard:
+    if the model altered any letter, retry once; if it alters again,
+    keep that chunk unchanged rather than accept corrupted text."""
     chunks = _llm_chunks(text)
+    out = []
     for i, ch in enumerate(chunks, 1):
-        status(f"حرکت‌گذاری با OpenAI… بخش {i} از {len(chunks)}")
+        status(f"حرکت‌گذاری با {label}… بخش {i} از {len(chunks)}")
+        t = _clean_llm(call_one(ch))
+        if _skeleton(t) != _skeleton(ch):
+            t = _clean_llm(call_one(ch))
+            if _skeleton(t) != _skeleton(ch):
+                t = ch
+        out.append(t)
+    return "\n".join(out) if "\n" in text else " ".join(out)
+
+
+def _ezafe_openai(text, key, status):
+    def call(ch):
         r = requests.post("https://api.openai.com/v1/chat/completions",
                           headers={"Authorization": "Bearer " + key},
                           json={"model": "gpt-4o-mini", "temperature": 0.2,
                                 "messages": [{"role": "system", "content": _LLM_PROMPT},
-                                             {"role": "user", "content": ch}]},
+                                             {"role": "user", "content": "TEXT TO DIACRITIZE:\n" + ch}]},
                           timeout=120)
         if r.status_code != 200:
             raise RuntimeError("OpenAI: " + r.json().get("error", {}).get("message", f"HTTP {r.status_code}"))
-        out.append(r.json()["choices"][0]["message"]["content"].strip())
-    return "\n".join(out) if "\n" in text else " ".join(out)
+        return r.json()["choices"][0]["message"]["content"]
+    return _llm_map(text, status, "OpenAI", call)
 
 
 def _ezafe_gemini(text, key, status):
-    out = []
-    chunks = _llm_chunks(text)
-    for i, ch in enumerate(chunks, 1):
-        status(f"حرکت‌گذاری با Gemini… بخش {i} از {len(chunks)}")
+    def call(ch):
         models = ["gemini-3.6-flash", "gemini-3-flash-preview", "gemini-2.5-flash", "gemini-flash-latest"]
         last_err = None
         for m in models:
             r = requests.post(
                 "https://generativelanguage.googleapis.com/v1beta/models/" + m + ":generateContent?key=" + key,
-                json={"contents": [{"parts": [{"text": _LLM_PROMPT + "\n\n" + ch}]}],
+                json={"contents": [{"parts": [{"text": _LLM_PROMPT + "\n\nTEXT TO DIACRITIZE:\n" + ch}]}],
                       "generationConfig": {"temperature": 0.1}},
                 timeout=120)
             if r.status_code == 200:
-                out.append(r.json()["candidates"][0]["content"]["parts"][0]["text"].strip())
-                last_err = None
-                break
+                return r.json()["candidates"][0]["content"]["parts"][0]["text"]
             last_err = r.json().get("error", {}).get("message", f"HTTP {r.status_code}")
             if not any(k in last_err.lower() for k in ("not found", "not available", "no longer", "deprecated")):
                 break
-        if last_err:
-            raise RuntimeError("Gemini: " + last_err)
-    return "\n".join(out) if "\n" in text else " ".join(out)
+        raise RuntimeError("Gemini: " + (last_err or "?"))
+    return _llm_map(text, status, "Gemini", call)
 
 
 def _ezafe_anthropic(text, key, status):
-    out = []
-    chunks = _llm_chunks(text)
-    for i, ch in enumerate(chunks, 1):
-        status(f"حرکت‌گذاری با Claude… بخش {i} از {len(chunks)}")
+    def call(ch):
         r = requests.post("https://api.anthropic.com/v1/messages",
                           headers={"x-api-key": key, "anthropic-version": "2023-06-01"},
                           json={"model": "claude-3-5-haiku-latest", "max_tokens": 8000, "temperature": 0.2,
                                 "system": _LLM_PROMPT,
-                                "messages": [{"role": "user", "content": ch}]},
+                                "messages": [{"role": "user", "content": "TEXT TO DIACRITIZE:\n" + ch}]},
                           timeout=120)
         if r.status_code != 200:
             raise RuntimeError("Claude: " + r.json().get("error", {}).get("message", f"HTTP {r.status_code}"))
-        out.append(r.json()["content"][0]["text"].strip())
-    return "\n".join(out) if "\n" in text else " ".join(out)
+        return r.json()["content"][0]["text"]
+    return _llm_map(text, status, "Claude", call)
 
 
 def ezafe_apply(text: str, status, tool: str = "local", key: str = "") -> str:
