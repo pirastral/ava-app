@@ -128,11 +128,13 @@ _LLM_PROMPT = (
     "carries sukun on \u06af mid-word THERE because the meter closes that syllable - the law is the syllable "
     "analysis, not that word. A half-marked word misleads the TTS more than a bare one - never leave "
     "a word partially vocalized. "
-    "ENDINGS LAW: for every word you mark, decide its final sound explicitly. A word ending on a closed "
-    "consonant gets a final sukun so the TTS cannot invent a trailing vowel "
-    "(\u06a9\u064e\u0632\u06cc\u0646\u0652, not \u06a9\u0632\u06cc\u0646 which gets misread as "
-    "\u06a9\u0632\u06cc\u0646\u0650); a word linking forward gets the ezafe of rule (1); word-final "
-    "\u0647 reads as e. "
+    "ENDINGS LAW: for every word you mark, decide its final sound explicitly. The final sukun is a SURGICAL "
+    "tool, not a default: use it only where the TTS would otherwise invent a trailing vowel - unusual or fused "
+    "endings (\u06a9\u064e\u0632\u06cc\u0646\u0652, which unmarked gets misread as "
+    "\u06a9\u0632\u06cc\u0646\u0650). Do NOT stamp it on ordinary consonant-final words, and NEVER before "
+    "punctuation or a pause, where the voice closes the word naturally (\u062e\u0650\u0631\u064e\u062f\u060c "
+    "not \u062e\u0650\u0631\u064e\u062f\u0652\u060c). A word linking forward gets the ezafe of rule (1); "
+    "word-final \u0647 reads as e. "
     "NEVER insert internal marks that create a wrong reading of a well-known word: "
     "\u062e\u062f\u0627\u0648\u0646\u062f stays internally bare - correct is "
     "\u062e\u062f\u0627\u0648\u0646\u062f\u0650 \u062c\u0627\u0646 (bare inside, ezafe at the end); "
@@ -293,9 +295,11 @@ def _ezafe_openai(text, key, status):
     return _llm_map(text, status, "OpenAI", call)
 
 
-def _ezafe_gemini(text, key, status):
-    def call(ch):
+def _ezafe_gemini(text, key, status, models=None, label="Gemini"):
+    if models is None:
         models = ["gemini-3.6-flash", "gemini-3-flash-preview", "gemini-2.5-flash", "gemini-flash-latest"]
+
+    def call(ch):
         last_err = None
         for m in models:
             r = requests.post(
@@ -308,8 +312,14 @@ def _ezafe_gemini(text, key, status):
             last_err = r.json().get("error", {}).get("message", f"HTTP {r.status_code}")
             if not any(k in last_err.lower() for k in ("not found", "not available", "no longer", "deprecated")):
                 break
-        raise RuntimeError("Gemini: " + (last_err or "?"))
-    return _llm_map(text, status, "Gemini", call)
+        raise RuntimeError(label + ": " + (last_err or "?"))
+    return _llm_map(text, status, label, call)
+
+
+def _ezafe_gemini_pro(text, key, status):
+    return _ezafe_gemini(text, key, status, label="Gemini Pro",
+                         models=["gemini-3-pro-preview", "gemini-3-pro",
+                                 "gemini-2.5-pro", "gemini-pro-latest"])
 
 
 def _ezafe_anthropic(text, key, status):
@@ -329,11 +339,13 @@ def _ezafe_anthropic(text, key, status):
 def ezafe_apply(text: str, status, tool: str = "local", key: str = "") -> str:
     tool = tool or "local"
     if tool != "local":
-        key = (key or "").strip() or load_key(tool)
+        keyname = "gemini" if tool.startswith("gemini") else tool
+        key = (key or "").strip() or load_key(keyname)
         if not key:
             raise RuntimeError("برای این ابزار، کلید API لازم است — آن را در کادر کلید وارد کنید (فقط یک‌بار).")
-        save_key(tool, key)
-        fn = {"openai": _ezafe_openai, "gemini": _ezafe_gemini, "anthropic": _ezafe_anthropic}[tool]
+        save_key(keyname, key)
+        fn = {"openai": _ezafe_openai, "gemini": _ezafe_gemini,
+              "gemini_pro": _ezafe_gemini_pro, "anthropic": _ezafe_anthropic}[tool]
         return fn(text, key, status)
     return _ezafe_local(text, status)
 
