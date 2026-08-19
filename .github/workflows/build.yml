@@ -48,11 +48,11 @@ jobs:
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
-        run: ditto -c -k --sequesterRsrc --keepParent "dist/Ava.app" Ava-macOS.zip
+        run: ditto -c -k --sequesterRsrc --keepParent "dist/Avaye Javid Shah.app" Ava-macOS.zip
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
-        run: Compress-Archive -Path dist/Ava -DestinationPath Ava-Windows.zip
+        run: Compress-Archive -Path "dist/Avaye Javid Shah" -DestinationPath Ava-Windows.zip
 
       - uses: actions/upload-artifact@v4
         with:
