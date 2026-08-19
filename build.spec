@@ -7,7 +7,7 @@ datas, binaries, hiddenimports = [("ui", "ui"), ("token.txt", "."), ("icon.png",
 for pkg in ["torch", "torchaudio", "chatterbox", "transformers", "tokenizers",
             "piper", "onnxruntime", "lameenc", "perth", "s3tokenizer",
             "librosa", "safetensors", "huggingface_hub", "numpy", "requests",
-            "espeakng_loader", "pysbd", "diffusers", "conformer", "webview", "audiotsm",
+            "espeakng_loader", "pysbd", "diffusers", "conformer", "webview", "audiotsm", "psutil",
             "sentencepiece"]:
     try:
         d, b, h = collect_all(pkg)

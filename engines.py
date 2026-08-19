@@ -1,5 +1,5 @@
 """Ava — Persian TTS engines (Chatterbox-Persian + Piper voices + auto-ezafe)."""
-import os, json, re, shutil, subprocess, sys, tempfile, wave
+import os, json, re, shutil, subprocess, sys, tempfile, threading, wave
 from pathlib import Path
 
 MODELS_DIR = Path.home() / "AvaModels"
@@ -401,7 +401,8 @@ def _ensure_local_espeak():
 
 
 def piper_worker_main(task_path: str) -> None:
-    """Runs inside the helper process."""
+    """Runs inside the helper process. Synthesizes a list of segments
+    ({"t": text} | {"p": seconds}) into one wav, splicing real silence."""
     task = json.loads(Path(task_path).read_text(encoding="utf-8"))
     data_dir = _ensure_local_espeak()
     try:
@@ -418,19 +419,44 @@ def piper_worker_main(task_path: str) -> None:
     from piper import PiperVoice
     voice = PiperVoice.load(task["onnx"], espeak_data_dir=str(data_dir))
     length_scale = 1.0 / max(0.25, float(task["speed"]))
+    segments = task.get("segments") or [{"t": task["text"]}]
+
+    def synth_to(path, text):
+        with wave.open(path, "wb") as wf:
+            try:
+                from piper import SynthesisConfig
+                sc = SynthesisConfig(length_scale=length_scale,
+                                     noise_scale=float(task["noise"]),
+                                     noise_w_scale=float(task["noisew"]))
+                voice.synthesize_wav(text, wf, syn_config=sc)
+            except ImportError:
+                voice.synthesize(text, wf, length_scale=length_scale,
+                                 noise_scale=float(task["noise"]), noise_w=float(task["noisew"]))
+
+    import numpy as _np
+    pieces, sr = [], 0
+    tmp = task["out"] + ".seg.wav"
+    for seg in segments:
+        if "t" in seg:
+            synth_to(tmp, seg["t"])
+            with wave.open(tmp, "rb") as rf:
+                sr = rf.getframerate()
+                pieces.append(_np.frombuffer(rf.readframes(rf.getnframes()), dtype=_np.int16))
+        else:
+            pieces.append(("pause", float(seg["p"])))
+    try:
+        os.unlink(tmp)
+    except OSError:
+        pass
+    chunks = [_np.zeros(int(sr * p[1]), dtype=_np.int16) if isinstance(p, tuple) else p
+              for p in pieces]
+    joined = _np.concatenate(chunks) if chunks else _np.zeros(1, dtype=_np.int16)
     with wave.open(task["out"], "wb") as wf:
-        try:
-            from piper import SynthesisConfig
-            sc = SynthesisConfig(length_scale=length_scale,
-                                 noise_scale=float(task["noise"]),
-                                 noise_w_scale=float(task["noisew"]))
-            voice.synthesize_wav(task["text"], wf, syn_config=sc)
-        except ImportError:
-            voice.synthesize(task["text"], wf, length_scale=length_scale,
-                             noise_scale=float(task["noise"]), noise_w=float(task["noisew"]))
+        wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(sr or 22050)
+        wf.writeframes(joined.tobytes())
 
 
-def piper_generate(voice_key, text, speed, noise_scale, noise_w, status):
+def piper_pcm(voice_key, segments, speed, noise_scale, noise_w, status):
     url = PIPER_VOICES[voice_key]
     onnx = MODELS_DIR / url.rsplit("/", 1)[-1]
     _download(url, onnx, status, f"صدای {voice_key} (~۶۰ مگابایت)")
@@ -439,7 +465,7 @@ def piper_generate(voice_key, text, speed, noise_scale, noise_w, status):
     status("در حال ساخت گفتار…")
     out = tempfile.NamedTemporaryFile(suffix=".wav", delete=False); out.close()
     taskf = tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w", encoding="utf-8")
-    json.dump({"onnx": str(onnx), "text": text, "speed": speed,
+    json.dump({"onnx": str(onnx), "segments": segments, "speed": speed,
                "noise": noise_scale, "noisew": noise_w, "out": out.name}, taskf)
     taskf.close()
     try:
@@ -455,13 +481,18 @@ def piper_generate(voice_key, text, speed, noise_scale, noise_w, status):
             pcm = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
         if len(pcm) == 0:
             raise RuntimeError("خروجی صدا خالی بود — دوباره امتحان کنید.")
-        return pcm_to_mp3(pcm, sr), sr
+        return pcm, sr
     finally:
         for p in (out.name, taskf.name):
             try:
                 os.unlink(p)
             except OSError:
                 pass
+
+
+def piper_generate(voice_key, text, speed, noise_scale, noise_w, status):
+    pcm, sr = piper_pcm(voice_key, _pause_segments(text), speed, noise_scale, noise_w, status)
+    return pcm_to_mp3(pcm, sr), sr
 
 
 # ---------------------------------------------------------------------------
@@ -515,8 +546,10 @@ def _load_chatterbox(status):
     from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 
     _hook_hf_progress(status)
-    device = "mps" if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available() \
-        else ("cuda" if torch.cuda.is_available() else "cpu")
+    # Apple GPU (MPS) deliberately NOT used: Chatterbox's MPS path leaks memory
+    # until the whole machine swaps (observed 45+ GB on a 48 GB Mac). CPU is
+    # slower but its memory stays bounded around 5-6 GB.
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     if _hf_cached("chatterbox"):
         status("در حال بارگذاری مدل چترباکس از حافظهٔ دستگاه… (۱ تا ۲ دقیقه)")
     else:
@@ -544,30 +577,97 @@ def _load_chatterbox(status):
     return model
 
 
+_PAUSE_RE = re.compile(r"\[\s*(مکث بلند|مکث)\s*\]")
+_PAUSE_SPLIT = re.compile(r"(\[\s*مکث بلند\s*\]|\[\s*مکث\s*\]|…|—)")
+
+
+def _pause_val(tok):
+    if tok.startswith("["):
+        return 1.2 if "بلند" in tok else 0.5
+    if tok == "…":
+        return 0.35
+    if tok == "—":
+        return 0.25
+    return None
+
+
+def _pause_segments(text):
+    """Light voices can't pause on punctuation reliably; split the text at
+    every marker so real silence gets spliced into the waveform."""
+    segs = []
+    for part in _PAUSE_SPLIT.split(text):
+        if not part:
+            continue
+        p = _pause_val(part.strip()) if _PAUSE_SPLIT.fullmatch(part) else None
+        if p is not None:
+            segs.append({"p": p})
+        elif part.strip():
+            segs.append({"t": part.strip()})
+    return segs or [{"t": text}]
+
+
 def _split_sentences(text, max_len=280):
     parts, buf = [], ""
+
+    def flush():
+        nonlocal buf
+        if buf:
+            parts.append(buf)
+            buf = ""
+
     for piece in re.split(r"(?<=[\.\!\?؟।؛…\n])\s+", text.strip()):
         if not piece:
             continue
         if len(buf) + len(piece) + 1 <= max_len:
             buf = (buf + " " + piece).strip()
-        else:
-            if buf:
-                parts.append(buf)
-            buf = piece if len(piece) <= max_len else piece[:max_len]
-    if buf:
-        parts.append(buf)
+            continue
+        flush()
+        # an over-long sentence: window it, preferring comma then space breaks —
+        # never discard a single character
+        while len(piece) > max_len:
+            cut = piece.rfind("،", 0, max_len)
+            if cut <= max_len // 3:
+                cut = piece.rfind(" ", 0, max_len)
+            if cut <= max_len // 3:
+                cut = max_len
+            else:
+                cut += 1
+            parts.append(piece[:cut].strip())
+            piece = piece[cut:].strip()
+        buf = piece
+    flush()
     return parts or [text[:max_len]]
 
 
-def chatterbox_generate(text, exaggeration, cfg_weight, temperature, status, speed=1.0):
+def chatterbox_pcm(text, exaggeration, cfg_weight, temperature, status, speed=1.0):
     import torch
     model = _load_chatterbox(status)
     import gc
-    chunks = _split_sentences(text)
+    # pause tags: [مکث] = 0.5s silence, [مکث بلند] = 1.2s — spliced into the audio
+    segments = []
+    pos = 0
+    for m in _PAUSE_RE.finditer(text):
+        if text[pos:m.start()].strip():
+            segments.append(("text", text[pos:m.start()]))
+        segments.append(("pause", 1.2 if "بلند" in m.group(1) else 0.5))
+        pos = m.end()
+    if text[pos:].strip():
+        segments.append(("text", text[pos:]))
+    chunks = []
+    for kind, val in segments:
+        if kind == "pause":
+            chunks.append(("pause", val))
+        else:
+            chunks.extend(("text", c) for c in _split_sentences(val))
+    total = sum(1 for k, _ in chunks if k == "text")
     waves = []
-    for i, chunk in enumerate(chunks, 1):
-        status(f"در حال ساخت گفتار… بخش {i} از {len(chunks)}")
+    i = 0
+    for kind, chunk in chunks:
+        if kind == "pause":
+            waves.append(np.zeros(int(model.sr * chunk), dtype=np.float32))
+            continue
+        i += 1
+        status(f"در حال ساخت گفتار… بخش {i} از {total}")
         with torch.no_grad():
             wav = model.generate(chunk, language_id=None,
                                  exaggeration=float(exaggeration),
@@ -597,20 +697,189 @@ def chatterbox_generate(text, exaggeration, cfg_weight, temperature, status, spe
             audio = writer.data.flatten()
         except Exception:
             status("تنظیم سرعت در دسترس نبود — با سرعت طبیعی ساخته شد.")
-    pcm = (np.clip(audio, -1, 1) * 32767).astype(np.int16)
-    return pcm_to_mp3(pcm, model.sr), model.sr
+    return (np.clip(audio, -1, 1) * 32767).astype(np.int16), model.sr
 
 
-def generate(payload, status) -> bytes:
+def chatterbox_generate(text, exaggeration, cfg_weight, temperature, status, speed=1.0):
+    pcm, sr = chatterbox_pcm(text, exaggeration, cfg_weight, temperature, status, speed=speed)
+    return pcm_to_mp3(pcm, sr), sr
+
+
+# ---------------------------------------------------------------------------
+# Chatterbox process isolation: the engine leaks memory by design flaw
+# (resemble-ai/chatterbox #218), so it lives in a disposable helper process.
+# Leaked memory cannot outlive its process — when the worker grows past the
+# threshold, it retires itself and a fresh one is spawned on the next request.
+# ---------------------------------------------------------------------------
+_CBX_RECYCLE_MB = 6000
+_cbx_proc = None
+_cbx_stderr = None
+_cbx_lock = threading.Lock()
+
+
+def chatterbox_worker_main():
+    """Runs inside the helper process: serve generation requests over stdio."""
+    def status(msg, pct=None):
+        sys.stdout.write(json.dumps({"type": "status", "msg": msg, "pct": pct},
+                                    ensure_ascii=False) + "\n")
+        sys.stdout.flush()
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            req = json.loads(line)
+            pcm, sr = chatterbox_pcm(req["text"], req.get("exaggeration", 0.8),
+                                     req.get("cfg_weight", 1.0),
+                                     req.get("temperature", 0.0), status,
+                                     speed=req.get("speed", 1.0))
+            f = tempfile.NamedTemporaryFile(suffix=".wav", delete=False); f.close()
+            with wave.open(f.name, "wb") as wf:
+                wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(sr)
+                wf.writeframes(pcm.tobytes())
+            rss = 0
+            try:
+                import psutil
+                rss = psutil.Process().memory_info().rss // (1024 * 1024)
+            except Exception:
+                pass
+            recycle = rss > _CBX_RECYCLE_MB
+            sys.stdout.write(json.dumps({"type": "result", "path": f.name, "sr": sr,
+                                         "rss_mb": rss, "recycle": recycle},
+                                        ensure_ascii=False) + "\n")
+            sys.stdout.flush()
+            if recycle:
+                break  # retire: the OS reclaims every leaked byte
+        except Exception as e:
+            sys.stdout.write(json.dumps({"type": "error", "error": str(e)},
+                                        ensure_ascii=False) + "\n")
+            sys.stdout.flush()
+
+
+def _cbx_ensure():
+    global _cbx_proc, _cbx_stderr
+    if _cbx_proc is not None and _cbx_proc.poll() is None:
+        return _cbx_proc
+    import collections
+    kwargs = {"creationflags": 0x08000000} if os.name == "nt" else {}
+    _cbx_proc = subprocess.Popen([sys.executable, "--chatterbox-worker", "run"],
+                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, text=True,
+                                 encoding="utf-8", bufsize=1, **kwargs)
+    _cbx_stderr = collections.deque(maxlen=60)
+
+    def _drain(p=_cbx_proc, d=_cbx_stderr):
+        try:
+            for l in p.stderr:
+                d.append(l.rstrip())
+        except Exception:
+            pass
+    threading.Thread(target=_drain, daemon=True).start()
+    return _cbx_proc
+
+
+def chatterbox_via_worker(req, status):
+    """Returns (pcm int16 ndarray, sample_rate) from the isolated worker."""
+    with _cbx_lock:
+        global _cbx_proc
+        p = _cbx_ensure()
+        line = json.dumps(req, ensure_ascii=False) + "\n"
+        try:
+            p.stdin.write(line); p.stdin.flush()
+        except Exception:
+            _cbx_proc = None
+            p = _cbx_ensure()
+            p.stdin.write(line); p.stdin.flush()
+        for out in p.stdout:
+            out = out.strip()
+            try:
+                msg = json.loads(out)
+            except Exception:
+                continue  # stray library print — not ours
+            t = msg.get("type")
+            if t == "status":
+                status(msg.get("msg", ""), pct=msg.get("pct"))
+            elif t == "error":
+                raise RuntimeError(msg.get("error", "خطای ناشناخته"))
+            elif t == "result":
+                with wave.open(msg["path"], "rb") as wf:
+                    sr = wf.getframerate()
+                    pcm = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
+                try:
+                    os.unlink(msg["path"])
+                except OSError:
+                    pass
+                if msg.get("recycle"):
+                    status("حافظهٔ موتور چترباکس پاک‌سازی شد — نوبت بعد چند لحظه بیشتر طول می‌کشد.")
+                    _cbx_proc = None
+                return pcm, sr
+        # stdout closed: the worker died mid-job
+        _cbx_proc = None
+        tail = "\n".join(list(_cbx_stderr or [])[-8:])
+        raise RuntimeError("موتور چترباکس ناگهان بسته شد" +
+                           (":\n" + tail if tail else " — دوباره امتحان کنید."))
+
+
+def _gulp_pcm(payload, status):
     engine = payload["engine"]
     text = payload["text"].strip()
     if engine == "chatterbox":
-        mp3, _ = chatterbox_generate(text, payload.get("exaggeration", 0.8),
-                                     payload.get("cfg_weight", 1.0),
-                                     payload.get("temperature", 0.0), status,
-                                     speed=payload.get("cbx_speed", 1.0))
-    else:
-        mp3, _ = piper_generate(engine, text, payload.get("speed", 1.0),
-                                payload.get("noise", 0.667),
-                                payload.get("noisew", 0.8), status)
-    return mp3
+        # chatterbox reads … and — natively; [مکث] tags are spliced inside its core
+        return chatterbox_via_worker(
+            {"text": text,
+             "exaggeration": payload.get("exaggeration", 0.8),
+             "cfg_weight": payload.get("cfg_weight", 1.0),
+             "temperature": payload.get("temperature", 0.0),
+             "speed": payload.get("cbx_speed", 1.0)}, status)
+    segs = _pause_segments(text)
+    if not any("t" in s for s in segs):
+        raise RuntimeError("این بخش متنی برای خواندن ندارد — فقط نشانهٔ مکث است.")
+    return piper_pcm(engine, segs, payload.get("speed", 1.0),
+                     payload.get("noise", 0.667), payload.get("noisew", 0.8), status)
+
+
+import itertools as _it
+_GULP_PCM = {}
+_gulp_ids = _it.count(1)
+
+
+def reset_gulps():
+    _GULP_PCM.clear()
+
+
+def generate_gulp(payload, status):
+    """One gulp → (mp3 for the row player, gulp id for the final splice)."""
+    pcm, sr = _gulp_pcm(payload, status)
+    gid = next(_gulp_ids)
+    _GULP_PCM[gid] = (pcm, sr)
+    return pcm_to_mp3(pcm, sr), gid
+
+
+def splice_gulps(ids, status) -> bytes:
+    """Join stored gulps in order — resampling if voices with different
+    sample rates were mixed — with a short breath between parts."""
+    try:
+        parts = [_GULP_PCM[int(i)] for i in ids]
+    except KeyError:
+        raise RuntimeError("برخی بخش‌ها دیگر در حافظه نیستند — دوباره «تبدیل به گفتار» را بزنید.")
+    if not parts:
+        raise RuntimeError("بخشی برای اتصال وجود ندارد.")
+    status("در حال اتصال بخش‌ها و ساخت فایل نهایی…")
+    target = max(sr for _, sr in parts)
+    gap = np.zeros(int(target * 0.12), dtype=np.int16)
+    out = []
+    for k, (pcm, sr) in enumerate(parts):
+        if sr != target:
+            n = int(round(len(pcm) * target / sr))
+            xi = np.linspace(0, len(pcm) - 1, n)
+            pcm = np.interp(xi, np.arange(len(pcm), dtype=np.float64),
+                            pcm.astype(np.float64)).astype(np.int16)
+        out.append(pcm)
+        if k < len(parts) - 1:
+            out.append(gap)
+    return pcm_to_mp3(np.concatenate(out), target)
+
+
+def generate(payload, status) -> bytes:
+    pcm, sr = _gulp_pcm(payload, status)
+    return pcm_to_mp3(pcm, sr)

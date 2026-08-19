@@ -9,5 +9,6 @@ huggingface_hub
 safetensors
 librosa
 audiotsm
+psutil
 sentencepiece
 chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git

@@ -46,6 +46,36 @@
   .meta{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 16px 12px;color:var(--muted);font-size:.78rem;flex-wrap:wrap}
   .meta .links{display:flex;gap:16px}
   .meta button{background:none;border:none;color:var(--tile);cursor:pointer;font:inherit;font-weight:600}
+  .chips{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .chip{background:var(--paper);border:1px solid var(--line);border-radius:8px;
+    padding:2px 10px;font:inherit;font-size:.74rem;font-weight:600;color:var(--tile);cursor:pointer}
+  .chip:hover{border-color:var(--tile)}
+  .endcap{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .gulpbox,.finalbox{border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-top:13px}
+  .gulpbox[hidden],.finalbox[hidden]{display:none}
+  .finalbox{background:color-mix(in srgb, var(--gold) 5%, transparent)}
+  .boxhead{font-size:.8rem;font-weight:700;color:var(--ink);margin-bottom:10px}
+  .boxhint{font-weight:400;color:var(--muted)}
+  .gulps{display:flex;flex-direction:column;gap:8px}
+  .gulp{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:8px 10px}
+  .gulp-row{display:flex;align-items:center;gap:8px;flex-wrap:nowrap}
+  .gulp-row .chip{white-space:nowrap;flex:none;height:30px;display:inline-flex;align-items:center}
+  .gnum{font-size:.72rem;color:var(--muted);min-width:22px;text-align:center;flex:none}
+  .gulp audio{flex:1 1 auto;min-width:0;height:34px;border-radius:9px}
+  .gstate{font-size:.74rem;color:var(--muted);flex:none;white-space:nowrap}
+  .gvoice{width:120px;min-width:120px;height:30px;border-radius:8px;font-size:.74rem;font-weight:600;
+    color:var(--tile);padding:0 10px 0 28px;background-position:left 10px center;flex:none}
+  .gedit{display:none;margin-top:8px}
+  .gedit.show{display:block}
+  .gedit textarea{width:100%;min-height:64px;max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:10px;
+    background:var(--panel);color:var(--ink);font:inherit;font-size:.95rem;line-height:1.9;
+    padding:8px 10px;direction:rtl;resize:vertical}
+  .gedit .chips{margin-top:6px;justify-content:flex-start}
+  .gedit .chip{font-size:.7rem;padding:2px 8px}
+  .finalrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .finalmsg{font-size:.82rem;margin-top:8px;line-height:1.9;display:none}
+  .finalmsg.ok{display:block;color:var(--tile)}
+  .finalmsg.stale{display:block;color:var(--danger);font-weight:600}
   .tools{display:flex;gap:10px;align-items:stretch;flex-wrap:wrap;padding:0 18px 16px}
   .tools select{flex:2;min-width:200px;width:auto}
   .tools input{flex:2;min-width:200px;height:42px;box-sizing:border-box;border-radius:12px;padding:0 12px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font:inherit;font-size:.85rem;direction:ltr;text-align:left}
@@ -57,7 +87,10 @@
   @media (max-width:640px){.grid{grid-template-columns:1fr}}
   label{display:flex;justify-content:space-between;align-items:baseline;font-size:.75rem;font-weight:600;color:var(--muted);margin-bottom:6px}
   label small{font-weight:400;font-size:.72rem}
-  select{width:100%;height:42px;padding:0 11px;border-radius:12px;box-sizing:border-box;border:1px solid var(--line);background:var(--paper);color:var(--ink);font:inherit;font-size:.88rem}
+  select{appearance:none;-webkit-appearance:none;width:100%;height:42px;padding:0 11px 0 30px;border-radius:12px;box-sizing:border-box;
+    border:1px solid var(--line);background-color:var(--paper);color:var(--ink);font:inherit;font-size:.88rem;cursor:pointer;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%236b7080' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:left 12px center}
+  [data-theme="dark"] select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%239aa2b8' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E")}
   select:focus,textarea:focus{outline:2px solid var(--tile);outline-offset:1px}
   .slider-row{display:flex;align-items:center;gap:12px}
   input[type="range"]{flex:1;accent-color:var(--tile);direction:ltr}
@@ -118,12 +151,20 @@
   <div class="card manuscript">
     <textarea id="text" dir="rtl" lang="fa" spellcheck="false" placeholder="متن فارسی خود را اینجا بنویسید یا جای‌گذاری کنید…"></textarea>
     <div class="meta">
-      <div class="links">
-        <button id="sampleBtn" type="button">درج متن نمونه</button>
-        <button id="clearBtn" type="button">پاک‌کردن حرکت‌ها</button>
-        <button id="guideBtn" type="button">راهنمای حرکت‌گذاری</button>
+      <div class="chips">
+        <button class="chip" id="sampleBtn" type="button">درج متن نمونه</button>
+        <button class="chip" id="clearBtn" type="button">پاک‌کردن حرکت‌ها</button>
+        <button class="chip" id="guideBtn" type="button">راهنمای حرکت‌گذاری</button>
       </div>
-      <span id="count">۰ نویسه</span>
+      <div class="endcap">
+        <div class="chips" id="mainChips">
+          <button class="chip" type="button" data-ins=" [مکث] " title="سکوت نیم‌ثانیه در همین نقطه">[مکث]</button>
+          <button class="chip" type="button" data-ins=" [مکث بلند] " title="سکوت بلند ۱٫۲ ثانیه‌ای — مناسب پایان پاراگراف">[مکث بلند]</button>
+          <button class="chip" type="button" data-ins="… " title="مکث کوتاه — در چترباکس طبیعی، در صداهای سبک ~۰٫۳۵ ثانیه">…</button>
+          <button class="chip" type="button" data-ins=" — " title="نفس کوتاه — در چترباکس طبیعی، در صداهای سبک ~۰٫۲۵ ثانیه">—</button>
+        </div>
+        <span id="count">۰ نویسه</span>
+      </div>
     </div>
     <div class="tools">
       <select id="ezafeTool" title="ابزار حرکت‌گذاری">
@@ -194,9 +235,21 @@
     </div>
     <div class="bar" id="bar"><div id="barFill"></div></div>
     <div class="status" id="status">آماده — متن را بنویسید و دکمه را بزنید.</div>
-    <div class="result" id="result">
-      <audio id="player" controls></audio>
-      <button class="btn btn-primary" id="saveBtn">⬇ ذخیرهٔ MP3</button>
+    <div class="gulpbox" id="gulpBox" hidden>
+      <div class="boxhead">بخش‌های گفتار <span class="boxhint">— هر بخش را بشنوید؛ برای اصلاح، متنش را با ✎ باز کنید، تغییر دهید و ↻ بزنید؛ صدای هر بخش را هم می‌توانید جدا انتخاب کنید</span></div>
+      <div class="gulps" id="gulps"></div>
+    </div>
+    <div class="finalbox" id="finalBox" hidden>
+      <div class="boxhead">فایل نهایی</div>
+      <div class="finalrow">
+        <button class="btn btn-primary" id="spliceBtn">⬇ اتصال بخش‌ها و ساخت فایل نهایی</button>
+        <span class="gstate">همهٔ بخش‌ها با یک نفس کوتاه میانشان به یک MP3 متصل می‌شوند.</span>
+      </div>
+      <div class="result" id="result">
+        <audio id="player" controls></audio>
+        <button class="btn btn-primary" id="saveBtn">⬇ ذخیرهٔ MP3</button>
+      </div>
+      <div class="finalmsg" id="finalMsg"></div>
     </div>
   </div>
 
@@ -273,13 +326,23 @@
   $("guideBtn").onclick = () => overlay.classList.add("show");
   $("guideClose").onclick = () => overlay.classList.remove("show");
   overlay.addEventListener("click", e => { if(e.target === overlay) overlay.classList.remove("show"); });
-  document.querySelectorAll(".ins").forEach(b => b.onclick = () => {
-    const ch = b.dataset.ch;
+  function insertAtCursor(t){
     const s = textEl.selectionStart ?? textEl.value.length, e = textEl.selectionEnd ?? s;
-    textEl.value = textEl.value.slice(0, s) + ch + textEl.value.slice(e);
-    textEl.focus(); textEl.selectionStart = textEl.selectionEnd = s + ch.length;
+    textEl.value = textEl.value.slice(0, s) + t + textEl.value.slice(e);
+    textEl.focus(); textEl.selectionStart = textEl.selectionEnd = s + t.length;
     textEl.dispatchEvent(new Event("input"));
-  });
+  }
+  document.querySelectorAll(".ins").forEach(b => b.onclick = () => insertAtCursor(b.dataset.ch));
+  function bindInsertChips(scope, ta){
+    scope.querySelectorAll(".chip[data-ins]").forEach(b => b.onclick = () => {
+      const t = b.dataset.ins;
+      const s = ta.selectionStart ?? ta.value.length, e = ta.selectionEnd ?? s;
+      ta.value = ta.value.slice(0, s) + t + ta.value.slice(e);
+      ta.focus(); ta.selectionStart = ta.selectionEnd = s + t.length;
+      ta.dispatchEvent(new Event("input"));
+    });
+  }
+  bindInsertChips($("mainChips"), textEl);
 
   // نمایش لغزنده‌های مناسب هر موتور
   const voiceSel = $("voiceSel");
@@ -309,36 +372,159 @@
     window.pywebview.api.open_url("https://x.com/kamangir31");
   });
 
+  /* ---------- ساخت گفتار: بخش‌به‌بخش (gulp) ---------- */
   const genBtn = $("genBtn"), spin = $("spin"), result = $("result"), player = $("player"), saveBtn = $("saveBtn");
-  let lastB64 = null, busy = false;
+  const gulpsEl = $("gulps"), gulpBox = $("gulpBox"), finalBox = $("finalBox"),
+        spliceBtn = $("spliceBtn"), finalMsg = $("finalMsg");
+  let gulps = [];        // {text, voice, b64, id}
+  let finalB64 = null, busy = false;
+
+  // تقسیم بدون ازدست‌دادن حتی یک نویسه — همان منطق موتور
+  function splitSentences(text, maxLen = 280){
+    const parts = []; let buf = "";
+    const flush = () => { if(buf){ parts.push(buf); buf = ""; } };
+    for(let piece of text.trim().split(/(?<=[\.\!\?؟؛…\n])\s+/)){
+      if(!piece) continue;
+      if((buf + " " + piece).trim().length <= maxLen){ buf = (buf + " " + piece).trim(); continue; }
+      flush();
+      while(piece.length > maxLen){
+        let cut = piece.lastIndexOf("،", maxLen);
+        if(cut <= maxLen/3) cut = piece.lastIndexOf(" ", maxLen);
+        if(cut <= maxLen/3) cut = maxLen; else cut += 1;
+        parts.push(piece.slice(0, cut).trim());
+        piece = piece.slice(cut).trim();
+      }
+      buf = piece;
+    }
+    flush();
+    return parts.length ? parts : [text.slice(0, maxLen)];
+  }
+
+  function gulpPayload(g){
+    return { engine: g.voice, text: g.text,
+      exaggeration: +$("exag").value, cfg_weight: +$("cfg").value, temperature: +$("temp").value, cbx_speed: +$("cbxSpeed").value,
+      speed: +$("speed").value, noise: +$("noise").value, noisew: +$("noisew").value };
+  }
+
+  function markFinalStale(){
+    if(!result.classList.contains("show")) return;
+    finalMsg.className = "finalmsg stale";
+    finalMsg.textContent = "بخش‌ها تغییر کرده‌اند و فایل نهایی قدیمی است — دوباره «اتصال بخش‌ها» را بزنید.";
+  }
+
+  function renderGulps(){
+    gulpsEl.innerHTML = "";
+    gulps.forEach((g, idx) => {
+      const div = document.createElement("div");
+      div.className = "gulp";
+      div.innerHTML = `
+        <div class="gulp-row">
+          <span class="gnum">${faNum(idx+1)}</span>
+          <audio controls ${g.b64 ? `src="data:audio/mpeg;base64,${g.b64}"` : ""}></audio>
+          <select class="gvoice" title="صدای همین بخش — با بازتولید اعمال می‌شود">
+            <option value="chatterbox">چترباکس</option>
+            <option value="mana">مانا</option>
+            <option value="gyro">ژیرو</option>
+            <option value="amir">امیر</option>
+          </select>
+          <button class="chip g-regen" title="بازتولید همین بخش از متن و صدای همین بخش">↻ بازتولید</button>
+          <button class="chip g-edit" title="باز و بسته‌کردن ویرایشگر متن همین بخش">✎ ویرایش</button>
+          <span class="gstate">${g.b64 ? "" : "در صف…"}</span>
+        </div>
+        <div class="gedit">
+          <textarea dir="rtl"></textarea>
+          <div class="chips">
+            <button class="chip" type="button" data-ins=" [مکث] " title="سکوت نیم‌ثانیه در همین نقطه">[مکث]</button>
+            <button class="chip" type="button" data-ins=" [مکث بلند] " title="سکوت بلند ۱٫۲ ثانیه‌ای">[مکث بلند]</button>
+            <button class="chip" type="button" data-ins="… " title="مکث کوتاه">…</button>
+            <button class="chip" type="button" data-ins=" — " title="نفس کوتاه">—</button>
+          </div>
+        </div>`;
+      const st = div.querySelector(".gstate"), ed = div.querySelector(".gedit");
+      const ta = div.querySelector(".gedit textarea");
+      const vs = div.querySelector(".gvoice");
+      ta.value = g.text;
+      vs.value = g.voice;
+      vs.onchange = () => { g.voice = vs.value; };
+      const autoGrow = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 220) + "px"; };
+      ta.addEventListener("input", autoGrow);
+      bindInsertChips(ed, ta);
+      div.querySelector(".g-edit").onclick = () => { ed.classList.toggle("show"); if(ed.classList.contains("show")) autoGrow(); };
+      div.querySelector(".g-regen").onclick = async () => {
+        if(busy) return;
+        busy = true; st.textContent = "در حال ساخت…";
+        try{
+          g.text = ta.value.trim() || g.text;   // همیشه از ویرایشگر همین بخش می‌خواند
+          const res = await window.pywebview.api.generate_gulp(gulpPayload(g));
+          bar.classList.remove("show");
+          if(!res.ok) throw new Error(res.error || "خطای ناشناخته");
+          g.b64 = res.b64; g.id = res.gulp;
+          div.querySelector("audio").src = "data:audio/mpeg;base64," + g.b64;
+          st.textContent = "";
+          say("بخش " + faNum(idx+1) + " بازتولید شد.", "ok");
+          markFinalStale();
+        }catch(e){ st.textContent = ""; say(e.message || String(e), "err"); }
+        finally{ busy = false; }
+      };
+      gulpsEl.appendChild(div);
+    });
+    gulpBox.hidden = gulps.length === 0;
+    finalBox.hidden = gulps.length === 0;
+  }
 
   genBtn.onclick = async () => {
     if(busy) return;
     const txt = textEl.value.trim();
     if(!txt){ say("اول متن فارسی را بنویسید یا جای‌گذاری کنید.", "err"); return; }
-    busy = true; genBtn.disabled = true; spin.classList.add("show"); result.classList.remove("show");
-    say("در حال آماده‌سازی…", "ok");
+    busy = true; genBtn.disabled = true; spin.classList.add("show");
+    result.classList.remove("show");
+    finalMsg.className = "finalmsg"; finalMsg.textContent = ""; finalB64 = null;
+    try{ await window.pywebview.api.reset_gulps(); }catch(e){}
+    const vid = voiceSel.value;
+    gulps = splitSentences(txt).map(t => ({ text: t, voice: vid, b64: null, id: null }));
+    renderGulps();
     try{
-      const payload = { engine: voiceSel.value, text: txt,
-        exaggeration: +$("exag").value, cfg_weight: +$("cfg").value, temperature: +$("temp").value, cbx_speed: +$("cbxSpeed").value,
-        speed: +$("speed").value, noise: +$("noise").value, noisew: +$("noisew").value };
-      const res = await window.pywebview.api.generate(payload);
+      for(let i = 0; i < gulps.length; i++){
+        say(`در حال ساخت گفتار… بخش ${faNum(i+1)} از ${faNum(gulps.length)}`, "ok");
+        const res = await window.pywebview.api.generate_gulp(gulpPayload(gulps[i]));
+        if(!res.ok) throw new Error(res.error || "خطای ناشناخته");
+        gulps[i].b64 = res.b64; gulps[i].id = res.gulp;
+        renderGulps();
+      }
       bar.classList.remove("show");
-      if(!res.ok) throw new Error(res.error || "خطای ناشناخته");
-      lastB64 = res.b64;
-      player.src = "data:audio/mpeg;base64," + res.b64;
-      result.classList.add("show");
-      say("آماده شد — فایل MP3 با حجم " + faNum(res.kb) + " کیلوبایت. پخش کنید یا ذخیره کنید.", "ok");
+      say("همهٔ بخش‌ها آماده شد — بشنوید، در صورت نیاز بخش‌ها را اصلاح کنید و در پایان متصل کنید.", "ok");
     }catch(e){
+      bar.classList.remove("show");
       say(e.message || String(e), "err");
     }finally{
       busy = false; genBtn.disabled = false; spin.classList.remove("show");
     }
   };
 
+  spliceBtn.onclick = async () => {
+    if(busy) return;
+    if(gulps.some(g => !g.id)){ say("هنوز همهٔ بخش‌ها ساخته نشده‌اند.", "err"); return; }
+    busy = true; spliceBtn.disabled = true;
+    try{
+      const res = await window.pywebview.api.splice(gulps.map(g => g.id));
+      bar.classList.remove("show");
+      if(!res.ok) throw new Error(res.error || "خطای ناشناخته");
+      finalB64 = res.b64;
+      player.src = "data:audio/mpeg;base64," + finalB64;
+      result.classList.add("show");
+      finalMsg.className = "finalmsg ok";
+      finalMsg.textContent = "فایل نهایی با حجم " + faNum(res.kb) + " کیلوبایت آماده شد.";
+      say("", "ok");
+    }catch(e){
+      say(e.message || String(e), "err");
+    }finally{
+      busy = false; spliceBtn.disabled = false;
+    }
+  };
+
   saveBtn.onclick = async () => {
-    if(!lastB64) return;
-    const res = await window.pywebview.api.save_mp3(lastB64);
+    if(!finalB64) return;
+    const res = await window.pywebview.api.save_mp3(finalB64);
     if(res.ok) say("ذخیره شد: " + res.path, "ok");
   };
 </script>

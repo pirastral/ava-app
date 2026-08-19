@@ -11,10 +11,14 @@ os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 # flag, initializing both aborts the process instantly (the classic silent crash).
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
-# Helper-process mode: light-voice synthesis runs here, isolated from the app.
+# Helper-process modes: synthesis runs isolated from the app window.
 if len(sys.argv) > 2 and sys.argv[1] == "--piper-worker":
     import engines
     engines.piper_worker_main(sys.argv[2])
+    sys.exit(0)
+if len(sys.argv) > 1 and sys.argv[1] == "--chatterbox-worker":
+    import engines
+    engines.chatterbox_worker_main()
     sys.exit(0)
 
 # Crash log: anything fatal is written to AvaModels/ava.log
@@ -53,6 +57,34 @@ class Api:
         try:
             import engines
             mp3 = engines.generate(payload, self._status)
+            b64 = base64.b64encode(mp3).decode("ascii")
+            return {"ok": True, "b64": b64, "kb": len(mp3) // 1024}
+        except Exception as e:
+            traceback.print_exc()
+            return {"ok": False, "error": str(e)}
+
+    def generate_gulp(self, payload):
+        try:
+            import engines
+            mp3, gid = engines.generate_gulp(payload, self._status)
+            b64 = base64.b64encode(mp3).decode("ascii")
+            return {"ok": True, "b64": b64, "gulp": gid}
+        except Exception as e:
+            traceback.print_exc()
+            return {"ok": False, "error": str(e)}
+
+    def reset_gulps(self):
+        try:
+            import engines
+            engines.reset_gulps()
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def splice(self, ids):
+        try:
+            import engines
+            mp3 = engines.splice_gulps(ids, self._status)
             b64 = base64.b64encode(mp3).decode("ascii")
             return {"ok": True, "b64": b64, "kb": len(mp3) // 1024}
         except Exception as e:
