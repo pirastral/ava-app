@@ -475,6 +475,36 @@ def _hf_cached(name_fragment: str) -> bool:
     return hub.is_dir() and any(name_fragment.lower() in p.name.lower() for p in hub.iterdir())
 
 
+def _verify_repo_cache(repo_id, status, token=None):
+    """Compare every cached model file's size against the repository's
+    metadata; delete and re-download any truncated/corrupted file.
+    A damaged file otherwise crashes the whole app at load time."""
+    try:
+        import os
+        from huggingface_hub import HfApi, hf_hub_download, try_to_load_from_cache
+        sizes = {s.rfilename: s.size for s in
+                 HfApi().model_info(repo_id, files_metadata=True, token=token).siblings
+                 if s.size}
+        for name, size in sizes.items():
+            p = try_to_load_from_cache(repo_id, name)
+            if isinstance(p, str) and os.path.exists(p):
+                real = os.path.getsize(os.path.realpath(p))
+                if real != size:
+                    status(f"فایل آسیب‌دیده در حافظه پیدا شد ({name}) — در حال دانلود دوبارهٔ همان فایل…")
+                    try:
+                        os.remove(os.path.realpath(p))
+                    except OSError:
+                        pass
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
+                    hf_hub_download(repo_id=repo_id, filename=name,
+                                    token=token, force_download=True)
+    except Exception:
+        pass  # offline or API hiccup: skip the check rather than block use
+
+
 def _load_chatterbox(status):
     global _chatterbox
     if _chatterbox is not None:
@@ -498,8 +528,11 @@ def _load_chatterbox(status):
         return _orig_load(*a, **k)
     torch.load = _patched
 
-    model = ChatterboxMultilingualTTS.from_pretrained(device=device)
     token = read_token()
+    _verify_repo_cache("ResembleAI/chatterbox", status)
+    if token:
+        _verify_repo_cache("Thomcles/Chatterbox-TTS-Persian-Farsi", status, token=token)
+    model = ChatterboxMultilingualTTS.from_pretrained(device=device)
     if not token:
         raise RuntimeError("توکن Hugging Face در برنامه نیست — باید هنگام ساخت قرار داده شود.")
     status("در حال آماده‌سازی صدای فارسی…")
@@ -530,6 +563,7 @@ def _split_sentences(text, max_len=280):
 def chatterbox_generate(text, exaggeration, cfg_weight, temperature, status, speed=1.0):
     import torch
     model = _load_chatterbox(status)
+    import gc
     chunks = _split_sentences(text)
     waves = []
     for i, chunk in enumerate(chunks, 1):
@@ -540,6 +574,17 @@ def chatterbox_generate(text, exaggeration, cfg_weight, temperature, status, spe
                                  cfg_weight=float(cfg_weight),
                                  temperature=max(0.05, float(temperature)))
         waves.append(wav.squeeze().cpu().numpy())
+        # release engine working memory between chunks — on Apple Silicon the
+        # allocator hoards freed memory and stacks it until the whole Mac swaps
+        del wav
+        gc.collect()
+        try:
+            if torch.backends.mps.is_available():
+                torch.mps.empty_cache()
+            elif torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
     audio = np.concatenate(waves)
     if abs(float(speed) - 1.0) > 0.01:
         status("در حال تنظیم سرعت گفتار…")

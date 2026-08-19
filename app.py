@@ -7,6 +7,9 @@ from datetime import datetime
 from pathlib import Path
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+# Windows: torch and onnxruntime each bundle the Intel OpenMP DLL; without this
+# flag, initializing both aborts the process instantly (the classic silent crash).
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 # Helper-process mode: light-voice synthesis runs here, isolated from the app.
 if len(sys.argv) > 2 and sys.argv[1] == "--piper-worker":
