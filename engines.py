@@ -1,5 +1,5 @@
 """Ava — Persian TTS engines (Chatterbox-Persian + Piper voices + auto-ezafe)."""
-import os, json, re, subprocess, sys, tempfile, wave
+import os, json, re, shutil, subprocess, sys, tempfile, wave
 from pathlib import Path
 
 MODELS_DIR = Path.home() / "AvaModels"
@@ -213,14 +213,22 @@ def _ezafe_gemini(text, key, status):
     chunks = _llm_chunks(text)
     for i, ch in enumerate(chunks, 1):
         status(f"حرکت‌گذاری با Gemini… بخش {i} از {len(chunks)}")
-        r = requests.post(
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + key,
-            json={"contents": [{"parts": [{"text": _LLM_PROMPT + "\n\n" + ch}]}]},
-            timeout=120)
-        if r.status_code != 200:
-            raise RuntimeError("Gemini: " + r.json().get("error", {}).get("message", f"HTTP {r.status_code}"))
-        r = r.json()
-        out.append(r["candidates"][0]["content"]["parts"][0]["text"].strip())
+        models = ["gemini-3.6-flash", "gemini-3-flash-preview", "gemini-2.5-flash", "gemini-flash-latest"]
+        last_err = None
+        for m in models:
+            r = requests.post(
+                "https://generativelanguage.googleapis.com/v1beta/models/" + m + ":generateContent?key=" + key,
+                json={"contents": [{"parts": [{"text": _LLM_PROMPT + "\n\n" + ch}]}]},
+                timeout=120)
+            if r.status_code == 200:
+                out.append(r.json()["candidates"][0]["content"]["parts"][0]["text"].strip())
+                last_err = None
+                break
+            last_err = r.json().get("error", {}).get("message", f"HTTP {r.status_code}")
+            if not any(k in last_err.lower() for k in ("not found", "not available", "no longer", "deprecated")):
+                break
+        if last_err:
+            raise RuntimeError("Gemini: " + last_err)
     return "\n".join(out) if "\n" in text else " ".join(out)
 
 
@@ -265,32 +273,59 @@ PIPER_VOICES = {
 
 
 def _find_espeak_data():
-    """Find the espeak-ng pronunciation data wherever the bundle put it."""
+    """Find espeak-ng data in the bundle, wherever the packager hid it."""
     bases = [Path(getattr(sys, "_MEIPASS", Path(__file__).parent))]
+    bases.append(bases[0].parent / "Resources")          # macOS .app data tree
     try:
         import piper as _piper
         bases.append(Path(_piper.__file__).parent.parent)
     except Exception:
         pass
-    quick = [bases[0] / "piper" / "espeak-ng-data", bases[0] / "espeak-ng-data"]
-    for c in quick:
-        if (c / "phontab").exists():
-            return c
     for base in bases:
-        for root, dirs, files in os.walk(base):
+        for c in (base / "piper" / "espeak-ng-data", base / "espeak-ng-data"):
+            if (c / "phontab").exists():
+                return c
+    for base in bases:
+        if not base.is_dir():
+            continue
+        for root, dirs, files in os.walk(base, followlinks=True):
             if root.endswith("espeak-ng-data") and "phontab" in files:
                 return Path(root)
     return None
 
 
+def _ensure_local_espeak():
+    """Copy espeak data out of the bundle into a plain real folder, once."""
+    target = MODELS_DIR / "espeak-ng-data"
+    if (target / "phontab").exists():
+        return target
+    found = _find_espeak_data()
+    if found is None:
+        return None
+    try:
+        shutil.copytree(found, target, dirs_exist_ok=True)
+        if (target / "phontab").exists():
+            return target
+    except Exception:
+        pass
+    return found
+
+
 def piper_worker_main(task_path: str) -> None:
     """Runs inside the helper process."""
     task = json.loads(Path(task_path).read_text(encoding="utf-8"))
-    data_dir = _find_espeak_data()
+    data_dir = _ensure_local_espeak()
+    try:
+        import importlib.metadata as _md
+        _pv = _md.version("piper-tts")
+    except Exception:
+        _pv = "?"
+    sys.stderr.write(f"[ava-diag] piper={_pv} data={data_dir} "
+                     f"phontab={(data_dir / 'phontab').exists() if data_dir else None}\n")
     if data_dir is None:
         raise RuntimeError("espeak-ng-data missing from the app bundle — rebuild needed")
-    # espeak-ng itself honours this variable; set it before piper loads.
-    os.environ["ESPEAK_DATA_PATH"] = str(data_dir)
+    # env semantics: espeak expects the PARENT of the espeak-ng-data folder here
+    os.environ["ESPEAK_DATA_PATH"] = str(data_dir.parent)
     from piper import PiperVoice
     voice = PiperVoice.load(task["onnx"], espeak_data_dir=str(data_dir))
     length_scale = 1.0 / max(0.25, float(task["speed"]))
