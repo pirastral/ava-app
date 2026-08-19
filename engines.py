@@ -103,32 +103,47 @@ _DIACRITICS = "\u064b\u064c\u064d\u064e\u064f\u0650\u0651\u0652\u0654"
 _KEYS_FILE = MODELS_DIR / "ezafe_keys.json"
 
 _LLM_PROMPT = (
-    "You are a Persian (Farsi) diacritization engine for text-to-speech. "
-    "FIRST read and fully comprehend the ENTIRE text: its meaning, grammar and context, "
-    "as if you were translating it. Only AFTER understanding it, decide each word's "
-    "diacritics from that context. Never judge a word in isolation or jump to the most "
-    "common reading: homographs (\u06af\u0644، \u0645\u0647\u0631، \u0633\u06a9\u0647، "
-    "\u06a9\u0631\u0645) and ezafe links must follow what the sentence actually means "
-    "(e.g. \u06a9\u0634\u062a\u06cc is \u06a9\u0650\u0634\u062a\u06cc for a ship but "
-    "\u06a9\u064f\u0634\u062a\u06cc for wrestling — only context decides). "
-    "CRITICAL DIALECT RULE: vocalize in formal IRANIAN standard Persian "
-    "(\u0641\u0627\u0631\u0633\u06cc \u0645\u0639\u06cc\u0627\u0631 \u0627\u06cc\u0631\u0627\u0646, "
-    "Tehran standard), NEVER Dari/Afghan or Tajik readings. In Iranian Persian: "
-    "\u0628\u0647 is \u0628\u0650\u0647 (never \u0628\u064e\u0647), "
-    "\u0632\u0646\u062f\u06af\u06cc is \u0632\u0650\u0646\u062f\u0650\u06af\u06cc "
-    "(never \u0632\u0650\u0646\u062f\u064e\u06af\u06cc), "
-    "\u06a9\u0647 is \u06a9\u0650\u0647; word-final \u0647 vowels read as e, not a. "
-    "Then add Persian diacritics to the user's text: kasre-ye ezafe (\u0650) on every word linked "
-    "to the next word (including \u0647\u0654 after final \u0647 and \u06cc after "
-    "final \u0627/\u0648), plus fatha, kasra, damma, tashdid and sukun wherever they "
-    "resolve ambiguity (e.g. \u06af\u064f\u0644 vs \u06af\u0650\u0644) or guide "
-    "natural reading rhythm. Preserve any diacritics already present in the input. "
-    "Do NOT change, add, remove or reorder any word, letter, digit, "
-    "punctuation or line break. Return ONLY the diacritized text, nothing else.\n"
-    "Example input: \u06a9\u062a\u0627\u0628 \u0645\u0646 \u0631\u0648\u06cc "
-    "\u0645\u06cc\u0632 \u0686\u0648\u0628\u06cc \u0627\u0633\u062a.\n"
+    "You are a Persian (Farsi) diacritization engine for Iranian text-to-speech. "
+    "First read and fully comprehend the ENTIRE text - meaning, grammar, context - before deciding anything. "
+    "MARK AS LITTLE AS POSSIBLE: the TTS reads plain Persian well; your only job is to prevent misreadings, "
+    "not to vocalize the text. Add ONLY: "
+    "(1) kasre-ye ezafe (\u0650) where a word links to the next (\u0647\u0654 after final \u0647\u060c "
+    "\u06cc after final \u0627/\u0648) - this is the main task; "
+    "(2) marks on genuinely ambiguous homographs where context picks the reading "
+    "(\u06a9\u0650\u0634\u062a\u06cc/\u06a9\u064f\u0634\u062a\u06cc\u060c "
+    "\u06af\u064f\u0644/\u06af\u0650\u0644\u060c \u0645\u0650\u0647\u0631/\u0645\u064f\u0647\u0631), "
+    "marking only the distinguishing letters; "
+    "(3) sukun or tashdid only where misreading is likely. "
+    "Leave common words BARE when they carry their default reading (\u0628\u0647 the preposition\u060c "
+    "\u0645\u0646\u060c \u0627\u0633\u062a). But if a common-looking word has an UNCOMMON reading in "
+    "context, DO mark it: \u0628\u0650\u0647 the quince fruit\u060c \u0628\u064e\u0647\u200c\u0628\u064e\u0647 "
+    "the exclamation. "
+    "NEVER insert internal vowel marks that create a wrong reading of a well-known word: "
+    "\u062e\u062f\u0627\u0648\u0646\u062f stays internally bare - "
+    "\u062e\u064f\u062f\u0627\u0648\u064e\u0646\u0650\u062f is WRONG; correct is "
+    "\u062e\u062f\u0627\u0648\u0646\u062f\u0650 \u062c\u0627\u0646 (bare inside, ezafe at the end). "
+    "If you are not certain of a letter's correct Iranian reading, leave that letter UNMARKED - "
+    "bare is always safer than wrong. "
+    "IMPORTANT: 'bare' refers to a word's INTERNAL letters only. The kasre-ye ezafe of rule (1) is "
+    "still REQUIRED on bare words whenever they link to the next word: "
+    "\u062e\u062f\u0627\u0648\u0646\u062f\u0650 \u062c\u0627\u0646\u060c "
+    "\u06a9\u062a\u0627\u0628\u0650 \u0645\u0646. "
+    "If the text is or contains classical Persian verse, follow that verse's established recitation and "
+    "poetic meter (\u0648\u0632\u0646); famous lines have canonical readings, e.g. "
+    "\u0628\u0647 \u0646\u0627\u0645\u0650 \u062e\u062f\u0627\u0648\u0646\u062f\u0650 "
+    "\u062c\u0627\u0646 \u0648 \u062e\u0650\u0631\u064e\u062f / \u06a9\u0632\u06cc\u0646 "
+    "\u0628\u0631\u062a\u0631 \u0627\u0646\u062f\u06cc\u0634\u0647 "
+    "\u0628\u064e\u0631\u0646\u064e\u06af\u0652\u0630\u064e\u0631\u064e\u062f. "
+    "Dialect: formal Iranian standard Persian (Tehran), never Dari/Afghan or Tajik readings; "
+    "word-final \u0647 reads as e. Preserve existing marks. Never change, add, remove or reorder any word, "
+    "letter, digit, punctuation or line break. Return ONLY the text.\n"
+    "Example input: \u06a9\u062a\u0627\u0628 \u0645\u0646 \u0631\u0648\u06cc \u0645\u06cc\u0632 "
+    "\u0686\u0648\u0628\u06cc \u0627\u0633\u062a \u0648 \u06af\u0644 \u0633\u0631\u062e \u0631\u0627 "
+    "\u06a9\u0646\u0627\u0631 \u06a9\u0634\u062a\u06cc \u062f\u06cc\u062f\u0645.\n"
     "Example output: \u06a9\u062a\u0627\u0628\u0650 \u0645\u0646 \u0631\u0648\u06cc\u0650 "
-    "\u0645\u06cc\u0632\u0650 \u0686\u0648\u0628\u06cc \u0627\u0633\u062a."
+    "\u0645\u06cc\u0632\u0650 \u0686\u0648\u0628\u06cc \u0627\u0633\u062a \u0648 \u06af\u064f\u0644\u0650 "
+    "\u0633\u0631\u062e \u0631\u0627 \u06a9\u0646\u0627\u0631\u0650 \u06a9\u0650\u0634\u062a\u06cc "
+    "\u062f\u06cc\u062f\u0645."
 )
 
 
@@ -237,7 +252,8 @@ def _ezafe_gemini(text, key, status):
         for m in models:
             r = requests.post(
                 "https://generativelanguage.googleapis.com/v1beta/models/" + m + ":generateContent?key=" + key,
-                json={"contents": [{"parts": [{"text": _LLM_PROMPT + "\n\n" + ch}]}]},
+                json={"contents": [{"parts": [{"text": _LLM_PROMPT + "\n\n" + ch}]}],
+                      "generationConfig": {"temperature": 0.1}},
                 timeout=120)
             if r.status_code == 200:
                 out.append(r.json()["candidates"][0]["content"]["parts"][0]["text"].strip())
@@ -258,7 +274,7 @@ def _ezafe_anthropic(text, key, status):
         status(f"حرکت‌گذاری با Claude… بخش {i} از {len(chunks)}")
         r = requests.post("https://api.anthropic.com/v1/messages",
                           headers={"x-api-key": key, "anthropic-version": "2023-06-01"},
-                          json={"model": "claude-3-5-haiku-latest", "max_tokens": 8000,
+                          json={"model": "claude-3-5-haiku-latest", "max_tokens": 8000, "temperature": 0.2,
                                 "system": _LLM_PROMPT,
                                 "messages": [{"role": "user", "content": ch}]},
                           timeout=120)
@@ -457,7 +473,7 @@ def _split_sentences(text, max_len=280):
     return parts or [text[:max_len]]
 
 
-def chatterbox_generate(text, exaggeration, cfg_weight, temperature, status):
+def chatterbox_generate(text, exaggeration, cfg_weight, temperature, status, speed=1.0):
     import torch
     model = _load_chatterbox(status)
     chunks = _split_sentences(text)
@@ -471,6 +487,10 @@ def chatterbox_generate(text, exaggeration, cfg_weight, temperature, status):
                                  temperature=float(temperature))
         waves.append(wav.squeeze().cpu().numpy())
     audio = np.concatenate(waves)
+    if abs(float(speed) - 1.0) > 0.01:
+        status("در حال تنظیم سرعت گفتار…")
+        import librosa
+        audio = librosa.effects.time_stretch(y=audio.astype(np.float32), rate=float(speed))
     pcm = (np.clip(audio, -1, 1) * 32767).astype(np.int16)
     return pcm_to_mp3(pcm, model.sr), model.sr
 
@@ -481,7 +501,8 @@ def generate(payload, status) -> bytes:
     if engine == "chatterbox":
         mp3, _ = chatterbox_generate(text, payload.get("exaggeration", 0.5),
                                      payload.get("cfg_weight", 0.5),
-                                     payload.get("temperature", 0.8), status)
+                                     payload.get("temperature", 0.8), status,
+                                     speed=payload.get("cbx_speed", 1.0))
     else:
         mp3, _ = piper_generate(engine, text, payload.get("speed", 1.0),
                                 payload.get("noise", 0.667),

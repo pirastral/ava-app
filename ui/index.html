@@ -21,56 +21,58 @@
     background:radial-gradient(1200px 500px at 15% -10%, color-mix(in srgb, var(--tile) 14%, transparent), transparent 60%),var(--paper);
     color:var(--ink);min-height:100vh;transition:background .35s,color .35s;
   }
-  .wrap{max-width:880px;margin:0 auto;padding:24px 20px 48px}
-  header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:24px}
+  .wrap{max-width:880px;margin:0 auto;padding:18px 18px 36px}
+  header{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:16px}
   .brand{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
-  .brand .fa{font-weight:700;font-size:1.9rem;color:var(--tile);line-height:1.2;unicode-bidi:isolate}
-  .brand .tagline{font-weight:400;font-size:.98rem;color:var(--muted)}
-  #themeBtn{border:1px solid var(--line);background:var(--panel);color:var(--ink);width:44px;height:44px;border-radius:50%;cursor:pointer;font-size:1.15rem;display:grid;place-items:center;box-shadow:var(--shadow);flex:none}
+  .brand .fa{font-weight:700;font-size:1.7rem;color:var(--tile);line-height:1.2;unicode-bidi:isolate}
+  .brand .tagline{font-weight:400;font-size:.9rem;color:var(--muted)}
+  #themeBtn{border:1px solid var(--line);background:var(--panel);color:var(--ink);width:40px;height:40px;border-radius:50%;cursor:pointer;font-size:1.15rem;display:grid;place-items:center;box-shadow:var(--shadow);flex:none}
   #themeBtn:hover{border-color:var(--tile)}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px;margin-bottom:20px;transition:background .35s,border-color .35s}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;margin-bottom:16px;transition:background .35s,border-color .35s}
   .manuscript{position:relative;padding:0;overflow:hidden}
   .manuscript::before{content:"";position:absolute;inset:0;pointer-events:none;border-radius:var(--radius);border:2px solid color-mix(in srgb, var(--gold) 55%, transparent)}
   .manuscript::after{content:"";position:absolute;left:0;right:0;top:0;height:6px;pointer-events:none;background:repeating-linear-gradient(90deg,var(--tile) 0 14px,transparent 14px 20px,var(--gold) 20px 26px,transparent 26px 32px);opacity:.85}
-  textarea{display:block;width:100%;min-height:170px;resize:vertical;border:none;outline:none;background:transparent;color:var(--ink);font-family:inherit;font-size:1.25rem;line-height:2.1;direction:rtl;text-align:right;padding:26px 22px 14px}
+  textarea{display:block;width:100%;min-height:140px;resize:vertical;border:none;outline:none;background:transparent;color:var(--ink);font-family:inherit;font-size:1.15rem;line-height:2;direction:rtl;text-align:right;padding:20px 18px 10px}
   textarea::placeholder{color:var(--muted);opacity:.75}
-  .meta{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 18px 14px;color:var(--muted);font-size:.82rem;flex-wrap:wrap}
+  .meta{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 16px 12px;color:var(--muted);font-size:.78rem;flex-wrap:wrap}
   .meta .links{display:flex;gap:16px}
   .meta button{background:none;border:none;color:var(--tile);cursor:pointer;font:inherit;font-weight:600}
   .tools{display:flex;gap:10px;align-items:stretch;flex-wrap:wrap;padding:0 18px 16px}
   .tools select{flex:2;min-width:200px;width:auto}
-  .tools input{flex:2;min-width:200px;height:46px;box-sizing:border-box;border-radius:12px;padding:0 12px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font:inherit;font-size:.85rem;direction:ltr;text-align:left}
+  .tools input{flex:2;min-width:200px;height:42px;box-sizing:border-box;border-radius:12px;padding:0 12px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font:inherit;font-size:.85rem;direction:ltr;text-align:left}
   .tools input::placeholder{direction:rtl;text-align:right}
   .tools .btn{flex:1;min-width:150px;padding:0 16px;font-size:.88rem;justify-content:center}
-  h2{font-size:1.08rem;font-weight:700;margin-bottom:4px}
-  .sub{color:var(--muted);font-size:.86rem;margin-bottom:16px;line-height:1.9}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px 20px}
+  h2{font-size:1rem;font-weight:700;margin-bottom:4px}
+  .sub{color:var(--muted);font-size:.8rem;margin-bottom:13px;line-height:1.9}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px}
   @media (max-width:640px){.grid{grid-template-columns:1fr}}
-  label{display:flex;justify-content:space-between;align-items:baseline;font-size:.8rem;font-weight:600;color:var(--muted);margin-bottom:6px}
+  label{display:flex;justify-content:space-between;align-items:baseline;font-size:.75rem;font-weight:600;color:var(--muted);margin-bottom:6px}
   label small{font-weight:400;font-size:.72rem}
-  select{width:100%;height:46px;padding:0 12px;border-radius:12px;box-sizing:border-box;border:1px solid var(--line);background:var(--paper);color:var(--ink);font:inherit;font-size:.95rem}
+  select{width:100%;height:42px;padding:0 11px;border-radius:12px;box-sizing:border-box;border:1px solid var(--line);background:var(--paper);color:var(--ink);font:inherit;font-size:.88rem}
   select:focus,textarea:focus{outline:2px solid var(--tile);outline-offset:1px}
   .slider-row{display:flex;align-items:center;gap:12px}
   input[type="range"]{flex:1;accent-color:var(--tile);direction:ltr}
-  .slider-val{min-width:48px;text-align:left;direction:ltr;font-variant-numeric:tabular-nums;font-size:.9rem;color:var(--muted)}
+  .slider-val{min-width:46px;text-align:left;direction:ltr;font-variant-numeric:tabular-nums;font-size:.84rem;color:var(--muted)}
   .check{display:flex;align-items:center;gap:10px;font-size:.88rem;color:var(--ink)}
   .check input{width:18px;height:18px;accent-color:var(--tile)}
   .check small{color:var(--muted)}
-  .btnrow{display:flex;flex-wrap:wrap;gap:12px;margin-top:18px}
-  .btn{border:none;border-radius:12px;height:46px;padding:0 22px;box-sizing:border-box;font:inherit;font-weight:600;font-size:.95rem;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:9px}
+  .btnrow{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+  .btn{border:none;border-radius:12px;height:42px;padding:0 20px;box-sizing:border-box;font:inherit;font-weight:600;font-size:.88rem;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px}
   .btn:disabled{opacity:.45;cursor:not-allowed}
   .btn-gold{background:var(--gold);color:#182238}
   .btn-gold .spin{border-color:rgba(24,34,56,.35);border-top-color:#182238}
   .btn-primary{background:var(--tile);color:#fff}
-  .status{margin-top:14px;font-size:.88rem;color:var(--muted);min-height:1.2em;line-height:1.9}
+  .reset{background:none;border:none;color:var(--tile);cursor:pointer;font:inherit;font-size:.78rem;font-weight:600;padding:0}
+  .reset:hover{text-decoration:underline}
+  .status{margin-top:12px;font-size:.82rem;color:var(--muted);min-height:1.2em;line-height:1.9}
   .status.err{color:var(--danger);white-space:pre-wrap}
   .status.ok{color:var(--tile)}
   .bar{height:8px;border-radius:6px;background:var(--line);overflow:hidden;margin-top:12px;display:none}
   .bar.show{display:block}
   .bar > div{height:100%;width:0%;background:linear-gradient(90deg,var(--tile),var(--gold));transition:width .25s}
-  .result{margin-top:16px;display:none;align-items:center;gap:14px;flex-wrap:wrap}
+  .result{margin-top:13px;display:none;align-items:center;gap:12px;flex-wrap:wrap}
   .result.show{display:flex}
-  audio{flex:1;min-width:220px;height:46px;border-radius:12px}
+  audio{flex:1;min-width:220px;height:42px;border-radius:12px}
   .spin{width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;animation:sp .7s linear infinite;display:none}
   .spin.show{display:inline-block}
   @keyframes sp{to{transform:rotate(360deg)}}
@@ -115,8 +117,8 @@
     </div>
     <div class="tools">
       <select id="ezafeTool" title="ابزار حرکت‌گذاری">
-        <option value="local" selected>مدل محلی — آفلاین، فقط کسرهٔ اضافه</option>
-        <option value="gemini">Google Gemini — دقیق، کلید رایگان</option>
+        <option value="gemini" selected>Google Gemini — دقیق، کلید رایگان</option>
+        <option value="local">مدل محلی — آفلاین، فقط کسرهٔ اضافه</option>
         <option value="openai">OpenAI GPT — دقیق، کلید لازم</option>
         <option value="anthropic">Anthropic Claude — دقیق، کلید لازم</option>
       </select>
@@ -142,6 +144,10 @@
 
       <!-- تنظیمات چترباکس -->
       <div class="cbx">
+        <label for="cbxSpeed"><span>سرعت گفتار</span><small>۱× طبیعی</small></label>
+        <div class="slider-row"><input type="range" id="cbxSpeed" min="0.5" max="1.5" step="0.05" value="1"><span class="slider-val" id="cbxSpeedVal">1.00×</span></div>
+      </div>
+      <div class="cbx">
         <label for="exag"><span>شدت بیان و احساس</span><small>۰٫۵ طبیعی</small></label>
         <div class="slider-row"><input type="range" id="exag" min="0" max="1" step="0.05" value="0.5"><span class="slider-val" id="exagVal">0.50</span></div>
       </div>
@@ -166,6 +172,9 @@
       <div class="ppr" hidden>
         <label for="noisew"><span>کشش و تنوع هجاها</span><small>ریتم واژه‌ها</small></label>
         <div class="slider-row"><input type="range" id="noisew" min="0.1" max="1.5" step="0.05" value="0.8"><span class="slider-val" id="noisewVal">0.80</span></div>
+      </div>
+      <div style="grid-column:1/-1">
+        <button class="reset" id="resetBtn" type="button">↺ بازگشت به تنظیمات پیش‌فرض</button>
       </div>
     </div>
 
@@ -268,9 +277,14 @@
   }
   voiceSel.onchange = syncSliders; syncSliders();
 
-  const pairs = [["exag","exagVal",""],["cfg","cfgVal",""],["temp","tempVal",""],["speed","speedVal","×"],["noise","noiseVal",""],["noisew","noisewVal",""]];
+  const pairs = [["cbxSpeed","cbxSpeedVal","×"],["exag","exagVal",""],["cfg","cfgVal",""],["temp","tempVal",""],["speed","speedVal","×"],["noise","noiseVal",""],["noisew","noisewVal",""]];
   pairs.forEach(([a,b,suf]) => { const el = $(a); const out = $(b);
     const f = () => out.textContent = Number(el.value).toFixed(2) + suf; el.oninput = f; f(); });
+
+  const DEFAULTS = {cbxSpeed:1, exag:0.5, cfg:0.5, temp:0.8, speed:1, noise:0.667, noisew:0.8};
+  $("resetBtn").onclick = () => {
+    for(const [id,val] of Object.entries(DEFAULTS)){ const el = $(id); el.value = val; el.dispatchEvent(new Event("input")); }
+  };
 
   const statusEl = $("status"), bar = $("bar"), barFill = $("barFill");
   function say(msg, cls){ statusEl.className = "status" + (cls ? " " + cls : ""); statusEl.textContent = msg; }
@@ -288,7 +302,7 @@
     say("در حال آماده‌سازی…", "ok");
     try{
       const payload = { engine: voiceSel.value, text: txt,
-        exaggeration: +$("exag").value, cfg_weight: +$("cfg").value, temperature: +$("temp").value,
+        exaggeration: +$("exag").value, cfg_weight: +$("cfg").value, temperature: +$("temp").value, cbx_speed: +$("cbxSpeed").value,
         speed: +$("speed").value, noise: +$("noise").value, noisew: +$("noisew").value };
       const res = await window.pywebview.api.generate(payload);
       bar.classList.remove("show");
