@@ -484,7 +484,7 @@ def chatterbox_generate(text, exaggeration, cfg_weight, temperature, status, spe
             wav = model.generate(chunk, language_id=None,
                                  exaggeration=float(exaggeration),
                                  cfg_weight=float(cfg_weight),
-                                 temperature=float(temperature))
+                                 temperature=max(0.05, float(temperature)))
         waves.append(wav.squeeze().cpu().numpy())
     audio = np.concatenate(waves)
     if abs(float(speed) - 1.0) > 0.01:
@@ -499,9 +499,9 @@ def generate(payload, status) -> bytes:
     engine = payload["engine"]
     text = payload["text"].strip()
     if engine == "chatterbox":
-        mp3, _ = chatterbox_generate(text, payload.get("exaggeration", 0.5),
-                                     payload.get("cfg_weight", 0.5),
-                                     payload.get("temperature", 0.8), status,
+        mp3, _ = chatterbox_generate(text, payload.get("exaggeration", 0.8),
+                                     payload.get("cfg_weight", 1.0),
+                                     payload.get("temperature", 0.0), status,
                                      speed=payload.get("cbx_speed", 1.0))
     else:
         mp3, _ = piper_generate(engine, text, payload.get("speed", 1.0),

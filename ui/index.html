@@ -23,9 +23,18 @@
   }
   .wrap{max-width:880px;margin:0 auto;padding:18px 18px 36px}
   header{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:16px}
-  .brand{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
   .brand .fa{font-weight:700;font-size:1.7rem;color:var(--tile);line-height:1.2;unicode-bidi:isolate}
   .brand .tagline{font-weight:400;font-size:.9rem;color:var(--muted)}
+  .badge{display:inline-flex;align-items:center;gap:8px;direction:ltr;text-decoration:none;
+    background:var(--panel);border:1px solid var(--line);border-radius:999px;
+    padding:3px 11px 3px 4px;color:var(--ink);font-size:.76rem;font-weight:600;
+    transition:border-color .2s;cursor:pointer}
+  .badge:hover{border-color:var(--tile);color:var(--tile)}
+  .badge img{width:24px;height:24px;border-radius:50%;display:block}
+  footer a{color:var(--tile);text-decoration:none;font-weight:600;cursor:pointer}
+  footer a:hover{text-decoration:underline}
+  footer .warn{display:block;margin-top:6px;font-size:.72rem;opacity:.85}
   #themeBtn{border:1px solid var(--line);background:var(--panel);color:var(--ink);width:40px;height:40px;border-radius:50%;cursor:pointer;font-size:1.15rem;display:grid;place-items:center;box-shadow:var(--shadow);flex:none}
   #themeBtn:hover{border-color:var(--tile)}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;margin-bottom:16px;transition:background .35s,border-color .35s}
@@ -99,7 +108,8 @@
 <div class="wrap">
   <header>
     <div class="brand">
-      <span class="fa" dir="ltr">@kamangir31 - آوای جاوید شاه</span>
+      <span class="fa">آوای جاوید شاه</span>
+      <a class="badge xlink"><img src="data:image/jpeg;base64,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" alt="@kamangir31">@kamangir31</a>
       <span class="tagline">تبدیل متن فارسی به گفتار</span>
     </div>
     <button id="themeBtn">🌙</button>
@@ -145,19 +155,19 @@
       <!-- تنظیمات چترباکس -->
       <div class="cbx">
         <label for="cbxSpeed"><span>سرعت گفتار</span><small>۱× طبیعی</small></label>
-        <div class="slider-row"><input type="range" id="cbxSpeed" min="0.5" max="1.5" step="0.05" value="1"><span class="slider-val" id="cbxSpeedVal">1.00×</span></div>
+        <div class="slider-row"><input type="range" id="cbxSpeed" min="0.7" max="1.3" step="0.05" value="1"><span class="slider-val" id="cbxSpeedVal">1.00×</span></div>
       </div>
       <div class="cbx">
-        <label for="exag"><span>شدت بیان و احساس</span><small>۰٫۵ طبیعی</small></label>
-        <div class="slider-row"><input type="range" id="exag" min="0" max="1" step="0.05" value="0.5"><span class="slider-val" id="exagVal">0.50</span></div>
+        <label for="exag"><span>شدت بیان و احساس</span><small>۰٫۸ پیش‌فرض</small></label>
+        <div class="slider-row"><input type="range" id="exag" min="0" max="1" step="0.05" value="0.8"><span class="slider-val" id="exagVal">0.80</span></div>
       </div>
       <div class="cbx">
         <label for="cfg"><span>پایبندی به متن</span><small>بیشتر = دقیق‌تر و آرام‌تر</small></label>
-        <div class="slider-row"><input type="range" id="cfg" min="0" max="1" step="0.05" value="0.5"><span class="slider-val" id="cfgVal">0.50</span></div>
+        <div class="slider-row"><input type="range" id="cfg" min="0" max="1" step="0.05" value="1"><span class="slider-val" id="cfgVal">1.00</span></div>
       </div>
       <div class="cbx">
-        <label for="temp"><span>تنوع و خلاقیت</span><small>کمتر = پایدارتر</small></label>
-        <div class="slider-row"><input type="range" id="temp" min="0.1" max="1.5" step="0.05" value="0.8"><span class="slider-val" id="tempVal">0.80</span></div>
+        <label for="temp"><span>تنوع و خلاقیت</span><small>۰ = پایدارترین</small></label>
+        <div class="slider-row"><input type="range" id="temp" min="0" max="1.5" step="0.05" value="0"><span class="slider-val" id="tempVal">0.00</span></div>
       </div>
 
       <!-- تنظیمات صداهای سبک -->
@@ -189,7 +199,9 @@
     </div>
   </div>
 
-  <footer>Built by @kamangir31 - آوای جاوید شاه</footer>
+  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه
+    <span class="warn">تنها از نسخه‌ای از این برنامه استفاده کنید که مستقیماً از توسعه‌دهنده دریافت کرده‌اید؛ نسخه‌های دریافتی از منابع ناشناس ممکن است حاوی بدافزار باشند.</span>
+  </footer>
 </div>
 
 <!-- راهنمای حرکت‌گذاری -->
@@ -281,7 +293,7 @@
   pairs.forEach(([a,b,suf]) => { const el = $(a); const out = $(b);
     const f = () => out.textContent = Number(el.value).toFixed(2) + suf; el.oninput = f; f(); });
 
-  const DEFAULTS = {cbxSpeed:1, exag:0.5, cfg:0.5, temp:0.8, speed:1, noise:0.667, noisew:0.8};
+  const DEFAULTS = {cbxSpeed:1, exag:0.8, cfg:1, temp:0, speed:1, noise:0.667, noisew:0.8};
   $("resetBtn").onclick = () => {
     for(const [id,val] of Object.entries(DEFAULTS)){ const el = $(id); el.value = val; el.dispatchEvent(new Event("input")); }
   };
@@ -290,6 +302,11 @@
   function say(msg, cls){ statusEl.className = "status" + (cls ? " " + cls : ""); statusEl.textContent = msg; }
   window.avaStatus = ({msg, pct}) => { say(msg, "ok");
     if(pct == null){ bar.classList.remove("show"); } else { bar.classList.add("show"); barFill.style.width = pct + "%"; } };
+
+  document.querySelectorAll(".xlink").forEach(a => a.onclick = e => {
+    e.preventDefault();
+    window.pywebview.api.open_url("https://x.com/kamangir31");
+  });
 
   const genBtn = $("genBtn"), spin = $("spin"), result = $("result"), player = $("player"), saveBtn = $("saveBtn");
   let lastB64 = null, busy = false;

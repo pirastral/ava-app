@@ -66,6 +66,15 @@ class Api:
             traceback.print_exc()
             return {"ok": False, "error": str(e)}
 
+    def open_url(self, url):
+        try:
+            import webbrowser
+            if isinstance(url, str) and url.startswith("https://"):
+                webbrowser.open(url)
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     def save_mp3(self, b64):
         try:
             name = "ava-" + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + ".mp3"
