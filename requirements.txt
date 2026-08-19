@@ -8,5 +8,6 @@ torchaudio>=2.2
 huggingface_hub
 safetensors
 librosa
+audiotsm
 sentencepiece
 chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git

@@ -105,38 +105,46 @@ _KEYS_FILE = MODELS_DIR / "ezafe_keys.json"
 _LLM_PROMPT = (
     "You are a Persian (Farsi) diacritization engine for Iranian text-to-speech. "
     "First read and fully comprehend the ENTIRE text - meaning, grammar, context - before deciding anything. "
-    "MARK AS LITTLE AS POSSIBLE: the TTS reads plain Persian well; your only job is to prevent misreadings, "
-    "not to vocalize the text. Add ONLY: "
-    "(1) kasre-ye ezafe (\u0650) where a word links to the next (\u0647\u0654 after final \u0647\u060c "
-    "\u06cc after final \u0627/\u0648) - this is the main task; "
-    "(2) marks on genuinely ambiguous homographs where context picks the reading "
-    "(\u06a9\u0650\u0634\u062a\u06cc/\u06a9\u064f\u0634\u062a\u06cc\u060c "
-    "\u06af\u064f\u0644/\u06af\u0650\u0644\u060c \u0645\u0650\u0647\u0631/\u0645\u064f\u0647\u0631), "
-    "marking only the distinguishing letters; "
-    "(3) sukun or tashdid only where misreading is likely. "
-    "Leave common words BARE when they carry their default reading (\u0628\u0647 the preposition\u060c "
-    "\u0645\u0646\u060c \u0627\u0633\u062a). But if a common-looking word has an UNCOMMON reading in "
-    "context, DO mark it: \u0628\u0650\u0647 the quince fruit\u060c \u0628\u064e\u0647\u200c\u0628\u064e\u0647 "
-    "the exclamation. "
-    "NEVER insert internal vowel marks that create a wrong reading of a well-known word: "
-    "\u062e\u062f\u0627\u0648\u0646\u062f stays internally bare - "
-    "\u062e\u064f\u062f\u0627\u0648\u064e\u0646\u0650\u062f is WRONG; correct is "
-    "\u062e\u062f\u0627\u0648\u0646\u062f\u0650 \u062c\u0627\u0646 (bare inside, ezafe at the end). "
-    "If you are not certain of a letter's correct Iranian reading, leave that letter UNMARKED - "
-    "bare is always safer than wrong. "
-    "IMPORTANT: 'bare' refers to a word's INTERNAL letters only. The kasre-ye ezafe of rule (1) is "
-    "still REQUIRED on bare words whenever they link to the next word: "
-    "\u062e\u062f\u0627\u0648\u0646\u062f\u0650 \u062c\u0627\u0646\u060c "
-    "\u06a9\u062a\u0627\u0628\u0650 \u0645\u0646. "
-    "If the text is or contains classical Persian verse, follow that verse's established recitation and "
-    "poetic meter (\u0648\u0632\u0646); famous lines have canonical readings, e.g. "
+    "WHAT TO MARK: "
+    "(1) kasre-ye ezafe (\u0650) wherever a word links to the next (\u0647\u0654 after final \u0647\u060c "
+    "\u06cc after final \u0627/\u0648) - the main task, never skipped; "
+    "(2) homographs, resolved from context (\u06a9\u0650\u0634\u062a\u06cc/\u06a9\u064f\u0634\u062a\u06cc\u060c "
+    "\u06af\u064f\u0644/\u06af\u0650\u0644\u060c \u0645\u0650\u0647\u0631/\u0645\u064f\u0647\u0631); "
+    "(3) any word a Persian TTS would plausibly misread: uncommon, poetic, fused "
+    "(\u06a9\u0632 + \u0627\u06cc\u0646 = \u06a9\u064e\u0632\u06cc\u0646\u0652), foreign, or "
+    "morphologically unusual words. Everyday words in their default reading stay bare inside "
+    "(\u0628\u0647 the preposition\u060c \u0645\u0646\u060c \u0627\u0633\u062a) - but "
+    "\u0628\u0650\u0647 the quince or \u0628\u064e\u0647\u200c\u0628\u064e\u0647 the exclamation get marked. "
+    "RULES OVER EXAMPLES: every example in these instructions is an illustration of a rule, never a "
+    "pattern to copy. The SAME written word takes DIFFERENT marks in different contexts: "
+    "\u0646\u06af\u0630\u0631\u062f is \u0646\u064e\u06af\u064f\u0630\u064e\u0631\u064e\u062f "
+    "in ordinary prose but \u0646\u064e\u06af\u0652\u0630\u064e\u0631\u064e\u062f inside the Ferdowsi "
+    "meter. Always derive the marks from how THIS word is actually pronounced in THIS sentence - from its "
+    "syllables, meaning and register - never from a remembered example, including the ones written here. "
+    "HOW TO MARK - two absolute laws: "
+    "COMPLETENESS LAW: when you vocalize a word, vocalize it COMPLETELY and syllable-accurately. Work out its "
+    "syllables first; every consonant not followed by a vowel takes sukun (\u0652), INCLUDING WORD-MEDIAL "
+    "consonant clusters: \u0628\u064e\u0631\u0646\u064e\u06af\u0652\u0630\u064e\u0631\u064e\u062f "
+    "carries sukun on \u06af mid-word THERE because the meter closes that syllable - the law is the syllable "
+    "analysis, not that word. A half-marked word misleads the TTS more than a bare one - never leave "
+    "a word partially vocalized. "
+    "ENDINGS LAW: for every word you mark, decide its final sound explicitly. A word ending on a closed "
+    "consonant gets a final sukun so the TTS cannot invent a trailing vowel "
+    "(\u06a9\u064e\u0632\u06cc\u0646\u0652, not \u06a9\u0632\u06cc\u0646 which gets misread as "
+    "\u06a9\u0632\u06cc\u0646\u0650); a word linking forward gets the ezafe of rule (1); word-final "
+    "\u0647 reads as e. "
+    "NEVER insert internal marks that create a wrong reading of a well-known word: "
+    "\u062e\u062f\u0627\u0648\u0646\u062f stays internally bare - correct is "
+    "\u062e\u062f\u0627\u0648\u0646\u062f\u0650 \u062c\u0627\u0646 (bare inside, ezafe at the end); "
+    "'bare' means internal letters only, the ezafe still applies. "
+    "Classical verse MUST follow its established recitation and meter (\u0648\u0632\u0646): "
     "\u0628\u0647 \u0646\u0627\u0645\u0650 \u062e\u062f\u0627\u0648\u0646\u062f\u0650 "
-    "\u062c\u0627\u0646 \u0648 \u062e\u0650\u0631\u064e\u062f / \u06a9\u0632\u06cc\u0646 "
-    "\u0628\u0631\u062a\u0631 \u0627\u0646\u062f\u06cc\u0634\u0647 "
+    "\u062c\u0627\u0646 \u0648 \u062e\u0650\u0631\u064e\u062f / \u06a9\u064e\u0632\u06cc\u0646\u0652 "
+    "\u0628\u064e\u0631\u062a\u064e\u0631 \u0627\u0646\u062f\u06cc\u0634\u0647 "
     "\u0628\u064e\u0631\u0646\u064e\u06af\u0652\u0630\u064e\u0631\u064e\u062f. "
-    "Dialect: formal Iranian standard Persian (Tehran), never Dari/Afghan or Tajik readings; "
-    "word-final \u0647 reads as e. Preserve existing marks. Never change, add, remove or reorder any word, "
-    "letter, digit, punctuation or line break. Return ONLY the text.\n"
+    "Dialect: formal Iranian standard Persian (Tehran), never Dari/Afghan or Tajik; "
+    "preserve existing marks; never change, add, remove or reorder any word, letter, digit, punctuation or "
+    "line break. Return ONLY the text.\n"
     "Example input: \u06a9\u062a\u0627\u0628 \u0645\u0646 \u0631\u0648\u06cc \u0645\u06cc\u0632 "
     "\u0686\u0648\u0628\u06cc \u0627\u0633\u062a \u0648 \u06af\u0644 \u0633\u0631\u062e \u0631\u0627 "
     "\u06a9\u0646\u0627\u0631 \u06a9\u0634\u062a\u06cc \u062f\u06cc\u062f\u0645.\n"
@@ -489,8 +497,15 @@ def chatterbox_generate(text, exaggeration, cfg_weight, temperature, status, spe
     audio = np.concatenate(waves)
     if abs(float(speed) - 1.0) > 0.01:
         status("در حال تنظیم سرعت گفتار…")
-        import librosa
-        audio = librosa.effects.time_stretch(y=audio.astype(np.float32), rate=float(speed))
+        try:
+            from audiotsm import wsola
+            from audiotsm.io.array import ArrayReader, ArrayWriter
+            reader = ArrayReader(audio.astype(np.float32).reshape(1, -1))
+            writer = ArrayWriter(1)
+            wsola(1, speed=float(speed)).run(reader, writer)
+            audio = writer.data.flatten()
+        except Exception:
+            status("تنظیم سرعت در دسترس نبود — با سرعت طبیعی ساخته شد.")
     pcm = (np.clip(audio, -1, 1) * 32767).astype(np.int16)
     return pcm_to_mp3(pcm, model.sr), model.sr
 
