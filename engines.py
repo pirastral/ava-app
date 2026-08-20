@@ -549,7 +549,14 @@ def _load_chatterbox(status):
     # Apple GPU (MPS) deliberately NOT used: Chatterbox's MPS path leaks memory
     # until the whole machine swaps (observed 45+ GB on a 48 GB Mac). CPU is
     # slower but its memory stays bounded around 5-6 GB.
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    # MPS (Mac GPU) is fast but leaks by upstream flaw (resemble-ai #218).
+    # Inside the self-recycling worker that leak is bounded, so speed wins.
+    if torch.cuda.is_available():
+        device = "cuda"
+    elif torch.backends.mps.is_available():
+        device = "mps"
+    else:
+        device = "cpu"
     if _hf_cached("chatterbox"):
         status("در حال بارگذاری مدل چترباکس از حافظهٔ دستگاه… (۱ تا ۲ دقیقه)")
     else:
@@ -575,6 +582,10 @@ def _load_chatterbox(status):
     model.t3.to(device).eval()
     _chatterbox = model
     return model
+
+
+def faDigits(n):
+    return str(n).translate(str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹"))
 
 
 _PAUSE_RE = re.compile(r"\[\s*(مکث بلند|مکث)\s*\]")
@@ -711,7 +722,13 @@ def chatterbox_generate(text, exaggeration, cfg_weight, temperature, status, spe
 # Leaked memory cannot outlive its process — when the worker grows past the
 # threshold, it retires itself and a fresh one is spawned on the next request.
 # ---------------------------------------------------------------------------
-_CBX_RECYCLE_MB = 6000
+def _cbx_ceiling_mb(rss_mb, avail_mb):
+    """The worker may hold up to 75% of the reclaimable pool: what's
+    available now PLUS what the worker itself would give back if retired.
+    Big idle machine → high ceiling; busy machine → ceiling shrinks with it."""
+    if avail_mb is None:
+        return 8000
+    return int(0.75 * (avail_mb + rss_mb))
 _cbx_proc = None
 _cbx_stderr = None
 _cbx_lock = threading.Lock()
@@ -743,7 +760,14 @@ def chatterbox_worker_main():
                 rss = psutil.Process().memory_info().rss // (1024 * 1024)
             except Exception:
                 pass
-            recycle = rss > _CBX_RECYCLE_MB
+            avail_mb = None
+            try:
+                import psutil
+                avail_mb = psutil.virtual_memory().available // (1024 * 1024)
+            except Exception:
+                pass
+            recycle = rss > _cbx_ceiling_mb(rss, avail_mb) or \
+                      (avail_mb is not None and avail_mb < 1500)
             sys.stdout.write(json.dumps({"type": "result", "path": f.name, "sr": sr,
                                          "rss_mb": rss, "recycle": recycle},
                                         ensure_ascii=False) + "\n")
@@ -810,7 +834,10 @@ def chatterbox_via_worker(req, status):
                 except OSError:
                     pass
                 if msg.get("recycle"):
-                    status("حافظهٔ موتور چترباکس پاک‌سازی شد — نوبت بعد چند لحظه بیشتر طول می‌کشد.")
+                    freed = msg.get("rss_mb") or 0
+                    status(f"حافظهٔ موتور چترباکس پاک‌سازی شد ({faDigits(freed // 1024)} گیگابایت آزاد شد) — نوبت بعد چند لحظه بیشتر طول می‌کشد."
+                           if freed else
+                           "حافظهٔ موتور چترباکس پاک‌سازی شد — نوبت بعد چند لحظه بیشتر طول می‌کشد.")
                     _cbx_proc = None
                 return pcm, sr
         # stdout closed: the worker died mid-job
@@ -824,6 +851,23 @@ def _gulp_pcm(payload, status):
     engine = payload["engine"]
     text = payload["text"].strip()
     if engine == "chatterbox":
+        try:
+            import psutil
+            total_mb = psutil.virtual_memory().total // (1024 * 1024)
+        except Exception:
+            total_mb = None
+        if total_mb is not None and total_mb < 7000:
+            raise RuntimeError(
+                f"صدای چترباکس روی این دستگاه اجرا نمی‌شود — دست‌کم ۸ گیگابایت رم لازم دارد "
+                f"(این دستگاه: {total_mb // 1024} گیگابایت). از صداهای سبک (مانا، ژیرو، امیر) استفاده کنید.")
+        try:
+            import psutil
+            avail_mb = psutil.virtual_memory().available // (1024 * 1024)
+        except Exception:
+            avail_mb = None
+        if avail_mb is not None and avail_mb < 4500:
+            status(f"هشدار: حافظهٔ آزاد کم است ({avail_mb // 1024} گیگابایت) — ممکن است کند پیش برود؛ "
+                   "بستن برنامه‌های دیگر کمک می‌کند.")
         # chatterbox reads … and — natively; [مکث] tags are spliced inside its core
         return chatterbox_via_worker(
             {"text": text,
