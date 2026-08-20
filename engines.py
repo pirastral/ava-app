@@ -451,9 +451,14 @@ def piper_worker_main(task_path: str) -> None:
     chunks = [_np.zeros(int(sr * p[1]), dtype=_np.int16) if isinstance(p, tuple) else p
               for p in pieces]
     joined = _np.concatenate(chunks) if chunks else _np.zeros(1, dtype=_np.int16)
+    offs, o = [], 0
+    for c in chunks:
+        offs.append([o, len(c)]); o += len(c)
     with wave.open(task["out"], "wb") as wf:
         wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(sr or 22050)
         wf.writeframes(joined.tobytes())
+    Path(task["out"] + ".offsets.json").write_text(json.dumps({"sr": sr or 22050, "offsets": offs}),
+                                                  encoding="utf-8")
 
 
 def piper_pcm(voice_key, segments, speed, noise_scale, noise_w, status):
@@ -481,9 +486,15 @@ def piper_pcm(voice_key, segments, speed, noise_scale, noise_w, status):
             pcm = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
         if len(pcm) == 0:
             raise RuntimeError("خروجی صدا خالی بود — دوباره امتحان کنید.")
-        return pcm, sr
+        offs = None
+        try:
+            meta = json.loads(Path(out.name + ".offsets.json").read_text(encoding="utf-8"))
+            offs = [pcm[a:a + n].copy() for a, n in meta["offsets"]]
+        except Exception:
+            pass
+        return (pcm, sr) if offs is None else (pcm, sr, offs)
     finally:
-        for p in (out.name, taskf.name):
+        for p in (out.name, taskf.name, out.name + ".offsets.json"):
             try:
                 os.unlink(p)
             except OSError:
@@ -600,6 +611,46 @@ def _pause_val(tok):
     if tok == "—":
         return 0.25
     return None
+
+
+_CLAUSE_END_STRONG = ".!?؟؛…"
+_GAP_AFTER = {"،": 0.08, "؛": 0.12, ".": 0.18, "!": 0.18, "?": 0.18, "؟": 0.18, "…": 0.3}
+
+
+def _clause_split(text, engine):
+    """Split a gulp's text into independently-synthesized clauses with char
+    spans, so a later patch can regenerate only the touched pieces.
+    Light voices break at commas too; chatterbox only at sentence ends
+    (its cross-comma prosody is worth keeping)."""
+    marks = _CLAUSE_END_STRONG + ("،" if engine != "chatterbox" else "")
+    items, pos = [], 0
+    for part in _PAUSE_SPLIT.split(text):
+        if not part:
+            continue
+        start = text.index(part, pos)
+        pos = start + len(part)
+        tok = part.strip()
+        p = _pause_val(tok) if _PAUSE_SPLIT.fullmatch(part) else None
+        if p is not None:
+            if engine == "chatterbox" and tok in ("…", "—"):
+                # chatterbox reads these natively — glue to the previous clause
+                if items and items[-1].get("kind") == "t":
+                    items[-1]["text"] += part
+                    items[-1]["span"] = (items[-1]["span"][0], pos)
+                continue
+            items.append({"kind": "p", "sec": p, "span": (start, pos)})
+            continue
+        for m in re.finditer(r"[^" + marks + r"]*[" + marks + r"]+\s*|[^" + marks + r"]+$", part):
+            t = m.group(0)
+            if not t.strip():
+                continue
+            a = start + m.start()
+            gap = 0.0
+            if engine != "chatterbox":
+                tail = t.strip()[-1]
+                gap = _GAP_AFTER.get(tail, 0.0)
+            items.append({"kind": "t", "text": t.strip(), "span": (a, a + len(t)), "gap": gap})
+    return [i for i in items if i["kind"] == "p" or i["text"]]
 
 
 def _pause_segments(text):
@@ -746,14 +797,25 @@ def chatterbox_worker_main():
             continue
         try:
             req = json.loads(line)
-            pcm, sr = chatterbox_pcm(req["text"], req.get("exaggeration", 0.8),
-                                     req.get("cfg_weight", 1.0),
-                                     req.get("temperature", 0.0), status,
-                                     speed=req.get("speed", 1.0))
+            texts = req.get("clauses") or [req["text"]]
+            parts, sr = [], 0
+            for k, t in enumerate(texts, 1):
+                if len(texts) > 1:
+                    status(f"در حال ساخت گفتار… قطعهٔ {k} از {len(texts)}")
+                pcm, sr = chatterbox_pcm(t, req.get("exaggeration", 0.8),
+                                         req.get("cfg_weight", 1.0),
+                                         req.get("temperature", 0.0), status,
+                                         speed=req.get("speed", 1.0))
+                parts.append(pcm)
+            offs, o = [], 0
+            for p in parts:
+                offs.append([o, len(p)]); o += len(p)
+            pcm = np.concatenate(parts) if parts else np.zeros(1, dtype=np.int16)
             f = tempfile.NamedTemporaryFile(suffix=".wav", delete=False); f.close()
             with wave.open(f.name, "wb") as wf:
                 wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(sr)
                 wf.writeframes(pcm.tobytes())
+            Path(f.name + ".offsets.json").write_text(json.dumps(offs), encoding="utf-8")
             rss = 0
             try:
                 import psutil
@@ -829,16 +891,24 @@ def chatterbox_via_worker(req, status):
                 with wave.open(msg["path"], "rb") as wf:
                     sr = wf.getframerate()
                     pcm = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
+                offs = None
                 try:
-                    os.unlink(msg["path"])
-                except OSError:
+                    offs = json.loads(Path(msg["path"] + ".offsets.json").read_text(encoding="utf-8"))
+                except Exception:
                     pass
+                for pth in (msg["path"], msg["path"] + ".offsets.json"):
+                    try:
+                        os.unlink(pth)
+                    except OSError:
+                        pass
                 if msg.get("recycle"):
                     freed = msg.get("rss_mb") or 0
                     status(f"حافظهٔ موتور چترباکس پاک‌سازی شد ({faDigits(freed // 1024)} گیگابایت آزاد شد) — نوبت بعد چند لحظه بیشتر طول می‌کشد."
                            if freed else
                            "حافظهٔ موتور چترباکس پاک‌سازی شد — نوبت بعد چند لحظه بیشتر طول می‌کشد.")
                     _cbx_proc = None
+                if offs is not None:
+                    return pcm, sr, [pcm[a:a + n].copy() for a, n in offs]
                 return pcm, sr
         # stdout closed: the worker died mid-job
         _cbx_proc = None
@@ -847,27 +917,72 @@ def chatterbox_via_worker(req, status):
                            (":\n" + tail if tail else " — دوباره امتحان کنید."))
 
 
+def _synth_clauses(items, payload, status):
+    """Synthesize the text-kind items in place (fills item['pcm']), one
+    engine call for the whole batch."""
+    engine = payload["engine"]
+    texts = [i["text"] for i in items if i["kind"] == "t"]
+    if not texts:
+        return 22050
+    if engine == "chatterbox":
+        _mem_preflight(status)
+        res = chatterbox_via_worker(
+            {"clauses": texts, "text": " ".join(texts),
+             "exaggeration": payload.get("exaggeration", 0.8),
+             "cfg_weight": payload.get("cfg_weight", 1.0),
+             "temperature": payload.get("temperature", 0.0),
+             "speed": payload.get("cbx_speed", 1.0)}, status)
+        pcm, sr, parts = res if len(res) == 3 else (res[0], res[1], [res[0]])
+    else:
+        segs = [{"t": t} for t in texts]
+        res = piper_pcm(engine, segs, payload.get("speed", 1.0),
+                        payload.get("noise", 0.667), payload.get("noisew", 0.8), status)
+        pcm, sr, parts = res if len(res) == 3 else (res[0], res[1], [res[0]])
+    it = iter(parts)
+    for i in items:
+        if i["kind"] == "t":
+            i["pcm"] = next(it)
+    return sr
+
+
+def _assemble(entry):
+    sr = entry["sr"]
+    out = []
+    for i in entry["items"]:
+        if i["kind"] == "p":
+            out.append(np.zeros(int(sr * i["sec"]), dtype=np.int16))
+        else:
+            out.append(i["pcm"])
+            if i.get("gap"):
+                out.append(np.zeros(int(sr * i["gap"]), dtype=np.int16))
+    return np.concatenate(out) if out else np.zeros(1, dtype=np.int16)
+
+
+def _mem_preflight(status):
+    try:
+        import psutil
+        total_mb = psutil.virtual_memory().total // (1024 * 1024)
+    except Exception:
+        total_mb = None
+    if total_mb is not None and total_mb < 7000:
+        raise RuntimeError(
+            f"صدای چترباکس روی این دستگاه اجرا نمی‌شود — دست‌کم ۸ گیگابایت رم لازم دارد "
+            f"(این دستگاه: {total_mb // 1024} گیگابایت). از صداهای سبک (مانا، ژیرو، امیر) استفاده کنید.")
+    try:
+        import psutil
+        avail_mb = psutil.virtual_memory().available // (1024 * 1024)
+    except Exception:
+        avail_mb = None
+    if avail_mb is not None and avail_mb < 4500:
+        status(f"هشدار: حافظهٔ آزاد کم است ({avail_mb // 1024} گیگابایت) — ممکن است کند پیش برود؛ "
+               "بستن برنامه‌های دیگر کمک می‌کند.")
+
+
 def _gulp_pcm(payload, status):
     engine = payload["engine"]
     text = payload["text"].strip()
     if engine == "chatterbox":
-        try:
-            import psutil
-            total_mb = psutil.virtual_memory().total // (1024 * 1024)
-        except Exception:
-            total_mb = None
-        if total_mb is not None and total_mb < 7000:
-            raise RuntimeError(
-                f"صدای چترباکس روی این دستگاه اجرا نمی‌شود — دست‌کم ۸ گیگابایت رم لازم دارد "
-                f"(این دستگاه: {total_mb // 1024} گیگابایت). از صداهای سبک (مانا، ژیرو، امیر) استفاده کنید.")
-        try:
-            import psutil
-            avail_mb = psutil.virtual_memory().available // (1024 * 1024)
-        except Exception:
-            avail_mb = None
-        if avail_mb is not None and avail_mb < 4500:
-            status(f"هشدار: حافظهٔ آزاد کم است ({avail_mb // 1024} گیگابایت) — ممکن است کند پیش برود؛ "
-                   "بستن برنامه‌های دیگر کمک می‌کند.")
+        _mem_preflight(status)
         # chatterbox reads … and — natively; [مکث] tags are spliced inside its core
         return chatterbox_via_worker(
             {"text": text,
@@ -892,23 +1007,80 @@ def reset_gulps():
 
 
 def generate_gulp(payload, status):
-    """One gulp → (mp3 for the row player, gulp id for the final splice)."""
-    pcm, sr = _gulp_pcm(payload, status)
+    """One gulp → clause-wise synthesis, stored per clause for surgical patching."""
+    text = payload["text"].strip()
+    items = _clause_split(text, payload["engine"])
+    if not any(i["kind"] == "t" for i in items):
+        raise RuntimeError("این بخش متنی برای خواندن ندارد — فقط نشانهٔ مکث است.")
+    sr = _synth_clauses(items, payload, status)
     gid = next(_gulp_ids)
-    _GULP_PCM[gid] = (pcm, sr)
-    return pcm_to_mp3(pcm, sr), gid
+    entry = {"sr": sr, "items": items, "text": text, "engine": payload["engine"]}
+    _GULP_PCM[gid] = entry
+    return pcm_to_mp3(_assemble(entry), sr), gid
+
+
+def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
+    """Regenerate only the clauses that the edit/selection touched; every
+    other clause's audio is reused bit-identical."""
+    entry = _GULP_PCM.get(int(gid))
+    if entry is None:
+        raise RuntimeError("این بخش دیگر در حافظه نیست — دوباره «تبدیل به گفتار» را بزنید.")
+    new_text = new_text.strip()
+    new_items = _clause_split(new_text, payload["engine"])
+    if not any(i["kind"] == "t" for i in new_items):
+        raise RuntimeError("این بخش متنی برای خواندن ندارد — فقط نشانهٔ مکث است.")
+    old_items = entry["items"]
+    same_engine = payload["engine"] == entry.get("engine")
+
+    def key(i):
+        return (i["kind"], i.get("text") if i["kind"] == "t" else i["sec"])
+
+    # longest common prefix and suffix of unchanged clauses, measured
+    # independently (audio reusable on both flanks)
+    n_old, n_new = len(old_items), len(new_items)
+    pre = 0
+    while (same_engine and pre < min(n_old, n_new)
+           and key(old_items[pre]) == key(new_items[pre])):
+        pre += 1
+    suf = 0
+    while (same_engine and suf < min(n_old, n_new)
+           and key(old_items[-1 - suf]) == key(new_items[-1 - suf])):
+        suf += 1
+    # the selection forces its clauses into the regenerated middle
+    if sel_start is not None and sel_end is not None and sel_end > sel_start:
+        for idx, i in enumerate(new_items):
+            a, b = i["span"]
+            if a < sel_end and b > sel_start:
+                pre = min(pre, idx)
+                suf = min(suf, n_new - 1 - idx)
+    # resolve overlap so prefix and suffix never claim the same clause
+    if pre + suf > n_new:
+        suf = n_new - pre
+    if pre + suf > n_old:
+        suf = max(0, n_old - pre)
+    for idx in range(pre):
+        new_items[idx]["pcm"] = old_items[idx].get("pcm")
+    for k in range(suf):
+        new_items[len(new_items) - 1 - k]["pcm"] = old_items[len(old_items) - 1 - k].get("pcm")
+    middle = [i for i in new_items[pre:len(new_items) - suf] if i["kind"] == "t"]
+    if middle:
+        status(f"بازتولید {faDigits(len(middle))} قطعهٔ تغییرکرده…")
+        _synth_clauses(middle, payload, status)
+    entry.update({"items": new_items, "text": new_text, "engine": payload["engine"]})
+    return pcm_to_mp3(_assemble(entry), entry["sr"]), len(middle)
 
 
 def splice_gulps(ids, status) -> bytes:
     """Join stored gulps in order — resampling if voices with different
     sample rates were mixed — with a short breath between parts."""
     try:
-        parts = [_GULP_PCM[int(i)] for i in ids]
+        entries = [_GULP_PCM[int(i)] for i in ids]
     except KeyError:
         raise RuntimeError("برخی بخش‌ها دیگر در حافظه نیستند — دوباره «تبدیل به گفتار» را بزنید.")
-    if not parts:
+    if not entries:
         raise RuntimeError("بخشی برای اتصال وجود ندارد.")
     status("در حال اتصال بخش‌ها و ساخت فایل نهایی…")
+    parts = [(_assemble(e), e["sr"]) for e in entries]
     target = max(sr for _, sr in parts)
     gap = np.zeros(int(target * 0.12), dtype=np.int16)
     out = []
@@ -925,5 +1097,6 @@ def splice_gulps(ids, status) -> bytes:
 
 
 def generate(payload, status) -> bytes:
-    pcm, sr = _gulp_pcm(payload, status)
-    return pcm_to_mp3(pcm, sr)
+    mp3, gid = generate_gulp(payload, status)
+    _GULP_PCM.pop(gid, None)
+    return mp3

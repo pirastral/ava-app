@@ -65,7 +65,12 @@
   .gstate{font-size:.74rem;color:var(--muted);flex:none;white-space:nowrap}
   .gvoice{width:120px;min-width:120px;height:30px;border-radius:8px;font-size:.74rem;font-weight:600;
     color:var(--tile);padding:0 10px 0 28px;background-position:left 10px center;flex:none}
-  .gedit{display:none;margin-top:8px}
+  .gedit{display:none;margin-top:8px;position:relative}
+  .selpatch{position:absolute;top:-14px;left:8px;z-index:3;display:none;
+    background:var(--tile);color:#fff;border:none;border-radius:9px;
+    padding:4px 12px;font:inherit;font-size:.74rem;font-weight:700;cursor:pointer;
+    box-shadow:0 2px 8px rgba(0,0,0,.25)}
+  .selpatch.show{display:inline-flex;align-items:center;gap:5px}
   .gedit.show{display:block}
   .gedit textarea{width:100%;min-height:64px;max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:10px;
     background:var(--panel);color:var(--ink);font:inherit;font-size:.95rem;line-height:1.9;
@@ -432,6 +437,7 @@
           <span class="gstate">${g.b64 ? "" : "در صف…"}</span>
         </div>
         <div class="gedit">
+          <button class="selpatch" type="button" title="فقط قطعه‌های دربرگیرندهٔ متن انتخاب‌شده بازتولید می‌شوند؛ بقیهٔ صدای این بخش دست‌نخورده می‌ماند">↻ بازتولید قسمت انتخاب‌شده</button>
           <textarea dir="rtl"></textarea>
           <div class="chips">
             <button class="chip" type="button" data-ins=" [مکث] " title="سکوت نیم‌ثانیه در همین نقطه">[مکث]</button>
@@ -448,6 +454,31 @@
       vs.onchange = () => { g.voice = vs.value; };
       const autoGrow = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 220) + "px"; };
       ta.addEventListener("input", autoGrow);
+      const sp = div.querySelector(".selpatch");
+      const updSel = () => {
+        const has = ta.selectionStart != null && ta.selectionEnd > ta.selectionStart;
+        sp.classList.toggle("show", has && !busy);
+      };
+      ["mouseup", "keyup", "select"].forEach(ev => ta.addEventListener(ev, updSel));
+      ta.addEventListener("blur", () => setTimeout(() => { if(document.activeElement !== sp) sp.classList.remove("show"); }, 150));
+      sp.onclick = async () => {
+        if(busy) return;
+        const s = ta.selectionStart, e = ta.selectionEnd;
+        if(!(e > s)) return;
+        busy = true; st.textContent = "در حال ساخت…"; sp.classList.remove("show");
+        try{
+          const res = await window.pywebview.api.patch_gulp({
+            gulp: g.id, text: ta.value.trim(), sel_start: s, sel_end: e, payload: gulpPayload(g) });
+          bar.classList.remove("show");
+          if(!res.ok) throw new Error(res.error || "خطای ناشناخته");
+          g.text = ta.value.trim(); g.b64 = res.b64;
+          div.querySelector("audio").src = "data:audio/mpeg;base64," + g.b64;
+          st.textContent = "";
+          say("بخش " + faNum(idx+1) + ": فقط " + faNum(res.changed) + " قطعه بازتولید شد؛ بقیه دست‌نخورده ماند.", "ok");
+          markFinalStale();
+        }catch(err){ st.textContent = ""; say(err.message || String(err), "err"); }
+        finally{ busy = false; }
+      };
       bindInsertChips(ed, ta);
       div.querySelector(".g-edit").onclick = () => { ed.classList.toggle("show"); if(ed.classList.contains("show")) autoGrow(); };
       div.querySelector(".g-regen").onclick = async () => {

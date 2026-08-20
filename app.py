@@ -81,6 +81,18 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    def patch_gulp(self, req):
+        try:
+            import engines
+            mp3, n = engines.patch_gulp(req["gulp"], req["text"],
+                                        req.get("sel_start"), req.get("sel_end"),
+                                        req["payload"], self._status)
+            b64 = base64.b64encode(mp3).decode("ascii")
+            return {"ok": True, "b64": b64, "gulp": req["gulp"], "changed": n}
+        except Exception as e:
+            traceback.print_exc()
+            return {"ok": False, "error": str(e)}
+
     def splice(self, ids):
         try:
             import engines
