@@ -28,12 +28,48 @@ def read_token() -> str:
     return ""
 
 
+BUILD = 50
+BUILD_FA = "\u06f5\u06f0"
+
+
+def _diag(tag, **kv):
+    """Silent forensic breadcrumbs (sr labels, guard verdicts) into the app
+    log — measurement trail for artifact classes we haven't caught in the
+    lab yet. Never user-facing, never raises."""
+    try:
+        import sys as _s
+        _s.stderr.write("[ava-diag] " + tag + " " +
+                        " ".join(f"{k}={v}" for k, v in kv.items()) + "\n")
+    except Exception:
+        pass
+
+
+def _final_decay(pcm, sr, win=0.030, fade=0.060, frac=0.15):
+    """Exit-gate guarantee: a file may never end mid-energy. If the last 30 ms
+    still carry >15% of body RMS (an amputated tail — the measured 'kh'/cold-end
+    class), apply a 60 ms raised-cosine landing. Natural decays pass untouched."""
+    n = len(pcm)
+    if n < int(sr * fade) * 2:
+        return pcm
+    body = float(np.sqrt(np.mean(pcm.astype(np.float64) ** 2))) or 1.0
+    tail = float(np.sqrt(np.mean(pcm[-int(sr * win):].astype(np.float64) ** 2)))
+    if tail <= frac * body:
+        return pcm
+    _diag("final_decay", tail_over_body=round(tail / body, 3))
+    out = pcm.astype(np.float32).copy()
+    m = int(sr * fade)
+    t = np.linspace(0, np.pi / 2, m, dtype=np.float32)
+    out[-m:] *= np.cos(t) ** 2
+    return out.astype(np.int16)
+
+
 def pcm_to_mp3(pcm_int16: np.ndarray, sample_rate: int) -> bytes:
     enc = lameenc.Encoder()
     enc.set_bit_rate(128)
     enc.set_in_sample_rate(sample_rate)
     enc.set_channels(1)
     enc.set_quality(2)
+    pcm_int16 = _final_decay(pcm_int16, sample_rate)
     data = enc.encode(pcm_int16.astype("<i2").tobytes())
     data += enc.flush()
     return bytes(data)
@@ -493,6 +529,7 @@ def piper_pcm(voice_key, segments, speed, noise_scale, noise_w, status):
         with wave.open(out.name, "rb") as wf:
             sr = wf.getframerate()
             pcm = _wav_pcm(wf)
+        _diag("piper_pcm", voice=voice_key, header_sr=sr, n=len(pcm))
         if len(pcm) == 0:
             raise RuntimeError("خروجی صدا خالی بود — دوباره امتحان کنید.")
         offs = None
@@ -1109,6 +1146,30 @@ def _cbx_continuous(items, payload, status):
     return sr
 
 
+def _audio_sane(pcm, sr):
+    """Content contract: synthesized speech must carry a baseband. The measured
+    mana-patch corruption was speech displaced onto a ~7.75 kHz carrier —
+    hi/lo band ratio 187.9 where clean speech measures <0.05 — plus dense
+    near-full-scale sample jumps. Both are unmistakable numerically."""
+    if len(pcm) < 2048:
+        return True
+    x = pcm.astype(np.float64)
+    if float(np.sqrt(np.mean(x ** 2))) < 40.0:
+        return True  # near-silence is structurally fine
+    sp = np.abs(np.fft.rfft(x * np.hanning(len(x)))) ** 2
+    fr = np.fft.rfftfreq(len(x), 1.0 / sr)
+    lo_e = float(sp[(fr > 150) & (fr < 4000)].sum())
+    hi_e = float(sp[fr > 6000].sum())
+    if lo_e <= 0 or hi_e / lo_e > 1.0:
+        _diag("audio_sane", verdict="FAIL", ratio=round(hi_e / max(lo_e, 1e-9), 2), sr=sr)
+        return False
+    jumps = int(np.count_nonzero(np.abs(np.diff(x)) / 32768.0 > 0.5))
+    if jumps / (len(x) / sr) > 20.0:
+        _diag("audio_sane", verdict="FAIL", jumps_per_s=round(jumps / (len(x) / sr), 1), sr=sr)
+        return False
+    return True
+
+
 def _verify_entry(entry, where):
     """Structural invariants: the stored items must exactly mirror what the
     gulp's text implies. A violation raises instead of ever becoming audio."""
@@ -1121,6 +1182,7 @@ def _verify_entry(entry, where):
             if i["kind"] == "t":
                 p = i.get("pcm")
                 assert isinstance(p, np.ndarray) and p.dtype == np.int16 and len(p) > 0, "pcm"
+                assert _audio_sane(p, int(entry["sr"])), "audio"
             else:
                 assert i["sec"] > 0, "sec"
         assert int(entry["sr"]) > 0, "sr"
@@ -1332,7 +1394,11 @@ def _gap_cut(pcm, aligned, i, sr):
     reachable, ok=False and the caller must fall back rather than cut speech."""
     body = float(np.sqrt(np.mean(pcm.astype(np.float64) ** 2))) or 1.0
     thr = max(0.10 * body, 60.0)
-    w = max(1, sr // 1000)
+    # 20 ms smoothing: longer than any glottal period (a 1 ms window slips
+    # BETWEEN voice pulses and reads a 'dip' inside a held vowel — measured as
+    # cuts landing mid-voicing with 0.85 periodicity right at the fade)
+    w = max(1, sr // 50)
+    min_run = int(0.025 * sr)  # a genuine dip is quiet for >=25 ms, not one pulse gap
     pad0 = int(0.04 * sr)
     for pad in (pad0, pad0 + int(0.12 * sr)):
         lo = max(0, int(aligned[i][2]) - pad)
@@ -1354,7 +1420,9 @@ def _gap_cut(pcm, aligned, i, sr):
                     if k - a > best[1] - best[0]:
                         best = (a, k)
                     a = None
-            return lo + (best[0] + best[1]) // 2, True
+            if best[1] - best[0] >= min_run:
+                return lo + (best[0] + best[1]) // 2, True
+            # quiet moments existed but none long enough to be real silence
     lo, hi = int(aligned[i][2]), int(aligned[i + 1][1])
     return max(0, (lo + hi) // 2), False
 
@@ -1448,6 +1516,7 @@ def _word_surgery(entry, old_item, new_item, sel_start, sel_end, payload, status
             res = piper_pcm(engine, [{"t": txt}], payload.get("speed", 1.0),
                             payload.get("noise", 0.667), payload.get("noisew", 0.8), status)
         pcm, sr2 = res[0], res[1]
+        _diag("surgery_synth", engine=engine, sr2=sr2, entry_sr=sr, n=len(pcm))
         return _resample(pcm, sr2, sr)
 
     if mid_words:
@@ -1615,6 +1684,7 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
                 done = False
         if not done:
             sr2 = _synth_clauses(middle, payload, status)
+            _diag("patch_clauses", engine=payload.get("engine"), sr2=sr2, entry_sr=entry["sr"])
             if sr2 != entry["sr"]:
                 for i in middle:
                     p = i.get("pcm")
@@ -1644,6 +1714,7 @@ def splice_gulps(ids, status) -> bytes:
         _ensure_valid(e, f"اتصال بخش {faDigits(k)}", status)
     parts = [(_assemble(e), e["sr"]) for e in entries]
     target = max(sr for _, sr in parts)
+    _diag("splice", srs=",".join(str(s) for _, s in parts), target=target)
     gap = np.zeros(int(target * 0.12), dtype=np.int16)
     out = []
     for k, (pcm, sr) in enumerate(parts):

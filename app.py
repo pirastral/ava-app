@@ -113,6 +113,10 @@ class Api:
             traceback.print_exc()
             return {"ok": False, "error": str(e)}
 
+    def build(self):
+        import engines
+        return {"n": engines.BUILD, "fa": engines.BUILD_FA}
+
     def open_url(self, url):
         try:
             import webbrowser

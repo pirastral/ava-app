@@ -265,7 +265,7 @@
     </div>
   </div>
 
-  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه
+  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۵۰</span>
     <span class="warn">تنها از نسخه‌ای از این برنامه استفاده کنید که مستقیماً از توسعه‌دهنده دریافت کرده‌اید؛ نسخه‌های دریافتی از منابع ناشناس ممکن است حاوی بدافزار باشند.</span>
   </footer>
 </div>
@@ -702,6 +702,13 @@
     const res = await window.pywebview.api.save_mp3(finalB64);
     if(res.ok) say("ذخیره شد: " + res.path, "ok");
   };
+</script>
+<script>
+window.addEventListener('pywebviewready', function(){
+  try{ pywebview.api.build().then(function(b){
+    if(b && b.fa) document.getElementById('buildTag').textContent = '· نسخهٔ ' + b.fa;
+  }); }catch(e){}
+});
 </script>
 </body>
 </html>
