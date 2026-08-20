@@ -1019,6 +1019,167 @@ def generate_gulp(payload, status):
     return pcm_to_mp3(_assemble(entry), sr), gid
 
 
+_ALIGN = {"model": None, "proc": None}
+_STRIP_RE = re.compile(r"[\u064B-\u0655\u0670\u200c]")
+
+
+def _load_aligner(status):
+    if _ALIGN["model"] is not None:
+        return
+    try:
+        import psutil
+        if psutil.virtual_memory().total // (1024 * 1024) < 8000:
+            raise RuntimeError("این دستگاه برای هم‌ترازی واژه‌ای حافظهٔ کافی ندارد")
+    except RuntimeError:
+        raise
+    except Exception:
+        pass
+    status("بار اول: در حال دانلود مدل هم‌ترازی واژه‌ها (~۱٫۲ گیگابایت)… فقط همین یک‌بار.")
+    _hook_hf_progress(status)
+    from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
+    repo = "jonatasgrosman/wav2vec2-large-xlsr-53-persian"
+    proc = Wav2Vec2Processor.from_pretrained(repo)
+    mdl = Wav2Vec2ForCTC.from_pretrained(repo)
+    mdl.eval()
+    _ALIGN.update(model=mdl, proc=proc)
+    status("مدل هم‌ترازی آماده شد.")
+
+
+def _align_words(pcm, sr, text, status):
+    """Force-align clause audio to its words → [(word, start_sample, end_sample)].
+    Returns None when alignment isn't trustworthy; caller falls back."""
+    _load_aligner(status)
+    import torch, torchaudio
+    x = pcm.astype(np.float32) / 32768.0
+    if sr != 16000:
+        n = int(round(len(x) * 16000 / sr))
+        x = np.interp(np.linspace(0, len(x) - 1, n), np.arange(len(x)), x).astype(np.float32)
+    proc, mdl = _ALIGN["proc"], _ALIGN["model"]
+    with torch.no_grad():
+        inp = proc(x, sampling_rate=16000, return_tensors="pt")
+        logp = torch.log_softmax(mdl(inp.input_values).logits, dim=-1)
+    vocab = proc.tokenizer.get_vocab()
+    blank = vocab.get(proc.tokenizer.pad_token, 0)
+    delim = vocab.get("|")
+    if delim is None:
+        return None
+    raw_words = re.findall(r"\S+", text)
+    words = []
+    for w in raw_words:
+        cw = "".join(ch for ch in _STRIP_RE.sub("", w) if ch in vocab and ch != "|")
+        if not cw:
+            return None
+        words.append(cw)
+    seq = []
+    for k, w in enumerate(words):
+        if k:
+            seq.append(delim)
+        seq.extend(vocab[ch] for ch in w)
+    targets = torch.tensor([seq], dtype=torch.long)
+    try:
+        ali, scores = torchaudio.functional.forced_align(logp, targets, blank=blank)
+        spans = torchaudio.functional.merge_tokens(ali[0], scores[0])
+    except Exception:
+        return None
+    T = logp.shape[1]
+    ratio = len(pcm) / max(1, T)
+    word_spans, cur = [], None
+    for s in spans:
+        if s.token == blank:
+            continue
+        if s.token == delim:
+            if cur:
+                word_spans.append(cur)
+            cur = None
+            continue
+        cur = [s.start, s.end] if cur is None else [cur[0], s.end]
+    if cur:
+        word_spans.append(cur)
+    if len(word_spans) != len(words):
+        return None
+    return [(raw_words[i], int(a * ratio), min(len(pcm), int(b * ratio) + 1))
+            for i, (a, b) in enumerate(word_spans)]
+
+
+def _crossfade_join(parts, sr, ms=12):
+    n = int(sr * ms / 1000)
+    out = parts[0].astype(np.float32)
+    for p in parts[1:]:
+        p = p.astype(np.float32)
+        if n > 0 and len(out) >= n and len(p) >= n:
+            fade = np.linspace(1, 0, n, dtype=np.float32)
+            out = np.concatenate([out[:-n], out[-n:] * fade + p[:n] * (1 - fade), p[n:]])
+        else:
+            out = np.concatenate([out, p])
+    return np.clip(out, -32768, 32767).astype(np.int16)
+
+
+def _word_surgery(entry, old_item, new_item, sel_start, sel_end, payload, status):
+    """Replace only the selected word window inside one clause's audio.
+    Returns the count of re-synthesized words, or None to fall back."""
+    sr = entry["sr"]
+    old_pcm = old_item.get("pcm")
+    if old_pcm is None:
+        return None
+    old_text, new_text = old_item["text"], new_item["text"]
+    off = new_item["span"][0]
+    s = max(0, (sel_start or 0) - off)
+    e = min(len(new_text), (sel_end or 0) - off)
+    if e <= s:
+        return None
+    old_words = re.findall(r"\S+", old_text)
+    new_spans = [(m.group(0), m.start(), m.end()) for m in re.finditer(r"\S+", new_text)]
+    new_words = [w for w, _, _ in new_spans]
+    pre_w = 0
+    while pre_w < min(len(old_words), len(new_words)) and old_words[pre_w] == new_words[pre_w]:
+        pre_w += 1
+    suf_w = 0
+    while suf_w < min(len(old_words), len(new_words)) and old_words[-1 - suf_w] == new_words[-1 - suf_w]:
+        suf_w += 1
+    for idx, (_, a, b) in enumerate(new_spans):
+        if a < e and b > s:
+            pre_w = min(pre_w, idx)
+            suf_w = min(suf_w, len(new_words) - 1 - idx)
+    if pre_w + suf_w > len(new_words):
+        suf_w = len(new_words) - pre_w
+    if pre_w + suf_w > len(old_words):
+        suf_w = max(0, len(old_words) - pre_w)
+    if pre_w == 0 and suf_w == 0:
+        return None  # whole clause anyway — the clause path handles it
+    aligned = _align_words(old_pcm, sr, old_text, status)
+    if aligned is None:
+        return None
+
+    def cut_after(i):   # sample boundary between old word i and i+1 (gap midpoint)
+        return (aligned[i][2] + aligned[i + 1][1]) // 2
+    a_cut = 0 if pre_w == 0 else cut_after(pre_w - 1)
+    b_cut = len(old_pcm) if suf_w == 0 else cut_after(len(old_words) - suf_w - 1)
+    mid_words = new_words[pre_w:len(new_words) - suf_w]
+    if mid_words:
+        txt = " ".join(mid_words)
+        status(f"جراحی واژه‌ای: بازتولید «{txt[:40]}»…")
+        engine = payload["engine"]
+        if engine == "chatterbox":
+            res = chatterbox_via_worker(
+                {"clauses": [txt], "text": txt,
+                 "exaggeration": payload.get("exaggeration", 0.8),
+                 "cfg_weight": payload.get("cfg_weight", 1.0),
+                 "temperature": payload.get("temperature", 0.0),
+                 "speed": payload.get("cbx_speed", 1.0)}, status)
+        else:
+            res = piper_pcm(engine, [{"t": txt}], payload.get("speed", 1.0),
+                            payload.get("noise", 0.667), payload.get("noisew", 0.8), status)
+        new_mid, sr2 = res[0], res[1]
+        if sr2 != sr:
+            n = int(round(len(new_mid) * sr / sr2))
+            new_mid = np.interp(np.linspace(0, len(new_mid) - 1, n),
+                                np.arange(len(new_mid)), new_mid.astype(np.float64)).astype(np.int16)
+    else:
+        new_mid = np.zeros(int(sr * 0.05), dtype=np.int16)  # pure deletion → tiny breath
+    new_item["pcm"] = _crossfade_join([old_pcm[:a_cut], new_mid, old_pcm[b_cut:]], sr)
+    return max(1, len(mid_words))
+
+
 def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
     """Regenerate only the clauses that the edit/selection touched; every
     other clause's audio is reused bit-identical."""
@@ -1062,12 +1223,25 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
         new_items[idx]["pcm"] = old_items[idx].get("pcm")
     for k in range(suf):
         new_items[len(new_items) - 1 - k]["pcm"] = old_items[len(old_items) - 1 - k].get("pcm")
-    middle = [i for i in new_items[pre:len(new_items) - suf] if i["kind"] == "t"]
+    mid_new = new_items[pre:len(new_items) - suf]
+    mid_old = old_items[pre:len(old_items) - suf]
+    mode = "clause"
+    words_done = 0
+    if (same_engine and sel_start is not None and len(mid_new) == 1 and len(mid_old) == 1
+            and mid_new[0]["kind"] == "t" and mid_old[0]["kind"] == "t"):
+        try:
+            r = _word_surgery(entry, mid_old[0], mid_new[0], sel_start, sel_end, payload, status)
+            if r:
+                mode, words_done = "words", r
+        except Exception as e:
+            status(f"هم‌ترازی واژه‌ای ممکن نشد ({str(e)[:50]}) — کل قطعه بازتولید می‌شود.")
+    middle = [] if mode == "words" else [i for i in mid_new if i["kind"] == "t"]
     if middle:
         status(f"بازتولید {faDigits(len(middle))} قطعهٔ تغییرکرده…")
         _synth_clauses(middle, payload, status)
     entry.update({"items": new_items, "text": new_text, "engine": payload["engine"]})
-    return pcm_to_mp3(_assemble(entry), entry["sr"]), len(middle)
+    changed = words_done if mode == "words" else len(middle)
+    return pcm_to_mp3(_assemble(entry), entry["sr"]), changed, mode
 
 
 def splice_gulps(ids, status) -> bytes:

@@ -437,7 +437,7 @@
           <span class="gstate">${g.b64 ? "" : "در صف…"}</span>
         </div>
         <div class="gedit">
-          <button class="selpatch" type="button" title="فقط قطعه‌های دربرگیرندهٔ متن انتخاب‌شده بازتولید می‌شوند؛ بقیهٔ صدای این بخش دست‌نخورده می‌ماند">↻ بازتولید قسمت انتخاب‌شده</button>
+          <button class="selpatch" type="button" title="در حد همان واژه‌های انتخاب‌شده بازتولید و در جای خود پیوند می‌زند (چند واژه انتخاب کنید تا طبیعی‌تر جا بیفتد)؛ اگر هم‌ترازی ممکن نباشد، قطعهٔ دربرگیرنده بازتولید می‌شود">↻ بازتولید قسمت انتخاب‌شده</button>
           <textarea dir="rtl"></textarea>
           <div class="chips">
             <button class="chip" type="button" data-ins=" [مکث] " title="سکوت نیم‌ثانیه در همین نقطه">[مکث]</button>
@@ -474,7 +474,9 @@
           g.text = ta.value.trim(); g.b64 = res.b64;
           div.querySelector("audio").src = "data:audio/mpeg;base64," + g.b64;
           st.textContent = "";
-          say("بخش " + faNum(idx+1) + ": فقط " + faNum(res.changed) + " قطعه بازتولید شد؛ بقیه دست‌نخورده ماند.", "ok");
+          say(res.mode === "words"
+            ? "بخش " + faNum(idx+1) + ": جراحی واژه‌ای — فقط " + faNum(res.changed) + " واژه بازتولید و در جای خود پیوند شد."
+            : "بخش " + faNum(idx+1) + ": " + faNum(res.changed) + " قطعهٔ دربرگیرنده بازتولید شد؛ بقیه دست‌نخورده ماند.", "ok");
           markFinalStale();
         }catch(err){ st.textContent = ""; say(err.message || String(err), "err"); }
         finally{ busy = false; }
