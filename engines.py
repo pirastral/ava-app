@@ -28,14 +28,12 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 50
-BUILD_FA = "\u06f5\u06f0"
+BUILD = 51
+BUILD_FA = "\u06f5\u06f1"
 
 
 def _diag(tag, **kv):
-    """Silent forensic breadcrumbs (sr labels, guard verdicts) into the app
-    log — measurement trail for artifact classes we haven't caught in the
-    lab yet. Never user-facing, never raises."""
+    """Silent forensic breadcrumbs into stderr/log. Never user-facing, never raises."""
     try:
         import sys as _s
         _s.stderr.write("[ava-diag] " + tag + " " +
@@ -45,9 +43,9 @@ def _diag(tag, **kv):
 
 
 def _final_decay(pcm, sr, win=0.030, fade=0.060, frac=0.15):
-    """Exit-gate guarantee: a file may never end mid-energy. If the last 30 ms
-    still carry >15% of body RMS (an amputated tail — the measured 'kh'/cold-end
-    class), apply a 60 ms raised-cosine landing. Natural decays pass untouched."""
+    """Exit gate: a file may never end mid-energy (the measured cold-end class,
+    file finishing at RMS 0.10). If the last 30 ms carry >15% of body RMS,
+    apply a 60 ms raised-cosine landing; natural decays pass untouched."""
     n = len(pcm)
     if n < int(sr * fade) * 2:
         return pcm
@@ -1146,30 +1144,6 @@ def _cbx_continuous(items, payload, status):
     return sr
 
 
-def _audio_sane(pcm, sr):
-    """Content contract: synthesized speech must carry a baseband. The measured
-    mana-patch corruption was speech displaced onto a ~7.75 kHz carrier —
-    hi/lo band ratio 187.9 where clean speech measures <0.05 — plus dense
-    near-full-scale sample jumps. Both are unmistakable numerically."""
-    if len(pcm) < 2048:
-        return True
-    x = pcm.astype(np.float64)
-    if float(np.sqrt(np.mean(x ** 2))) < 40.0:
-        return True  # near-silence is structurally fine
-    sp = np.abs(np.fft.rfft(x * np.hanning(len(x)))) ** 2
-    fr = np.fft.rfftfreq(len(x), 1.0 / sr)
-    lo_e = float(sp[(fr > 150) & (fr < 4000)].sum())
-    hi_e = float(sp[fr > 6000].sum())
-    if lo_e <= 0 or hi_e / lo_e > 1.0:
-        _diag("audio_sane", verdict="FAIL", ratio=round(hi_e / max(lo_e, 1e-9), 2), sr=sr)
-        return False
-    jumps = int(np.count_nonzero(np.abs(np.diff(x)) / 32768.0 > 0.5))
-    if jumps / (len(x) / sr) > 20.0:
-        _diag("audio_sane", verdict="FAIL", jumps_per_s=round(jumps / (len(x) / sr), 1), sr=sr)
-        return False
-    return True
-
-
 def _verify_entry(entry, where):
     """Structural invariants: the stored items must exactly mirror what the
     gulp's text implies. A violation raises instead of ever becoming audio."""
@@ -1182,7 +1156,6 @@ def _verify_entry(entry, where):
             if i["kind"] == "t":
                 p = i.get("pcm")
                 assert isinstance(p, np.ndarray) and p.dtype == np.int16 and len(p) > 0, "pcm"
-                assert _audio_sane(p, int(entry["sr"])), "audio"
             else:
                 assert i["sec"] > 0, "sec"
         assert int(entry["sr"]) > 0, "sr"
@@ -1394,11 +1367,11 @@ def _gap_cut(pcm, aligned, i, sr):
     reachable, ok=False and the caller must fall back rather than cut speech."""
     body = float(np.sqrt(np.mean(pcm.astype(np.float64) ** 2))) or 1.0
     thr = max(0.10 * body, 60.0)
-    # 20 ms smoothing: longer than any glottal period (a 1 ms window slips
-    # BETWEEN voice pulses and reads a 'dip' inside a held vowel — measured as
-    # cuts landing mid-voicing with 0.85 periodicity right at the fade)
+    # 20 ms smoothing: longer than any glottal period. A 1 ms window slips
+    # BETWEEN voice pulses and reads a held vowel as "silence" — measured as
+    # cuts landing mid-voicing (periodicity 0.85 at the fade) in sample_1.
     w = max(1, sr // 50)
-    min_run = int(0.025 * sr)  # a genuine dip is quiet for >=25 ms, not one pulse gap
+    min_run = int(0.025 * sr)  # a real dip stays quiet >=25 ms, not one pulse gap
     pad0 = int(0.04 * sr)
     for pad in (pad0, pad0 + int(0.12 * sr)):
         lo = max(0, int(aligned[i][2]) - pad)
@@ -1425,6 +1398,36 @@ def _gap_cut(pcm, aligned, i, sr):
             # quiet moments existed but none long enough to be real silence
     lo, hi = int(aligned[i][2]), int(aligned[i + 1][1])
     return max(0, (lo + hi) // 2), False
+
+
+def _band_displaced(pcm, sr):
+    """Detector for the measured mana-patch corruption: speech displaced onto a
+    ~7.75 kHz carrier — hi/lo 187.9, baseband annihilated for the WHOLE island.
+    Criterion is sustained displacement, so legitimate sibilants (a س slice
+    measures hi/lo 2-18 for a few windows, with vowel windows in between) pass.
+    Analysis capped at 2 s; float32; bounded and allocation-light."""
+    if len(pcm) < 4096:
+        return False
+    x = pcm[: int(2.0 * sr)].astype(np.float32)
+    if float(np.sqrt(np.mean(x.astype(np.float64) ** 2))) < 40.0:
+        return False
+    w = int(0.100 * sr)
+    n_win = max(1, len(x) // w)
+    dead = 0
+    for k in range(n_win):
+        seg = x[k * w:(k + 1) * w]
+        sp = np.abs(np.fft.rfft(seg)) ** 2
+        fr = np.fft.rfftfreq(len(seg), 1.0 / sr)
+        lo_e = float(sp[(fr > 150) & (fr < 4000)].sum())
+        hi_e = float(sp[fr > 5000].sum())
+        tot = float(sp.sum()) or 1.0
+        if hi_e / max(lo_e, 1e-9) > 8.0 and lo_e / tot < 0.05:
+            dead += 1
+    frac = dead / n_win
+    if frac >= 0.7:
+        _diag("band_displaced", dead_windows=dead, of=n_win)
+        return True
+    return False
 
 
 def _fade_edges(pcm, sr, ms=8):
@@ -1517,7 +1520,17 @@ def _word_surgery(entry, old_item, new_item, sel_start, sel_end, payload, status
                             payload.get("noise", 0.667), payload.get("noisew", 0.8), status)
         pcm, sr2 = res[0], res[1]
         _diag("surgery_synth", engine=engine, sr2=sr2, entry_sr=sr, n=len(pcm))
-        return _resample(pcm, sr2, sr)
+        out = _resample(pcm, sr2, sr)
+        if engine != "chatterbox" and _band_displaced(out, sr):
+            _diag("band_displaced_retry", engine=engine)
+            res = piper_pcm(engine, [{"t": txt}], payload.get("speed", 1.0),
+                            payload.get("noise", 0.667), payload.get("noisew", 0.8), status)
+            out = _resample(res[0], res[1], sr)
+            if _band_displaced(out, sr):
+                raise RuntimeError(
+                    "خروجی این صدا دوبار پشت‌سرهم خراب از موتور بیرون آمد (طیف جابه‌جا). "
+                    "این اشکال ثبت شد — لطفاً لاگ برنامه را بفرستید.")
+        return out
 
     if mid_words:
         status(f"جراحی واژه‌ای: بازتولید «{' '.join(mid_words)[:40]}»…")
@@ -1685,6 +1698,19 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
         if not done:
             sr2 = _synth_clauses(middle, payload, status)
             _diag("patch_clauses", engine=payload.get("engine"), sr2=sr2, entry_sr=entry["sr"])
+            if payload.get("engine") != "chatterbox":
+                for i in middle:
+                    p = i.get("pcm")
+                    if p is not None and len(p) and _band_displaced(p, sr2):
+                        _diag("band_displaced_retry", engine=payload.get("engine"))
+                        _synth_clauses(middle, payload, status)
+                        bad = [j for j in middle if j.get("pcm") is not None
+                               and len(j["pcm"]) and _band_displaced(j["pcm"], sr2)]
+                        if bad:
+                            raise RuntimeError(
+                                "خروجی این صدا دوبار پشت‌سرهم خراب از موتور بیرون آمد (طیف جابه‌جا). "
+                                "این اشکال ثبت شد — لطفاً لاگ برنامه را بفرستید.")
+                        break
             if sr2 != entry["sr"]:
                 for i in middle:
                     p = i.get("pcm")
