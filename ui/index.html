@@ -87,6 +87,7 @@
   .finalmsg{font-size:.82rem;margin-top:8px;line-height:1.9;display:none}
   .finalmsg.ok{display:block;color:var(--tile)}
   .finalmsg.stale{display:block;color:var(--danger);font-weight:600}
+  #saveBtn:disabled{opacity:.45;cursor:not-allowed}
   .tools{display:flex;gap:10px;align-items:stretch;flex-wrap:wrap;padding:0 18px 16px}
   .tools select{flex:2;min-width:200px;width:auto}
   .tools input{flex:2;min-width:200px;height:42px;box-sizing:border-box;border-radius:12px;padding:0 12px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font:inherit;font-size:.85rem;direction:ltr;text-align:left}
@@ -548,6 +549,7 @@
     if(!result.classList.contains("show")) return;
     finalMsg.className = "finalmsg stale";
     finalMsg.textContent = "بخش‌ها تغییر کرده‌اند و فایل نهایی قدیمی است — دوباره «اتصال بخش‌ها» را بزنید.";
+    saveBtn.disabled = true;   // فایل کهنه ذخیره نشود
   }
 
   function renderGulps(){
@@ -686,6 +688,7 @@
       result.classList.add("show");
       finalMsg.className = "finalmsg ok";
       finalMsg.textContent = "فایل نهایی با حجم " + faNum(res.kb) + " کیلوبایت آماده شد.";
+      saveBtn.disabled = false;
       say("", "ok");
     }catch(e){
       say(e.message || String(e), "err");

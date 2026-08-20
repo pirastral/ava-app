@@ -1086,12 +1086,82 @@ def _cbx_continuous(items, payload, status):
     cuts, w = [0], 0
     for n in words_per[:-1]:
         w += n
-        cuts.append((aligned[w - 1][2] + aligned[w][1]) // 2)
+        cuts.append(_gap_cut(pcm, aligned, w - 1, sr))
     cuts.append(len(pcm))
+    if not _slices_sane(cuts, len(pcm)):
+        return None   # untrustworthy alignment → per-fragment fallback
     for k, i in enumerate(t_items):
-        i["pcm"] = pcm[cuts[k]:cuts[k + 1]].copy()
+        i["pcm"] = _fade_edges(pcm[cuts[k]:cuts[k + 1]].copy(), sr)
     status("مکث‌ها با هم‌ترازی در جای نشانه‌ها بریده شدند — متن یک‌جا و طبیعی خوانده شد.")
     return sr
+
+
+def _verify_entry(entry, where):
+    """Structural invariants: the stored items must exactly mirror what the
+    gulp's text implies. A violation raises instead of ever becoming audio."""
+    try:
+        expected = _clause_split(entry["text"], entry.get("engine") or "chatterbox")
+        exp_keys = [("t", i["text"]) if i["kind"] == "t" else ("p", i["sec"]) for i in expected]
+        got_keys = [("t", i["text"]) if i["kind"] == "t" else ("p", i["sec"]) for i in entry["items"]]
+        assert exp_keys == got_keys, "structure"
+        for i in entry["items"]:
+            if i["kind"] == "t":
+                p = i.get("pcm")
+                assert isinstance(p, np.ndarray) and p.dtype == np.int16 and len(p) > 0, "pcm"
+            else:
+                assert i["sec"] > 0, "sec"
+        assert int(entry["sr"]) > 0, "sr"
+    except AssertionError as e:
+        raise RuntimeError(
+            f"ناهماهنگی داخلی در ساخت صدا شناسایی شد (مرحلهٔ {where}/{e}). "
+            "برای جلوگیری از خروجی خراب، این بخش را دوباره کامل بازتولید کنید.")
+
+
+def _heal_entry(entry, status):
+    """A corrupt gulp is rebuilt from its own text and stored settings —
+    repair first, error only if repair itself fails."""
+    status("ناهماهنگی داخلی شناسایی شد — ترمیم خودکار این بخش…")
+    payload = dict(entry.get("payload") or {})
+    payload["engine"] = entry.get("engine") or payload.get("engine") or "chatterbox"
+    payload["text"] = entry["text"]
+    items = _clause_split(entry["text"], payload["engine"])
+    if not any(i["kind"] == "t" for i in items):
+        raise RuntimeError("ترمیم ممکن نیست — این بخش متنی برای خواندن ندارد.")
+    sr = None
+    if (payload["engine"] == "chatterbox"
+            and any(i["kind"] == "p" for i in items)
+            and any(i["kind"] == "t" and len(i["text"]) < 40 for i in items)):
+        try:
+            sr = _cbx_continuous(items, payload, status)
+        except Exception:
+            sr = None
+        if sr is None:
+            for i in items:
+                i.pop("pcm", None)
+    if sr is None:
+        sr = _synth_clauses(items, payload, status)
+    entry.update({"items": items, "sr": sr})
+    _verify_entry(entry, "ترمیم")
+    status("بخش خودکار ترمیم و از نو ساخته شد.")
+
+
+def _ensure_valid(entry, where, status):
+    try:
+        _verify_entry(entry, where)
+    except RuntimeError:
+        try:
+            _heal_entry(entry, status)
+        except RuntimeError:
+            raise
+        except Exception as e:
+            raise RuntimeError(
+                f"ترمیم خودکار این بخش ممکن نشد ({str(e)[:60]}) — "
+                "بخش را دستی دوباره بسازید و اتصال اینترنت را بررسی کنید.")
+
+
+def _slices_sane(cuts, total):
+    """Cut positions must be strictly increasing inside the audio."""
+    return all(0 <= a < b <= total for a, b in zip(cuts, cuts[1:])) if len(cuts) > 1 else True
 
 
 def generate_gulp(payload, status):
@@ -1115,7 +1185,11 @@ def generate_gulp(payload, status):
     if sr is None:
         sr = _synth_clauses(items, payload, status)
     gid = next(_gulp_ids)
-    entry = {"sr": sr, "items": items, "text": text, "engine": payload["engine"]}
+    entry = {"sr": sr, "items": items, "text": text, "engine": payload["engine"],
+             "payload": {k: payload[k] for k in
+                         ("exaggeration", "cfg_weight", "temperature", "cbx_speed",
+                          "speed", "noise", "noisew") if k in payload}}
+    _ensure_valid(entry, "تولید", status)
     _GULP_PCM[gid] = entry
     return pcm_to_mp3(_assemble(entry), sr), gid
 
@@ -1202,6 +1276,55 @@ def _align_words(pcm, sr, text, status):
             for i, (a, b) in enumerate(word_spans)]
 
 
+def _resample(pcm, sr_from, sr_to):
+    """Anti-aliased resampling. Bare linear interpolation folds high
+    frequencies into audible hiss when downsampling (mana is 44.1 kHz;
+    chatterbox gulps are 24 kHz) — low-pass first, then interpolate."""
+    if sr_from == sr_to or len(pcm) == 0:
+        return pcm
+    x = pcm.astype(np.float64)
+    if sr_to < sr_from:
+        cutoff = 0.45 * sr_to / sr_from
+        taps = 101
+        m = np.arange(taps) - (taps - 1) / 2
+        h = np.sinc(2 * cutoff * m) * np.hamming(taps)
+        h /= h.sum()
+        x = np.convolve(x, h, mode="same")
+    n = int(round(len(x) * sr_to / sr_from))
+    y = np.interp(np.linspace(0, len(x) - 1, n), np.arange(len(x)), x)
+    return np.clip(y, -32768, 32767).astype(np.int16)
+
+
+def _refine_cut(pcm, lo, hi, sr):
+    """The quietest sample inside an inter-word gap — a midpoint cut clips
+    co-articulated speech; the energy valley doesn't."""
+    lo, hi = max(0, int(lo)), min(len(pcm), int(hi))
+    if hi - lo < max(8, sr // 200):
+        return (lo + hi) // 2
+    seg = np.abs(pcm[lo:hi].astype(np.float32))
+    w = max(1, sr // 1000)
+    sm = np.convolve(seg, np.ones(w) / w, mode="same")
+    return lo + int(np.argmin(sm))
+
+
+def _gap_cut(pcm, aligned, i, sr):
+    lo, hi = aligned[i][2], aligned[i + 1][1]
+    if hi <= lo:
+        return (lo + hi) // 2
+    return _refine_cut(pcm, lo, hi, sr)
+
+
+def _fade_edges(pcm, sr, ms=8):
+    n = min(int(sr * ms / 1000), len(pcm) // 2)
+    if n <= 0:
+        return pcm
+    out = pcm.astype(np.float32)
+    t = np.linspace(0, np.pi / 2, n, dtype=np.float32)
+    out[:n] *= np.sin(t)
+    out[-n:] *= np.cos(t)
+    return out.astype(np.int16)
+
+
 def _crossfade_join(parts, sr, ms=15):
     n = int(sr * ms / 1000)
     out = parts[0].astype(np.float32)
@@ -1256,10 +1379,10 @@ def _word_surgery(entry, old_item, new_item, sel_start, sel_end, payload, status
     if aligned is None:
         return None
 
-    def cut_after(al, i):   # sample boundary between word i and i+1 (gap midpoint)
-        return (al[i][2] + al[i + 1][1]) // 2
-    a_cut = 0 if pre_w == 0 else cut_after(aligned, pre_w - 1)
-    b_cut = len(old_pcm) if suf_w == 0 else cut_after(aligned, len(old_words) - suf_w - 1)
+    def cut_after(al, i, buf):   # boundary between word i and i+1, at the energy valley
+        return _gap_cut(buf, al, i, sr)
+    a_cut = 0 if pre_w == 0 else cut_after(aligned, pre_w - 1, old_pcm)
+    b_cut = len(old_pcm) if suf_w == 0 else cut_after(aligned, len(old_words) - suf_w - 1, old_pcm)
     mid_words = new_words[pre_w:len(new_words) - suf_w]
 
     def synth(words):
@@ -1277,11 +1400,7 @@ def _word_surgery(entry, old_item, new_item, sel_start, sel_end, payload, status
             res = piper_pcm(engine, [{"t": txt}], payload.get("speed", 1.0),
                             payload.get("noise", 0.667), payload.get("noisew", 0.8), status)
         pcm, sr2 = res[0], res[1]
-        if sr2 != sr:
-            n = int(round(len(pcm) * sr / sr2))
-            pcm = np.interp(np.linspace(0, len(pcm) - 1, n),
-                            np.arange(len(pcm)), pcm.astype(np.float64)).astype(np.int16)
-        return pcm
+        return _resample(pcm, sr2, sr)
 
     if mid_words:
         status(f"جراحی واژه‌ای: بازتولید «{' '.join(mid_words)[:40]}»…")
@@ -1291,12 +1410,17 @@ def _word_surgery(entry, old_item, new_item, sel_start, sel_end, payload, status
         new_mid = synth(synth_words)
         if ctx_l or ctx_r:
             al2 = _align_words(new_mid, sr, " ".join(synth_words), status)
+            trimmed = None
             if al2 is not None and len(al2) == len(synth_words):
-                lo = cut_after(al2, len(ctx_l) - 1) if ctx_l else 0
-                hi = cut_after(al2, len(synth_words) - len(ctx_r) - 1) if ctx_r else len(new_mid)
-                new_mid = new_mid[lo:hi]
+                lo = cut_after(al2, len(ctx_l) - 1, new_mid) if ctx_l else 0
+                hi = cut_after(al2, len(synth_words) - len(ctx_r) - 1, new_mid) if ctx_r else len(new_mid)
+                exp = len(new_mid) * len(mid_words) / max(1, len(synth_words))
+                if 0 <= lo < hi <= len(new_mid) and 0.35 * exp <= (hi - lo) <= 2.2 * exp:
+                    trimmed = new_mid[lo:hi]
+            if trimmed is not None:
+                new_mid = trimmed
             else:
-                status("هم‌ترازیِ برشِ زمینه ممکن نشد — بازتولید بدون زمینه…")
+                status("هم‌ترازیِ برشِ زمینه قابل‌اعتماد نبود — بازتولید بدون زمینه…")
                 new_mid = synth(mid_words)
     else:
         new_mid = np.zeros(int(sr * 0.05), dtype=np.int16)  # pure deletion → tiny breath
@@ -1336,10 +1460,7 @@ def _cbx_patch_middle(entry, new_items, pre, suf, payload, status):
          "speed": payload.get("cbx_speed", 1.0)}, status)
     pcm, sr2 = res[0], res[1]
     sr = entry["sr"]
-    if sr2 != sr:
-        n = int(round(len(pcm) * sr / sr2))
-        pcm = np.interp(np.linspace(0, len(pcm) - 1, n),
-                        np.arange(len(pcm)), pcm.astype(np.float64)).astype(np.int16)
+    pcm = _resample(pcm, sr2, sr)
     aligned = _align_words(pcm, sr, spoken, status)
     counts = [len(re.findall(r"\S+", p)) for p in pieces]
     if aligned is None or len(aligned) != sum(counts):
@@ -1354,13 +1475,20 @@ def _cbx_patch_middle(entry, new_items, pre, suf, payload, status):
             return 0
         if word_idx >= len(aligned):
             return len(pcm)
-        return (aligned[word_idx - 1][2] + aligned[word_idx][1]) // 2
+        return _gap_cut(pcm, aligned, word_idx - 1, sr)
     k = 0
     lo_words = counts[0] if ctx_l else 0
     pos = lo_words
-    for i, cnt in zip(mid_t, counts[1 if ctx_l else 0:len(counts) - (1 if ctx_r else 0)]):
-        i["pcm"] = pcm[cut_at(pos):cut_at(pos + cnt)].copy()
-        pos += cnt
+    planned = []
+    p2 = pos
+    for cnt in counts[1 if ctx_l else 0:len(counts) - (1 if ctx_r else 0)]:
+        planned.append((cut_at(p2), cut_at(p2 + cnt)))
+        p2 += cnt
+    if not all(0 <= a < b <= len(pcm) for a, b in planned):
+        return False   # untrustworthy alignment → clause fallback
+    for i, (a, b) in zip(mid_t, planned):
+        i["pcm"] = _fade_edges(pcm[a:b].copy(), sr)
+        pos += 1
     status("قطعهٔ کوتاه با متن همسایه یک‌جا خوانده و با هم‌ترازی جدا شد.")
     return True
 
@@ -1371,6 +1499,7 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
     entry = _GULP_PCM.get(int(gid))
     if entry is None:
         raise RuntimeError("این بخش دیگر در حافظه نیست — دوباره «تبدیل به گفتار» را بزنید.")
+    _ensure_valid(entry, "پایهٔ ویرایش", status)
     new_text = new_text.strip()
     has_sel = sel_start is not None and sel_end is not None and sel_end > sel_start
     # the gulp's clause structure follows its BASE voice; a different voice in
@@ -1436,9 +1565,18 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
             except Exception:
                 done = False
         if not done:
-            _synth_clauses(middle, payload, status)
+            sr2 = _synth_clauses(middle, payload, status)
+            if sr2 != entry["sr"]:
+                for i in middle:
+                    p = i.get("pcm")
+                    if p is not None and len(p):
+                        i["pcm"] = _resample(p, sr2, entry["sr"])
     entry.update({"items": new_items, "text": new_text,
-                  "engine": entry.get("engine") if has_sel else payload["engine"]})
+                  "engine": entry.get("engine") if has_sel else payload["engine"],
+                  "payload": {k: payload[k] for k in
+                              ("exaggeration", "cfg_weight", "temperature", "cbx_speed",
+                               "speed", "noise", "noisew") if k in payload}})
+    _ensure_valid(entry, "ویرایش", status)
     changed = words_done if mode == "words" else len(middle)
     return pcm_to_mp3(_assemble(entry), entry["sr"]), changed, mode
 
@@ -1453,16 +1591,14 @@ def splice_gulps(ids, status) -> bytes:
     if not entries:
         raise RuntimeError("بخشی برای اتصال وجود ندارد.")
     status("در حال اتصال بخش‌ها و ساخت فایل نهایی…")
+    for k, e in enumerate(entries, 1):
+        _ensure_valid(e, f"اتصال بخش {faDigits(k)}", status)
     parts = [(_assemble(e), e["sr"]) for e in entries]
     target = max(sr for _, sr in parts)
     gap = np.zeros(int(target * 0.12), dtype=np.int16)
     out = []
     for k, (pcm, sr) in enumerate(parts):
-        if sr != target:
-            n = int(round(len(pcm) * target / sr))
-            xi = np.linspace(0, len(pcm) - 1, n)
-            pcm = np.interp(xi, np.arange(len(pcm), dtype=np.float64),
-                            pcm.astype(np.float64)).astype(np.int16)
+        pcm = _resample(pcm, sr, target)
         out.append(pcm)
         if k < len(parts) - 1:
             out.append(gap)
