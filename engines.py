@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 52
-BUILD_FA = "\u06f5\u06f2"
+BUILD = 54
+BUILD_FA = "\u06f5\u06f4"
 
 
 def _diag(tag, **kv):
@@ -844,12 +844,15 @@ def chatterbox_pcm(text, exaggeration, cfg_weight, temperature, status, speed=1.
             pass
         try:
             import psutil
+            _rss = psutil.Process().memory_info().rss // (1024 * 1024)
             _avail = psutil.virtual_memory().available // (1024 * 1024)
-            if _avail < 800:
+            # rss is the honest signal: macOS compresses/swaps to keep "avail"
+            # looking fine while a leaking process swells — brake on OURSELVES
+            if _rss > _cbx_ceiling_mb(_rss, _avail) + 2000 or _avail < 800:
                 raise RuntimeError(
-                    f"حافظهٔ دستگاه در میانهٔ ساخت تمام شد ({faDigits(_avail)} مگابایت آزاد) — "
-                    "این بخش نیمه‌کاره متوقف شد تا دستگاه قفل نشود. "
-                    "برنامه‌های دیگر را ببندید و همین بخش را دوباره بسازید.")
+                    f"حافظهٔ موتور در میانهٔ ساخت از حد گذشت ({faDigits(_rss // 1024)} گیگابایت) — "
+                    "این بخش متوقف شد تا دستگاه قفل نشود؛ موتور تازه‌سازی می‌شود. "
+                    "همین بخش را دوباره بسازید.")
         except RuntimeError:
             raise
         except Exception:
@@ -881,12 +884,24 @@ def chatterbox_generate(text, exaggeration, cfg_weight, temperature, status, spe
 # threshold, it retires itself and a fresh one is spawned on the next request.
 # ---------------------------------------------------------------------------
 def _cbx_ceiling_mb(rss_mb, avail_mb):
-    """The worker may hold up to 75% of the reclaimable pool: what's
-    available now PLUS what the worker itself would give back if retired.
-    Big idle machine → high ceiling; busy machine → ceiling shrinks with it."""
+    """Two ceilings, whichever is LOWER wins.
+    (1) The adaptive pool ceiling: 75% of (avail + rss) — shrinks on busy
+        machines. Alone it is leak-unsafe: it only retires at rss > 3x avail,
+        which on a 48 GB Mac authorizes ~36 GB of growth (measured: 57 GB
+        reached twice, because macOS compresses memory and keeps "avail"
+        looking healthy while rss swells into swap).
+    (2) The absolute leak cap: the model itself needs 5-6 GB; anything much
+        past that is leaked memory the process holds hostage. Retire near
+        10 GB and the OS reclaims it for the price of a few-second respawn."""
+    hard = 10000
+    try:
+        import psutil
+        hard = max(9000, int(0.20 * (psutil.virtual_memory().total // (1024 * 1024))))
+    except Exception:
+        pass
     if avail_mb is None:
-        return 8000
-    return int(0.75 * (avail_mb + rss_mb))
+        return min(8000, hard)
+    return min(int(0.75 * (avail_mb + rss_mb)), hard)
 _cbx_proc = None
 _cbx_stderr = None
 _cbx_lock = threading.Lock()
@@ -1084,7 +1099,41 @@ def _synth_clauses(items, payload, status):
     for i in t_items:
         if i.get("pcm") is None:
             i["pcm"] = np.zeros(int(sr * 0.15), dtype=np.int16)
+        else:
+            i["pcm"] = _tail_gate(i["pcm"], sr)
     return sr
+
+
+def _tail_gate(pcm, sr):
+    """Trim junk tails off synthesized fragments. Junk = the vocoder noise
+    floor chatterbox trails into (measured: hi-band-dominated, hi/lo 77-347,
+    at 20-30% of body RMS — too loud for an amplitude gate, unmistakable
+    spectrally) or plain dead air. A duration guard protects genuine word-final
+    sibilants: a real «س» ending runs ~80-120 ms; the squeal runs 200 ms+."""
+    hop = int(0.050 * sr)
+    if len(pcm) < 5 * hop:
+        return pcm
+    body = float(np.sqrt(np.mean(pcm.astype(np.float64) ** 2))) or 1.0
+    junk = 0
+    for k in range(1, len(pcm) // hop):
+        seg = pcm[len(pcm) - (k + 1) * hop: len(pcm) - k * hop + hop].astype(np.float64)
+        lvl = float(np.sqrt(np.mean(seg ** 2)))
+        sp = np.abs(np.fft.rfft(seg)) ** 2
+        fr = np.fft.rfftfreq(len(seg), 1.0 / sr)
+        lo_e = float(sp[(fr > 150) & (fr < 4000)].sum())
+        hi_e = float(sp[fr > 5000].sum())
+        noisy = lvl < 0.35 * body and hi_e / max(lo_e, 1e-9) > 2.0
+        dead = lvl < max(0.05 * body, 60.0)
+        if noisy or dead:
+            junk = k
+        else:
+            break
+    run = junk * hop
+    if run < int(0.180 * sr):
+        return pcm  # shorter than a legit final sibilant could be — keep
+    keep = len(pcm) - run + int(0.080 * sr)
+    _diag("tail_gate", trimmed_ms=int(1000 * (len(pcm) - keep) / sr))
+    return _fade_edges(pcm[:keep].copy(), sr, ms=15)
 
 
 def _assemble(entry):
@@ -1183,7 +1232,7 @@ def _cbx_continuous(items, payload, status):
     if not ok_all or not _slices_sane(cuts, len(pcm)):
         return None   # no true dip to cut in → fragments with real pauses
     for k, i in enumerate(t_items):
-        i["pcm"] = _fade_edges(pcm[cuts[k]:cuts[k + 1]].copy(), sr)
+        i["pcm"] = _fade_edges(pcm[cuts[k]:cuts[k + 1]].copy(), sr, ms=15)
     status("مکث‌ها با هم‌ترازی در جای نشانه‌ها بریده شدند — متن یک‌جا و طبیعی خوانده شد.")
     return sr
 
@@ -1415,8 +1464,9 @@ def _gap_cut(pcm, aligned, i, sr):
     # BETWEEN voice pulses and reads a held vowel as "silence" — measured as
     # cuts landing mid-voicing (periodicity 0.85 at the fade) in sample_1.
     w = max(1, sr // 50)
-    min_run = int(0.025 * sr)  # a real dip stays quiet >=25 ms, not one pulse gap
+    min_run = int(0.012 * sr)  # longer than any glottal cycle (80 Hz -> 12.5 ms period)
     pad0 = int(0.04 * sr)
+    valley = (None, None)  # best soft-knee candidate across both pad widths
     for pad in (pad0, pad0 + int(0.12 * sr)):
         lo = max(0, int(aligned[i][2]) - pad)
         hi = min(len(pcm), int(aligned[i + 1][1]) + pad)
@@ -1440,6 +1490,16 @@ def _gap_cut(pcm, aligned, i, sr):
             if best[1] - best[0] >= min_run:
                 return lo + (best[0] + best[1]) // 2, True
             # quiet moments existed but none long enough to be real silence
+        e = w // 2 + 1  # 'same'-mode convolution zero-pads the edges -> fake dips there
+        if len(sm) > 2 * e:
+            j = e + int(np.argmin(sm[e:len(sm) - e]))
+            if valley[1] is None or sm[j] < valley[1]:
+                valley = (lo + j, float(sm[j]))
+    if valley[0] is not None and valley[1] <= 0.35 * body:
+        # no true silence, but a genuine smoothed-energy valley (a 20 ms
+        # average cannot dip inside held voicing) — a softened landing there
+        # beats discarding continuous mode for fragment babble
+        return valley[0], True
     lo, hi = int(aligned[i][2]), int(aligned[i + 1][1])
     return max(0, (lo + hi) // 2), False
 
