@@ -1062,13 +1062,58 @@ def reset_gulps():
     _GULP_PCM.clear()
 
 
+def _cbx_continuous(items, payload, status):
+    """Chatterbox babbles on the tiny fragments that pause tags create.
+    Instead: speak the WHOLE text as one natural utterance (tags → commas),
+    then cut the finished audio at the tag positions via alignment and let
+    the requested silences be spliced in. Returns sr, or None to fall back."""
+    t_items = [i for i in items if i["kind"] == "t"]
+    spoken = _cbx_sanitize("، ".join(i["text"] for i in t_items))
+    if not spoken:
+        return None
+    _mem_preflight(status)
+    res = chatterbox_via_worker(
+        {"clauses": [spoken], "text": spoken,
+         "exaggeration": payload.get("exaggeration", 0.8),
+         "cfg_weight": payload.get("cfg_weight", 1.0),
+         "temperature": payload.get("temperature", 0.0),
+         "speed": payload.get("cbx_speed", 1.0)}, status)
+    pcm, sr = res[0], res[1]
+    aligned = _align_words(pcm, sr, spoken, status)
+    words_per = [len(re.findall(r"\S+", i["text"])) for i in t_items]
+    if aligned is None or len(aligned) != sum(words_per):
+        return None
+    cuts, w = [0], 0
+    for n in words_per[:-1]:
+        w += n
+        cuts.append((aligned[w - 1][2] + aligned[w][1]) // 2)
+    cuts.append(len(pcm))
+    for k, i in enumerate(t_items):
+        i["pcm"] = pcm[cuts[k]:cuts[k + 1]].copy()
+    status("مکث‌ها با هم‌ترازی در جای نشانه‌ها بریده شدند — متن یک‌جا و طبیعی خوانده شد.")
+    return sr
+
+
 def generate_gulp(payload, status):
     """One gulp → clause-wise synthesis, stored per clause for surgical patching."""
     text = payload["text"].strip()
     items = _clause_split(text, payload["engine"])
     if not any(i["kind"] == "t" for i in items):
         raise RuntimeError("این بخش متنی برای خواندن ندارد — فقط نشانهٔ مکث است.")
-    sr = _synth_clauses(items, payload, status)
+    sr = None
+    if (payload["engine"] == "chatterbox"
+            and any(i["kind"] == "p" for i in items)
+            and any(i["kind"] == "t" and len(i["text"]) < 40 for i in items)):
+        try:
+            sr = _cbx_continuous(items, payload, status)
+        except Exception as e:
+            status(f"خواندن یک‌جا ممکن نشد ({str(e)[:40]}) — تکه‌به‌تکه ساخته می‌شود.")
+            sr = None
+        if sr is None:
+            for i in items:
+                i.pop("pcm", None)
+    if sr is None:
+        sr = _synth_clauses(items, payload, status)
     gid = next(_gulp_ids)
     entry = {"sr": sr, "items": items, "text": text, "engine": payload["engine"]}
     _GULP_PCM[gid] = entry
@@ -1266,6 +1311,60 @@ def _word_surgery(entry, old_item, new_item, sel_start, sel_end, payload, status
     return max(1, len(mid_words))
 
 
+def _cbx_patch_middle(entry, new_items, pre, suf, payload, status):
+    """Regenerating a SHORT chatterbox clause in isolation babbles. Borrow the
+    neighboring clauses' TEXT as spoken context (their audio stays reused),
+    read the whole neighborhood as one utterance, then alignment-cut the
+    context off and the middle apart at its pause positions."""
+    mid = new_items[pre:len(new_items) - suf]
+    mid_t = [i for i in mid if i["kind"] == "t"]
+    if not mid_t:
+        return False
+    ctx_l = next((i for i in reversed(new_items[:pre]) if i["kind"] == "t"), None)
+    ctx_r = next((i for i in new_items[len(new_items) - suf:] if i["kind"] == "t"), None)
+    pieces = ([ctx_l["text"]] if ctx_l else []) + [i["text"] for i in mid_t] + \
+             ([ctx_r["text"]] if ctx_r else [])
+    spoken = _cbx_sanitize("، ".join(pieces))
+    if not spoken:
+        return False
+    _mem_preflight(status)
+    res = chatterbox_via_worker(
+        {"clauses": [spoken], "text": spoken,
+         "exaggeration": payload.get("exaggeration", 0.8),
+         "cfg_weight": payload.get("cfg_weight", 1.0),
+         "temperature": payload.get("temperature", 0.0),
+         "speed": payload.get("cbx_speed", 1.0)}, status)
+    pcm, sr2 = res[0], res[1]
+    sr = entry["sr"]
+    if sr2 != sr:
+        n = int(round(len(pcm) * sr / sr2))
+        pcm = np.interp(np.linspace(0, len(pcm) - 1, n),
+                        np.arange(len(pcm)), pcm.astype(np.float64)).astype(np.int16)
+    aligned = _align_words(pcm, sr, spoken, status)
+    counts = [len(re.findall(r"\S+", p)) for p in pieces]
+    if aligned is None or len(aligned) != sum(counts):
+        return False
+    bounds, w = [], 0
+    for n in counts:
+        w += n
+        bounds.append(w)
+
+    def cut_at(word_idx):   # boundary before word word_idx
+        if word_idx <= 0:
+            return 0
+        if word_idx >= len(aligned):
+            return len(pcm)
+        return (aligned[word_idx - 1][2] + aligned[word_idx][1]) // 2
+    k = 0
+    lo_words = counts[0] if ctx_l else 0
+    pos = lo_words
+    for i, cnt in zip(mid_t, counts[1 if ctx_l else 0:len(counts) - (1 if ctx_r else 0)]):
+        i["pcm"] = pcm[cut_at(pos):cut_at(pos + cnt)].copy()
+        pos += cnt
+    status("قطعهٔ کوتاه با متن همسایه یک‌جا خوانده و با هم‌ترازی جدا شد.")
+    return True
+
+
 def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
     """Regenerate only the clauses that the edit/selection touched; every
     other clause's audio is reused bit-identical."""
@@ -1329,7 +1428,15 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
     middle = [] if mode == "words" else [i for i in mid_new if i["kind"] == "t"]
     if middle:
         status(f"بازتولید {faDigits(len(middle))} قطعهٔ تغییرکرده…")
-        _synth_clauses(middle, payload, status)
+        done = False
+        if (payload["engine"] == "chatterbox"
+                and any(len(i["text"]) < 40 for i in middle)):
+            try:
+                done = _cbx_patch_middle(entry, new_items, pre, suf, payload, status)
+            except Exception:
+                done = False
+        if not done:
+            _synth_clauses(middle, payload, status)
     entry.update({"items": new_items, "text": new_text,
                   "engine": entry.get("engine") if has_sel else payload["engine"]})
     changed = words_done if mode == "words" else len(middle)
