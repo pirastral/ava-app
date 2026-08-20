@@ -115,6 +115,14 @@ _LLM_PROMPT = (
     "morphologically unusual words. Everyday words in their default reading stay bare inside "
     "(\u0628\u0647 the preposition\u060c \u0645\u0646\u060c \u0627\u0633\u062a) - but "
     "\u0628\u0650\u0647 the quince or \u0628\u064e\u0647\u200c\u0628\u064e\u0647 the exclamation get marked. "
+    "MARKING IS A SCALPEL, NOT SEASONING - and the blade cuts both ways: a common word the TTS "
+    "already reads correctly is actively HARMED by marks, because the synthesizer knows the bare "
+    "familiar form as a whole; vocalizing it - however correctly - can break its pronunciation "
+    "(مجلس left bare is read right; the correctly marked مَجْلِس made a TTS say مَجَلِس). "
+    "The twin failure is just as wrong: a genuine ambiguity left bare - an unresolved homograph, "
+    "a skipped ezafe, an unmarked rare or metrical word - misleads the voice equally. "
+    "So: resolve EVERY ambiguity, decorate NOTHING familiar; when a word is both common and "
+    "unambiguous in this sentence, leaving it bare is the correct expert action, not an omission. "
     "RULES OVER EXAMPLES: every example in these instructions is an illustration of a rule, never a "
     "pattern to copy. The SAME written word takes DIFFERENT marks in different contexts: "
     "\u0646\u06af\u0630\u0631\u062f is \u0646\u064e\u06af\u064f\u0630\u064e\u0631\u064e\u062f "
@@ -468,6 +476,7 @@ def piper_pcm(voice_key, segments, speed, noise_scale, noise_w, status):
     _download(url + ".json", Path(str(onnx) + ".json"), status, "پیکربندی صدا")
 
     status("در حال ساخت گفتار…")
+    segments = [({"t": _strip_orphan_marks(s["t"])} if "t" in s else s) for s in segments]
     out = tempfile.NamedTemporaryFile(suffix=".wav", delete=False); out.close()
     taskf = tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w", encoding="utf-8")
     json.dump({"onnx": str(onnx), "segments": segments, "speed": speed,
@@ -613,6 +622,26 @@ def _pause_val(tok):
     return None
 
 
+# A diacritic detached from a letter (after space/ZWNJ/punctuation) makes
+# espeak SPEAK ITS NAME ("tashdid", "sāken") — attached marks work perfectly
+# and must survive untouched, including stacks like شدّهِ.
+_ORPHAN_MARKS = re.compile(
+    r"(?<![\u0621-\u063A\u0641-\u064A\u066E-\u06D3\u06D5\u064B-\u0655\u0670])"
+    r"[\u064B-\u0655\u0670]+")
+
+
+def _strip_orphan_marks(t):
+    return _ORPHAN_MARKS.sub("", t)
+_CBX_JUNK = re.compile(r"[\[\]{}<>|~^*_#@$%&+=\\\u2010-\u2027\u2030-\u205E]")
+
+
+def _cbx_sanitize(t):
+    """The Persian chatterbox checkpoint garbles exotic punctuation into
+    noise and can corrupt neighboring phonemes — whitelist-clean its input.
+    Orphaned diacritics are junk for it too."""
+    return re.sub(r"\s+", " ", _CBX_JUNK.sub(" ", _strip_orphan_marks(t))).strip()
+
+
 _CLAUSE_END_STRONG = ".!?؟؛…"
 _GAP_AFTER = {"،": 0.08, "؛": 0.12, ".": 0.18, "!": 0.18, "?": 0.18, "؟": 0.18, "…": 0.3}
 
@@ -632,12 +661,8 @@ def _clause_split(text, engine):
         tok = part.strip()
         p = _pause_val(tok) if _PAUSE_SPLIT.fullmatch(part) else None
         if p is not None:
-            if engine == "chatterbox" and tok in ("…", "—"):
-                # chatterbox reads these natively — glue to the previous clause
-                if items and items[-1].get("kind") == "t":
-                    items[-1]["text"] += part
-                    items[-1]["span"] = (items[-1]["span"][0], pos)
-                continue
+            # all four markers splice real silence, in every engine — the
+            # chatterbox fa checkpoint turned … and — into noise artifacts
             items.append({"kind": "p", "sec": p, "span": (start, pos)})
             continue
         for m in re.finditer(r"[^" + marks + r"]*[" + marks + r"]+\s*|[^" + marks + r"]+$", part):
@@ -650,7 +675,31 @@ def _clause_split(text, engine):
                 tail = t.strip()[-1]
                 gap = _GAP_AFTER.get(tail, 0.0)
             items.append({"kind": "t", "text": t.strip(), "span": (a, a + len(t)), "gap": gap})
-    return [i for i in items if i["kind"] == "p" or i["text"]]
+    items = [i for i in items if i["kind"] == "p" or i["text"]]
+    if engine == "chatterbox":
+        # token-model fidelity (sukun honoring, phoneme stability) degrades on
+        # short fragments — absorb undersized clauses into a same-run neighbor;
+        # pause boundaries are never crossed (audio must gap there)
+        MIN = 40
+        changed = True
+        while changed:
+            changed = False
+            for k, i in enumerate(items):
+                if i["kind"] != "t" or len(i["text"]) >= MIN:
+                    continue
+                prev = items[k - 1] if k > 0 else None
+                nxt = items[k + 1] if k + 1 < len(items) else None
+                mate = prev if (prev and prev["kind"] == "t") else (nxt if (nxt and nxt["kind"] == "t") else None)
+                if mate is None:
+                    continue
+                a0 = min(i["span"][0], mate["span"][0])
+                b0 = max(i["span"][1], mate["span"][1])
+                mate.update(text=text[a0:b0].strip(), span=(a0, b0),
+                            gap=max(i.get("gap", 0.0), mate.get("gap", 0.0)))
+                items.pop(k)
+                changed = True
+                break
+    return items
 
 
 def _pause_segments(text):
@@ -919,29 +968,36 @@ def chatterbox_via_worker(req, status):
 
 def _synth_clauses(items, payload, status):
     """Synthesize the text-kind items in place (fills item['pcm']), one
-    engine call for the whole batch."""
+    engine call for the whole batch. Chatterbox input is sanitized; a clause
+    that sanitizes to nothing becomes a short breath instead of a crash."""
     engine = payload["engine"]
-    texts = [i["text"] for i in items if i["kind"] == "t"]
-    if not texts:
+    t_items = [i for i in items if i["kind"] == "t"]
+    if not t_items:
         return 22050
-    if engine == "chatterbox":
-        _mem_preflight(status)
-        res = chatterbox_via_worker(
-            {"clauses": texts, "text": " ".join(texts),
-             "exaggeration": payload.get("exaggeration", 0.8),
-             "cfg_weight": payload.get("cfg_weight", 1.0),
-             "temperature": payload.get("temperature", 0.0),
-             "speed": payload.get("cbx_speed", 1.0)}, status)
+    texts, live = [], []
+    for i in t_items:
+        c = _cbx_sanitize(i["text"]) if engine == "chatterbox" else i["text"].strip()
+        if c:
+            texts.append(c); live.append(i)
+    sr = 24000 if engine == "chatterbox" else 22050
+    if texts:
+        if engine == "chatterbox":
+            _mem_preflight(status)
+            res = chatterbox_via_worker(
+                {"clauses": texts, "text": " ".join(texts),
+                 "exaggeration": payload.get("exaggeration", 0.8),
+                 "cfg_weight": payload.get("cfg_weight", 1.0),
+                 "temperature": payload.get("temperature", 0.0),
+                 "speed": payload.get("cbx_speed", 1.0)}, status)
+        else:
+            res = piper_pcm(engine, [{"t": t} for t in texts], payload.get("speed", 1.0),
+                            payload.get("noise", 0.667), payload.get("noisew", 0.8), status)
         pcm, sr, parts = res if len(res) == 3 else (res[0], res[1], [res[0]])
-    else:
-        segs = [{"t": t} for t in texts]
-        res = piper_pcm(engine, segs, payload.get("speed", 1.0),
-                        payload.get("noise", 0.667), payload.get("noisew", 0.8), status)
-        pcm, sr, parts = res if len(res) == 3 else (res[0], res[1], [res[0]])
-    it = iter(parts)
-    for i in items:
-        if i["kind"] == "t":
-            i["pcm"] = next(it)
+        for i, p in zip(live, parts):
+            i["pcm"] = p
+    for i in t_items:
+        if i.get("pcm") is None:
+            i["pcm"] = np.zeros(int(sr * 0.15), dtype=np.int16)
     return sr
 
 
@@ -1101,14 +1157,16 @@ def _align_words(pcm, sr, text, status):
             for i, (a, b) in enumerate(word_spans)]
 
 
-def _crossfade_join(parts, sr, ms=12):
+def _crossfade_join(parts, sr, ms=15):
     n = int(sr * ms / 1000)
     out = parts[0].astype(np.float32)
     for p in parts[1:]:
         p = p.astype(np.float32)
         if n > 0 and len(out) >= n and len(p) >= n:
-            fade = np.linspace(1, 0, n, dtype=np.float32)
-            out = np.concatenate([out[:-n], out[-n:] * fade + p[:n] * (1 - fade), p[n:]])
+            t = np.linspace(0, np.pi / 2, n, dtype=np.float32)
+            out = np.concatenate([out[:-n],
+                                  out[-n:] * np.cos(t) + p[:n] * np.sin(t),
+                                  p[n:]])
         else:
             out = np.concatenate([out, p])
     return np.clip(out, -32768, 32767).astype(np.int16)
@@ -1116,6 +1174,9 @@ def _crossfade_join(parts, sr, ms=12):
 
 def _word_surgery(entry, old_item, new_item, sel_start, sel_end, payload, status):
     """Replace only the selected word window inside one clause's audio.
+    The replacement is synthesized WITH one neighbor word of context on each
+    side, then the context is trimmed off via alignment — short bare inputs
+    make chatterbox babble at the edges; context keeps the middle clean.
     Returns the count of re-synthesized words, or None to fall back."""
     sr = entry["sr"]
     old_pcm = old_item.get("pcm")
@@ -1150,16 +1211,17 @@ def _word_surgery(entry, old_item, new_item, sel_start, sel_end, payload, status
     if aligned is None:
         return None
 
-    def cut_after(i):   # sample boundary between old word i and i+1 (gap midpoint)
-        return (aligned[i][2] + aligned[i + 1][1]) // 2
-    a_cut = 0 if pre_w == 0 else cut_after(pre_w - 1)
-    b_cut = len(old_pcm) if suf_w == 0 else cut_after(len(old_words) - suf_w - 1)
+    def cut_after(al, i):   # sample boundary between word i and i+1 (gap midpoint)
+        return (al[i][2] + al[i + 1][1]) // 2
+    a_cut = 0 if pre_w == 0 else cut_after(aligned, pre_w - 1)
+    b_cut = len(old_pcm) if suf_w == 0 else cut_after(aligned, len(old_words) - suf_w - 1)
     mid_words = new_words[pre_w:len(new_words) - suf_w]
-    if mid_words:
-        txt = " ".join(mid_words)
-        status(f"جراحی واژه‌ای: بازتولید «{txt[:40]}»…")
+
+    def synth(words):
+        txt = " ".join(words)
         engine = payload["engine"]
         if engine == "chatterbox":
+            txt = _cbx_sanitize(txt) or "،"
             res = chatterbox_via_worker(
                 {"clauses": [txt], "text": txt,
                  "exaggeration": payload.get("exaggeration", 0.8),
@@ -1169,13 +1231,37 @@ def _word_surgery(entry, old_item, new_item, sel_start, sel_end, payload, status
         else:
             res = piper_pcm(engine, [{"t": txt}], payload.get("speed", 1.0),
                             payload.get("noise", 0.667), payload.get("noisew", 0.8), status)
-        new_mid, sr2 = res[0], res[1]
+        pcm, sr2 = res[0], res[1]
         if sr2 != sr:
-            n = int(round(len(new_mid) * sr / sr2))
-            new_mid = np.interp(np.linspace(0, len(new_mid) - 1, n),
-                                np.arange(len(new_mid)), new_mid.astype(np.float64)).astype(np.int16)
+            n = int(round(len(pcm) * sr / sr2))
+            pcm = np.interp(np.linspace(0, len(pcm) - 1, n),
+                            np.arange(len(pcm)), pcm.astype(np.float64)).astype(np.int16)
+        return pcm
+
+    if mid_words:
+        status(f"جراحی واژه‌ای: بازتولید «{' '.join(mid_words)[:40]}»…")
+        ctx_l = [new_words[pre_w - 1]] if pre_w > 0 else []
+        ctx_r = [new_words[len(new_words) - suf_w]] if suf_w > 0 else []
+        synth_words = ctx_l + mid_words + ctx_r
+        new_mid = synth(synth_words)
+        if ctx_l or ctx_r:
+            al2 = _align_words(new_mid, sr, " ".join(synth_words), status)
+            if al2 is not None and len(al2) == len(synth_words):
+                lo = cut_after(al2, len(ctx_l) - 1) if ctx_l else 0
+                hi = cut_after(al2, len(synth_words) - len(ctx_r) - 1) if ctx_r else len(new_mid)
+                new_mid = new_mid[lo:hi]
+            else:
+                status("هم‌ترازیِ برشِ زمینه ممکن نشد — بازتولید بدون زمینه…")
+                new_mid = synth(mid_words)
     else:
         new_mid = np.zeros(int(sr * 0.05), dtype=np.int16)  # pure deletion → tiny breath
+    replaced = old_pcm[a_cut:b_cut]
+    if len(replaced) > sr // 20 and len(new_mid) > sr // 20:
+        r_old = float(np.sqrt(np.mean(replaced.astype(np.float64) ** 2)))
+        r_new = float(np.sqrt(np.mean(new_mid.astype(np.float64) ** 2)))
+        if r_old > 1 and r_new > 1:
+            gain = min(2.0, max(0.5, r_old / r_new))
+            new_mid = np.clip(new_mid.astype(np.float64) * gain, -32768, 32767).astype(np.int16)
     new_item["pcm"] = _crossfade_join([old_pcm[:a_cut], new_mid, old_pcm[b_cut:]], sr)
     return max(1, len(mid_words))
 
@@ -1187,11 +1273,16 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
     if entry is None:
         raise RuntimeError("این بخش دیگر در حافظه نیست — دوباره «تبدیل به گفتار» را بزنید.")
     new_text = new_text.strip()
-    new_items = _clause_split(new_text, payload["engine"])
+    has_sel = sel_start is not None and sel_end is not None and sel_end > sel_start
+    # the gulp's clause structure follows its BASE voice; a different voice in
+    # the payload re-voices only the selection (the flanks' audio is reusable
+    # regardless of which engine once produced it)
+    split_engine = entry.get("engine") if has_sel else payload["engine"]
+    new_items = _clause_split(new_text, split_engine)
     if not any(i["kind"] == "t" for i in new_items):
         raise RuntimeError("این بخش متنی برای خواندن ندارد — فقط نشانهٔ مکث است.")
     old_items = entry["items"]
-    same_engine = payload["engine"] == entry.get("engine")
+    same_engine = has_sel or payload["engine"] == entry.get("engine")
 
     def key(i):
         return (i["kind"], i.get("text") if i["kind"] == "t" else i["sec"])
@@ -1227,7 +1318,7 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
     mid_old = old_items[pre:len(old_items) - suf]
     mode = "clause"
     words_done = 0
-    if (same_engine and sel_start is not None and len(mid_new) == 1 and len(mid_old) == 1
+    if (has_sel and len(mid_new) == 1 and len(mid_old) == 1
             and mid_new[0]["kind"] == "t" and mid_old[0]["kind"] == "t"):
         try:
             r = _word_surgery(entry, mid_old[0], mid_new[0], sel_start, sel_end, payload, status)
@@ -1239,7 +1330,8 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
     if middle:
         status(f"بازتولید {faDigits(len(middle))} قطعهٔ تغییرکرده…")
         _synth_clauses(middle, payload, status)
-    entry.update({"items": new_items, "text": new_text, "engine": payload["engine"]})
+    entry.update({"items": new_items, "text": new_text,
+                  "engine": entry.get("engine") if has_sel else payload["engine"]})
     changed = words_done if mode == "words" else len(middle)
     return pcm_to_mp3(_assemble(entry), entry["sr"]), changed, mode
 
