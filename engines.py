@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 51
-BUILD_FA = "\u06f5\u06f1"
+BUILD = 52
+BUILD_FA = "\u06f5\u06f2"
 
 
 def _diag(tag, **kv):
@@ -842,6 +842,18 @@ def chatterbox_pcm(text, exaggeration, cfg_weight, temperature, status, speed=1.
                 torch.cuda.empty_cache()
         except Exception:
             pass
+        try:
+            import psutil
+            _avail = psutil.virtual_memory().available // (1024 * 1024)
+            if _avail < 800:
+                raise RuntimeError(
+                    f"حافظهٔ دستگاه در میانهٔ ساخت تمام شد ({faDigits(_avail)} مگابایت آزاد) — "
+                    "این بخش نیمه‌کاره متوقف شد تا دستگاه قفل نشود. "
+                    "برنامه‌های دیگر را ببندید و همین بخش را دوباره بسازید.")
+        except RuntimeError:
+            raise
+        except Exception:
+            pass
     audio = np.concatenate(waves)
     if abs(float(speed) - 1.0) > 0.01:
         status("در حال تنظیم سرعت گفتار…")
@@ -878,6 +890,7 @@ def _cbx_ceiling_mb(rss_mb, avail_mb):
 _cbx_proc = None
 _cbx_stderr = None
 _cbx_lock = threading.Lock()
+_cbx_last_rss = 0  # worker rss (MB) as of its last finished job
 
 
 def chatterbox_worker_main():
@@ -962,7 +975,31 @@ def _cbx_ensure():
 def chatterbox_via_worker(req, status):
     """Returns (pcm int16 ndarray, sample_rate) from the isolated worker."""
     with _cbx_lock:
-        global _cbx_proc
+        global _cbx_proc, _cbx_last_rss
+        # ---- per-generation admission gate ----
+        # The worker retires AFTER a job crosses the ceiling; this is the other
+        # bracket: never ADMIT a job into a bloated worker. Measured failure
+        # mode: back-to-back jobs each starting on top of leaked memory until
+        # 57 GB. A fresh worker returns every leaked byte to the OS first.
+        avail_mb = None
+        try:
+            import psutil
+            avail_mb = psutil.virtual_memory().available // (1024 * 1024)
+        except Exception:
+            pass
+        if _cbx_proc is not None and _cbx_proc.poll() is None and _cbx_last_rss:
+            over = _cbx_last_rss > _cbx_ceiling_mb(_cbx_last_rss, avail_mb)
+            tight = avail_mb is not None and avail_mb < 1500
+            if over or tight:
+                _diag("admission_recycle", rss=_cbx_last_rss, avail=avail_mb,
+                      reason="ceiling" if over else "low_avail")
+                status("پاک‌سازی حافظهٔ موتور پیش از ساخت این بخش…")
+                try:
+                    _cbx_proc.terminate()
+                except Exception:
+                    pass
+                _cbx_proc = None
+                _cbx_last_rss = 0
         p = _cbx_ensure()
         line = json.dumps(req, ensure_ascii=False) + "\n"
         try:
@@ -983,6 +1020,7 @@ def chatterbox_via_worker(req, status):
             elif t == "error":
                 raise RuntimeError(msg.get("error", "خطای ناشناخته"))
             elif t == "result":
+                _cbx_last_rss = int(msg.get("rss_mb") or 0)
                 with wave.open(msg["path"], "rb") as wf:
                     sr = wf.getframerate()
                     pcm = _wav_pcm(wf)
@@ -1002,11 +1040,13 @@ def chatterbox_via_worker(req, status):
                            if freed else
                            "حافظهٔ موتور چترباکس پاک‌سازی شد — نوبت بعد چند لحظه بیشتر طول می‌کشد.")
                     _cbx_proc = None
+                    _cbx_last_rss = 0
                 if offs is not None:
                     return pcm, sr, [pcm[a:a + n].copy() for a, n in offs]
                 return pcm, sr
         # stdout closed: the worker died mid-job
         _cbx_proc = None
+        _cbx_last_rss = 0
         tail = "\n".join(list(_cbx_stderr or [])[-8:])
         raise RuntimeError("موتور چترباکس ناگهان بسته شد" +
                            (":\n" + tail if tail else " — دوباره امتحان کنید."))
@@ -1075,6 +1115,10 @@ def _mem_preflight(status):
         avail_mb = psutil.virtual_memory().available // (1024 * 1024)
     except Exception:
         avail_mb = None
+    if avail_mb is not None and avail_mb < 2000:
+        raise RuntimeError(
+            f"حافظهٔ آزاد برای صدای چترباکس کافی نیست ({faDigits(avail_mb)} مگابایت). "
+            "چند برنامهٔ دیگر را ببندید و دوباره امتحان کنید — ادامه‌دادن در این وضعیت دستگاه را قفل می‌کند.")
     if avail_mb is not None and avail_mb < 4500:
         status(f"هشدار: حافظهٔ آزاد کم است ({avail_mb // 1024} گیگابایت) — ممکن است کند پیش برود؛ "
                "بستن برنامه‌های دیگر کمک می‌کند.")
