@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 54
-BUILD_FA = "\u06f5\u06f4"
+BUILD = 55
+BUILD_FA = "\u06f5\u06f5"
 
 
 def _diag(tag, **kv):
@@ -681,6 +681,33 @@ def _strip_orphan_marks(t):
 _CBX_JUNK = re.compile(r"[\[\]{}<>|~^*_#@$%&+=\\\u2010-\u2027\u2030-\u205E]")
 
 
+_EZAFE_TAIL = re.compile("\u0650(?=[\\s\u200c]*(?:$|[.!?\u061f\u061b\u060c\u2026]))")
+
+
+def _ezafe_join(texts):
+    """Join clause texts for one continuous utterance. Normal boundaries get
+    «، » so the model breathes there; but a clause ENDING in ezafe kasre binds
+    grammatically forward — «دوستانِ،» is unpronounceable and the model crushes
+    or babbles the word (measured: a 0.18 s unvoiced burst where «دوستانِ»
+    belongs). Those boundaries join with a plain space: the model speaks the
+    bound phrase naturally, and the aligner-guided cut still separates the
+    words at their boundary valley so the requested pause is spliced in full."""
+    out = ""
+    for k, t in enumerate(texts):
+        if k:
+            out += " " if _EZAFE_TAIL.search(texts[k - 1]) else "، "
+        out += t
+    return out
+
+
+def _despoken_tail_ezafe(t):
+    """A STANDALONE fragment ending in ezafe makes chatterbox hallucinate the
+    continuation the kasre promises (measured: «دوستانِ» alone -> 0.68 s ending
+    hot mid-babble). For the spoken form only, drop a clause-final kasre; the
+    user's stored text keeps it untouched."""
+    return _EZAFE_TAIL.sub("", t)
+
+
 def _cbx_sanitize(t):
     """The Persian chatterbox checkpoint garbles exotic punctuation into
     noise and can corrupt neighboring phonemes — whitelist-clean its input.
@@ -1077,7 +1104,7 @@ def _synth_clauses(items, payload, status):
         return 22050
     texts, live = [], []
     for i in t_items:
-        c = _cbx_sanitize(i["text"]) if engine == "chatterbox" else i["text"].strip()
+        c = _cbx_sanitize(_despoken_tail_ezafe(i["text"])) if engine == "chatterbox" else i["text"].strip()
         if c:
             texts.append(c); live.append(i)
     sr = 24000 if engine == "chatterbox" else 22050
@@ -1207,7 +1234,7 @@ def _cbx_continuous(items, payload, status):
     then cut the finished audio at the tag positions via alignment and let
     the requested silences be spliced in. Returns sr, or None to fall back."""
     t_items = [i for i in items if i["kind"] == "t"]
-    spoken = _cbx_sanitize("، ".join(i["text"] for i in t_items))
+    spoken = _cbx_sanitize(_ezafe_join([i["text"] for i in t_items]))
     if not spoken:
         return None
     _mem_preflight(status)
@@ -1221,6 +1248,8 @@ def _cbx_continuous(items, payload, status):
     aligned = _align_words(pcm, sr, spoken, status)
     words_per = [len(re.findall(r"\S+", i["text"])) for i in t_items]
     if aligned is None or len(aligned) != sum(words_per):
+        _diag("continuous_bail", reason="align_none" if aligned is None else
+              f"count_{len(aligned)}_vs_{sum(words_per)}")
         return None
     cuts, w, ok_all = [0], 0, True
     for n in words_per[:-1]:
@@ -1230,6 +1259,7 @@ def _cbx_continuous(items, payload, status):
         cuts.append(c)
     cuts.append(len(pcm))
     if not ok_all or not _slices_sane(cuts, len(pcm)):
+        _diag("continuous_bail", reason="no_dip" if not ok_all else "slices_insane")
         return None   # no true dip to cut in → fragments with real pauses
     for k, i in enumerate(t_items):
         i["pcm"] = _fade_edges(pcm[cuts[k]:cuts[k + 1]].copy(), sr, ms=15)
@@ -1612,7 +1642,7 @@ def _word_surgery(entry, old_item, new_item, sel_start, sel_end, payload, status
         txt = " ".join(words)
         engine = payload["engine"]
         if engine == "chatterbox":
-            txt = _cbx_sanitize(txt) or "،"
+            txt = _cbx_sanitize(_despoken_tail_ezafe(txt)) or "،"
             res = chatterbox_via_worker(
                 {"clauses": [txt], "text": txt,
                  "exaggeration": payload.get("exaggeration", 0.8),
@@ -1682,7 +1712,7 @@ def _cbx_patch_middle(entry, new_items, pre, suf, payload, status):
     ctx_r = next((i for i in new_items[len(new_items) - suf:] if i["kind"] == "t"), None)
     pieces = ([ctx_l["text"]] if ctx_l else []) + [i["text"] for i in mid_t] + \
              ([ctx_r["text"]] if ctx_r else [])
-    spoken = _cbx_sanitize("، ".join(pieces))
+    spoken = _cbx_sanitize(_ezafe_join(pieces))
     if not spoken:
         return False
     _mem_preflight(status)
