@@ -41,7 +41,7 @@
   .manuscript{position:relative;padding:0;overflow:hidden}
   .manuscript::before{content:"";position:absolute;inset:0;pointer-events:none;border-radius:var(--radius);border:2px solid color-mix(in srgb, var(--gold) 55%, transparent)}
   .manuscript::after{content:"";position:absolute;left:0;right:0;top:0;height:6px;pointer-events:none;background:repeating-linear-gradient(90deg,var(--tile) 0 14px,transparent 14px 20px,var(--gold) 20px 26px,transparent 26px 32px);opacity:.85}
-  textarea{display:block;width:100%;min-height:140px;resize:vertical;border:none;outline:none;background:transparent;color:var(--ink);font-family:inherit;font-size:1.15rem;line-height:2;direction:rtl;text-align:right;padding:20px 18px 10px}
+  textarea{display:block;width:100%;min-height:140px;resize:vertical;border:none;outline:none;background:transparent;color:var(--ink);font-family:inherit;font-size:1.15rem;line-height:2;direction:rtl;text-align:right;unicode-bidi:plaintext;padding:20px 18px 10px}
   textarea::placeholder{color:var(--muted);opacity:.75}
   .meta{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 16px 12px;color:var(--muted);font-size:.78rem;flex-wrap:wrap}
   .meta .links{display:flex;gap:16px}
@@ -66,17 +66,23 @@
   .gvoice{width:120px;min-width:120px;height:30px;border-radius:8px;font-size:.74rem;font-weight:600;
     color:var(--tile);padding:0 10px 0 28px;background-position:left 10px center;flex:none}
   .gedit{display:none;margin-top:8px;position:relative}
-  .selpatch{position:absolute;top:-14px;left:8px;z-index:3;display:none;
-    background:var(--tile);color:#fff;border:none;border-radius:9px;
-    padding:4px 12px;font:inherit;font-size:.74rem;font-weight:700;cursor:pointer;
-    box-shadow:0 2px 8px rgba(0,0,0,.25)}
-  .selpatch.show{display:inline-flex;align-items:center;gap:5px}
+  .regen-wrap{position:relative;flex:none}
+  .seltip{display:none;position:absolute;bottom:calc(100% + 7px);right:50%;transform:translateX(50%);
+    background:var(--gold);color:#182238;font-size:.7rem;font-weight:700;
+    padding:2px 9px;border-radius:7px;white-space:nowrap;z-index:4;pointer-events:none}
+  .seltip::after{content:"";position:absolute;top:100%;right:50%;transform:translateX(50%);
+    border:5px solid transparent;border-top-color:var(--gold)}
+  .regen-wrap.sel .seltip{display:block}
+  .regen-wrap.sel .g-regen{border-color:var(--gold);color:var(--gold)}
   .gedit.show{display:block}
   .gedit textarea{width:100%;min-height:64px;max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:10px;
     background:var(--panel);color:var(--ink);font:inherit;font-size:.95rem;line-height:1.9;
-    padding:8px 10px;direction:rtl;resize:vertical}
+    padding:8px 10px;direction:rtl;text-align:right;unicode-bidi:plaintext;resize:vertical}
   .gedit .chips{margin-top:6px;justify-content:flex-start}
   .gedit .chip{font-size:.7rem;padding:2px 8px}
+  .g-sett.on{border-color:var(--gold);color:var(--gold)}
+  .dialog.gs{max-width:560px}
+  .gs-actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;align-items:center}
   .finalrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   .finalmsg{font-size:.82rem;margin-top:8px;line-height:1.9;display:none}
   .finalmsg.ok{display:block;color:var(--tile)}
@@ -263,6 +269,38 @@
   </footer>
 </div>
 
+<!-- تنظیمات اختصاصی بخش -->
+<div class="overlay" id="gulpSettOverlay">
+  <div class="dialog gs" role="dialog" aria-modal="true">
+    <button class="close" id="gsClose" aria-label="بستن">✕</button>
+    <h3 id="gsTitle">تنظیمات صدای این بخش</h3>
+    <p class="dnote">هر تغییری همان لحظه روی همین بخش اعمال می‌شود — بازتولید کامل و جراحی واژه‌ای هر دو از آن می‌خوانند. برای «برداشت‌های» متفاوت از یک بخش، تنوع را بالا ببرید و چند بار ↻ بزنید. «تنظیمات پایهٔ تولید» یعنی مقادیر لغزنده‌های کلی در لحظهٔ آخرین «تبدیل به گفتار» — با هر تولید کاملِ تازه، تازه می‌شود.</p>
+    <div class="gs-cbx">
+      <label><span>سرعت گفتار</span><small>۱× طبیعی</small></label>
+      <div class="slider-row"><input type="range" id="gs_cbxSpeed" min="0.7" max="1.3" step="0.05" value="1"><span class="slider-val" id="gs_cbxSpeedVal">1.00×</span></div>
+      <label><span>شدت بیان و احساس</span><small>۰٫۸ پیش‌فرض</small></label>
+      <div class="slider-row"><input type="range" id="gs_exag" min="0" max="1" step="0.05" value="0.8"><span class="slider-val" id="gs_exagVal">0.80</span></div>
+      <label><span>پایبندی به متن</span><small>بیشتر = دقیق‌تر و آرام‌تر</small></label>
+      <div class="slider-row"><input type="range" id="gs_cfg" min="0" max="1" step="0.05" value="1"><span class="slider-val" id="gs_cfgVal">1.00</span></div>
+      <label><span>تنوع و خلاقیت</span><small>۰ = پایدارترین؛ بالاتر = هر بازتولید یک برداشت تازه</small></label>
+      <div class="slider-row"><input type="range" id="gs_temp" min="0" max="1.5" step="0.05" value="0"><span class="slider-val" id="gs_tempVal">0.00</span></div>
+    </div>
+    <div class="gs-ppr">
+      <label><span>سرعت گفتار</span><small>۱× طبیعی</small></label>
+      <div class="slider-row"><input type="range" id="gs_speed" min="0.5" max="2" step="0.05" value="1"><span class="slider-val" id="gs_speedVal">1.00×</span></div>
+      <label><span>آهنگ و حالت گفتار</span><small>بیشتر = پرحالت‌تر</small></label>
+      <div class="slider-row"><input type="range" id="gs_noise" min="0.1" max="1.3" step="0.05" value="0.667"><span class="slider-val" id="gs_noiseVal">0.67</span></div>
+      <label><span>کشش و تنوع هجاها</span><small>ریتم واژه‌ها</small></label>
+      <div class="slider-row"><input type="range" id="gs_noisew" min="0.1" max="1.5" step="0.05" value="0.8"><span class="slider-val" id="gs_noisewVal">0.80</span></div>
+    </div>
+    <div class="gs-actions">
+      <button class="chip" id="gsResetApp" title="مقادیر پیش‌فرض خود برنامه">↺ پیش‌فرض برنامه</button>
+      <button class="chip" id="gsResetSeed" title="مقادیر لغزنده‌های کلی در لحظهٔ آخرین تولید کامل">↺ تنظیمات پایهٔ تولید</button>
+      <button class="btn btn-primary" id="gsAll" title="همین مقادیر روی همهٔ بخش‌ها اعمال می‌شود">اعمال روی همهٔ بخش‌ها</button>
+    </div>
+  </div>
+</div>
+
 <!-- راهنمای حرکت‌گذاری -->
 <div class="overlay" id="guideOverlay">
   <div class="dialog" role="dialog" aria-modal="true">
@@ -406,10 +444,105 @@
   }
 
   function gulpPayload(g){
+    const s = g.settings;
     return { engine: g.voice, text: g.text,
-      exaggeration: +$("exag").value, cfg_weight: +$("cfg").value, temperature: +$("temp").value, cbx_speed: +$("cbxSpeed").value,
-      speed: +$("speed").value, noise: +$("noise").value, noisew: +$("noisew").value };
+      exaggeration: s ? s.exag : +$("exag").value,
+      cfg_weight:   s ? s.cfg  : +$("cfg").value,
+      temperature:  s ? s.temp : +$("temp").value,
+      cbx_speed:    s ? s.cbxSpeed : +$("cbxSpeed").value,
+      speed:        s ? s.speed : +$("speed").value,
+      noise:        s ? s.noise : +$("noise").value,
+      noisew:       s ? s.noisew : +$("noisew").value };
   }
+
+  /* ---------- تنظیمات اختصاصی هر بخش ---------- */
+  const gsOverlay = $("gulpSettOverlay");
+  const GS_KEYS = ["cbxSpeed","exag","cfg","temp","speed","noise","noisew"];
+  GS_KEYS.forEach(k => {
+    const el = $("gs_" + k), val = $("gs_" + k + "Val");
+    el.oninput = () => val.textContent = (+el.value).toFixed(2) + (k === "cbxSpeed" || k === "speed" ? "×" : "");
+  });
+  let gsTarget = null, gsLoading = false;
+  let seedSettings = null;   // لغزنده‌های کلی در لحظهٔ آخرین تولید کامل
+  function snapGlobals(){
+    const s = {};
+    GS_KEYS.forEach(k => s[k] = +$(k).value);
+    return s;
+  }
+  function collectGS(){
+    const s = {};
+    GS_KEYS.forEach(k => s[k] = +$("gs_" + k).value);
+    return s;
+  }
+  function setGSInputs(vals){
+    gsLoading = true;
+    GS_KEYS.forEach(k => {
+      const el = $("gs_" + k);
+      el.value = vals[k];
+      el.dispatchEvent(new Event("input"));
+    });
+    gsLoading = false;
+  }
+  // هر تغییر، همان لحظه روی بخش هدف اعمال می‌شود
+  GS_KEYS.forEach(k => $("gs_" + k).addEventListener("input", () => {
+    if(gsLoading || !gsTarget) return;
+    gsTarget.g.settings = collectGS();
+    gsTarget.chip.classList.add("on");
+  }));
+  function openGulpSett(g, idx, chip){
+    gsTarget = { g, chip };
+    $("gsTitle").textContent = "تنظیمات صدای بخش " + faNum(idx + 1);
+    setGSInputs(g.settings || snapGlobals());
+    const cbx = g.voice === "chatterbox";
+    document.querySelector(".gs-cbx").hidden = !cbx;
+    document.querySelector(".gs-ppr").hidden = cbx;
+    gsOverlay.classList.add("show");
+  }
+  $("gsClose").onclick = () => gsOverlay.classList.remove("show");
+  gsOverlay.addEventListener("click", e => { if(e.target === gsOverlay) gsOverlay.classList.remove("show"); });
+  $("gsResetApp").onclick = () => {
+    if(!gsTarget) return;
+    setGSInputs(DEFAULTS);
+    gsTarget.g.settings = collectGS();
+    gsTarget.chip.classList.add("on");
+    say("این بخش به پیش‌فرض برنامه برگشت.", "ok");
+  };
+  $("gsResetSeed").onclick = () => {
+    if(!gsTarget || !seedSettings) return;
+    setGSInputs(seedSettings);
+    gsTarget.g.settings = collectGS();
+    gsTarget.chip.classList.add("on");
+    say("این بخش به تنظیمات پایهٔ تولید برگشت.", "ok");
+  };
+  $("gsAll").onclick = async () => {
+    if(!gsTarget || busy) return;
+    const s = collectGS();
+    gulps.forEach(g => g.settings = { ...s });
+    gulpsEl.querySelectorAll(".g-sett").forEach(c => c.classList.add("on"));
+    gsOverlay.classList.remove("show");
+    busy = true; genBtn.disabled = true; spin.classList.add("show");
+    try{
+      const rows = [...gulpsEl.children];
+      for(let i = 0; i < gulps.length; i++){
+        const g = gulps[i], row = rows[i];
+        const rta = row && row.querySelector(".gedit textarea");
+        if(rta && rta.value.trim()) g.text = rta.value.trim();
+        say("بازتولید همهٔ بخش‌ها با تنظیمات تازه… بخش " + faNum(i+1) + " از " + faNum(gulps.length), "ok");
+        const res = await window.pywebview.api.generate_gulp(gulpPayload(g));
+        if(!res.ok) throw new Error(res.error || "خطای ناشناخته");
+        g.b64 = res.b64; g.id = res.gulp;
+        if(row) row.querySelector("audio").src = "data:audio/mpeg;base64," + g.b64;
+      }
+      bar.classList.remove("show");
+      say("همهٔ " + faNum(gulps.length) + " بخش با تنظیمات تازه بازتولید شدند.", "ok");
+      markFinalStale();
+    }catch(e){
+      bar.classList.remove("show");
+      say(e.message || String(e), "err");
+    }finally{
+      busy = false; genBtn.disabled = false; spin.classList.remove("show");
+    }
+  };
 
   function markFinalStale(){
     if(!result.classList.contains("show")) return;
@@ -432,12 +565,15 @@
             <option value="gyro">ژیرو</option>
             <option value="amir">امیر</option>
           </select>
-          <button class="chip g-regen" title="بازتولید همین بخش از متن و صدای همین بخش">↻ بازتولید</button>
+          <button class="chip g-sett" title="تنظیمات صدای همین بخش — بازتولید و جراحی واژه‌ای این بخش از آن می‌خوانند">⚙</button>
+          <span class="regen-wrap">
+            <span class="seltip">فقط قسمت انتخاب‌شده بازتولید می‌شود</span>
+            <button class="chip g-regen" title="بازتولید همین بخش از متن، صدا و تنظیمات همین بخش؛ اگر در ویرایشگر متنی انتخاب شده باشد، فقط همان قسمت (چند واژه انتخاب کنید تا طبیعی‌تر جا بیفتد)">↻ بازتولید</button>
+          </span>
           <button class="chip g-edit" title="باز و بسته‌کردن ویرایشگر متن همین بخش">✎ ویرایش</button>
           <span class="gstate">${g.b64 ? "" : "در صف…"}</span>
         </div>
         <div class="gedit">
-          <button class="selpatch" type="button" title="در حد همان واژه‌های انتخاب‌شده بازتولید و در جای خود پیوند می‌زند (چند واژه انتخاب کنید تا طبیعی‌تر جا بیفتد)؛ اگر هم‌ترازی ممکن نباشد، قطعهٔ دربرگیرنده بازتولید می‌شود">↻ بازتولید قسمت انتخاب‌شده</button>
           <textarea dir="rtl"></textarea>
           <div class="chips">
             <button class="chip" type="button" data-ins=" [مکث] " title="سکوت نیم‌ثانیه در همین نقطه">[مکث]</button>
@@ -452,49 +588,51 @@
       ta.value = g.text;
       vs.value = g.voice;
       vs.onchange = () => { g.voice = vs.value; };
+      const gsChip = div.querySelector(".g-sett");
+      gsChip.classList.toggle("on", !!g.settings);
+      gsChip.onclick = () => openGulpSett(g, idx, gsChip);
       const autoGrow = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 220) + "px"; };
       ta.addEventListener("input", autoGrow);
-      const sp = div.querySelector(".selpatch");
+      const rw = div.querySelector(".regen-wrap");
       const updSel = () => {
-        const has = ta.selectionStart != null && ta.selectionEnd > ta.selectionStart;
-        sp.classList.toggle("show", has && !busy);
+        const s = ta.selectionStart, e = ta.selectionEnd;
+        g.sel = (e != null && s != null && e > s) ? { s, e } : null;
+        rw.classList.toggle("sel", !!g.sel);
       };
       ["mouseup", "keyup", "select"].forEach(ev => ta.addEventListener(ev, updSel));
-      ta.addEventListener("blur", () => setTimeout(() => { if(document.activeElement !== sp) sp.classList.remove("show"); }, 150));
-      sp.onclick = async () => {
-        if(busy) return;
-        const s = ta.selectionStart, e = ta.selectionEnd;
-        if(!(e > s)) return;
-        busy = true; st.textContent = "در حال ساخت…"; sp.classList.remove("show");
-        try{
-          const res = await window.pywebview.api.patch_gulp({
-            gulp: g.id, text: ta.value.trim(), sel_start: s, sel_end: e, payload: gulpPayload(g) });
-          bar.classList.remove("show");
-          if(!res.ok) throw new Error(res.error || "خطای ناشناخته");
-          g.text = ta.value.trim(); g.b64 = res.b64;
-          div.querySelector("audio").src = "data:audio/mpeg;base64," + g.b64;
-          st.textContent = "";
-          say(res.mode === "words"
-            ? "بخش " + faNum(idx+1) + ": جراحی واژه‌ای — فقط " + faNum(res.changed) + " واژه بازتولید و در جای خود پیوند شد."
-            : "بخش " + faNum(idx+1) + ": " + faNum(res.changed) + " قطعهٔ دربرگیرنده بازتولید شد؛ بقیه دست‌نخورده ماند.", "ok");
-          markFinalStale();
-        }catch(err){ st.textContent = ""; say(err.message || String(err), "err"); }
-        finally{ busy = false; }
-      };
       bindInsertChips(ed, ta);
-      div.querySelector(".g-edit").onclick = () => { ed.classList.toggle("show"); if(ed.classList.contains("show")) autoGrow(); };
-      div.querySelector(".g-regen").onclick = async () => {
+      div.querySelector(".g-edit").onclick = () => {
+        ed.classList.toggle("show");
+        if(ed.classList.contains("show")) autoGrow();
+        else { g.sel = null; rw.classList.remove("sel"); }
+      };
+      const regenBtn = div.querySelector(".g-regen");
+      regenBtn.onmousedown = e => e.preventDefault();   // انتخاب متن هنگام کلیک نپرد
+      regenBtn.onclick = async () => {
         if(busy) return;
         busy = true; st.textContent = "در حال ساخت…";
         try{
           g.text = ta.value.trim() || g.text;   // همیشه از ویرایشگر همین بخش می‌خواند
-          const res = await window.pywebview.api.generate_gulp(gulpPayload(g));
-          bar.classList.remove("show");
-          if(!res.ok) throw new Error(res.error || "خطای ناشناخته");
-          g.b64 = res.b64; g.id = res.gulp;
-          div.querySelector("audio").src = "data:audio/mpeg;base64," + g.b64;
+          if(g.sel){
+            const res = await window.pywebview.api.patch_gulp({
+              gulp: g.id, text: g.text, sel_start: g.sel.s, sel_end: g.sel.e, payload: gulpPayload(g) });
+            bar.classList.remove("show");
+            if(!res.ok) throw new Error(res.error || "خطای ناشناخته");
+            g.b64 = res.b64;
+            div.querySelector("audio").src = "data:audio/mpeg;base64," + g.b64;
+            say(res.mode === "words"
+              ? "بخش " + faNum(idx+1) + ": جراحی واژه‌ای — فقط " + faNum(res.changed) + " واژه بازتولید و در جای خود پیوند شد."
+              : "بخش " + faNum(idx+1) + ": " + faNum(res.changed) + " قطعهٔ دربرگیرنده بازتولید شد؛ بقیه دست‌نخورده ماند.", "ok");
+            g.sel = null; rw.classList.remove("sel");
+          }else{
+            const res = await window.pywebview.api.generate_gulp(gulpPayload(g));
+            bar.classList.remove("show");
+            if(!res.ok) throw new Error(res.error || "خطای ناشناخته");
+            g.b64 = res.b64; g.id = res.gulp;
+            div.querySelector("audio").src = "data:audio/mpeg;base64," + g.b64;
+            say("بخش " + faNum(idx+1) + " بازتولید شد.", "ok");
+          }
           st.textContent = "";
-          say("بخش " + faNum(idx+1) + " بازتولید شد.", "ok");
           markFinalStale();
         }catch(e){ st.textContent = ""; say(e.message || String(e), "err"); }
         finally{ busy = false; }
@@ -514,7 +652,8 @@
     finalMsg.className = "finalmsg"; finalMsg.textContent = ""; finalB64 = null;
     try{ await window.pywebview.api.reset_gulps(); }catch(e){}
     const vid = voiceSel.value;
-    gulps = splitSentences(txt).map(t => ({ text: t, voice: vid, b64: null, id: null }));
+    seedSettings = snapGlobals();
+    gulps = splitSentences(txt).map(t => ({ text: t, voice: vid, b64: null, id: null, settings: null }));
     renderGulps();
     try{
       for(let i = 0; i < gulps.length; i++){
