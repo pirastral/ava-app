@@ -492,7 +492,7 @@ def piper_pcm(voice_key, segments, speed, noise_scale, noise_w, status):
                               else f"موتور صدای سبک با کد {proc.returncode} بسته شد (خطای داخلی).")
         with wave.open(out.name, "rb") as wf:
             sr = wf.getframerate()
-            pcm = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
+            pcm = _wav_pcm(wf)
         if len(pcm) == 0:
             raise RuntimeError("خروجی صدا خالی بود — دوباره امتحان کنید.")
         offs = None
@@ -508,6 +508,17 @@ def piper_pcm(voice_key, segments, speed, noise_scale, noise_w, status):
                 os.unlink(p)
             except OSError:
                 pass
+
+
+def _wav_pcm(wf):
+    """Read a worker WAV defensively: reject exotic widths, downmix stereo —
+    misreading interleaved channels as mono is pure high-frequency garbage."""
+    if wf.getsampwidth() != 2:
+        raise RuntimeError("قالب صدای موتور پشتیبانی نمی‌شود (عرض نمونهٔ غیر ۱۶بیت).")
+    pcm = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
+    if wf.getnchannels() == 2:
+        pcm = pcm.reshape(-1, 2).astype(np.float32).mean(axis=1).astype(np.int16)
+    return pcm
 
 
 def piper_generate(voice_key, text, speed, noise_scale, noise_w, status):
@@ -939,7 +950,7 @@ def chatterbox_via_worker(req, status):
             elif t == "result":
                 with wave.open(msg["path"], "rb") as wf:
                     sr = wf.getframerate()
-                    pcm = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
+                    pcm = _wav_pcm(wf)
                 offs = None
                 try:
                     offs = json.loads(Path(msg["path"] + ".offsets.json").read_text(encoding="utf-8"))
@@ -1083,13 +1094,15 @@ def _cbx_continuous(items, payload, status):
     words_per = [len(re.findall(r"\S+", i["text"])) for i in t_items]
     if aligned is None or len(aligned) != sum(words_per):
         return None
-    cuts, w = [0], 0
+    cuts, w, ok_all = [0], 0, True
     for n in words_per[:-1]:
         w += n
-        cuts.append(_gap_cut(pcm, aligned, w - 1, sr))
+        c, ok = _gap_cut(pcm, aligned, w - 1, sr)
+        ok_all = ok_all and ok
+        cuts.append(c)
     cuts.append(len(pcm))
-    if not _slices_sane(cuts, len(pcm)):
-        return None   # untrustworthy alignment → per-fragment fallback
+    if not ok_all or not _slices_sane(cuts, len(pcm)):
+        return None   # no true dip to cut in → fragments with real pauses
     for k, i in enumerate(t_items):
         i["pcm"] = _fade_edges(pcm[cuts[k]:cuts[k + 1]].copy(), sr)
     status("مکث‌ها با هم‌ترازی در جای نشانه‌ها بریده شدند — متن یک‌جا و طبیعی خوانده شد.")
@@ -1220,15 +1233,20 @@ def _load_aligner(status):
     status("مدل هم‌ترازی آماده شد.")
 
 
+def _align_feed(pcm, sr):
+    """16 kHz feed for wav2vec2 — anti-aliased. A naive decimation folds the
+    8-12 kHz band onto the speech band and drags every CTC boundary with it."""
+    if sr != 16000:
+        pcm = _resample(pcm, sr, 16000)
+    return pcm.astype(np.float32) / 32768.0
+
+
 def _align_words(pcm, sr, text, status):
     """Force-align clause audio to its words → [(word, start_sample, end_sample)].
     Returns None when alignment isn't trustworthy; caller falls back."""
     _load_aligner(status)
     import torch, torchaudio
-    x = pcm.astype(np.float32) / 32768.0
-    if sr != 16000:
-        n = int(round(len(x) * 16000 / sr))
-        x = np.interp(np.linspace(0, len(x) - 1, n), np.arange(len(x)), x).astype(np.float32)
+    x = _align_feed(pcm, sr)
     proc, mdl = _ALIGN["proc"], _ALIGN["model"]
     with torch.no_grad():
         inp = proc(x, sampling_rate=16000, return_tensors="pt")
@@ -1308,10 +1326,37 @@ def _refine_cut(pcm, lo, hi, sr):
 
 
 def _gap_cut(pcm, aligned, i, sr):
-    lo, hi = aligned[i][2], aligned[i + 1][1]
-    if hi <= lo:
-        return (lo + hi) // 2
-    return _refine_cut(pcm, lo, hi, sr)
+    """Cut point between word i and i+1 under a QUIETNESS CONTRACT: the chosen
+    sample must sit in a genuine dip, because a faded amputation is still an
+    amputation. The window widens once if alignment drifted; if no true dip is
+    reachable, ok=False and the caller must fall back rather than cut speech."""
+    body = float(np.sqrt(np.mean(pcm.astype(np.float64) ** 2))) or 1.0
+    thr = max(0.10 * body, 60.0)
+    w = max(1, sr // 1000)
+    pad0 = int(0.04 * sr)
+    for pad in (pad0, pad0 + int(0.12 * sr)):
+        lo = max(0, int(aligned[i][2]) - pad)
+        hi = min(len(pcm), int(aligned[i + 1][1]) + pad)
+        if hi - lo < sr // 100:
+            continue
+        seg = np.abs(pcm[lo:hi].astype(np.float32))
+        sm = np.convolve(seg, np.ones(w) / w, mode="same")
+        mask = sm <= thr
+        if mask.any():
+            # cut at the CENTER of the longest quiet run — mid-dip, so the word's
+            # natural decay stays with its own slice and the next slice opens clean
+            best = (-1, -1); a = None
+            for k in range(len(mask) + 1):
+                if k < len(mask) and mask[k]:
+                    if a is None:
+                        a = k
+                elif a is not None:
+                    if k - a > best[1] - best[0]:
+                        best = (a, k)
+                    a = None
+            return lo + (best[0] + best[1]) // 2, True
+    lo, hi = int(aligned[i][2]), int(aligned[i + 1][1])
+    return max(0, (lo + hi) // 2), False
 
 
 def _fade_edges(pcm, sr, ms=8):
@@ -1379,10 +1424,13 @@ def _word_surgery(entry, old_item, new_item, sel_start, sel_end, payload, status
     if aligned is None:
         return None
 
-    def cut_after(al, i, buf):   # boundary between word i and i+1, at the energy valley
-        return _gap_cut(buf, al, i, sr)
+    def cut_after(al, i, buf):   # boundary between word i and i+1, in a true dip
+        c, ok = _gap_cut(buf, al, i, sr)
+        return c if ok else None
     a_cut = 0 if pre_w == 0 else cut_after(aligned, pre_w - 1, old_pcm)
     b_cut = len(old_pcm) if suf_w == 0 else cut_after(aligned, len(old_words) - suf_w - 1, old_pcm)
+    if a_cut is None or b_cut is None:
+        return None   # no quiet boundary around the edit → resynthesize the clause plainly
     mid_words = new_words[pre_w:len(new_words) - suf_w]
 
     def synth(words):
@@ -1475,7 +1523,8 @@ def _cbx_patch_middle(entry, new_items, pre, suf, payload, status):
             return 0
         if word_idx >= len(aligned):
             return len(pcm)
-        return _gap_cut(pcm, aligned, word_idx - 1, sr)
+        c, ok = _gap_cut(pcm, aligned, word_idx - 1, sr)
+        return c if ok else -1
     k = 0
     lo_words = counts[0] if ctx_l else 0
     pos = lo_words
