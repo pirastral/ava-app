@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 60
-BUILD_FA = "\u06f6\u06f0"
+BUILD = 62
+BUILD_FA = "\u06f6\u06f2"
 
 
 def _diag(tag, **kv):
@@ -503,11 +503,54 @@ def piper_worker_main(task_path: str) -> None:
                                                   encoding="utf-8")
 
 
+_VOICE_TRUE_SR = {"mana": 44100, "gyro": 22050, "amir": 22050}
+
+
+def _voice_config_guard(voice_key, onnx, url, status):
+    """Root cause of the mana corruption (measured, log-confirmed): the local
+    voice CONFIG declared 22050 while the mana model is a 44100 voice — piper
+    then conditions the vocoder with wrong frame math and the output itself
+    comes out spectrum-displaced. Verify the declared rate against the known
+    truth; repair by re-download, and if upstream itself is wrong, rewrite the
+    local config's sample_rate to the measured-true value."""
+    want = _VOICE_TRUE_SR.get(voice_key)
+    if not want:
+        return
+    cfg = Path(str(onnx) + ".json")
+    def declared():
+        try:
+            d = json.loads(cfg.read_text(encoding="utf-8"))
+            return d, (d.get("audio", {}) or {}).get("sample_rate") or d.get("sample_rate")
+        except Exception:
+            return None, None
+    d, sr = declared()
+    if sr == want:
+        return
+    _diag("voice_config", voice=voice_key, declared=sr, want=want, action="redownload")
+    status(f"پیکربندی صدای {voice_key} نادرست بود — در حال ترمیم…")
+    for p in (cfg, onnx):
+        try:
+            p.unlink()
+        except OSError:
+            pass
+    _download(url, onnx, status, f"صدای {voice_key} (~۶۰ مگابایت)")
+    _download(url + ".json", cfg, status, "پیکربندی صدا")
+    d, sr = declared()
+    if sr == want or d is None:
+        return
+    _diag("voice_config", voice=voice_key, declared=sr, want=want, action="rewrite")
+    if "audio" in d and isinstance(d["audio"], dict):
+        d["audio"]["sample_rate"] = want
+    d["sample_rate"] = want
+    cfg.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+
+
 def piper_pcm(voice_key, segments, speed, noise_scale, noise_w, status):
     url = PIPER_VOICES[voice_key]
     onnx = MODELS_DIR / url.rsplit("/", 1)[-1]
     _download(url, onnx, status, f"صدای {voice_key} (~۶۰ مگابایت)")
     _download(url + ".json", Path(str(onnx) + ".json"), status, "پیکربندی صدا")
+    _voice_config_guard(voice_key, onnx, url, status)
 
     status("در حال ساخت گفتار…")
     segments = [({"t": _strip_orphan_marks(s["t"])} if "t" in s else s) for s in segments]
@@ -682,6 +725,31 @@ _CBX_JUNK = re.compile(r"[\[\]{}<>|~^*_#@$%&+=\\\u2010-\u2027\u2030-\u205E]")
 
 
 _EZAFE_TAIL = re.compile("\u0650(?=[\\s\u200c]*(?:$|[.!?\u061f\u061b\u060c\u2026]))")
+
+
+def _pause_join(items):
+    """Continuous-mode spoken string, pause-aware. A pause tag of 0.5 s or
+    more is a full stop in speech: join with «.» so the model genuinely halts
+    (sentence-final intonation is linguistically CORRECT before a real pause)
+    and leaves absolute silence to cut in. Micro-pauses (… —) join with «؛».
+    An ezafe-tailed clause always binds forward with a plain space."""
+    out, prev_t, pending = "", None, None
+    for i in items:
+        if i["kind"] == "p":
+            pending = max(pending or 0.0, i["sec"])
+            continue
+        if prev_t is not None:
+            if _EZAFE_TAIL.search(prev_t):
+                out += " "
+            elif prev_t.rstrip() and prev_t.rstrip()[-1] in ".!?؟؛،…":
+                out += " "  # clause already ends in punctuation — no doubling
+            elif pending is not None and pending >= 0.5:
+                out += ". "
+            else:
+                out += "؛ "
+        out += i["text"]
+        prev_t, pending = i["text"], None
+    return out
 
 
 def _ezafe_join(texts):
@@ -1181,8 +1249,8 @@ def _assemble(entry):
     for i in entry["items"]:
         if i["kind"] == "p":
             tone = i.get("pcm")
-            if isinstance(tone, np.ndarray) and tone.dtype == np.int16 and len(tone) == int(sr * i["sec"]):
-                out.append(tone)
+            if isinstance(tone, np.ndarray) and tone.dtype == np.int16 and len(tone) > 0:
+                out.append(tone)  # budgeted fill: natural edges + fill = the tag's promise
             else:
                 out.append(np.zeros(int(sr * i["sec"]), dtype=np.int16))
         else:
@@ -1250,7 +1318,7 @@ def _cbx_continuous(items, payload, status):
     then cut the finished audio at the tag positions via alignment and let
     the requested silences be spliced in. Returns sr, or None to fall back."""
     t_items = [i for i in items if i["kind"] == "t"]
-    spoken = _cbx_sanitize(_ezafe_join([i["text"] for i in t_items]))
+    spoken = _cbx_sanitize(_pause_join(items))
     if not spoken:
         return None
     _mem_preflight(status)
@@ -1280,11 +1348,15 @@ def _cbx_continuous(items, payload, status):
     for k, i in enumerate(t_items):
         i["pcm"] = _fade_asym(pcm[cuts[k]:cuts[k + 1]].copy(), sr)
     tk = 0
-    for i in items:
+    prev_t = None
+    for idx, i in enumerate(items):
         if i["kind"] == "t":
             tk += 1
+            prev_t = i
         elif 0 < tk < len(cuts):
-            i["pcm"] = _pause_fill(pcm, cuts[tk], sr, i["sec"])
+            nxt_t = next((j for j in items[idx + 1:] if j["kind"] == "t"), None)
+            sec_fill = _budget_pause(prev_t, i, nxt_t, sr)
+            i["pcm"] = _pause_fill(pcm, cuts[tk], sr, sec_fill)
     status("مکث‌ها با هم‌ترازی در جای نشانه‌ها بریده شدند — متن یک‌جا و طبیعی خوانده شد.")
     return sr
 
@@ -1522,6 +1594,30 @@ def _zc_snap(pcm, pos, sr, radius_ms=2.0):
     return int(cand[np.argmin(np.abs(cand - pos))])
 
 
+def _unvoiced_at(pcm, pos, sr):
+    """Quiet is not unvoiced: a soft voiced trail smooths below the energy
+    threshold and still carries pitch — cutting there clips the word. Gate
+    EVERY accepted cut on the absence of periodicity around the point.
+    The window's two HALVES are tested separately as well: at a soft-voice /
+    loud-onset transition the loud side dominates a full-window correlation
+    and drowns the quiet side's pitch (measured: true 150 Hz collapsing to
+    0.26). Voice on either side of the knife means the knife is in voice."""
+    a, b = max(0, pos - int(0.025 * sr)), min(len(pcm), pos + int(0.025 * sr))
+    for s0, s1 in ((a, b), (a, pos), (pos, b)):
+        seg = pcm[s0:s1].astype(np.float64)
+        if len(seg) < int(0.015 * sr):
+            continue
+        seg = seg - seg.mean()
+        if float(np.sqrt(np.mean(seg ** 2))) < 60.0:
+            continue  # effectively digital silence — nothing to voice
+        ac = np.correlate(seg, seg, "full")[len(seg) - 1:]
+        ac = ac / (ac[0] + 1e-12)
+        l1, l2 = int(sr / 400), min(int(sr / 70), len(ac) - 1)
+        if l2 > l1 and float(np.max(ac[l1:l2])) >= 0.5:
+            return False
+    return True
+
+
 def _gap_cut(pcm, aligned, i, sr):
     """Cut point between word i and i+1 under a QUIETNESS CONTRACT: the chosen
     sample must sit in a genuine dip, because a faded amputation is still an
@@ -1535,7 +1631,7 @@ def _gap_cut(pcm, aligned, i, sr):
     w = max(1, sr // 50)
     min_run = int(0.012 * sr)  # longer than any glottal cycle (80 Hz -> 12.5 ms period)
     pad0 = int(0.04 * sr)
-    valley = (None, None)  # best soft-knee candidate across both pad widths
+    valley = (None, None, None, None)  # (abs_pos, level, pass_lo, pass_sm)
     for pad in (pad0, pad0 + int(0.12 * sr)):
         lo = max(0, int(aligned[i][2]) - pad)
         hi = min(len(pcm), int(aligned[i + 1][1]) + pad)
@@ -1557,23 +1653,36 @@ def _gap_cut(pcm, aligned, i, sr):
                         best = (a, k)
                     a = None
             if best[1] - best[0] >= min_run:
-                # the word's decay occupies the FRONT of the quiet run — a
-                # center cut bisects it and every fade then reads as
-                # truncation (measured: voicing 0.88 at the cut). Cut where
-                # smoothed energy bottoms out: the decay is complete there.
-                j = best[0] + int(np.argmin(sm[best[0]:best[1]]))
-                return _zc_snap(pcm, lo + j, sr), True
+                # the raw energy minimum hugs the run's leading edge, right
+                # where the word's decay ends — a voicing window there reaches
+                # back into speech. Choose the most INTERIOR point of the run
+                # that is both under threshold and verifiably unvoiced.
+                step = max(1, int(0.005 * sr))
+                mid = (best[0] + best[1]) // 2
+                cands = sorted(range(best[0], best[1], step), key=lambda g: abs(g - mid))
+                for g in cands:
+                    if sm[g] <= thr and _unvoiced_at(pcm, lo + g, sr):
+                        return _zc_snap(pcm, lo + g, sr), True
+                # no point in this run clears the voice gate — not a cut region
             # quiet moments existed but none long enough to be real silence
         e = w // 2 + 1  # 'same'-mode convolution zero-pads the edges -> fake dips there
         if len(sm) > 2 * e:
             j = e + int(np.argmin(sm[e:len(sm) - e]))
             if valley[1] is None or sm[j] < valley[1]:
-                valley = (lo + j, float(sm[j]))
-    if valley[0] is not None and valley[1] <= 0.35 * body:
-        # no true silence, but a genuine smoothed-energy valley (a 20 ms
-        # average cannot dip inside held voicing) — a softened landing there
-        # beats discarding continuous mode for fragment babble
-        return _zc_snap(pcm, valley[0], sr), True
+                valley = (lo + j, float(sm[j]), lo, sm)
+    if valley[0] is not None and valley[1] <= 0.40 * body:
+        # a valley may only be cut if it is genuinely UNVOICED — measured
+        # defect: soft-knee cuts landed in glided speech at voicing 0.75-0.87
+        # and clipped word ends. Voice is never cut; refusal falls back.
+        # Scan the whole sub-40% region nearest the quietest point first —
+        # the raw argmin hugs edges where a voicing window touches speech.
+        vlo, vsm = valley[2], valley[3]
+        e2 = w // 2 + 1
+        ok_lvl = [g for g in range(e2, len(vsm) - e2, max(1, int(0.005 * sr)))
+                  if vsm[g] <= 0.40 * body]
+        for g in sorted(ok_lvl, key=lambda g: abs(vlo + g - valley[0])):
+            if _unvoiced_at(pcm, vlo + g, sr):
+                return _zc_snap(pcm, vlo + g, sr), True
     lo, hi = int(aligned[i][2]), int(aligned[i + 1][1])
     return max(0, (lo + hi) // 2), False
 
@@ -1726,43 +1835,69 @@ def _stretch_dip(src_pcm, cut_pos, sr, sec):
         return None
 
 
+def _edge_quiet(pcm, sr, leading):
+    """Length of near-silence at a slice's edge (20 ms smoothed, 2% body)."""
+    if len(pcm) < 64:
+        return 0
+    body = float(np.sqrt(np.mean(pcm.astype(np.float64) ** 2))) or 1.0
+    thr = max(60.0, 0.02 * body)
+    w = max(1, sr // 50)
+    x = np.abs(pcm.astype(np.float32))
+    sm = np.convolve(x, np.ones(w, dtype=np.float32) / w, mode="same")
+    n = 0
+    it = range(len(sm)) if leading else range(len(sm) - 1, -1, -1)
+    for k in it:
+        if sm[k] > thr:
+            break
+        n += 1
+    return n
+
+
+def _budget_pause(prev_item, p_item, next_item, sr):
+    """The model's own boundary silence plus the inserted silence must SUM to
+    the tag's promise — with «.» joins the natural gap alone runs 200-400 ms
+    and naive insertion made a [مکث] last 0.7-0.9 s. Keep 40 ms of natural
+    edge on each side, trim the excess, insert exactly the remainder."""
+    M = int(0.040 * sr)
+    kept = 0
+    for item, lead in ((prev_item, False), (next_item, True)):
+        p = None if item is None else item.get("pcm")
+        if not isinstance(p, np.ndarray) or len(p) < 4 * M:
+            kept += 0
+            continue
+        q = _edge_quiet(p, sr, lead)
+        keep = min(q, M)
+        trim = q - keep
+        if trim > int(0.010 * sr):
+            item["pcm"] = p[trim:] if lead else p[:len(p) - trim]
+            _diag("pause_budget_trim", ms=int(1000 * trim / sr), edge="lead" if lead else "trail")
+        kept += keep
+    return max(0.05, p_item["sec"] - kept / sr)
+
+
 def _pause_fill(src_pcm, cut_pos, sr, sec):
-    """A pause is not a substance stretched to fit its container. It is:
-      [ breath EVENT | near-silent bed ......... | re-entry rise ]
-    The event is FIXED-SIZE (180 ms of the model's own exhale, normalized by
-    WSOLA from whatever the harvest yielded) and identical in character for
-    every pause length — a [مکث بلند] simply has a longer near-silent middle,
-    never more breath. Deterministic end to end: no randomness anywhere."""
+    """The user's design, adopted as the contract: when the cut sits in the
+    model's ABSOLUTE silence (the normal case now that pause tags end
+    sentences), the pause is pure timed digital silence — silence against
+    silence has no cliff and nothing injected can stutter. Only when a cut
+    had to land on a nonzero floor does a low matched tone (no event, no
+    structure) bridge the texture. Deterministic in both branches."""
     n_out = int(sr * sec)
-    EVENT, RISE, GAIN_EV, BED, GAIN_RISE = int(0.180 * sr), int(0.080 * sr), 0.8, 0.10, 0.45
     if n_out <= 0:
         return np.zeros(0, dtype=np.int16)
-    ev_n = min(EVENT, max(1, int(n_out * 0.5)))
-    rise_n = min(RISE, max(1, int(n_out * 0.25)))
-    event = _stretch_dip(src_pcm, cut_pos, sr, ev_n / sr)
-    if event is None or len(event) != ev_n:
-        event = _room_tone(src_pcm, cut_pos, sr, ev_n / sr)
-    event = (event.astype(np.float32) * GAIN_EV)
-    ev_rms = float(np.sqrt(np.mean(event.astype(np.float64) ** 2))) or 1.0
-    bed_n = n_out - ev_n - rise_n
-    if bed_n > 0:
-        bed = _room_tone(src_pcm, cut_pos, sr, bed_n / sr).astype(np.float32)
-        b_rms = float(np.sqrt(np.mean(bed.astype(np.float64) ** 2))) or 1.0
-        bed *= (BED * ev_rms) / b_rms
-    else:
-        bed = np.zeros(0, dtype=np.float32)
-    rise = _room_tone(src_pcm, cut_pos, sr, rise_n / sr).astype(np.float32)
-    r_rms = float(np.sqrt(np.mean(rise.astype(np.float64) ** 2))) or 1.0
-    rise *= (GAIN_RISE * ev_rms) / r_rms
-    rise *= np.linspace(BED / max(GAIN_RISE, 1e-6), 1.0, len(rise), dtype=np.float32).clip(0, 1)
-    out = np.concatenate([event, bed, rise])[:n_out]
-    xf = min(int(0.015 * sr), max(1, ev_n // 4))
-    t = np.linspace(0, np.pi / 2, xf, dtype=np.float32)
-    if len(out) > 2 * xf:
-        a = ev_n - xf
-        if 0 < a and a + xf <= len(out) and bed_n > 0:
-            out[a:a + xf] *= np.cos(t) ** 2 * (1 - BED) + BED  # event settles into bed
-    return np.clip(out, -32768, 32767).astype(np.int16)
+    a = max(0, cut_pos - int(0.010 * sr))
+    b = min(len(src_pcm), cut_pos + int(0.010 * sr))
+    local = float(np.sqrt(np.mean(src_pcm[a:b].astype(np.float64) ** 2))) if b > a else 0.0
+    body = float(np.sqrt(np.mean(src_pcm.astype(np.float64) ** 2))) or 1.0
+    if local < max(80.0, 0.02 * body):
+        return np.zeros(n_out, dtype=np.int16)
+    tone = _room_tone(src_pcm, cut_pos, sr, sec).astype(np.float32)
+    t_rms = float(np.sqrt(np.mean(tone.astype(np.float64) ** 2))) or 1.0
+    tone *= min(1.0, local / t_rms)
+    fade = min(int(0.120 * sr), n_out // 3)
+    if fade > 1:
+        tone[-fade:] *= np.cos(np.linspace(0, np.pi / 2, fade, dtype=np.float32)) ** 2
+    return np.clip(tone, -32768, 32767).astype(np.int16)
 
 
 def _fade_asym(pcm, sr, in_ms=12, out_ms=15):
@@ -1971,16 +2106,16 @@ def _cbx_patch_middle(entry, new_items, pre, suf, payload, status):
         i["pcm"] = _fade_asym(pcm[a:b].copy(), sr)
         pos += 1
     tj = -1
-    for i in mid:
+    prev_t = None
+    for idx, i in enumerate(mid):
         if i["kind"] == "t":
             tj += 1
+            prev_t = i
         elif i["kind"] == "p":
-            if tj < 0:
-                i["pcm"] = _pause_fill(pcm, planned[0][0], sr, i["sec"])
-            elif tj + 1 < len(planned):
-                i["pcm"] = _pause_fill(pcm, planned[tj][1], sr, i["sec"])
-            else:
-                i["pcm"] = _pause_fill(pcm, planned[-1][1], sr, i["sec"])
+            cutp = planned[0][0] if tj < 0 else (planned[tj][1] if tj + 1 < len(planned) else planned[-1][1])
+            nxt_t = next((j for j in mid[idx + 1:] if j["kind"] == "t"), None)
+            sec_fill = _budget_pause(prev_t, i, nxt_t, sr)
+            i["pcm"] = _pause_fill(pcm, cutp, sr, sec_fill)
     status("قطعهٔ کوتاه با متن همسایه یک‌جا خوانده و با هم‌ترازی جدا شد.")
     return True
 
@@ -2064,6 +2199,15 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
                     p = i.get("pcm")
                     if p is not None and len(p) and _band_displaced(p, sr2):
                         _diag("band_displaced_retry", engine=payload.get("engine"))
+                        vk = payload.get("engine")
+                        u = PIPER_VOICES.get(vk)
+                        if u:
+                            for q in (MODELS_DIR / u.rsplit("/", 1)[-1],
+                                      Path(str(MODELS_DIR / u.rsplit("/", 1)[-1]) + ".json")):
+                                try:
+                                    q.unlink()
+                                except OSError:
+                                    pass
                         _synth_clauses(middle, payload, status)
                         bad = [j for j in middle if j.get("pcm") is not None
                                and len(j["pcm"]) and _band_displaced(j["pcm"], sr2)]
