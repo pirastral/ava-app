@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 68
-BUILD_FA = "\u06f6\u06f8"
+BUILD = 70
+BUILD_FA = "\u06f7\u06f0"
 
 
 def _diag(tag, **kv):
@@ -608,8 +608,46 @@ def _wav_pcm(wf):
     return pcm
 
 
+_PIPER_CARRIER = "این یک آزمایش است."
+
+
+def _piper_padded(voice_key, text, speed, noise_scale, noise_w, status):
+    """Field-proven (user observation): mana degenerates on SHORT inputs and
+    is clean on full sentences — long-form training data leaves tiny phoneme
+    sequences in an unlearned region of the model. Remedy: never let a short
+    text stand alone. Speak a carrier sentence first, let piper's
+    deterministic sentence stop create a guaranteed silence, extract the
+    target after it, discard the carrier."""
+    spoken = _PIPER_CARRIER + " " + text.strip()
+    pcm, sr = piper_pcm(voice_key, _pause_segments(spoken), speed, noise_scale, noise_w, status)
+    if pcm is None or not len(pcm):
+        return None, sr
+    runs = _silence_runs(pcm, sr, min_ms=100)
+    runs = [r for r in runs if r[2] > int(0.20 * sr)]
+    if not runs:
+        return None, sr
+    cutp = runs[0][2]
+    target = pcm[_zc_snap(pcm, cutp, sr):]
+    target = _sweep_stubs(_fade_edges(target.copy(), sr, ms=10), sr)
+    if len(target) < sr // 8 or _band_displaced(target, sr):
+        return None, sr
+    _diag("piper_padded", voice=voice_key, kept_s=round(len(target) / sr, 2))
+    return target, sr
+
+
 def piper_generate(voice_key, text, speed, noise_scale, noise_w, status):
     pcm, sr = piper_pcm(voice_key, _pause_segments(text), speed, noise_scale, noise_w, status)
+    if pcm is not None and len(pcm) and _band_displaced(pcm, sr):
+        _diag("piper_main_displaced", voice=voice_key, chars=len(text))
+        fixed, sr2 = _piper_padded(voice_key, text, speed, noise_scale, noise_w, status)
+        if fixed is None:
+            fixed = _demod_repair(pcm, sr)
+            sr2 = sr
+        if fixed is None:
+            raise RuntimeError(
+                "این صدا برای متن کوتاه خروجی خراب می‌دهد و ترمیم هم ممکن نشد — "
+                "متن را کمی بلندتر کنید (یک جملهٔ کامل) یا صدای دیگری برگزینید.")
+        pcm, sr = fixed, sr2
     return pcm_to_mp3(pcm, sr), sr
 
 
@@ -1206,7 +1244,8 @@ def _synth_clauses(items, payload, status):
         return 22050
     texts, live = [], []
     for i in t_items:
-        c = _cbx_sanitize(_despoken_tail_ezafe(i["text"])) if engine == "chatterbox" else i["text"].strip()
+        c = _cbx_sanitize(_despoken_tail_ezafe(i["text"])) if engine == "chatterbox" \
+            else i.pop("_synth_text", i["text"]).strip()
         if c:
             texts.append(c); live.append(i)
     sr = 24000 if engine == "chatterbox" else 22050
@@ -1417,7 +1456,7 @@ def _cbx_continuous(items, payload, status):
             _diag("cuts_by_silence", runs=len(runs), mode="nearest")
         if len(chosen) == B and all(chosen[k][2] < chosen[k + 1][2] for k in range(B - 1)):
             for r in chosen:
-                cuts.append(_zc_snap(pcm, r[2], sr))
+                cuts.append(_zc_snap(pcm, _fry_snap(pcm, r[2], sr), sr))
         else:
             chosen = None
     else:
@@ -1436,7 +1475,15 @@ def _cbx_continuous(items, payload, status):
         _diag("continuous_bail", reason="no_dip" if not ok_all else "slices_insane")
         return None   # no true dip to cut in → fragments with real pauses
     for k, i in enumerate(t_items):
-        i["pcm"] = _fade_asym(pcm[cuts[k]:cuts[k + 1]].copy(), sr)
+        # boundary grade decides the dressing: cuts in true silence keep the
+        # short safety fade; VOICED cuts (micro-sentence glide, measured at
+        # 0.57-0.69 voicing) get a long 40 ms landing and a 20 ms rise —
+        # when clean surgery is impossible, graceful surgery is mandatory.
+        q_out = _voicing_score(pcm, cuts[k + 1], sr) if k + 1 < len(cuts) - 1 else 0.0
+        q_in = _voicing_score(pcm, cuts[k], sr) if k > 0 else 0.0
+        i["pcm"] = _fade_asym(pcm[cuts[k]:cuts[k + 1]].copy(), sr,
+                              in_ms=20 if q_in >= 0.4 else 12,
+                              out_ms=40 if q_out >= 0.4 else 15)
     tk = 0
     prev_t = None
     for idx, i in enumerate(items):
@@ -1667,6 +1714,25 @@ def _refine_cut(pcm, lo, hi, sr):
     return lo + int(np.argmin(sm))
 
 
+def _fry_snap(pcm, pos, sr):
+    """If the neighborhood of a cut carries pulse structure (fry), move the
+    cut into the inter-pulse floor right AFTER a pulse's decay — a cut
+    landing mid-pulse is the sharpest stutter the app can produce."""
+    a, b = max(0, pos - int(0.030 * sr)), min(len(pcm), pos + int(0.030 * sr))
+    seg = pcm[a:b].astype(np.float64)
+    if len(seg) < 200:
+        return pos
+    sm = np.abs(seg)
+    k = max(1, sr // 200)
+    env = np.convolve(sm, np.ones(k) / k, mode="same")
+    floor = np.percentile(env, 25)
+    pk = np.percentile(env, 95)
+    if pk < 4 * max(floor, 40.0):
+        return pos  # no pulse structure here
+    j = int(np.argmin(env))
+    return a + j
+
+
 def _zc_snap(pcm, pos, sr, radius_ms=2.0):
     """Editors' rule: cuts belong on rising zero-crossings — a join at
     matching height and direction is silent, anywhere else the residual step
@@ -1810,6 +1876,41 @@ def _gap_cut(pcm, aligned, i, sr):
             return _zc_snap(pcm, vlo + g, sr), True
     lo, hi = int(aligned[i][2]), int(aligned[i + 1][1])
     return max(0, (lo + hi) // 2), False
+
+
+def _demod_repair(pcm, sr):
+    """The displaced mana output is speech MODULATED onto a high-band
+    carrier (earlier forensics recovered 93.8% of band energy back to
+    baseband by demodulation). Attempt the inverse: locate the carrier as
+    the spectral centroid of the high band, mix down, low-pass, and only
+    accept the result if it now looks like speech (band check passes and
+    real baseband energy exists). Anything less proves garbage: refuse."""
+    x = pcm.astype(np.float64)
+    n = len(x)
+    if n < sr // 4:
+        return None
+    spec = np.abs(np.fft.rfft(x * np.hanning(n))) ** 2
+    fr = np.fft.rfftfreq(n, 1 / sr)
+    hi = (fr > 5000)
+    if spec[hi].sum() <= spec[~hi].sum():
+        return None
+    fc = float((fr[hi] * spec[hi]).sum() / max(spec[hi].sum(), 1e-9))
+    t = np.arange(n) / sr
+    mixed = x * np.cos(2 * np.pi * fc * t) * 2.0
+    # simple FIR low-pass at 4 kHz
+    taps = 255
+    h = np.sinc(2 * 4000 / sr * (np.arange(taps) - (taps - 1) / 2)) * np.hamming(taps)
+    h /= h.sum()
+    y = np.convolve(mixed, h, mode="same")
+    peak = float(np.max(np.abs(y))) or 1.0
+    y = y * min(1.0, 28000.0 / peak)
+    out = np.clip(y, -32768, 32767).astype(np.int16)
+    spec2 = np.abs(np.fft.rfft(out.astype(np.float64) * np.hanning(n))) ** 2
+    base = spec2[(fr > 150) & (fr < 3500)].sum() / max(spec2.sum(), 1e-9)
+    if base < 0.5 or _band_displaced(out, sr):
+        return None
+    _diag("demod_repair", fc=int(fc), base=round(base, 2))
+    return out
 
 
 def _band_displaced(pcm, sr):
@@ -2100,17 +2201,31 @@ def _sweep_stubs(pcm, sr):
             merged[-1] = (merged[-1][0], i1)
         else:
             merged.append((i0, i1))
+    def _aperiodic(i0, i1):
+        seg = pcm[i0:i1].astype(np.float64)
+        if len(seg) < 200:
+            return True
+        seg = seg - seg.mean()
+        if float(np.sqrt(np.mean(seg ** 2))) < 60.0:
+            return True
+        ac = np.correlate(seg, seg, "full")[len(seg) - 1:]
+        ac = ac / (ac[0] + 1e-12)
+        l1, l2 = int(sr / 400), min(int(sr / 55), len(ac) - 1)
+        return l2 <= l1 or float(np.max(ac[l1:l2])) < 0.40
+
     changed = True
     while changed and len(merged) > 1:
         changed = False
         if (merged[-1][1] - merged[-1][0] < int(0.120 * sr)
-                and merged[-1][0] - merged[-2][1] >= int(0.150 * sr)):
+                and merged[-1][0] - merged[-2][1] >= int(0.150 * sr)
+                and _aperiodic(*merged[-1])):
             _diag("stub_sweep", edge="trail", ms=int(1000 * (merged[-1][1] - merged[-1][0]) / sr))
             pcm = pcm[:merged[-2][1] + int(0.040 * sr)]
             merged = merged[:-1]
             changed = True
         elif (merged[0][1] - merged[0][0] < int(0.120 * sr)
-                and merged[1][0] - merged[0][1] >= int(0.150 * sr)):
+                and merged[1][0] - merged[0][1] >= int(0.150 * sr)
+                and _aperiodic(*merged[0])):
             _diag("stub_sweep", edge="lead", ms=int(1000 * (merged[0][1] - merged[0][0]) / sr))
             cutp = max(0, merged[1][0] - int(0.040 * sr))
             pcm = pcm[cutp:]
@@ -2371,6 +2486,13 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
             except Exception:
                 done = False
         if not done:
+            # piper voices can clip the final phone of an utterance-final
+            # sentence; a trailing bare stop gives the phonemizer a following
+            # sentence boundary so the real final syllable is fully held.
+            last_t = next((i for i in reversed(new_items) if i["kind"] == "t"), None)
+            for i in middle:
+                if payload.get("engine") != "chatterbox" and i is last_t                         and not i["text"].rstrip().endswith("."):
+                    i["_synth_text"] = i["text"] + " ."
             sr2 = _synth_clauses(middle, payload, status)
             _diag("patch_clauses", engine=payload.get("engine"), sr2=sr2, entry_sr=entry["sr"])
             for i in middle:
@@ -2382,6 +2504,17 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
                 for i in middle:
                     p = i.get("pcm")
                     if p is not None and len(p) and _band_displaced(p, sr2):
+                        pad, _sp = _piper_padded(
+                            payload["engine"], i["text"],
+                            payload.get("speed", 1.0), payload.get("noise", 0.667),
+                            payload.get("noisew", 0.8), status)
+                        if pad is not None:
+                            i["pcm"] = pad
+                            continue
+                        fixed = _demod_repair(p, sr2)
+                        if fixed is not None:
+                            i["pcm"] = fixed
+                            continue
                         _diag("band_displaced_retry", engine=payload.get("engine"))
                         vk = payload.get("engine")
                         u = PIPER_VOICES.get(vk)
@@ -2393,8 +2526,15 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
                                 except OSError:
                                     pass
                         _synth_clauses(middle, payload, status)
-                        bad = [j for j in middle if j.get("pcm") is not None
-                               and len(j["pcm"]) and _band_displaced(j["pcm"], sr2)]
+                        bad = []
+                        for j in middle:
+                            p2 = j.get("pcm")
+                            if p2 is not None and len(p2) and _band_displaced(p2, sr2):
+                                fixed = _demod_repair(p2, sr2)
+                                if fixed is not None:
+                                    j["pcm"] = fixed
+                                else:
+                                    bad.append(j)
                         if bad:
                             raise RuntimeError(
                                 "خروجی این صدا دوبار پشت‌سرهم خراب از موتور بیرون آمد (طیف جابه‌جا). "

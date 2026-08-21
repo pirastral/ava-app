@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist (repo: github.com/pirastral/ava-app)
 ======================================================================
-This zip is the COMPLETE application source as of update 68.
+This zip is the COMPLETE application source as of update 70.
 Replace these files in the repo (paths identical):
 
   app.py            – window + API bridge + worker-mode entrypoints
