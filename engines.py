@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 70
-BUILD_FA = "\u06f7\u06f0"
+BUILD = 71
+BUILD_FA = "\u06f7\u06f1"
 
 
 def _diag(tag, **kv):
@@ -588,7 +588,10 @@ def piper_pcm(voice_key, segments, speed, noise_scale, noise_w, status):
             offs = [pcm[a:a + n].copy() for a, n in meta["offsets"]]
         except Exception:
             pass
-        return (pcm, sr) if offs is None else (pcm, sr, offs)
+        # a function that sometimes returns 2 values and sometimes 3 is a
+        # landmine (it detonated in the field as a raw unpack error on the
+        # user's screen). One shape, always: parts is None when absent.
+        return pcm, sr, offs
     finally:
         for p in (out.name, taskf.name, out.name + ".offsets.json"):
             try:
@@ -609,6 +612,7 @@ def _wav_pcm(wf):
 
 
 _PIPER_CARRIER = "این یک آزمایش است."
+_CBX_CARRIER = "این یک آزمایش است."
 
 
 def _piper_padded(voice_key, text, speed, noise_scale, noise_w, status):
@@ -619,7 +623,7 @@ def _piper_padded(voice_key, text, speed, noise_scale, noise_w, status):
     deterministic sentence stop create a guaranteed silence, extract the
     target after it, discard the carrier."""
     spoken = _PIPER_CARRIER + " " + text.strip()
-    pcm, sr = piper_pcm(voice_key, _pause_segments(spoken), speed, noise_scale, noise_w, status)
+    pcm, sr, _ = piper_pcm(voice_key, _pause_segments(spoken), speed, noise_scale, noise_w, status)
     if pcm is None or not len(pcm):
         return None, sr
     runs = _silence_runs(pcm, sr, min_ms=100)
@@ -636,7 +640,7 @@ def _piper_padded(voice_key, text, speed, noise_scale, noise_w, status):
 
 
 def piper_generate(voice_key, text, speed, noise_scale, noise_w, status):
-    pcm, sr = piper_pcm(voice_key, _pause_segments(text), speed, noise_scale, noise_w, status)
+    pcm, sr, _ = piper_pcm(voice_key, _pause_segments(text), speed, noise_scale, noise_w, status)
     if pcm is not None and len(pcm) and _band_displaced(pcm, sr):
         _diag("piper_main_displaced", voice=voice_key, chars=len(text))
         fixed, sr2 = _piper_padded(voice_key, text, speed, noise_scale, noise_w, status)
@@ -1244,8 +1248,9 @@ def _synth_clauses(items, payload, status):
         return 22050
     texts, live = [], []
     for i in t_items:
-        c = _cbx_sanitize(_despoken_tail_ezafe(i["text"])) if engine == "chatterbox" \
-            else i.pop("_synth_text", i["text"]).strip()
+        raw = i.pop("_synth_text", None)
+        c = (_cbx_sanitize(raw if raw is not None else _despoken_tail_ezafe(i["text"]))
+             if engine == "chatterbox" else (raw if raw is not None else i["text"]).strip())
         if c:
             texts.append(c); live.append(i)
     sr = 24000 if engine == "chatterbox" else 22050
@@ -1261,7 +1266,8 @@ def _synth_clauses(items, payload, status):
         else:
             res = piper_pcm(engine, [{"t": t} for t in texts], payload.get("speed", 1.0),
                             payload.get("noise", 0.667), payload.get("noisew", 0.8), status)
-        pcm, sr, parts = res if len(res) == 3 else (res[0], res[1], [res[0]])
+        pcm, sr, parts = res
+        parts = parts if parts is not None else [pcm]
         for i, p in zip(live, parts):
             i["pcm"] = p
     for i in t_items:
@@ -1423,6 +1429,49 @@ def _cbx_continuous(items, payload, status):
         _diag("continuous_bail", reason="align_none" if aligned is None else
               f"count_{len(aligned)}_vs_{sum(words_per)}")
         return None
+    # ---- CARRIER MODE for small chunks (field lesson of builds 68-70) ----
+    # Micro-sentences make the model glide: measured 0-9 ms of usable quiet,
+    # so EVERY cut lands in voice and no dressing saves it. The piper carrier
+    # proved the alternative: each short chunk is spoken behind a carrier
+    # sentence, the model's reliable stop after a LONG sentence yields true
+    # silence, the chunk is extracted after it, and chunks + timed zeros
+    # assemble without ever cutting flowing speech.
+    if any(len(i["text"].strip()) < 25 for i in t_items):
+        shadow = [dict(i) for i in t_items]
+        for sh in shadow:
+            sh["_synth_text"] = _CBX_CARRIER + " " + _despoken_tail_ezafe(sh["text"])
+        sr_c = _synth_clauses(shadow, payload, status)
+        okc = True
+        for i, sh in zip(t_items, shadow):
+            p = sh.get("pcm")
+            if p is None or not len(p):
+                okc = False
+                break
+            runs_c = [r for r in _silence_runs(p, sr_c, min_ms=90)
+                      if r[2] > int(0.25 * sr_c)]
+            if not runs_c:
+                okc = False
+                break
+            tgt = p[_zc_snap(p, _fry_snap(p, runs_c[0][2], sr_c), sr_c):]
+            tgt = _sweep_stubs(_fade_edges(tgt.copy(), sr_c, ms=10), sr_c)
+            if len(tgt) < sr_c // 8:
+                okc = False
+                break
+            i["pcm"] = tgt
+        if okc:
+            _diag("carrier_mode", chunks=len(t_items))
+            prev_t = None
+            for idx, i in enumerate(items):
+                if i["kind"] == "t":
+                    prev_t = i
+                elif i["kind"] == "p":
+                    nxt_t = next((j for j in items[idx + 1:] if j["kind"] == "t"), None)
+                    sec_fill = _budget_pause(prev_t, i, nxt_t, sr_c)
+                    i["pcm"] = np.zeros(int(sr_c * sec_fill), dtype=np.int16)
+            return sr_c
+        _diag("carrier_mode", chunks=len(t_items), failed=True)
+        # extraction failed somewhere — fall through to the cutting pipeline
+
     # ---- SILENCE-FIRST boundary location (the field lesson of build 65) ----
     # wav2vec2's word timings drift on this audio; a drifted search window
     # made a cut land a quarter-second INSIDE the next word («دوس|تانِ»,
@@ -2414,6 +2463,22 @@ def _cbx_patch_middle(entry, new_items, pre, suf, payload, status):
     return True
 
 
+def _fa_errors(fn):
+    def wrapped(*a, **k):
+        try:
+            return fn(*a, **k)
+        except RuntimeError:
+            raise
+        except Exception as e:
+            _diag("internal_error", where=fn.__name__, err=type(e).__name__, msg=str(e)[:120])
+            raise RuntimeError(
+                f"خطای داخلی برنامه رخ داد و ثبت شد ({type(e).__name__}). "
+                "لطفاً لاگ برنامه را بفرستید.")
+    wrapped.__name__ = fn.__name__
+    return wrapped
+
+
+@_fa_errors
 def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
     """Regenerate only the clauses that the edit/selection touched; every
     other clause's audio is reused bit-identical."""
@@ -2584,6 +2649,7 @@ def splice_gulps(ids, status) -> bytes:
     return pcm_to_mp3(np.concatenate(out), target)
 
 
+@_fa_errors
 def generate(payload, status) -> bytes:
     mp3, gid = generate_gulp(payload, status)
     _GULP_PCM.pop(gid, None)
