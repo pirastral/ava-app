@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 71
-BUILD_FA = "\u06f7\u06f1"
+BUILD = 72
+BUILD_FA = "\u06f7\u06f2"
 
 
 def _diag(tag, **kv):
@@ -615,43 +615,14 @@ _PIPER_CARRIER = "این یک آزمایش است."
 _CBX_CARRIER = "این یک آزمایش است."
 
 
-def _piper_padded(voice_key, text, speed, noise_scale, noise_w, status):
-    """Field-proven (user observation): mana degenerates on SHORT inputs and
-    is clean on full sentences — long-form training data leaves tiny phoneme
-    sequences in an unlearned region of the model. Remedy: never let a short
-    text stand alone. Speak a carrier sentence first, let piper's
-    deterministic sentence stop create a guaranteed silence, extract the
-    target after it, discard the carrier."""
-    spoken = _PIPER_CARRIER + " " + text.strip()
-    pcm, sr, _ = piper_pcm(voice_key, _pause_segments(spoken), speed, noise_scale, noise_w, status)
-    if pcm is None or not len(pcm):
-        return None, sr
-    runs = _silence_runs(pcm, sr, min_ms=100)
-    runs = [r for r in runs if r[2] > int(0.20 * sr)]
-    if not runs:
-        return None, sr
-    cutp = runs[0][2]
-    target = pcm[_zc_snap(pcm, cutp, sr):]
-    target = _sweep_stubs(_fade_edges(target.copy(), sr, ms=10), sr)
-    if len(target) < sr // 8 or _band_displaced(target, sr):
-        return None, sr
-    _diag("piper_padded", voice=voice_key, kept_s=round(len(target) / sr, 2))
-    return target, sr
-
 
 def piper_generate(voice_key, text, speed, noise_scale, noise_w, status):
     pcm, sr, _ = piper_pcm(voice_key, _pause_segments(text), speed, noise_scale, noise_w, status)
     if pcm is not None and len(pcm) and _band_displaced(pcm, sr):
         _diag("piper_main_displaced", voice=voice_key, chars=len(text))
-        fixed, sr2 = _piper_padded(voice_key, text, speed, noise_scale, noise_w, status)
-        if fixed is None:
-            fixed = _demod_repair(pcm, sr)
-            sr2 = sr
-        if fixed is None:
-            raise RuntimeError(
-                "این صدا برای متن کوتاه خروجی خراب می‌دهد و ترمیم هم ممکن نشد — "
-                "متن را کمی بلندتر کنید (یک جملهٔ کامل) یا صدای دیگری برگزینید.")
-        pcm, sr = fixed, sr2
+        raise RuntimeError(
+            "این صدا جمله\u200cهای خیلی کوتاه را خراب می\u200cخواند (محدودیت خود مدل). "
+            "متن را به یک جملهٔ کامل برسانید یا صدای دیگری برگزینید.")
     return pcm_to_mp3(pcm, sr), sr
 
 
@@ -1470,7 +1441,29 @@ def _cbx_continuous(items, payload, status):
                     i["pcm"] = np.zeros(int(sr_c * sec_fill), dtype=np.int16)
             return sr_c
         _diag("carrier_mode", chunks=len(t_items), failed=True)
-        # extraction failed somewhere — fall through to the cutting pipeline
+        # (build 72) extraction failed -> per-chunk FRAGMENT synthesis. The
+        # cutting pipeline is FORBIDDEN for small chunks: its drifted
+        # fallback split a word in half in the field («دوس|تانِ»). A fragment
+        # chunk can sound plain; a torn word is always worse.
+        frag = [dict(i) for i in t_items]
+        for f in frag:
+            f.pop("_synth_text", None)
+            f["pcm"] = None
+        sr_f = _synth_clauses(frag, payload, status)
+        if all(f.get("pcm") is not None and len(f["pcm"]) for f in frag):
+            for i, f in zip(t_items, frag):
+                i["pcm"] = _sweep_stubs(_fade_edges(f["pcm"].copy(), sr_f, ms=10), sr_f)
+            prev_t = None
+            for idx, i in enumerate(items):
+                if i["kind"] == "t":
+                    prev_t = i
+                elif i["kind"] == "p":
+                    nxt_t = next((j for j in items[idx + 1:] if j["kind"] == "t"), None)
+                    sec_fill = _budget_pause(prev_t, i, nxt_t, sr_f)
+                    i["pcm"] = np.zeros(int(sr_f * sec_fill), dtype=np.int16)
+            _diag("carrier_mode", chunks=len(t_items), mode="fragment_rescue")
+            return sr_f
+        return None
 
     # ---- SILENCE-FIRST boundary location (the field lesson of build 65) ----
     # wav2vec2's word timings drift on this audio; a drifted search window
@@ -1927,40 +1920,6 @@ def _gap_cut(pcm, aligned, i, sr):
     return max(0, (lo + hi) // 2), False
 
 
-def _demod_repair(pcm, sr):
-    """The displaced mana output is speech MODULATED onto a high-band
-    carrier (earlier forensics recovered 93.8% of band energy back to
-    baseband by demodulation). Attempt the inverse: locate the carrier as
-    the spectral centroid of the high band, mix down, low-pass, and only
-    accept the result if it now looks like speech (band check passes and
-    real baseband energy exists). Anything less proves garbage: refuse."""
-    x = pcm.astype(np.float64)
-    n = len(x)
-    if n < sr // 4:
-        return None
-    spec = np.abs(np.fft.rfft(x * np.hanning(n))) ** 2
-    fr = np.fft.rfftfreq(n, 1 / sr)
-    hi = (fr > 5000)
-    if spec[hi].sum() <= spec[~hi].sum():
-        return None
-    fc = float((fr[hi] * spec[hi]).sum() / max(spec[hi].sum(), 1e-9))
-    t = np.arange(n) / sr
-    mixed = x * np.cos(2 * np.pi * fc * t) * 2.0
-    # simple FIR low-pass at 4 kHz
-    taps = 255
-    h = np.sinc(2 * 4000 / sr * (np.arange(taps) - (taps - 1) / 2)) * np.hamming(taps)
-    h /= h.sum()
-    y = np.convolve(mixed, h, mode="same")
-    peak = float(np.max(np.abs(y))) or 1.0
-    y = y * min(1.0, 28000.0 / peak)
-    out = np.clip(y, -32768, 32767).astype(np.int16)
-    spec2 = np.abs(np.fft.rfft(out.astype(np.float64) * np.hanning(n))) ** 2
-    base = spec2[(fr > 150) & (fr < 3500)].sum() / max(spec2.sum(), 1e-9)
-    if base < 0.5 or _band_displaced(out, sr):
-        return None
-    _diag("demod_repair", fc=int(fc), base=round(base, 2))
-    return out
-
 
 def _band_displaced(pcm, sr):
     """Detector for the measured mana-patch corruption: speech displaced onto a
@@ -2349,14 +2308,11 @@ def _word_surgery(entry, old_item, new_item, sel_start, sel_end, payload, status
         _diag("surgery_synth", engine=engine, sr2=sr2, entry_sr=sr, n=len(pcm))
         out = _resample(pcm, sr2, sr)
         if engine != "chatterbox" and _band_displaced(out, sr):
-            _diag("band_displaced_retry", engine=engine)
-            res = piper_pcm(engine, [{"t": txt}], payload.get("speed", 1.0),
-                            payload.get("noise", 0.667), payload.get("noisew", 0.8), status)
-            out = _resample(res[0], res[1], sr)
-            if _band_displaced(out, sr):
-                raise RuntimeError(
-                    "خروجی این صدا دوبار پشت‌سرهم خراب از موتور بیرون آمد (طیف جابه‌جا). "
-                    "این اشکال ثبت شد — لطفاً لاگ برنامه را بفرستید.")
+            # (build 72) same honest contract as everywhere else: this is the
+            # model failing on a short sentence, not a transient to retry.
+            raise RuntimeError(
+                "این صدا جمله\u200cهای خیلی کوتاه را خراب می\u200cخواند (محدودیت خود مدل). "
+                "متن این بخش را به یک جملهٔ کامل برسانید یا صدای دیگری برگزینید.")
         return out
 
     if mid_words:
@@ -2551,14 +2507,10 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
             except Exception:
                 done = False
         if not done:
-            # piper voices can clip the final phone of an utterance-final
-            # sentence; a trailing bare stop gives the phonemizer a following
-            # sentence boundary so the real final syllable is fully held.
-            last_t = next((i for i in reversed(new_items) if i["kind"] == "t"), None)
-            for i in middle:
-                if payload.get("engine") != "chatterbox" and i is last_t                         and not i["text"].rstrip().endswith("."):
-                    i["_synth_text"] = i["text"] + " ."
             sr2 = _synth_clauses(middle, payload, status)
+            # (build 72) the former trailing-«.» padding is REMOVED: field
+            # audio proved piper SPEAKS a lone period as a word — the padding
+            # was itself the measured amir gibberish.
             _diag("patch_clauses", engine=payload.get("engine"), sr2=sr2, entry_sr=entry["sr"])
             for i in middle:
                 p = i.get("pcm")
@@ -2569,42 +2521,16 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
                 for i in middle:
                     p = i.get("pcm")
                     if p is not None and len(p) and _band_displaced(p, sr2):
-                        pad, _sp = _piper_padded(
-                            payload["engine"], i["text"],
-                            payload.get("speed", 1.0), payload.get("noise", 0.667),
-                            payload.get("noisew", 0.8), status)
-                        if pad is not None:
-                            i["pcm"] = pad
-                            continue
-                        fixed = _demod_repair(p, sr2)
-                        if fixed is not None:
-                            i["pcm"] = fixed
-                            continue
-                        _diag("band_displaced_retry", engine=payload.get("engine"))
-                        vk = payload.get("engine")
-                        u = PIPER_VOICES.get(vk)
-                        if u:
-                            for q in (MODELS_DIR / u.rsplit("/", 1)[-1],
-                                      Path(str(MODELS_DIR / u.rsplit("/", 1)[-1]) + ".json")):
-                                try:
-                                    q.unlink()
-                                except OSError:
-                                    pass
-                        _synth_clauses(middle, payload, status)
-                        bad = []
-                        for j in middle:
-                            p2 = j.get("pcm")
-                            if p2 is not None and len(p2) and _band_displaced(p2, sr2):
-                                fixed = _demod_repair(p2, sr2)
-                                if fixed is not None:
-                                    j["pcm"] = fixed
-                                else:
-                                    bad.append(j)
-                        if bad:
-                            raise RuntimeError(
-                                "خروجی این صدا دوبار پشت‌سرهم خراب از موتور بیرون آمد (طیف جابه‌جا). "
-                                "این اشکال ثبت شد — لطفاً لاگ برنامه را بفرستید.")
-                        break
+# (build 72) padded-retry and demodulation are REMOVED
+                        # from this ladder: piper synthesizes PER SENTENCE, so
+                        # a carrier cannot lengthen the failing sentence, and
+                        # the demod verifier shipped baseband noise to the
+                        # user's ears. A weights-level limitation gets an
+                        # honest instruction, not manufactured audio.
+                        raise RuntimeError(
+                            "این صدا جمله\u200cهای خیلی کوتاه را خراب می\u200cخواند (محدودیت خود مدل). "
+                            "متن این بخش را به یک جملهٔ کامل برسانید یا صدای دیگری برگزینید.")
+                        break  # unreachable after the raise; kept loop shape
             if sr2 != entry["sr"]:
                 for i in middle:
                     p = i.get("pcm")
