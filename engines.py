@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 58
-BUILD_FA = "\u06f5\u06f8"
+BUILD = 60
+BUILD_FA = "\u06f6\u06f0"
 
 
 def _diag(tag, **kv):
@@ -1557,7 +1557,12 @@ def _gap_cut(pcm, aligned, i, sr):
                         best = (a, k)
                     a = None
             if best[1] - best[0] >= min_run:
-                return _zc_snap(pcm, lo + (best[0] + best[1]) // 2, sr), True
+                # the word's decay occupies the FRONT of the quiet run — a
+                # center cut bisects it and every fade then reads as
+                # truncation (measured: voicing 0.88 at the cut). Cut where
+                # smoothed energy bottoms out: the decay is complete there.
+                j = best[0] + int(np.argmin(sm[best[0]:best[1]]))
+                return _zc_snap(pcm, lo + j, sr), True
             # quiet moments existed but none long enough to be real silence
         e = w // 2 + 1  # 'same'-mode convolution zero-pads the edges -> fake dips there
         if len(sm) > 2 * e:
@@ -1629,7 +1634,7 @@ def _room_tone(src_pcm, cut_pos, sr, sec):
     # at its natural level; scale down only a semi-voiced valley (>12% of the
     # utterance body RMS can carry pitch, and a pitched pause is a hum).
     body_all = float(np.sqrt(np.mean(src_pcm.astype(np.float64) ** 2))) or 1.0
-    cap = max(0.12 * body_all, 300.0)
+    cap = min(max(0.06 * body_all, 150.0), 450.0)
     if brms and brms > cap:
         tile *= cap / brms
     xf = int(0.010 * sr)
@@ -1663,16 +1668,33 @@ def _stretch_dip(src_pcm, cut_pos, sr, sec):
         w = max(1, sr // 50)
         x = np.abs(src_pcm.astype(np.float32))
         sm = np.convolve(x, np.ones(w, dtype=np.float32) / w, mode="same")
-        thr = 0.12 * body
+        # harvest the dip extent at 15% of body (real vocoder floors run
+        # 8-14% and must be reachable); the stutter guards are downstream:
+        # 20 ms edge trims, the pitch check, and the peak check — a snippet
+        # touching the word's decay edge gets its transients REPEATED by
+        # WSOLA (the measured stutter blip), so anything speech-like bails.
+        thr = 0.15 * body
         a = cut_pos
         while a > 0 and sm[a - 1] < thr and cut_pos - a < int(0.25 * sr):
             a -= 1
         b = cut_pos
         while b < len(sm) and sm[b] < thr and b - cut_pos < int(0.25 * sr):
             b += 1
-        if b - a < int(0.030 * sr):
+        a += int(0.020 * sr)
+        b -= int(0.020 * sr)
+        if b - a < int(0.050 * sr):
             return None
+        if (b - a) * 10 < int(sr * sec):
+            return None  # >10x stretch repeats material too audibly — use tone
         snippet = src_pcm[a:b].astype(np.float64) / 32768.0
+        if float(np.max(np.abs(snippet))) * 32768.0 > 0.35 * float(np.max(np.abs(src_pcm))):
+            return None  # a transient spike survived the walk — not breath
+        s0 = snippet - snippet.mean()
+        ac = np.correlate(s0, s0, "full")[len(s0) - 1:]
+        ac = ac / (ac[0] + 1e-12)
+        l1, l2 = int(sr / 400), min(int(sr / 70), len(ac) - 1)
+        if l2 > l1 and float(np.max(ac[l1:l2])) > 0.55:
+            return None  # pitched content survived the walk — not breath
         n_out = int(sr * sec)
         from audiotsm import wsola
         from audiotsm.io.array import ArrayReader, ArrayWriter
@@ -1688,7 +1710,7 @@ def _stretch_dip(src_pcm, cut_pos, sr, sec):
         while 0 < len(y) < n_out:
             y = np.concatenate([y, y[::-1][:n_out - len(y)]])
         y = y[:n_out] * 32768.0
-        cap = max(0.12 * body, 300.0)
+        cap = min(max(0.06 * body, 150.0), 450.0)
         r = float(np.sqrt(np.mean(y ** 2)))
         if r > cap:
             y *= cap / r
@@ -1705,16 +1727,49 @@ def _stretch_dip(src_pcm, cut_pos, sr, sec):
 
 
 def _pause_fill(src_pcm, cut_pos, sr, sec):
-    filled = _stretch_dip(src_pcm, cut_pos, sr, sec)
-    if filled is not None and len(filled) == int(sr * sec):
-        return filled
-    return _room_tone(src_pcm, cut_pos, sr, sec)
+    """A pause is not a substance stretched to fit its container. It is:
+      [ breath EVENT | near-silent bed ......... | re-entry rise ]
+    The event is FIXED-SIZE (180 ms of the model's own exhale, normalized by
+    WSOLA from whatever the harvest yielded) and identical in character for
+    every pause length — a [مکث بلند] simply has a longer near-silent middle,
+    never more breath. Deterministic end to end: no randomness anywhere."""
+    n_out = int(sr * sec)
+    EVENT, RISE, GAIN_EV, BED, GAIN_RISE = int(0.180 * sr), int(0.080 * sr), 0.8, 0.10, 0.45
+    if n_out <= 0:
+        return np.zeros(0, dtype=np.int16)
+    ev_n = min(EVENT, max(1, int(n_out * 0.5)))
+    rise_n = min(RISE, max(1, int(n_out * 0.25)))
+    event = _stretch_dip(src_pcm, cut_pos, sr, ev_n / sr)
+    if event is None or len(event) != ev_n:
+        event = _room_tone(src_pcm, cut_pos, sr, ev_n / sr)
+    event = (event.astype(np.float32) * GAIN_EV)
+    ev_rms = float(np.sqrt(np.mean(event.astype(np.float64) ** 2))) or 1.0
+    bed_n = n_out - ev_n - rise_n
+    if bed_n > 0:
+        bed = _room_tone(src_pcm, cut_pos, sr, bed_n / sr).astype(np.float32)
+        b_rms = float(np.sqrt(np.mean(bed.astype(np.float64) ** 2))) or 1.0
+        bed *= (BED * ev_rms) / b_rms
+    else:
+        bed = np.zeros(0, dtype=np.float32)
+    rise = _room_tone(src_pcm, cut_pos, sr, rise_n / sr).astype(np.float32)
+    r_rms = float(np.sqrt(np.mean(rise.astype(np.float64) ** 2))) or 1.0
+    rise *= (GAIN_RISE * ev_rms) / r_rms
+    rise *= np.linspace(BED / max(GAIN_RISE, 1e-6), 1.0, len(rise), dtype=np.float32).clip(0, 1)
+    out = np.concatenate([event, bed, rise])[:n_out]
+    xf = min(int(0.015 * sr), max(1, ev_n // 4))
+    t = np.linspace(0, np.pi / 2, xf, dtype=np.float32)
+    if len(out) > 2 * xf:
+        a = ev_n - xf
+        if 0 < a and a + xf <= len(out) and bed_n > 0:
+            out[a:a + xf] *= np.cos(t) ** 2 * (1 - BED) + BED  # event settles into bed
+    return np.clip(out, -32768, 32767).astype(np.int16)
 
 
-def _fade_asym(pcm, sr, in_ms=12, out_ms=35):
-    """Boundary fades shaped like speech: quick natural attack in, long
-    landing out (measured defect: re-entries jumping 0.02->0.33 FS in 15 ms
-    and decays truncated at 2-3% FS straight onto vacuum)."""
+def _fade_asym(pcm, sr, in_ms=12, out_ms=15):
+    """Boundary fades shaped like speech: quick attack in, short safety
+    landing out. The landing is deliberately SHORT: cuts now sit at the
+    energy minimum where decay is already complete, and a long fade there
+    reaches back INTO the decay and reads as truncation."""
     out = pcm.astype(np.float32)
     n_in = min(int(sr * in_ms / 1000), len(out) // 2)
     n_out = min(int(sr * out_ms / 1000), len(out) // 2)
