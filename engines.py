@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 62
-BUILD_FA = "\u06f6\u06f2"
+BUILD = 64
+BUILD_FA = "\u06f6\u06f4"
 
 
 def _diag(tag, **kv):
@@ -536,13 +536,11 @@ def _voice_config_guard(voice_key, onnx, url, status):
     _download(url, onnx, status, f"صدای {voice_key} (~۶۰ مگابایت)")
     _download(url + ".json", cfg, status, "پیکربندی صدا")
     d, sr = declared()
-    if sr == want or d is None:
-        return
-    _diag("voice_config", voice=voice_key, declared=sr, want=want, action="rewrite")
-    if "audio" in d and isinstance(d["audio"], dict):
-        d["audio"]["sample_rate"] = want
-    d["sample_rate"] = want
-    cfg.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+    if sr != want:
+        # field-measured: forcing the rate does NOT heal the output — the
+        # defect lives in the model/runtime pairing, not the label. Record
+        # and proceed; the synthesis guard still refuses displaced audio.
+        _diag("voice_config", voice=voice_key, declared=sr, want=want, action="observe")
 
 
 def piper_pcm(voice_key, segments, speed, noise_scale, noise_w, status):
@@ -563,6 +561,12 @@ def piper_pcm(voice_key, segments, speed, noise_scale, noise_w, status):
         creation = {"creationflags": 0x08000000} if os.name == "nt" else {}
         proc = subprocess.run([sys.executable, "--piper-worker", taskf.name],
                               capture_output=True, timeout=600, **creation)
+        try:
+            for ln in (proc.stderr or b"").decode("utf-8", "ignore").splitlines():
+                if "[ava-diag]" in ln:
+                    sys.stderr.write(ln + "\n")
+        except Exception:
+            pass
         if proc.returncode != 0:
             tail = (proc.stderr or b"").decode("utf-8", "ignore").strip().splitlines()[-6:]
             raise RuntimeError("موتور صدای سبک خطا داد:\n" + "\n".join(tail) if tail
@@ -728,11 +732,12 @@ _EZAFE_TAIL = re.compile("\u0650(?=[\\s\u200c]*(?:$|[.!?\u061f\u061b\u060c\u2026
 
 
 def _pause_join(items):
-    """Continuous-mode spoken string, pause-aware. A pause tag of 0.5 s or
-    more is a full stop in speech: join with «.» so the model genuinely halts
-    (sentence-final intonation is linguistically CORRECT before a real pause)
-    and leaves absolute silence to cut in. Micro-pauses (… —) join with «؛».
-    An ezafe-tailed clause always binds forward with a plain space."""
+    """Continuous-mode spoken string, pause-aware. EVERY pause marker joins
+    with «.» — the one boundary the model reliably realizes as absolute
+    silence — and the markers differ only in the timed silence spliced in
+    (— 0.25 s, … 0.35 s, [مکث] 0.5 s, [مکث بلند] 1.2 s). One mechanism, four
+    durations, no boundary ever left to glide. An ezafe-tailed clause still
+    binds forward with a plain space; existing punctuation is never doubled."""
     out, prev_t, pending = "", None, None
     for i in items:
         if i["kind"] == "p":
@@ -743,7 +748,7 @@ def _pause_join(items):
                 out += " "
             elif prev_t.rstrip() and prev_t.rstrip()[-1] in ".!?؟؛،…":
                 out += " "  # clause already ends in punctuation — no doubling
-            elif pending is not None and pending >= 0.5:
+            elif pending is not None:
                 out += ". "
             else:
                 out += "؛ "
@@ -946,7 +951,8 @@ def chatterbox_pcm(text, exaggeration, cfg_weight, temperature, status, speed=1.
             _avail = psutil.virtual_memory().available // (1024 * 1024)
             # rss is the honest signal: macOS compresses/swaps to keep "avail"
             # looking fine while a leaking process swells — brake on OURSELVES
-            if _rss > _cbx_ceiling_mb(_rss, _avail) + 2000 or _avail < 800:
+            _swap = psutil.swap_memory().used // (1024 * 1024)
+            if _rss > _cbx_ceiling_mb(_rss, _avail) + 2000 or _avail < 800 or _swap > 12000:
                 raise RuntimeError(
                     f"حافظهٔ موتور در میانهٔ ساخت از حد گذشت ({faDigits(_rss // 1024)} گیگابایت) — "
                     "این بخش متوقف شد تا دستگاه قفل نشود؛ موتور تازه‌سازی می‌شود. "
@@ -981,6 +987,14 @@ def chatterbox_generate(text, exaggeration, cfg_weight, temperature, status, spe
 # Leaked memory cannot outlive its process — when the worker grows past the
 # threshold, it retires itself and a fresh one is spawned on the next request.
 # ---------------------------------------------------------------------------
+def _swap_used_mb():
+    try:
+        import psutil
+        return int(psutil.swap_memory().used // (1024 * 1024))
+    except Exception:
+        return 0
+
+
 def _cbx_ceiling_mb(rss_mb, avail_mb):
     """Two ceilings, whichever is LOWER wins.
     (1) The adaptive pool ceiling: 75% of (avail + rss) — shrinks on busy
@@ -1058,8 +1072,9 @@ def chatterbox_worker_main():
                 avail_mb = psutil.virtual_memory().available // (1024 * 1024)
             except Exception:
                 pass
-            recycle = rss > _cbx_ceiling_mb(rss, avail_mb) or \
-                      (avail_mb is not None and avail_mb < 1500)
+            recycle = (rss > _cbx_ceiling_mb(rss, avail_mb)
+                       or (avail_mb is not None and avail_mb < 1500)
+                       or _swap_used_mb() > 4000)
             sys.stdout.write(json.dumps({"type": "result", "path": f.name, "sr": sr,
                                          "rss_mb": rss, "recycle": recycle},
                                         ensure_ascii=False) + "\n")
@@ -1112,9 +1127,11 @@ def chatterbox_via_worker(req, status):
         if _cbx_proc is not None and _cbx_proc.poll() is None and _cbx_last_rss:
             over = _cbx_last_rss > _cbx_ceiling_mb(_cbx_last_rss, avail_mb)
             tight = avail_mb is not None and avail_mb < 1500
-            if over or tight:
+            swapped = _swap_used_mb() > 6000
+            if over or tight or swapped:
                 _diag("admission_recycle", rss=_cbx_last_rss, avail=avail_mb,
-                      reason="ceiling" if over else "low_avail")
+                      swap=_swap_used_mb(),
+                      reason="ceiling" if over else ("swap" if swapped else "low_avail"))
                 status("پاک‌سازی حافظهٔ موتور پیش از ساخت این بخش…")
                 try:
                     _cbx_proc.terminate()
@@ -1275,6 +1292,10 @@ def _mem_preflight(status):
         avail_mb = psutil.virtual_memory().available // (1024 * 1024)
     except Exception:
         avail_mb = None
+    if _swap_used_mb() > 10000:
+        raise RuntimeError(
+            f"حافظهٔ دستگاه به سواپ سنگین افتاده ({faDigits(_swap_used_mb() // 1024)} گیگابایت) — "
+            "پیش از ادامه، برنامه را ببندید و دوباره باز کنید تا حافظهٔ نشت‌کرده آزاد شود.")
     if avail_mb is not None and avail_mb < 2000:
         raise RuntimeError(
             f"حافظهٔ آزاد برای صدای چترباکس کافی نیست ({faDigits(avail_mb)} مگابایت). "
@@ -1602,7 +1623,7 @@ def _unvoiced_at(pcm, pos, sr):
     loud-onset transition the loud side dominates a full-window correlation
     and drowns the quiet side's pitch (measured: true 150 Hz collapsing to
     0.26). Voice on either side of the knife means the knife is in voice."""
-    a, b = max(0, pos - int(0.025 * sr)), min(len(pcm), pos + int(0.025 * sr))
+    a, b = max(0, pos - int(0.040 * sr)), min(len(pcm), pos + int(0.040 * sr))
     for s0, s1 in ((a, b), (a, pos), (pos, b)):
         seg = pcm[s0:s1].astype(np.float64)
         if len(seg) < int(0.015 * sr):
@@ -1612,8 +1633,14 @@ def _unvoiced_at(pcm, pos, sr):
             continue  # effectively digital silence — nothing to voice
         ac = np.correlate(seg, seg, "full")[len(seg) - 1:]
         ac = ac / (ac[0] + 1e-12)
-        l1, l2 = int(sr / 400), min(int(sr / 70), len(ac) - 1)
-        if l2 > l1 and float(np.max(ac[l1:l2])) >= 0.5:
+        l1, l2 = int(sr / 400), min(int(sr / 55), len(ac) - 1)
+        if l2 > l1 and float(np.max(ac[l1:l2])) >= 0.45:
+            return False
+        # fry is IRREGULAR — periodicity alone can miss it. Sparse strong
+        # pulses against a quiet floor are its other signature.
+        pk = float(np.max(np.abs(seg)))
+        rm = float(np.sqrt(np.mean(seg ** 2))) or 1.0
+        if pk > 1200.0 and pk / rm > 6.0:
             return False
     return True
 
@@ -1869,7 +1896,13 @@ def _budget_pause(prev_item, p_item, next_item, sr):
         keep = min(q, M)
         trim = q - keep
         if trim > int(0.010 * sr):
-            item["pcm"] = p[trim:] if lead else p[:len(p) - trim]
+            cutpt = trim if lead else len(p) - trim
+            if not _unvoiced_at(p, cutpt, sr):
+                trim = 0  # the trim boundary would sit in voice or fry — keep it all
+        if trim > int(0.010 * sr):
+            newp = p[trim:] if lead else p[:len(p) - trim]
+            # a trimmed edge is a fresh cut — it gets a fresh fade, or it clicks
+            item["pcm"] = _fade_edges(newp.copy(), sr, ms=10)
             _diag("pause_budget_trim", ms=int(1000 * trim / sr), edge="lead" if lead else "trail")
         kept += keep
     return max(0.05, p_item["sec"] - kept / sr)
