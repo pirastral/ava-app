@@ -13,3 +13,4 @@ psutil
 sentencepiece
 transformers
 chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox.git
+onnxruntime==1.16.3

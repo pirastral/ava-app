@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 65
-BUILD_FA = "\u06f6\u06f5"
+BUILD = 68
+BUILD_FA = "\u06f6\u06f8"
 
 
 def _diag(tag, **kv):
@@ -524,6 +524,11 @@ def _voice_config_guard(voice_key, onnx, url, status):
         except Exception:
             return None, None
     d, sr = declared()
+    if isinstance(d, dict):
+        _diag("voice_cfg_detail", voice=voice_key, sr=sr,
+              phoneme_type=d.get("phoneme_type"),
+              espeak=(d.get("espeak", {}) or {}).get("voice"),
+              num_symbols=d.get("num_symbols"))
     if sr == want:
         return
     _diag("voice_config", voice=voice_key, declared=sr, want=want, action="redownload")
@@ -1333,6 +1338,29 @@ def reset_gulps():
     _GULP_PCM.clear()
 
 
+def _silence_runs(pcm, sr, min_ms=70):
+    """All true-silence runs in the utterance: (start, end, center) of every
+    stretch where the 20 ms envelope stays under max(4% body, 60) for at
+    least min_ms. With «.» joins these are the model's own sentence stops."""
+    body = float(np.sqrt(np.mean(pcm.astype(np.float64) ** 2))) or 1.0
+    thr = max(60.0, 0.04 * body)
+    w = max(1, sr // 50)
+    sm = np.convolve(np.abs(pcm.astype(np.float32)), np.ones(w, dtype=np.float32) / w, mode="same")
+    runs, a = [], None
+    e = w // 2 + 1
+    for k in range(e, len(sm) - e):
+        if sm[k] <= thr:
+            if a is None:
+                a = k
+        elif a is not None:
+            if k - a >= int(min_ms * sr / 1000):
+                runs.append((a, k, (a + k) // 2))
+            a = None
+    if a is not None and (len(sm) - e) - a >= int(min_ms * sr / 1000):
+        runs.append((a, len(sm) - e, (a + len(sm) - e) // 2))
+    return runs
+
+
 def _cbx_continuous(items, payload, status):
     """Chatterbox babbles on the tiny fragments that pause tags create.
     Instead: speak the WHOLE text as one natural utterance (tags → commas),
@@ -1356,12 +1384,53 @@ def _cbx_continuous(items, payload, status):
         _diag("continuous_bail", reason="align_none" if aligned is None else
               f"count_{len(aligned)}_vs_{sum(words_per)}")
         return None
+    # ---- SILENCE-FIRST boundary location (the field lesson of build 65) ----
+    # wav2vec2's word timings drift on this audio; a drifted search window
+    # made a cut land a quarter-second INSIDE the next word («دوس|تانِ»,
+    # measured: 0.16 s left of a 0.5 s word, voicing 0.78 at the cut).
+    # Silence is the primary signal — with «.» joins the model leaves one
+    # true silence per boundary. Find them in the audio itself; alignment
+    # only breaks ties or fills in when a silence is missing.
+    B = len(t_items) - 1
+    runs = _silence_runs(pcm, sr)
     cuts, w, ok_all = [0], 0, True
-    for n in words_per[:-1]:
-        w += n
-        c, ok = _gap_cut(pcm, aligned, w - 1, sr)
-        ok_all = ok_all and ok
-        cuts.append(c)
+    if B > 0 and len(runs) >= B:
+        if len(runs) == B:
+            chosen = runs
+            _diag("cuts_by_silence", runs=len(runs), mode="exact")
+        else:
+            # more silences than boundaries: keep the B runs nearest the
+            # aligned boundary estimates, order-preserving
+            marks = []
+            wa = 0
+            for n in words_per[:-1]:
+                wa += n
+                marks.append((int(aligned[wa - 1][2]) + int(aligned[wa][1])) // 2)
+            avail = list(runs)
+            chosen = []
+            for m in marks:
+                pick = min(avail, key=lambda r: abs(r[2] - m))
+                chosen.append(pick)
+                avail = [r for r in avail if r[2] > pick[2]]
+                if not avail and len(chosen) < B:
+                    break
+            _diag("cuts_by_silence", runs=len(runs), mode="nearest")
+        if len(chosen) == B and all(chosen[k][2] < chosen[k + 1][2] for k in range(B - 1)):
+            for r in chosen:
+                cuts.append(_zc_snap(pcm, r[2], sr))
+        else:
+            chosen = None
+    else:
+        chosen = None
+    if chosen is None:
+        # fewer silences than boundaries — the model glided somewhere.
+        # Aligned-window graded cutting per boundary, as before.
+        _diag("cuts_by_silence", runs=len(runs), mode="fallback_aligned")
+        for n in words_per[:-1]:
+            w += n
+            c, ok = _gap_cut(pcm, aligned, w - 1, sr)
+            ok_all = ok_all and ok
+            cuts.append(c)
     cuts.append(len(pcm))
     if not ok_all or not _slices_sane(cuts, len(pcm)):
         _diag("continuous_bail", reason="no_dip" if not ok_all else "slices_insane")
@@ -2003,6 +2072,53 @@ def _crossfade_join(parts, sr, ms=15):
     return np.clip(out, -32768, 32767).astype(np.int16)
 
 
+def _sweep_stubs(pcm, sr):
+    """A patched clause must be ONE speech body. A detached micro-island at
+    an edge — measured in the field as a 0.10 s aperiodic blob sitting 0.32 s
+    after the real word — is surgery/synthesis debris, never language: no
+    Persian word is 120 ms of noise floating 150+ ms away from its clause.
+    Sweep such stubs off both edges, keeping 40 ms of natural silence."""
+    if len(pcm) < sr // 5:
+        return pcm
+    body = float(np.sqrt(np.mean(pcm.astype(np.float64) ** 2))) or 1.0
+    thr = max(60.0, 0.05 * body)
+    w = max(1, sr // 50)
+    sm = np.convolve(np.abs(pcm.astype(np.float32)), np.ones(w, dtype=np.float32) / w, mode="same")
+    isl, a = [], None
+    for k in range(len(sm)):
+        if sm[k] > thr:
+            if a is None:
+                a = k
+        elif a is not None:
+            isl.append((a, k))
+            a = None
+    if a is not None:
+        isl.append((a, len(sm)))
+    merged = []
+    for i0, i1 in isl:
+        if merged and i0 - merged[-1][1] < int(0.08 * sr):
+            merged[-1] = (merged[-1][0], i1)
+        else:
+            merged.append((i0, i1))
+    changed = True
+    while changed and len(merged) > 1:
+        changed = False
+        if (merged[-1][1] - merged[-1][0] < int(0.120 * sr)
+                and merged[-1][0] - merged[-2][1] >= int(0.150 * sr)):
+            _diag("stub_sweep", edge="trail", ms=int(1000 * (merged[-1][1] - merged[-1][0]) / sr))
+            pcm = pcm[:merged[-2][1] + int(0.040 * sr)]
+            merged = merged[:-1]
+            changed = True
+        elif (merged[0][1] - merged[0][0] < int(0.120 * sr)
+                and merged[1][0] - merged[0][1] >= int(0.150 * sr)):
+            _diag("stub_sweep", edge="lead", ms=int(1000 * (merged[0][1] - merged[0][0]) / sr))
+            cutp = max(0, merged[1][0] - int(0.040 * sr))
+            pcm = pcm[cutp:]
+            merged = [(a - cutp, b - cutp) for a, b in merged[1:]]
+            changed = True
+    return _fade_edges(pcm.copy(), sr, ms=10) if changed or True else pcm
+
+
 def _word_surgery(entry, old_item, new_item, sel_start, sel_end, payload, status):
     """Replace only the selected word window inside one clause's audio.
     The replacement is synthesized WITH one neighbor word of context on each
@@ -2108,7 +2224,8 @@ def _word_surgery(entry, old_item, new_item, sel_start, sel_end, payload, status
         if r_old > 1 and r_new > 1:
             gain = min(2.0, max(0.5, r_old / r_new))
             new_mid = np.clip(new_mid.astype(np.float64) * gain, -32768, 32767).astype(np.int16)
-    new_item["pcm"] = _crossfade_join([old_pcm[:a_cut], new_mid, old_pcm[b_cut:]], sr)
+    new_item["pcm"] = _sweep_stubs(
+        _crossfade_join([old_pcm[:a_cut], new_mid, old_pcm[b_cut:]], sr), sr)
     return max(1, len(mid_words))
 
 
@@ -2256,6 +2373,11 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
         if not done:
             sr2 = _synth_clauses(middle, payload, status)
             _diag("patch_clauses", engine=payload.get("engine"), sr2=sr2, entry_sr=entry["sr"])
+            for i in middle:
+                p = i.get("pcm")
+                _diag("patch_text", engine=payload.get("engine"),
+                      text=i["text"][:60],
+                      audio_s=round(len(p) / sr2, 2) if (p is not None and sr2) else None)
             if payload.get("engine") != "chatterbox":
                 for i in middle:
                     p = i.get("pcm")
@@ -2283,6 +2405,10 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
                     p = i.get("pcm")
                     if p is not None and len(p):
                         i["pcm"] = _resample(p, sr2, entry["sr"])
+            for i in middle:
+                p = i.get("pcm")
+                if p is not None and len(p):
+                    i["pcm"] = _sweep_stubs(p, entry["sr"])
     entry.update({"items": new_items, "text": new_text,
                   "engine": entry.get("engine") if has_sel else payload["engine"],
                   "payload": {k: payload[k] for k in
