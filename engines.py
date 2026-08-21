@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 64
-BUILD_FA = "\u06f6\u06f4"
+BUILD = 65
+BUILD_FA = "\u06f6\u06f5"
 
 
 def _diag(tag, **kv):
@@ -1623,7 +1623,7 @@ def _unvoiced_at(pcm, pos, sr):
     loud-onset transition the loud side dominates a full-window correlation
     and drowns the quiet side's pitch (measured: true 150 Hz collapsing to
     0.26). Voice on either side of the knife means the knife is in voice."""
-    a, b = max(0, pos - int(0.040 * sr)), min(len(pcm), pos + int(0.040 * sr))
+    a, b = max(0, pos - int(0.030 * sr)), min(len(pcm), pos + int(0.030 * sr))
     for s0, s1 in ((a, b), (a, pos), (pos, b)):
         seg = pcm[s0:s1].astype(np.float64)
         if len(seg) < int(0.015 * sr):
@@ -1636,13 +1636,27 @@ def _unvoiced_at(pcm, pos, sr):
         l1, l2 = int(sr / 400), min(int(sr / 55), len(ac) - 1)
         if l2 > l1 and float(np.max(ac[l1:l2])) >= 0.45:
             return False
-        # fry is IRREGULAR — periodicity alone can miss it. Sparse strong
-        # pulses against a quiet floor are its other signature.
-        pk = float(np.max(np.abs(seg)))
-        rm = float(np.sqrt(np.mean(seg ** 2))) or 1.0
-        if pk > 1200.0 and pk / rm > 6.0:
-            return False
     return True
+
+
+def _voicing_score(pcm, pos, sr):
+    """Max periodicity (55-400 Hz) across the gate's three windows — the
+    continuous measure behind _unvoiced_at's yes/no."""
+    a, b = max(0, pos - int(0.030 * sr)), min(len(pcm), pos + int(0.030 * sr))
+    worst = 0.0
+    for s0, s1 in ((a, b), (a, pos), (pos, b)):
+        seg = pcm[s0:s1].astype(np.float64)
+        if len(seg) < int(0.015 * sr):
+            continue
+        seg = seg - seg.mean()
+        if float(np.sqrt(np.mean(seg ** 2))) < 60.0:
+            continue
+        ac = np.correlate(seg, seg, "full")[len(seg) - 1:]
+        ac = ac / (ac[0] + 1e-12)
+        l1, l2 = int(sr / 400), min(int(sr / 55), len(ac) - 1)
+        if l2 > l1:
+            worst = max(worst, float(np.max(ac[l1:l2])))
+    return worst
 
 
 def _gap_cut(pcm, aligned, i, sr):
@@ -1700,9 +1714,9 @@ def _gap_cut(pcm, aligned, i, sr):
     if valley[0] is not None and valley[1] <= 0.40 * body:
         # a valley may only be cut if it is genuinely UNVOICED — measured
         # defect: soft-knee cuts landed in glided speech at voicing 0.75-0.87
-        # and clipped word ends. Voice is never cut; refusal falls back.
-        # Scan the whole sub-40% region nearest the quietest point first —
-        # the raw argmin hugs edges where a voicing window touches speech.
+        # and clipped word ends. Scan the whole sub-40% region nearest the
+        # quietest point first — the raw argmin hugs edges where a voicing
+        # window touches speech.
         vlo, vsm = valley[2], valley[3]
         e2 = w // 2 + 1
         ok_lvl = [g for g in range(e2, len(vsm) - e2, max(1, int(0.005 * sr)))
@@ -1710,6 +1724,21 @@ def _gap_cut(pcm, aligned, i, sr):
         for g in sorted(ok_lvl, key=lambda g: abs(vlo + g - valley[0])):
             if _unvoiced_at(pcm, vlo + g, sr):
                 return _zc_snap(pcm, vlo + g, sr), True
+    # GRADED LAST TIER — the field lesson of build 64: one stubborn boundary
+    # refusing used to discard the WHOLE continuous synthesis into fragment
+    # babble, the worst outcome the app produces. Cut at the least-voiced
+    # admissible instant instead: with the fry-aware score steering it away
+    # from pulses, a soft imperfect cut beats wholesale gibberish every time.
+    if valley[0] is not None and valley[3] is not None:
+        vlo, vsm = valley[2], valley[3]
+        e2 = w // 2 + 1
+        cands = [g for g in range(e2, len(vsm) - e2, max(1, int(0.005 * sr)))
+                 if vsm[g] <= 0.60 * body]
+        if cands:
+            g = min(cands, key=lambda g: (_voicing_score(pcm, vlo + g, sr), vsm[g]))
+            _diag("gap_cut_soft", at=round((vlo + g) / sr, 3),
+                  voicing=round(_voicing_score(pcm, vlo + g, sr), 2))
+            return _zc_snap(pcm, vlo + g, sr), True
     lo, hi = int(aligned[i][2]), int(aligned[i + 1][1])
     return max(0, (lo + hi) // 2), False
 
