@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 55
-BUILD_FA = "\u06f5\u06f5"
+BUILD = 58
+BUILD_FA = "\u06f5\u06f8"
 
 
 def _diag(tag, **kv):
@@ -695,7 +695,10 @@ def _ezafe_join(texts):
     out = ""
     for k, t in enumerate(texts):
         if k:
-            out += " " if _EZAFE_TAIL.search(texts[k - 1]) else "، "
+            # «؛» is a stronger break cue than «،» without a full stop's
+            # intonation reset — the model leaves a longer genuine dip at tag
+            # boundaries, so cuts land in real breath instead of glide.
+            out += " " if _EZAFE_TAIL.search(texts[k - 1]) else "؛ "
         out += t
     return out
 
@@ -920,15 +923,24 @@ def _cbx_ceiling_mb(rss_mb, avail_mb):
     (2) The absolute leak cap: the model itself needs 5-6 GB; anything much
         past that is leaked memory the process holds hostage. Retire near
         10 GB and the OS reclaims it for the price of a few-second respawn."""
-    hard = 10000
+    lo_fence, hi_fence = 9000, 19000
     try:
         import psutil
-        hard = max(9000, int(0.20 * (psutil.virtual_memory().total // (1024 * 1024))))
+        total = psutil.virtual_memory().total // (1024 * 1024)
+        # the fences scale with the machine: never retire a warm model below
+        # ~20% of total (respawn churn), never let a leak past 40% of total
+        # (the honest signal — macOS "available" flatters under pressure)
+        lo_fence = max(9000, int(0.20 * total))
+        hi_fence = max(lo_fence + 1000, int(0.40 * total))
     except Exception:
         pass
     if avail_mb is None:
-        return min(8000, hard)
-    return min(int(0.75 * (avail_mb + rss_mb)), hard)
+        return lo_fence
+    # inside the band, the documented pool rule governs: 75% of what the
+    # machine would have if the worker retired right now — an idle machine
+    # grants headroom (fewer respawns), a busy one pulls the ceiling down
+    pool = int(0.75 * (avail_mb + rss_mb))
+    return min(max(pool, lo_fence), hi_fence)
 _cbx_proc = None
 _cbx_stderr = None
 _cbx_lock = threading.Lock()
@@ -1168,7 +1180,11 @@ def _assemble(entry):
     out = []
     for i in entry["items"]:
         if i["kind"] == "p":
-            out.append(np.zeros(int(sr * i["sec"]), dtype=np.int16))
+            tone = i.get("pcm")
+            if isinstance(tone, np.ndarray) and tone.dtype == np.int16 and len(tone) == int(sr * i["sec"]):
+                out.append(tone)
+            else:
+                out.append(np.zeros(int(sr * i["sec"]), dtype=np.int16))
         else:
             out.append(i["pcm"])
             if i.get("gap"):
@@ -1262,7 +1278,13 @@ def _cbx_continuous(items, payload, status):
         _diag("continuous_bail", reason="no_dip" if not ok_all else "slices_insane")
         return None   # no true dip to cut in → fragments with real pauses
     for k, i in enumerate(t_items):
-        i["pcm"] = _fade_edges(pcm[cuts[k]:cuts[k + 1]].copy(), sr, ms=15)
+        i["pcm"] = _fade_asym(pcm[cuts[k]:cuts[k + 1]].copy(), sr)
+    tk = 0
+    for i in items:
+        if i["kind"] == "t":
+            tk += 1
+        elif 0 < tk < len(cuts):
+            i["pcm"] = _pause_fill(pcm, cuts[tk], sr, i["sec"])
     status("مکث‌ها با هم‌ترازی در جای نشانه‌ها بریده شدند — متن یک‌جا و طبیعی خوانده شد.")
     return sr
 
@@ -1483,6 +1505,23 @@ def _refine_cut(pcm, lo, hi, sr):
     return lo + int(np.argmin(sm))
 
 
+def _zc_snap(pcm, pos, sr, radius_ms=2.0):
+    """Editors' rule: cuts belong on rising zero-crossings — a join at
+    matching height and direction is silent, anywhere else the residual step
+    leaks click energy through even a good fade. Snap the chosen cut to the
+    nearest rising crossing within +/-2 ms (imperceptible as a shift)."""
+    r = int(sr * radius_ms / 1000.0)
+    lo, hi = max(1, pos - r), min(len(pcm) - 1, pos + r)
+    if hi <= lo:
+        return pos
+    seg = pcm[lo - 1:hi + 1].astype(np.int32)
+    rising = np.nonzero((seg[:-1] < 0) & (seg[1:] >= 0))[0]
+    if len(rising) == 0:
+        return pos
+    cand = lo - 1 + rising + 1
+    return int(cand[np.argmin(np.abs(cand - pos))])
+
+
 def _gap_cut(pcm, aligned, i, sr):
     """Cut point between word i and i+1 under a QUIETNESS CONTRACT: the chosen
     sample must sit in a genuine dip, because a faded amputation is still an
@@ -1518,7 +1557,7 @@ def _gap_cut(pcm, aligned, i, sr):
                         best = (a, k)
                     a = None
             if best[1] - best[0] >= min_run:
-                return lo + (best[0] + best[1]) // 2, True
+                return _zc_snap(pcm, lo + (best[0] + best[1]) // 2, sr), True
             # quiet moments existed but none long enough to be real silence
         e = w // 2 + 1  # 'same'-mode convolution zero-pads the edges -> fake dips there
         if len(sm) > 2 * e:
@@ -1529,7 +1568,7 @@ def _gap_cut(pcm, aligned, i, sr):
         # no true silence, but a genuine smoothed-energy valley (a 20 ms
         # average cannot dip inside held voicing) — a softened landing there
         # beats discarding continuous mode for fragment babble
-        return valley[0], True
+        return _zc_snap(pcm, valley[0], sr), True
     lo, hi = int(aligned[i][2]), int(aligned[i + 1][1])
     return max(0, (lo + hi) // 2), False
 
@@ -1562,6 +1601,128 @@ def _band_displaced(pcm, sr):
         _diag("band_displaced", dead_windows=dead, of=n_win)
         return True
     return False
+
+
+def _room_tone(src_pcm, cut_pos, sr, sec):
+    """A spliced pause of DIGITAL ZERO against chatterbox's audible vocoder
+    floor (measured 557-3051 int16) reads as a hole punched in the audio.
+    Fill the pause with the utterance's OWN quiet texture: harvest ~40 ms of
+    the quietest real audio around the cut, tile it forward/backward with
+    equal-power seams (reversal kills tile periodicity), cap the level so a
+    semi-voiced valley can never become a hum."""
+    n_out = int(sr * sec)
+    w = int(0.040 * sr)
+    lo = max(0, cut_pos - int(0.060 * sr))
+    hi = min(len(src_pcm), cut_pos + int(0.060 * sr))
+    if hi - lo < w or n_out <= 0:
+        return np.zeros(max(n_out, 0), dtype=np.int16)
+    seg = src_pcm[lo:hi].astype(np.float32)
+    best, brms = 0, None
+    for s in range(0, len(seg) - w, w // 4):
+        r = float(np.sqrt(np.mean(seg[s:s + w] ** 2)))
+        if brms is None or r < brms:
+            best, brms = s, r
+    tile = seg[best:best + w].copy()
+    # Continuity illusion: the ear only accepts the gap as "the same recording
+    # going quiet" if the fill sits AT the local floor. A fixed cap left hot
+    # floors stepping down several dB into the pause. Play the harvested tile
+    # at its natural level; scale down only a semi-voiced valley (>12% of the
+    # utterance body RMS can carry pitch, and a pitched pause is a hum).
+    body_all = float(np.sqrt(np.mean(src_pcm.astype(np.float64) ** 2))) or 1.0
+    cap = max(0.12 * body_all, 300.0)
+    if brms and brms > cap:
+        tile *= cap / brms
+    xf = int(0.010 * sr)
+    t = np.linspace(0, np.pi / 2, xf, dtype=np.float32)
+    out = np.zeros(n_out + w, dtype=np.float32)
+    pos, k = 0, 0
+    while pos < n_out:
+        piece = tile if k % 2 == 0 else tile[::-1]
+        if pos == 0:
+            out[:w] = piece
+        else:
+            out[pos:pos + xf] = out[pos:pos + xf] * np.cos(t) + piece[:xf] * np.sin(t)
+            out[pos + xf:pos + w] = piece[xf:]
+        pos += w - xf
+        k += 1
+    out = out[:n_out]
+    if n_out > 2 * xf:
+        out[:xf] *= np.sin(t)
+        out[-xf:] *= np.cos(t)
+    return out.astype(np.int16)
+
+
+def _stretch_dip(src_pcm, cut_pos, sr, sec):
+    """Best-available pause body: take the model's real dip around the cut —
+    however short — and time-stretch IT to the requested length with WSOLA.
+    The pause becomes the speaker's own breath elongated: right floor, right
+    texture, no foreign material. Returns None when there is no usable dip
+    or the stretcher is unavailable; caller falls back to tiled room tone."""
+    try:
+        body = float(np.sqrt(np.mean(src_pcm.astype(np.float64) ** 2))) or 1.0
+        w = max(1, sr // 50)
+        x = np.abs(src_pcm.astype(np.float32))
+        sm = np.convolve(x, np.ones(w, dtype=np.float32) / w, mode="same")
+        thr = 0.12 * body
+        a = cut_pos
+        while a > 0 and sm[a - 1] < thr and cut_pos - a < int(0.25 * sr):
+            a -= 1
+        b = cut_pos
+        while b < len(sm) and sm[b] < thr and b - cut_pos < int(0.25 * sr):
+            b += 1
+        if b - a < int(0.030 * sr):
+            return None
+        snippet = src_pcm[a:b].astype(np.float64) / 32768.0
+        n_out = int(sr * sec)
+        from audiotsm import wsola
+        from audiotsm.io.array import ArrayReader, ArrayWriter
+        reader = ArrayReader(snippet.reshape(1, -1))
+        writer = ArrayWriter(1)
+        # default WSOLA frames (~85 ms) barely fit a 100-150 ms breath snippet
+        # and truncate extreme stretches; 25 ms frames are safe for unpitched
+        # breath/floor material and track any stretch ratio
+        wsola(1, speed=len(snippet) / max(n_out, 1),
+              frame_length=max(64, int(0.025 * sr)),
+              synthesis_hop=max(32, int(0.0125 * sr))).run(reader, writer)
+        y = writer.data.flatten()
+        while 0 < len(y) < n_out:
+            y = np.concatenate([y, y[::-1][:n_out - len(y)]])
+        y = y[:n_out] * 32768.0
+        cap = max(0.12 * body, 300.0)
+        r = float(np.sqrt(np.mean(y ** 2)))
+        if r > cap:
+            y *= cap / r
+        xf = int(0.010 * sr)
+        if n_out > 2 * xf:
+            t = np.linspace(0, np.pi / 2, xf)
+            y[:xf] *= np.sin(t)
+            y[-xf:] *= np.cos(t)
+        _diag("stretch_dip", src_ms=int(1000 * (b - a) / sr), out_ms=int(1000 * sec))
+        return np.clip(y, -32768, 32767).astype(np.int16)
+    except Exception as e:
+        _diag("stretch_dip", failed=type(e).__name__)
+        return None
+
+
+def _pause_fill(src_pcm, cut_pos, sr, sec):
+    filled = _stretch_dip(src_pcm, cut_pos, sr, sec)
+    if filled is not None and len(filled) == int(sr * sec):
+        return filled
+    return _room_tone(src_pcm, cut_pos, sr, sec)
+
+
+def _fade_asym(pcm, sr, in_ms=12, out_ms=35):
+    """Boundary fades shaped like speech: quick natural attack in, long
+    landing out (measured defect: re-entries jumping 0.02->0.33 FS in 15 ms
+    and decays truncated at 2-3% FS straight onto vacuum)."""
+    out = pcm.astype(np.float32)
+    n_in = min(int(sr * in_ms / 1000), len(out) // 2)
+    n_out = min(int(sr * out_ms / 1000), len(out) // 2)
+    if n_in > 0:
+        out[:n_in] *= np.sin(np.linspace(0, np.pi / 2, n_in, dtype=np.float32))
+    if n_out > 0:
+        out[-n_out:] *= np.cos(np.linspace(0, np.pi / 2, n_out, dtype=np.float32)) ** 2
+    return out.astype(np.int16)
 
 
 def _fade_edges(pcm, sr, ms=8):
@@ -1752,8 +1913,19 @@ def _cbx_patch_middle(entry, new_items, pre, suf, payload, status):
     if not all(0 <= a < b <= len(pcm) for a, b in planned):
         return False   # untrustworthy alignment → clause fallback
     for i, (a, b) in zip(mid_t, planned):
-        i["pcm"] = _fade_edges(pcm[a:b].copy(), sr)
+        i["pcm"] = _fade_asym(pcm[a:b].copy(), sr)
         pos += 1
+    tj = -1
+    for i in mid:
+        if i["kind"] == "t":
+            tj += 1
+        elif i["kind"] == "p":
+            if tj < 0:
+                i["pcm"] = _pause_fill(pcm, planned[0][0], sr, i["sec"])
+            elif tj + 1 < len(planned):
+                i["pcm"] = _pause_fill(pcm, planned[tj][1], sr, i["sec"])
+            else:
+                i["pcm"] = _pause_fill(pcm, planned[-1][1], sr, i["sec"])
     status("قطعهٔ کوتاه با متن همسایه یک‌جا خوانده و با هم‌ترازی جدا شد.")
     return True
 
