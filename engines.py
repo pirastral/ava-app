@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 72
-BUILD_FA = "\u06f7\u06f2"
+BUILD = 73
+BUILD_FA = "\u06f7\u06f3"
 
 
 def _diag(tag, **kv):
@@ -1354,6 +1354,39 @@ def reset_gulps():
     _GULP_PCM.clear()
 
 
+def _rep_beat(pcm, sr):
+    """Extract ONE beat from a triple-repetition synthesis. The model cannot
+    speak two isolated words (fragments hallucinate — measured), but it CAN
+    speak them in a rhythm; three near-identical beats give the output a
+    self-similarity peak at one-third lag. The boundary comes from the
+    audio's own periodicity — no aligner, no cutting of unique speech."""
+    n = len(pcm)
+    if n < sr // 2:
+        return None
+    w = max(1, sr // 50)
+    env = np.convolve(np.abs(pcm.astype(np.float32)), np.ones(w, dtype=np.float32) / w, mode="same")
+    e = env - env.mean()
+    ac = np.correlate(e, e, "full")[n - 1:]
+    ac = ac / (ac[0] + 1e-12)
+    l1, l2 = int(0.22 * n), int(0.45 * n)
+    if l2 <= l1 + 8:
+        return None
+    lag = l1 + int(np.argmax(ac[l1:l2]))
+    if float(ac[lag]) < 0.35:
+        return None  # no rhythm found — repetition didn't take
+    a, b = max(w, int(lag * 0.80)), min(n - w, int(lag * 1.08))
+    if b <= a:
+        return None
+    cut = a + int(np.argmin(env[a:b]))
+    beat = pcm[:_zc_snap(pcm, cut, sr)]
+    beat = _sweep_stubs(_fade_edges(beat.copy(), sr, ms=10), sr)
+    if len(beat) < sr // 8:
+        return None
+    _diag("rep_beat", lag_s=round(lag / sr, 2), ac=round(float(ac[lag]), 2),
+          beat_s=round(len(beat) / sr, 2))
+    return beat
+
+
 def _silence_runs(pcm, sr, min_ms=70):
     """All true-silence runs in the utterance: (start, end, center) of every
     stretch where the 20 ms envelope stays under max(4% body, 60) for at
@@ -1408,9 +1441,14 @@ def _cbx_continuous(items, payload, status):
     # silence, the chunk is extracted after it, and chunks + timed zeros
     # assemble without ever cutting flowing speech.
     if any(len(i["text"].strip()) < 25 for i in t_items):
+        # (build 73) the carrier is REMOVED — the model glides straight
+        # through it into short sentences (field-measured). Repetition-beat
+        # synthesis replaces it: each chunk spoken three times in a comma
+        # flow, one beat extracted by the output's own self-similarity.
         shadow = [dict(i) for i in t_items]
         for sh in shadow:
-            sh["_synth_text"] = _CBX_CARRIER + " " + _despoken_tail_ezafe(sh["text"])
+            base = _despoken_tail_ezafe(sh["text"]).strip().rstrip(".!؟?")
+            sh["_synth_text"] = f"{base}، {base}، {base}."
         sr_c = _synth_clauses(shadow, payload, status)
         okc = True
         for i, sh in zip(t_items, shadow):
@@ -1418,14 +1456,8 @@ def _cbx_continuous(items, payload, status):
             if p is None or not len(p):
                 okc = False
                 break
-            runs_c = [r for r in _silence_runs(p, sr_c, min_ms=90)
-                      if r[2] > int(0.25 * sr_c)]
-            if not runs_c:
-                okc = False
-                break
-            tgt = p[_zc_snap(p, _fry_snap(p, runs_c[0][2], sr_c), sr_c):]
-            tgt = _sweep_stubs(_fade_edges(tgt.copy(), sr_c, ms=10), sr_c)
-            if len(tgt) < sr_c // 8:
+            tgt = _rep_beat(p, sr_c)
+            if tgt is None:
                 okc = False
                 break
             i["pcm"] = tgt
