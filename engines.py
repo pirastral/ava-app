@@ -29,8 +29,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 79
-BUILD_FA = "\u06f7\u06f9"
+BUILD = 81
+BUILD_FA = "\u06f8\u06f1"
 
 
 def _diag(tag, **kv):
@@ -629,8 +629,6 @@ def _wav_pcm(wf):
     return pcm
 
 
-_PIPER_CARRIER = "این یک آزمایش است."
-_CBX_CARRIER = "این یک آزمایش است."
 
 
 
@@ -1070,8 +1068,15 @@ def _mem_check(role, rss_mb, avail_mb):
     cap = pol["cap"] if pol["cap"] is not None else _cbx_ceiling_mb_safe(rss_mb, avail_mb)
     if rss_mb is not None and rss_mb > cap:
         return False, f"rss>{cap}"
-    if _swap_growth_mb() > pol["swap"]:
-        return False, f"swap_growth>{pol['swap']}"
+    # FIELD LAW (build 80): swap growth alone may NEVER kill or refuse.
+    # macOS swap only ratchets upward — every legitimate spike (per-call
+    # aligner load, worker respawn) raises it and plentiful RAM never
+    # lowers it. Gating on the ratchet executed a HEALTHY 1.2 GB worker
+    # (logged) and manufactured a kill->respawn->ratchet->kill loop.
+    # Swap counts only under genuine pressure: free RAM actually scarce.
+    if (_swap_growth_mb() > pol["swap"]
+            and avail_mb is not None and avail_mb < 6000):
+        return False, f"swap_growth>{pol['swap']}+avail<6000"
     if avail_mb is not None and avail_mb < 1500 and role != "main":
         return False, "avail<1500"
     return True, ""
@@ -1510,14 +1515,21 @@ def _main_watchdog():
     try:
         import psutil
         rss = int(psutil.Process().memory_info().rss // 1048576)
+        avail = int(psutil.virtual_memory().available // 1048576)
     except Exception:
         return
-    ok, why = _mem_check("main", rss, None)
+    ok, why = _mem_check("main", rss, avail)
     if not ok:
-        _diag("mem_gate", role="main", action="refuse", rss_mb=rss, reason=why)
-        raise RuntimeError(
-            f"هستهٔ برنامه به سقف حافظهٔ خود رسیده ({faDigits(rss // 1024)} گیگابایت) — "
-            "برنامه را ببندید و دوباره باز کنید؛ این وضعیت ثبت شد تا ریشه\u200cیابی شود.")
+        _diag("mem_gate", role="main", action="refuse", rss_mb=rss, avail_mb=avail, reason=why)
+        if why.startswith("rss"):
+            amount = (f"{faDigits(round(rss / 1024, 1))} گیگابایت" if rss >= 1024
+                      else f"{faDigits(rss)} مگابایت")
+            msg = (f"هستهٔ برنامه به سقف حافظهٔ خود رسیده ({amount}) — "
+                   "برنامه را ببندید و دوباره باز کنید؛ این وضعیت ثبت شد تا ریشه\u200cیابی شود.")
+        else:
+            msg = ("حافظهٔ آزاد دستگاه کم است و سواپ در همین نشست زیاد شده — "
+                   "چند برنامهٔ دیگر را ببندید و دوباره بکوشید.")
+        raise RuntimeError(msg)
 
 
 def _mem_preflight(status):
@@ -1604,38 +1616,6 @@ def reset_gulps():
         _SPILL_DIR = None
 
 
-def _rep_beat(pcm, sr):
-    """Extract ONE beat from a triple-repetition synthesis. The model cannot
-    speak two isolated words (fragments hallucinate — measured), but it CAN
-    speak them in a rhythm; three near-identical beats give the output a
-    self-similarity peak at one-third lag. The boundary comes from the
-    audio's own periodicity — no aligner, no cutting of unique speech."""
-    n = len(pcm)
-    if n < sr // 2:
-        return None
-    w = max(1, sr // 50)
-    env = np.convolve(np.abs(pcm.astype(np.float32)), np.ones(w, dtype=np.float32) / w, mode="same")
-    e = env - env.mean()
-    ac = np.correlate(e, e, "full")[n - 1:]
-    ac = ac / (ac[0] + 1e-12)
-    l1, l2 = int(0.22 * n), int(0.45 * n)
-    if l2 <= l1 + 8:
-        return None
-    lag = l1 + int(np.argmax(ac[l1:l2]))
-    if float(ac[lag]) < 0.35:
-        return None  # no rhythm found — repetition didn't take
-    a, b = max(w, int(lag * 0.80)), min(n - w, int(lag * 1.08))
-    if b <= a:
-        return None
-    cut = a + int(np.argmin(env[a:b]))
-    beat = pcm[:_zc_snap(pcm, cut, sr)]
-    beat = _sweep_stubs(_fade_edges(beat.copy(), sr, ms=10), sr)
-    if len(beat) < sr // 8:
-        return None
-    _diag("rep_beat", lag_s=round(lag / sr, 2), ac=round(float(ac[lag]), 2),
-          beat_s=round(len(beat) / sr, 2))
-    return beat
-
 
 def _silence_runs(pcm, sr, min_ms=70):
     """All true-silence runs in the utterance: (start, end, center) of every
@@ -1690,62 +1670,12 @@ def _cbx_continuous(items, payload, status):
     # sentence, the model's reliable stop after a LONG sentence yields true
     # silence, the chunk is extracted after it, and chunks + timed zeros
     # assemble without ever cutting flowing speech.
-    if any(len(i["text"].strip()) < 25 for i in t_items):
-        # (build 73) the carrier is REMOVED — the model glides straight
-        # through it into short sentences (field-measured). Repetition-beat
-        # synthesis replaces it: each chunk spoken three times in a comma
-        # flow, one beat extracted by the output's own self-similarity.
-        shadow = [dict(i) for i in t_items]
-        for sh in shadow:
-            base = _despoken_tail_ezafe(sh["text"]).strip().rstrip(".!؟?")
-            sh["_synth_text"] = f"{base}، {base}، {base}."
-        sr_c = _synth_clauses(shadow, payload, status)
-        okc = True
-        for i, sh in zip(t_items, shadow):
-            p = sh.get("pcm")
-            if p is None or not len(p):
-                okc = False
-                break
-            tgt = _rep_beat(p, sr_c)
-            if tgt is None:
-                okc = False
-                break
-            i["pcm"] = tgt
-        if okc:
-            _diag("carrier_mode", chunks=len(t_items))
-            prev_t = None
-            for idx, i in enumerate(items):
-                if i["kind"] == "t":
-                    prev_t = i
-                elif i["kind"] == "p":
-                    nxt_t = next((j for j in items[idx + 1:] if j["kind"] == "t"), None)
-                    sec_fill = _budget_pause(prev_t, i, nxt_t, sr_c)
-                    i["pcm"] = np.zeros(int(sr_c * sec_fill), dtype=np.int16)
-            return sr_c
-        _diag("carrier_mode", chunks=len(t_items), failed=True)
-        # (build 72) extraction failed -> per-chunk FRAGMENT synthesis. The
-        # cutting pipeline is FORBIDDEN for small chunks: its drifted
-        # fallback split a word in half in the field («دوس|تانِ»). A fragment
-        # chunk can sound plain; a torn word is always worse.
-        frag = [dict(i) for i in t_items]
-        for f in frag:
-            f.pop("_synth_text", None)
-            f["pcm"] = None
-        sr_f = _synth_clauses(frag, payload, status)
-        if all(f.get("pcm") is not None and len(f["pcm"]) for f in frag):
-            for i, f in zip(t_items, frag):
-                i["pcm"] = _sweep_stubs(_fade_edges(f["pcm"].copy(), sr_f, ms=10), sr_f)
-            prev_t = None
-            for idx, i in enumerate(items):
-                if i["kind"] == "t":
-                    prev_t = i
-                elif i["kind"] == "p":
-                    nxt_t = next((j for j in items[idx + 1:] if j["kind"] == "t"), None)
-                    sec_fill = _budget_pause(prev_t, i, nxt_t, sr_f)
-                    i["pcm"] = np.zeros(int(sr_f * sec_fill), dtype=np.int16)
-            _diag("carrier_mode", chunks=len(t_items), mode="fragment_rescue")
-            return sr_f
-        return None
+    short = [i["text"].strip() for i in t_items if len(i["text"].strip()) < 25]
+    if short:
+        raise RuntimeError(
+            "بخش\u200cهای خیلی کوتاه میان مکث\u200cها با صدای چترباکس درست خوانده نمی\u200cشوند "
+            f"(مثل «{short[0][:20]}») — هر بخش را یک جملهٔ کامل کنید، "
+            "یا برای این متن صدای گیرو یا امیر را برگزینید که بخش\u200cهای کوتاه را درست می\u200cخوانند.")
 
     # ---- SILENCE-FIRST boundary location (the field lesson of build 65) ----
     # wav2vec2's word timings drift on this audio; a drifted search window
@@ -1954,6 +1884,59 @@ def _align_feed(pcm, sr):
     return pcm.astype(np.float32) / 32768.0
 
 
+_align_proc = None
+_RESPAWNS = {}
+
+
+def _respawn_permit(role, limit=3, window=600):
+    """Churn governor: a role may respawn at most `limit` times per
+    `window` seconds. Beyond that the app STOPS churning and says so —
+    respawn storms were themselves a memory pathology (each spike
+    ratchets macOS swap)."""
+    import collections
+    dq = _RESPAWNS.setdefault(role, collections.deque())
+    now = time.time()
+    while dq and now - dq[0] > window:
+        dq.popleft()
+    if len(dq) >= limit:
+        raise RuntimeError(
+            f"موتور {role} چند بار پیاپی از نو راه\u200cاندازی شد و متوقف شد تا دستگاه آرام بماند — "
+            "چند لحظه صبر کنید و دوباره بکوشید؛ اگر تکرار شد لاگ را بفرستید.")
+    dq.append(now)
+
+
+def _align_ensure(status):
+    global _align_proc
+    if _align_proc is not None and _align_proc.poll() is None:
+        return _align_proc
+    _respawn_permit("align")
+    creation = {"creationflags": 0x08000000} if os.name == "nt" else {}
+    status("بارگذاری هم\u200cترازساز (یک\u200cبار برای کل نشست)…")
+    _align_proc = subprocess.Popen([sys.executable, "--align-server"],
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                   stderr=subprocess.DEVNULL, **creation)
+    return _align_proc
+
+
+def align_server_main():
+    """Persistent alignment worker: loads wav2vec2 ONCE, serves line-JSON
+    requests for the app's lifetime. Flat footprint, zero per-call churn."""
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            task = json.loads(line)
+            pcm = np.fromfile(task["pcm_path"], dtype=np.int16)
+            res = _align_words_core(pcm, int(task["sr"]), task["text"], lambda m: None)
+            out = {"ok": res is not None,
+                   "spans": [[w, int(a), int(b)] for w, a, b in (res or [])]}
+        except Exception as e:
+            out = {"ok": False, "err": f"{type(e).__name__}: {str(e)[:80]}"}
+        sys.stdout.write(json.dumps(out, ensure_ascii=False) + "\n")
+        sys.stdout.flush()
+
+
 def align_worker_main(task_path):
     """Disposable alignment worker: torch, torchaudio, and the wav2vec2
     model live and DIE here. Four identical main-process deaths (56 GB, 18
@@ -1979,33 +1962,44 @@ def align_worker_main(task_path):
 def _align_words(pcm, sr, text, status):
     """Subprocess wrapper with the historical signature. The heavy body is
     _align_words_core, executed only inside the disposable worker."""
-    import tempfile, json as _json
+    global _align_proc
+    import tempfile
     _mem_report("align_call")
     with tempfile.TemporaryDirectory() as td:
         pcm_path = os.path.join(td, "a.raw")
-        out_path = os.path.join(td, "r.json")
         np.asarray(pcm, dtype=np.int16).tofile(pcm_path)
-        task = os.path.join(td, "t.json")
-        with open(task, "w", encoding="utf-8") as f:
-            _json.dump({"pcm_path": pcm_path, "sr": int(sr),
-                        "text": text, "out_path": out_path}, f, ensure_ascii=False)
-        creation = {"creationflags": 0x08000000} if os.name == "nt" else {}
         try:
             status("هم\u200cترازسازی واژه\u200cها…")
-            proc = _guarded_run([sys.executable, "--align-worker", task],
-                                "align", 420)
-            for ln in (proc.stderr or b"").decode("utf-8", "ignore").splitlines():
-                if "[ava-diag]" in ln:
-                    sys.stderr.write(ln + "\n")
-            if proc.returncode != 0 or not os.path.exists(out_path):
-                _diag("align_worker_fail", rc=proc.returncode)
+            p = _align_ensure(status)
+            p.stdin.write((json.dumps({"pcm_path": pcm_path, "sr": int(sr),
+                                       "text": text}, ensure_ascii=False) + "\n").encode("utf-8"))
+            p.stdin.flush()
+            raw = p.stdout.readline()
+            if not raw:
+                _align_proc = None
+                _diag("align_worker_fail", err="server closed")
                 return None
-            with open(out_path, encoding="utf-8") as f:
-                out = _json.load(f)
+            out = json.loads(raw.decode("utf-8", "ignore"))
+            # steady-state hygiene: retire the server only on a TRUE cap breach
+            try:
+                import psutil
+                rss = int(psutil.Process(p.pid).memory_info().rss // 1048576)
+                ok_h, _wh = _mem_check("align", rss, None)
+                if not ok_h:
+                    _diag("mem_gate", role="align", action="retire_after_reply", rss=rss)
+                    p.terminate()
+                    _align_proc = None
+            except Exception:
+                pass
+        except RuntimeError:
+            raise
         except Exception as e:
+            _align_proc = None
             _diag("align_worker_fail", err=f"{type(e).__name__}: {str(e)[:90]}")
             return None
     if not out.get("ok"):
+        if out.get("err"):
+            _diag("align_worker_fail", err=out["err"])
         return None
     return [(w, a, b) for w, a, b in out["spans"]]
 

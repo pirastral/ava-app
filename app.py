@@ -12,6 +12,10 @@ os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 # Helper-process modes: synthesis runs isolated from the app window.
+if len(sys.argv) > 1 and sys.argv[1] == "--align-server":
+    import engines
+    engines.align_server_main()
+    sys.exit(0)
 if len(sys.argv) > 2 and sys.argv[1] == "--align-worker":
     import engines
     engines.align_worker_main(sys.argv[2])
