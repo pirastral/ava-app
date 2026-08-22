@@ -29,8 +29,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 78
-BUILD_FA = "\u06f7\u06f8"
+BUILD = 79
+BUILD_FA = "\u06f7\u06f9"
 
 
 def _diag(tag, **kv):
@@ -1067,7 +1067,7 @@ def _mem_check(role, rss_mb, avail_mb):
     """(ok, reason) under the unified policy. rss_cap None means the adaptive
     band-rule ceiling; a number is an absolute cap for that role."""
     pol = _MEM_POLICY[role]
-    cap = pol["cap"] if pol["cap"] is not None else _cbx_ceiling_mb(rss_mb, avail_mb)
+    cap = pol["cap"] if pol["cap"] is not None else _cbx_ceiling_mb_safe(rss_mb, avail_mb)
     if rss_mb is not None and rss_mb > cap:
         return False, f"rss>{cap}"
     if _swap_growth_mb() > pol["swap"]:
@@ -1083,7 +1083,12 @@ def _guarded_run(argv, role, timeout):
     kills the child. Piper and align never had a mid-job cap before this."""
     import psutil
     creation = {"creationflags": 0x08000000} if os.name == "nt" else {}
-    proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **creation)
+    # PIPES DEADLOCK: a child flooding stderr (torch load warnings measured
+    # in the field) fills the 64 KB pipe and blocks forever while the parent
+    # polls a process that can never finish. Files have no such limit.
+    of = tempfile.NamedTemporaryFile(delete=False)
+    ef = tempfile.NamedTemporaryFile(delete=False)
+    proc = subprocess.Popen(argv, stdout=of, stderr=ef, **creation)
     t0 = time.time()
     child = None
     try:
@@ -1106,8 +1111,30 @@ def _guarded_run(argv, role, timeout):
             _diag("mem_gate", role=role, action="brake_kill", rss=rss, reason=why)
             break
         time.sleep(0.5)
-    out, err = proc.communicate(timeout=30)
+    try:
+        proc.wait(timeout=30)
+    except Exception:
+        proc.kill()
+    of.close(); ef.close()
+    out = open(of.name, "rb").read()
+    err = open(ef.name, "rb").read()
+    for p_ in (of.name, ef.name):
+        try:
+            os.unlink(p_)
+        except OSError:
+            pass
     return types.SimpleNamespace(returncode=proc.returncode, stdout=out, stderr=err)
+
+
+def _cbx_ceiling_mb_safe(rss_mb, avail_mb):
+    """Never let a measurement gap masquerade as a breach: on any failure or
+    missing input, return the most PERMISSIVE fence — a watchdog that cannot
+    see clearly must not kill."""
+    try:
+        return _cbx_ceiling_mb(rss_mb, avail_mb if avail_mb is not None else 0) \
+            if rss_mb is not None else 10 ** 9
+    except Exception:
+        return 10 ** 9
 
 
 def _cbx_ceiling_mb(rss_mb, avail_mb):
@@ -1268,14 +1295,18 @@ def chatterbox_via_worker(req, status):
             while not _watch_stop.wait(0.5):
                 if proc_ref.poll() is not None:
                     return
-                rss = None
+                rss, avail = None, None
                 try:
                     rss = int(child.memory_info().rss // 1048576)
                     for gc in child.children(recursive=True):
                         rss += int(gc.memory_info().rss // 1048576)
+                    avail = int(psutil.virtual_memory().available // 1048576)
                 except Exception:
                     pass
-                ok_w, why_w = _mem_check("cbx_brake", (rss - 2000) if rss else None, None)
+                # the user's doctrine, applied where it was being skipped:
+                # the ceiling is ADAPTIVE — 75% of (free + rss), band-clamped
+                # — so plentiful free RAM legitimately raises the allowance.
+                ok_w, why_w = _mem_check("cbx_brake", (rss - 2000) if rss else None, avail)
                 if not ok_w:
                     _watch_hit["breach"] = f"{why_w} rss={rss}"
                     _diag("mem_gate", role="cbx_parent", action="brake_kill",
