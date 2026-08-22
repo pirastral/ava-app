@@ -1,5 +1,6 @@
 """Ava — Persian TTS engines (Chatterbox-Persian + Piper voices + auto-ezafe)."""
 import os, json, re, shutil, subprocess, sys, tempfile, threading, wave
+import types
 from pathlib import Path
 
 MODELS_DIR = Path.home() / "AvaModels"
@@ -28,8 +29,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 73
-BUILD_FA = "\u06f7\u06f3"
+BUILD = 77
+BUILD_FA = "\u06f7\u06f7"
 
 
 def _diag(tag, **kv):
@@ -564,8 +565,19 @@ def piper_pcm(voice_key, segments, speed, noise_scale, noise_w, status):
     taskf.close()
     try:
         creation = {"creationflags": 0x08000000} if os.name == "nt" else {}
-        proc = subprocess.run([sys.executable, "--piper-worker", taskf.name],
-                              capture_output=True, timeout=600, **creation)
+        proc = _guarded_run([sys.executable, "--piper-worker", taskf.name],
+                            "piper", 600)
+        if proc.returncode not in (0, None) and proc.returncode < 0:
+            # mid-job brake or timeout killed the worker. A job that breaches
+            # is a runaway that would never have finished — but a FRESH
+            # process deserves one chance before the user sees an error.
+            _diag("mem_gate", role="piper", action="retry_after_brake")
+            proc = _guarded_run([sys.executable, "--piper-worker", taskf.name],
+                                "piper", 600)
+            if proc.returncode not in (0, None) and proc.returncode < 0:
+                raise RuntimeError(
+                    "ساخت گفتار دوبار پشت\u200cسرهم از سقف حافظه گذشت و متوقف شد — "
+                    "برنامه\u200cهای دیگر را ببندید یا متن را کوتاه\u200cتر کنید و دوباره بکوشید.")
         try:
             for ln in (proc.stderr or b"").decode("utf-8", "ignore").splitlines():
                 if "[ava-diag]" in ln:
@@ -969,8 +981,9 @@ def chatterbox_pcm(text, exaggeration, cfg_weight, temperature, status, speed=1.
             _avail = psutil.virtual_memory().available // (1024 * 1024)
             # rss is the honest signal: macOS compresses/swaps to keep "avail"
             # looking fine while a leaking process swells — brake on OURSELVES
-            _swap = psutil.swap_memory().used // (1024 * 1024)
-            if _rss > _cbx_ceiling_mb(_rss, _avail) + 2000 or _avail < 800 or _swap > 12000:
+            _swap = _swap_growth_mb()
+            ok_b, _why_b = _mem_check("cbx_brake", max(0, _rss - 2000), _avail if _avail >= 800 else None)
+            if not ok_b or _avail < 800:
                 raise RuntimeError(
                     f"حافظهٔ موتور در میانهٔ ساخت از حد گذشت ({faDigits(_rss // 1024)} گیگابایت) — "
                     "این بخش متوقف شد تا دستگاه قفل نشود؛ موتور تازه‌سازی می‌شود. "
@@ -1011,6 +1024,84 @@ def _swap_used_mb():
         return int(psutil.swap_memory().used // (1024 * 1024))
     except Exception:
         return 0
+
+
+_SWAP_BASELINE = _swap_used_mb()
+
+
+def _swap_growth_mb():
+    """Swap GROWTH since this app launched. Absolute system swap punished the
+    user for state a relaunch can't clear (field-measured lockout: the app
+    refused all work after its own crash because yesterday's swap was still
+    draining). Growth resets with every launch — the gate measures US."""
+    return max(0, _swap_used_mb() - _SWAP_BASELINE)
+
+
+# =========================================================================
+# UNIFIED MEMORY PROTOCOL (build 76) — the user's doctrine, verbatim:
+# "the cap and the entire ram management protocols should be applied to
+#  both the chatterbox worker and the main process, or any other leaker
+#  that may exist, not just one or the other."
+# One policy table, one check primitive, one guarded runner. A new process
+# gets a ROW here, never a bespoke gate. Enforcement differs only by what
+# physics allows: a worker dies and respawns; main refuses and instructs.
+# =========================================================================
+_MEM_POLICY = {
+    #  role         rss_cap_mb  swap_growth_kill_mb   note
+    "main":        {"cap": 6000,  "swap": 10000},   # refuse jobs + relaunch advice
+    "cbx":         {"cap": None,  "swap": 4000},    # cap=None -> band rule ceiling
+    "cbx_admit":   {"cap": None,  "swap": 6000},
+    "cbx_brake":   {"cap": None,  "swap": 12000},   # band rule + 2000 slack applied at site
+    "piper":       {"cap": 5000,  "swap": 8000},    # deterministic small model
+    "align":       {"cap": 8000,  "swap": 8000},    # wav2vec2-large + activations
+}
+
+
+def _mem_check(role, rss_mb, avail_mb):
+    """(ok, reason) under the unified policy. rss_cap None means the adaptive
+    band-rule ceiling; a number is an absolute cap for that role."""
+    pol = _MEM_POLICY[role]
+    cap = pol["cap"] if pol["cap"] is not None else _cbx_ceiling_mb(rss_mb, avail_mb)
+    if rss_mb is not None and rss_mb > cap:
+        return False, f"rss>{cap}"
+    if _swap_growth_mb() > pol["swap"]:
+        return False, f"swap_growth>{pol['swap']}"
+    if avail_mb is not None and avail_mb < 1500 and role != "main":
+        return False, "avail<1500"
+    return True, ""
+
+
+def _guarded_run(argv, role, timeout):
+    """subprocess.run with the SAME mid-job brake every process deserves:
+    poll the child's rss and system swap growth against the policy; breach
+    kills the child. Piper and align never had a mid-job cap before this."""
+    import psutil
+    creation = {"creationflags": 0x08000000} if os.name == "nt" else {}
+    proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **creation)
+    t0 = time.time()
+    child = None
+    try:
+        child = psutil.Process(proc.pid)
+    except Exception:
+        pass
+    while proc.poll() is None:
+        if time.time() - t0 > timeout:
+            proc.kill()
+            _diag("mem_gate", role=role, action="timeout_kill")
+            break
+        rss = None
+        try:
+            rss = int(child.memory_info().rss // 1048576) if child else None
+        except Exception:
+            pass
+        ok, why = _mem_check(role, rss, None)
+        if not ok:
+            proc.kill()
+            _diag("mem_gate", role=role, action="brake_kill", rss=rss, reason=why)
+            break
+        time.sleep(0.5)
+    out, err = proc.communicate(timeout=30)
+    return types.SimpleNamespace(returncode=proc.returncode, stdout=out, stderr=err)
 
 
 def _cbx_ceiling_mb(rss_mb, avail_mb):
@@ -1090,9 +1181,10 @@ def chatterbox_worker_main():
                 avail_mb = psutil.virtual_memory().available // (1024 * 1024)
             except Exception:
                 pass
-            recycle = (rss > _cbx_ceiling_mb(rss, avail_mb)
-                       or (avail_mb is not None and avail_mb < 1500)
-                       or _swap_used_mb() > 4000)
+            ok_m, why_m = _mem_check("cbx", rss, avail_mb)
+            recycle = not ok_m
+            if recycle:
+                _diag("mem_gate", role="cbx", action="retire", rss=rss, reason=why_m)
             sys.stdout.write(json.dumps({"type": "result", "path": f.name, "sr": sr,
                                          "rss_mb": rss, "recycle": recycle},
                                         ensure_ascii=False) + "\n")
@@ -1143,12 +1235,12 @@ def chatterbox_via_worker(req, status):
         except Exception:
             pass
         if _cbx_proc is not None and _cbx_proc.poll() is None and _cbx_last_rss:
-            over = _cbx_last_rss > _cbx_ceiling_mb(_cbx_last_rss, avail_mb)
-            tight = avail_mb is not None and avail_mb < 1500
-            swapped = _swap_used_mb() > 6000
-            if over or tight or swapped:
+            ok_a, why_a = _mem_check("cbx_admit", _cbx_last_rss, avail_mb)
+            over = "rss>" in why_a
+            swapped = "swap" in why_a
+            if not ok_a:
                 _diag("admission_recycle", rss=_cbx_last_rss, avail=avail_mb,
-                      swap=_swap_used_mb(),
+                      swap=_swap_growth_mb(),
                       reason="ceiling" if over else ("swap" if swapped else "low_avail"))
                 status("پاک‌سازی حافظهٔ موتور پیش از ساخت این بخش…")
                 try:
@@ -1175,7 +1267,24 @@ def chatterbox_via_worker(req, status):
             if t == "status":
                 status(msg.get("msg", ""), pct=msg.get("pct"))
             elif t == "error":
-                raise RuntimeError(msg.get("error", "خطای ناشناخته"))
+                err = msg.get("error", "خطای ناشناخته")
+                if "در میانهٔ ساخت از حد گذشت" in err and not req.get("_brake_retry"):
+                    # the brake stopped a runaway — the job gets ONE fresh
+                    # worker before the user ever sees an error (the user's
+                    # doctrine: a ceiling protects the machine, not at the
+                    # price of silently costing them their job).
+                    _diag("mem_gate", role="cbx", action="retry_after_brake")
+                    try:
+                        p.terminate()
+                    except Exception:
+                        pass
+                    _cbx_proc = None
+                    _cbx_last_rss = 0
+                    req2 = dict(req)
+                    req2["_brake_retry"] = True
+                    status("موتور تازه\u200cسازی شد؛ همین بخش دوباره ساخته می\u200cشود…")
+                    return chatterbox_via_worker(req2, status)
+                raise RuntimeError(err)
             elif t == "result":
                 _cbx_last_rss = int(msg.get("rss_mb") or 0)
                 with wave.open(msg["path"], "rb") as wf:
@@ -1298,7 +1407,39 @@ def _assemble(entry):
     return np.concatenate(out) if out else np.zeros(1, dtype=np.int16)
 
 
+def _mem_report(tag):
+    try:
+        import psutil
+        pr = psutil.Process()
+        _diag("mem", tag=tag, main_rss_mb=int(pr.memory_info().rss // 1048576),
+              swap_mb=_swap_used_mb(), swap_growth_mb=_swap_growth_mb(),
+              threads=pr.num_threads())
+    except Exception:
+        pass
+
+
+_MAIN_RSS_CAP_MB = 6000  # mirrored in _MEM_POLICY["main"]["cap"]
+
+
+def _main_watchdog():
+    """The 75% ceiling always governed the worker; MAIN had no cap because it
+    was assumed light — the assumption that hid four crashes. Now main gets
+    its own hard bound, checked before every job."""
+    try:
+        import psutil
+        rss = int(psutil.Process().memory_info().rss // 1048576)
+    except Exception:
+        return
+    ok, why = _mem_check("main", rss, None)
+    if not ok:
+        _diag("mem_gate", role="main", action="refuse", rss_mb=rss, reason=why)
+        raise RuntimeError(
+            f"هستهٔ برنامه به سقف حافظهٔ خود رسیده ({faDigits(rss // 1024)} گیگابایت) — "
+            "برنامه را ببندید و دوباره باز کنید؛ این وضعیت ثبت شد تا ریشه\u200cیابی شود.")
+
+
 def _mem_preflight(status):
+    _main_watchdog()
     try:
         import psutil
         total_mb = psutil.virtual_memory().total // (1024 * 1024)
@@ -1313,10 +1454,10 @@ def _mem_preflight(status):
         avail_mb = psutil.virtual_memory().available // (1024 * 1024)
     except Exception:
         avail_mb = None
-    if _swap_used_mb() > 10000:
+    if _swap_growth_mb() > 10000:
         raise RuntimeError(
-            f"حافظهٔ دستگاه به سواپ سنگین افتاده ({faDigits(_swap_used_mb() // 1024)} گیگابایت) — "
-            "پیش از ادامه، برنامه را ببندید و دوباره باز کنید تا حافظهٔ نشت‌کرده آزاد شود.")
+            f"برنامه در همین نشست {faDigits(_swap_growth_mb() // 1024)} گیگابایت سواپ اشغال کرده — "
+            "برنامه را ببندید و دوباره باز کنید؛ با باز شدن دوباره، شمارش از صفر آغاز می\u200cشود.")
     if avail_mb is not None and avail_mb < 2000:
         raise RuntimeError(
             f"حافظهٔ آزاد برای صدای چترباکس کافی نیست ({faDigits(avail_mb)} مگابایت). "
@@ -1347,11 +1488,38 @@ def _gulp_pcm(payload, status):
 
 import itertools as _it
 _GULP_PCM = {}
+_SPILL_DIR = None
+
+
+def _spill_entry(entry, gid):
+    """Main-process prevention, not defense: an entry's audio arrays move to
+    disk immediately after assembly and come back as read-only memory-maps.
+    RAM cost of a stored entry drops to ~zero while patching stays exact —
+    a memory-mapped array slices and concatenates like any other. Session
+    length no longer grows the main process."""
+    global _SPILL_DIR
+    import tempfile
+    if _SPILL_DIR is None:
+        _SPILL_DIR = tempfile.mkdtemp(prefix="ava-spill-")
+    for k, i in enumerate(entry.get("items", [])):
+        p = i.get("pcm")
+        if isinstance(p, np.ndarray) and len(p) and not isinstance(p, np.memmap):
+            path = os.path.join(_SPILL_DIR, f"g{gid}-i{k}.npy")
+            np.save(path, np.ascontiguousarray(p, dtype=np.int16))
+            i["pcm"] = np.load(path, mmap_mode="r")
+    return entry
+
+
 _gulp_ids = _it.count(1)
 
 
 def reset_gulps():
     _GULP_PCM.clear()
+    global _SPILL_DIR
+    if _SPILL_DIR:
+        import shutil
+        shutil.rmtree(_SPILL_DIR, ignore_errors=True)
+        _SPILL_DIR = None
 
 
 def _rep_beat(pcm, sr):
@@ -1666,7 +1834,7 @@ def generate_gulp(payload, status):
                          ("exaggeration", "cfg_weight", "temperature", "cbx_speed",
                           "speed", "noise", "noisew") if k in payload}}
     _ensure_valid(entry, "تولید", status)
-    _GULP_PCM[gid] = entry
+    _GULP_PCM[gid] = _spill_entry(entry, gid)
     return pcm_to_mp3(_assemble(entry), sr), gid
 
 
@@ -1704,7 +1872,63 @@ def _align_feed(pcm, sr):
     return pcm.astype(np.float32) / 32768.0
 
 
+def align_worker_main(task_path):
+    """Disposable alignment worker: torch, torchaudio, and the wav2vec2
+    model live and DIE here. Four identical main-process deaths (56 GB, 18
+    threads) with every guard aimed at the chatterbox worker — the aligner
+    was the resident torch stack in main all along. Now nothing of it
+    survives a call."""
+    import json as _json
+    with open(task_path, encoding="utf-8") as f:
+        task = _json.load(f)
+    pcm = np.fromfile(task["pcm_path"], dtype=np.int16)
+    res = _align_words_core(pcm, int(task["sr"]), task["text"], lambda m: None)
+    out = {"ok": res is not None,
+           "spans": [[w, int(a), int(b)] for w, a, b in (res or [])]}
+    with open(task["out_path"], "w", encoding="utf-8") as f:
+        _json.dump(out, f, ensure_ascii=False)
+    try:
+        import psutil
+        _diag("align_worker_exit", rss_mb=int(psutil.Process().memory_info().rss // 1048576))
+    except Exception:
+        pass
+
+
 def _align_words(pcm, sr, text, status):
+    """Subprocess wrapper with the historical signature. The heavy body is
+    _align_words_core, executed only inside the disposable worker."""
+    import tempfile, json as _json
+    _mem_report("align_call")
+    with tempfile.TemporaryDirectory() as td:
+        pcm_path = os.path.join(td, "a.raw")
+        out_path = os.path.join(td, "r.json")
+        np.asarray(pcm, dtype=np.int16).tofile(pcm_path)
+        task = os.path.join(td, "t.json")
+        with open(task, "w", encoding="utf-8") as f:
+            _json.dump({"pcm_path": pcm_path, "sr": int(sr),
+                        "text": text, "out_path": out_path}, f, ensure_ascii=False)
+        creation = {"creationflags": 0x08000000} if os.name == "nt" else {}
+        try:
+            status("هم\u200cترازسازی واژه\u200cها…")
+            proc = _guarded_run([sys.executable, "--align-worker", task],
+                                "align", 420)
+            for ln in (proc.stderr or b"").decode("utf-8", "ignore").splitlines():
+                if "[ava-diag]" in ln:
+                    sys.stderr.write(ln + "\n")
+            if proc.returncode != 0 or not os.path.exists(out_path):
+                _diag("align_worker_fail", rc=proc.returncode)
+                return None
+            with open(out_path, encoding="utf-8") as f:
+                out = _json.load(f)
+        except Exception as e:
+            _diag("align_worker_fail", err=type(e).__name__)
+            return None
+    if not out.get("ok"):
+        return None
+    return [(w, a, b) for w, a, b in out["spans"]]
+
+
+def _align_words_core(pcm, sr, text, status):
     """Force-align clause audio to its words → [(word, start_sample, end_sample)].
     Returns None when alignment isn't trustworthy; caller falls back."""
     _load_aligner(status)
