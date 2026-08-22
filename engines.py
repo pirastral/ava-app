@@ -1,5 +1,5 @@
 """Ava — Persian TTS engines (Chatterbox-Persian + Piper voices + auto-ezafe)."""
-import os, json, re, shutil, subprocess, sys, tempfile, threading, wave
+import os, json, re, shutil, subprocess, sys, tempfile, threading, time, wave
 import types
 from pathlib import Path
 
@@ -29,8 +29,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 77
-BUILD_FA = "\u06f7\u06f7"
+BUILD = 78
+BUILD_FA = "\u06f7\u06f8"
 
 
 def _diag(tag, **kv):
@@ -41,6 +41,12 @@ def _diag(tag, **kv):
                         " ".join(f"{k}={v}" for k, v in kv.items()) + "\n")
     except Exception:
         pass
+
+
+try:
+    _diag("session", build=BUILD)
+except Exception:
+    pass
 
 
 def _final_decay(pcm, sr, win=0.030, fade=0.060, frac=0.15):
@@ -1250,6 +1256,38 @@ def chatterbox_via_worker(req, status):
                 _cbx_proc = None
                 _cbx_last_rss = 0
         p = _cbx_ensure()
+        _watch_stop = threading.Event()
+        _watch_hit = {"breach": None}
+
+        def _cbx_parent_watch(proc_ref):
+            try:
+                import psutil
+                child = psutil.Process(proc_ref.pid)
+            except Exception:
+                return
+            while not _watch_stop.wait(0.5):
+                if proc_ref.poll() is not None:
+                    return
+                rss = None
+                try:
+                    rss = int(child.memory_info().rss // 1048576)
+                    for gc in child.children(recursive=True):
+                        rss += int(gc.memory_info().rss // 1048576)
+                except Exception:
+                    pass
+                ok_w, why_w = _mem_check("cbx_brake", (rss - 2000) if rss else None, None)
+                if not ok_w:
+                    _watch_hit["breach"] = f"{why_w} rss={rss}"
+                    _diag("mem_gate", role="cbx_parent", action="brake_kill",
+                          rss=rss, reason=why_w)
+                    try:
+                        proc_ref.kill()
+                    except Exception:
+                        pass
+                    return
+
+        _watch_thr = threading.Thread(target=_cbx_parent_watch, args=(p,), daemon=True)
+        _watch_thr.start()
         line = json.dumps(req, ensure_ascii=False) + "\n"
         try:
             p.stdin.write(line); p.stdin.flush()
@@ -1267,6 +1305,7 @@ def chatterbox_via_worker(req, status):
             if t == "status":
                 status(msg.get("msg", ""), pct=msg.get("pct"))
             elif t == "error":
+                _watch_stop.set()
                 err = msg.get("error", "خطای ناشناخته")
                 if "در میانهٔ ساخت از حد گذشت" in err and not req.get("_brake_retry"):
                     # the brake stopped a runaway — the job gets ONE fresh
@@ -1286,6 +1325,7 @@ def chatterbox_via_worker(req, status):
                     return chatterbox_via_worker(req2, status)
                 raise RuntimeError(err)
             elif t == "result":
+                _watch_stop.set()
                 _cbx_last_rss = int(msg.get("rss_mb") or 0)
                 with wave.open(msg["path"], "rb") as wf:
                     sr = wf.getframerate()
@@ -1307,12 +1347,23 @@ def chatterbox_via_worker(req, status):
                            "حافظهٔ موتور چترباکس پاک‌سازی شد — نوبت بعد چند لحظه بیشتر طول می‌کشد.")
                     _cbx_proc = None
                     _cbx_last_rss = 0
+                # one return shape, always (the user's arity law — its
+                # violation here crashed every offset-less chatterbox job
+                # after build 71 with "not enough values to unpack").
                 if offs is not None:
                     return pcm, sr, [pcm[a:a + n].copy() for a, n in offs]
-                return pcm, sr
+                return pcm, sr, None
         # stdout closed: the worker died mid-job
+        _watch_stop.set()
         _cbx_proc = None
         _cbx_last_rss = 0
+        if _watch_hit.get("breach"):
+            # the parent watchdog killed a runaway — speak the brake marker
+            # so the retry-after-brake path gives this job one fresh worker
+            raise RuntimeError(
+                f"حافظهٔ موتور در میانهٔ ساخت از حد گذشت ({_watch_hit['breach']}) — "
+                "این بخش متوقف شد تا دستگاه قفل نشود؛ موتور تازه\u200cسازی می\u200cشود. "
+                "همین بخش را دوباره بسازید.")
         tail = "\n".join(list(_cbx_stderr or [])[-8:])
         raise RuntimeError("موتور چترباکس ناگهان بسته شد" +
                            (":\n" + tail if tail else " — دوباره امتحان کنید."))
@@ -1921,7 +1972,7 @@ def _align_words(pcm, sr, text, status):
             with open(out_path, encoding="utf-8") as f:
                 out = _json.load(f)
         except Exception as e:
-            _diag("align_worker_fail", err=type(e).__name__)
+            _diag("align_worker_fail", err=f"{type(e).__name__}: {str(e)[:90]}")
             return None
     if not out.get("ok"):
         return None
