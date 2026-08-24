@@ -1,6 +1,5 @@
 """Ava — Persian TTS engines (Chatterbox-Persian + Piper voices + auto-ezafe)."""
-import os, json, re, shutil, subprocess, sys, tempfile, threading, time, wave
-import types
+import os, json, re, shutil, subprocess, sys, tempfile, threading, wave
 from pathlib import Path
 
 MODELS_DIR = Path.home() / "AvaModels"
@@ -29,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 81
-BUILD_FA = "\u06f8\u06f1"
+BUILD = 82
+BUILD_FA = "\u06f8\u06f2"
 
 
 def _diag(tag, **kv):
@@ -41,7 +40,6 @@ def _diag(tag, **kv):
                         " ".join(f"{k}={v}" for k, v in kv.items()) + "\n")
     except Exception:
         pass
-
 
 try:
     _diag("session", build=BUILD)
@@ -571,19 +569,8 @@ def piper_pcm(voice_key, segments, speed, noise_scale, noise_w, status):
     taskf.close()
     try:
         creation = {"creationflags": 0x08000000} if os.name == "nt" else {}
-        proc = _guarded_run([sys.executable, "--piper-worker", taskf.name],
-                            "piper", 600)
-        if proc.returncode not in (0, None) and proc.returncode < 0:
-            # mid-job brake or timeout killed the worker. A job that breaches
-            # is a runaway that would never have finished — but a FRESH
-            # process deserves one chance before the user sees an error.
-            _diag("mem_gate", role="piper", action="retry_after_brake")
-            proc = _guarded_run([sys.executable, "--piper-worker", taskf.name],
-                                "piper", 600)
-            if proc.returncode not in (0, None) and proc.returncode < 0:
-                raise RuntimeError(
-                    "ساخت گفتار دوبار پشت\u200cسرهم از سقف حافظه گذشت و متوقف شد — "
-                    "برنامه\u200cهای دیگر را ببندید یا متن را کوتاه\u200cتر کنید و دوباره بکوشید.")
+        proc = subprocess.run([sys.executable, "--piper-worker", taskf.name],
+                              capture_output=True, timeout=600, **creation)
         try:
             for ln in (proc.stderr or b"").decode("utf-8", "ignore").splitlines():
                 if "[ava-diag]" in ln:
@@ -606,10 +593,7 @@ def piper_pcm(voice_key, segments, speed, noise_scale, noise_w, status):
             offs = [pcm[a:a + n].copy() for a, n in meta["offsets"]]
         except Exception:
             pass
-        # a function that sometimes returns 2 values and sometimes 3 is a
-        # landmine (it detonated in the field as a raw unpack error on the
-        # user's screen). One shape, always: parts is None when absent.
-        return pcm, sr, offs
+        return (pcm, sr) if offs is None else (pcm, sr, offs)
     finally:
         for p in (out.name, taskf.name, out.name + ".offsets.json"):
             try:
@@ -629,16 +613,8 @@ def _wav_pcm(wf):
     return pcm
 
 
-
-
-
 def piper_generate(voice_key, text, speed, noise_scale, noise_w, status):
-    pcm, sr, _ = piper_pcm(voice_key, _pause_segments(text), speed, noise_scale, noise_w, status)
-    if pcm is not None and len(pcm) and _band_displaced(pcm, sr):
-        _diag("piper_main_displaced", voice=voice_key, chars=len(text))
-        raise RuntimeError(
-            "این صدا جمله\u200cهای خیلی کوتاه را خراب می\u200cخواند (محدودیت خود مدل). "
-            "متن را به یک جملهٔ کامل برسانید یا صدای دیگری برگزینید.")
+    pcm, sr = piper_pcm(voice_key, _pause_segments(text), speed, noise_scale, noise_w, status)
     return pcm_to_mp3(pcm, sr), sr
 
 
@@ -985,9 +961,8 @@ def chatterbox_pcm(text, exaggeration, cfg_weight, temperature, status, speed=1.
             _avail = psutil.virtual_memory().available // (1024 * 1024)
             # rss is the honest signal: macOS compresses/swaps to keep "avail"
             # looking fine while a leaking process swells — brake on OURSELVES
-            _swap = _swap_growth_mb()
-            ok_b, _why_b = _mem_check("cbx_brake", max(0, _rss - 2000), _avail if _avail >= 800 else None)
-            if not ok_b or _avail < 800:
+            if _rss > _cbx_ceiling_mb(_rss, _avail) + 2000 or _avail < 800 \
+                    or _swap_hot(12000, _avail):
                 raise RuntimeError(
                     f"حافظهٔ موتور در میانهٔ ساخت از حد گذشت ({faDigits(_rss // 1024)} گیگابایت) — "
                     "این بخش متوقف شد تا دستگاه قفل نشود؛ موتور تازه‌سازی می‌شود. "
@@ -1033,113 +1008,12 @@ def _swap_used_mb():
 _SWAP_BASELINE = _swap_used_mb()
 
 
-def _swap_growth_mb():
-    """Swap GROWTH since this app launched. Absolute system swap punished the
-    user for state a relaunch can't clear (field-measured lockout: the app
-    refused all work after its own crash because yesterday's swap was still
-    draining). Growth resets with every launch — the gate measures US."""
-    return max(0, _swap_used_mb() - _SWAP_BASELINE)
-
-
-# =========================================================================
-# UNIFIED MEMORY PROTOCOL (build 76) — the user's doctrine, verbatim:
-# "the cap and the entire ram management protocols should be applied to
-#  both the chatterbox worker and the main process, or any other leaker
-#  that may exist, not just one or the other."
-# One policy table, one check primitive, one guarded runner. A new process
-# gets a ROW here, never a bespoke gate. Enforcement differs only by what
-# physics allows: a worker dies and respawns; main refuses and instructs.
-# =========================================================================
-_MEM_POLICY = {
-    #  role         rss_cap_mb  swap_growth_kill_mb   note
-    "main":        {"cap": 6000,  "swap": 10000},   # refuse jobs + relaunch advice
-    "cbx":         {"cap": None,  "swap": 4000},    # cap=None -> band rule ceiling
-    "cbx_admit":   {"cap": None,  "swap": 6000},
-    "cbx_brake":   {"cap": None,  "swap": 12000},   # band rule + 2000 slack applied at site
-    "piper":       {"cap": 5000,  "swap": 8000},    # deterministic small model
-    "align":       {"cap": 8000,  "swap": 8000},    # wav2vec2-large + activations
-}
-
-
-def _mem_check(role, rss_mb, avail_mb):
-    """(ok, reason) under the unified policy. rss_cap None means the adaptive
-    band-rule ceiling; a number is an absolute cap for that role."""
-    pol = _MEM_POLICY[role]
-    cap = pol["cap"] if pol["cap"] is not None else _cbx_ceiling_mb_safe(rss_mb, avail_mb)
-    if rss_mb is not None and rss_mb > cap:
-        return False, f"rss>{cap}"
-    # FIELD LAW (build 80): swap growth alone may NEVER kill or refuse.
-    # macOS swap only ratchets upward — every legitimate spike (per-call
-    # aligner load, worker respawn) raises it and plentiful RAM never
-    # lowers it. Gating on the ratchet executed a HEALTHY 1.2 GB worker
-    # (logged) and manufactured a kill->respawn->ratchet->kill loop.
-    # Swap counts only under genuine pressure: free RAM actually scarce.
-    if (_swap_growth_mb() > pol["swap"]
-            and avail_mb is not None and avail_mb < 6000):
-        return False, f"swap_growth>{pol['swap']}+avail<6000"
-    if avail_mb is not None and avail_mb < 1500 and role != "main":
-        return False, "avail<1500"
-    return True, ""
-
-
-def _guarded_run(argv, role, timeout):
-    """subprocess.run with the SAME mid-job brake every process deserves:
-    poll the child's rss and system swap growth against the policy; breach
-    kills the child. Piper and align never had a mid-job cap before this."""
-    import psutil
-    creation = {"creationflags": 0x08000000} if os.name == "nt" else {}
-    # PIPES DEADLOCK: a child flooding stderr (torch load warnings measured
-    # in the field) fills the 64 KB pipe and blocks forever while the parent
-    # polls a process that can never finish. Files have no such limit.
-    of = tempfile.NamedTemporaryFile(delete=False)
-    ef = tempfile.NamedTemporaryFile(delete=False)
-    proc = subprocess.Popen(argv, stdout=of, stderr=ef, **creation)
-    t0 = time.time()
-    child = None
-    try:
-        child = psutil.Process(proc.pid)
-    except Exception:
-        pass
-    while proc.poll() is None:
-        if time.time() - t0 > timeout:
-            proc.kill()
-            _diag("mem_gate", role=role, action="timeout_kill")
-            break
-        rss = None
-        try:
-            rss = int(child.memory_info().rss // 1048576) if child else None
-        except Exception:
-            pass
-        ok, why = _mem_check(role, rss, None)
-        if not ok:
-            proc.kill()
-            _diag("mem_gate", role=role, action="brake_kill", rss=rss, reason=why)
-            break
-        time.sleep(0.5)
-    try:
-        proc.wait(timeout=30)
-    except Exception:
-        proc.kill()
-    of.close(); ef.close()
-    out = open(of.name, "rb").read()
-    err = open(ef.name, "rb").read()
-    for p_ in (of.name, ef.name):
-        try:
-            os.unlink(p_)
-        except OSError:
-            pass
-    return types.SimpleNamespace(returncode=proc.returncode, stdout=out, stderr=err)
-
-
-def _cbx_ceiling_mb_safe(rss_mb, avail_mb):
-    """Never let a measurement gap masquerade as a breach: on any failure or
-    missing input, return the most PERMISSIVE fence — a watchdog that cannot
-    see clearly must not kill."""
-    try:
-        return _cbx_ceiling_mb(rss_mb, avail_mb if avail_mb is not None else 0) \
-            if rss_mb is not None else 10 ** 9
-    except Exception:
-        return 10 ** 9
+def _swap_hot(threshold_mb, avail_mb):
+    """Swap matters only as GROWTH since this launch AND under genuine
+    pressure (free RAM scarce). Absolute swap locked the app out after its
+    own crashes; swap-alone gating killed healthy processes. Both measured."""
+    growth = max(0, _swap_used_mb() - _SWAP_BASELINE)
+    return growth > threshold_mb and avail_mb is not None and avail_mb < 6000
 
 
 def _cbx_ceiling_mb(rss_mb, avail_mb):
@@ -1219,10 +1093,9 @@ def chatterbox_worker_main():
                 avail_mb = psutil.virtual_memory().available // (1024 * 1024)
             except Exception:
                 pass
-            ok_m, why_m = _mem_check("cbx", rss, avail_mb)
-            recycle = not ok_m
-            if recycle:
-                _diag("mem_gate", role="cbx", action="retire", rss=rss, reason=why_m)
+            recycle = (rss > _cbx_ceiling_mb(rss, avail_mb)
+                       or (avail_mb is not None and avail_mb < 1500)
+                       or _swap_hot(4000, avail_mb))
             sys.stdout.write(json.dumps({"type": "result", "path": f.name, "sr": sr,
                                          "rss_mb": rss, "recycle": recycle},
                                         ensure_ascii=False) + "\n")
@@ -1273,12 +1146,12 @@ def chatterbox_via_worker(req, status):
         except Exception:
             pass
         if _cbx_proc is not None and _cbx_proc.poll() is None and _cbx_last_rss:
-            ok_a, why_a = _mem_check("cbx_admit", _cbx_last_rss, avail_mb)
-            over = "rss>" in why_a
-            swapped = "swap" in why_a
-            if not ok_a:
+            over = _cbx_last_rss > _cbx_ceiling_mb(_cbx_last_rss, avail_mb)
+            tight = avail_mb is not None and avail_mb < 1500
+            swapped = _swap_hot(6000, avail_mb)
+            if over or tight or swapped:
                 _diag("admission_recycle", rss=_cbx_last_rss, avail=avail_mb,
-                      swap=_swap_growth_mb(),
+                      swap=_swap_used_mb(),
                       reason="ceiling" if over else ("swap" if swapped else "low_avail"))
                 status("پاک‌سازی حافظهٔ موتور پیش از ساخت این بخش…")
                 try:
@@ -1288,42 +1161,6 @@ def chatterbox_via_worker(req, status):
                 _cbx_proc = None
                 _cbx_last_rss = 0
         p = _cbx_ensure()
-        _watch_stop = threading.Event()
-        _watch_hit = {"breach": None}
-
-        def _cbx_parent_watch(proc_ref):
-            try:
-                import psutil
-                child = psutil.Process(proc_ref.pid)
-            except Exception:
-                return
-            while not _watch_stop.wait(0.5):
-                if proc_ref.poll() is not None:
-                    return
-                rss, avail = None, None
-                try:
-                    rss = int(child.memory_info().rss // 1048576)
-                    for gc in child.children(recursive=True):
-                        rss += int(gc.memory_info().rss // 1048576)
-                    avail = int(psutil.virtual_memory().available // 1048576)
-                except Exception:
-                    pass
-                # the user's doctrine, applied where it was being skipped:
-                # the ceiling is ADAPTIVE — 75% of (free + rss), band-clamped
-                # — so plentiful free RAM legitimately raises the allowance.
-                ok_w, why_w = _mem_check("cbx_brake", (rss - 2000) if rss else None, avail)
-                if not ok_w:
-                    _watch_hit["breach"] = f"{why_w} rss={rss}"
-                    _diag("mem_gate", role="cbx_parent", action="brake_kill",
-                          rss=rss, reason=why_w)
-                    try:
-                        proc_ref.kill()
-                    except Exception:
-                        pass
-                    return
-
-        _watch_thr = threading.Thread(target=_cbx_parent_watch, args=(p,), daemon=True)
-        _watch_thr.start()
         line = json.dumps(req, ensure_ascii=False) + "\n"
         try:
             p.stdin.write(line); p.stdin.flush()
@@ -1341,27 +1178,8 @@ def chatterbox_via_worker(req, status):
             if t == "status":
                 status(msg.get("msg", ""), pct=msg.get("pct"))
             elif t == "error":
-                _watch_stop.set()
-                err = msg.get("error", "خطای ناشناخته")
-                if "در میانهٔ ساخت از حد گذشت" in err and not req.get("_brake_retry"):
-                    # the brake stopped a runaway — the job gets ONE fresh
-                    # worker before the user ever sees an error (the user's
-                    # doctrine: a ceiling protects the machine, not at the
-                    # price of silently costing them their job).
-                    _diag("mem_gate", role="cbx", action="retry_after_brake")
-                    try:
-                        p.terminate()
-                    except Exception:
-                        pass
-                    _cbx_proc = None
-                    _cbx_last_rss = 0
-                    req2 = dict(req)
-                    req2["_brake_retry"] = True
-                    status("موتور تازه\u200cسازی شد؛ همین بخش دوباره ساخته می\u200cشود…")
-                    return chatterbox_via_worker(req2, status)
-                raise RuntimeError(err)
+                raise RuntimeError(msg.get("error", "خطای ناشناخته"))
             elif t == "result":
-                _watch_stop.set()
                 _cbx_last_rss = int(msg.get("rss_mb") or 0)
                 with wave.open(msg["path"], "rb") as wf:
                     sr = wf.getframerate()
@@ -1383,23 +1201,12 @@ def chatterbox_via_worker(req, status):
                            "حافظهٔ موتور چترباکس پاک‌سازی شد — نوبت بعد چند لحظه بیشتر طول می‌کشد.")
                     _cbx_proc = None
                     _cbx_last_rss = 0
-                # one return shape, always (the user's arity law — its
-                # violation here crashed every offset-less chatterbox job
-                # after build 71 with "not enough values to unpack").
                 if offs is not None:
                     return pcm, sr, [pcm[a:a + n].copy() for a, n in offs]
-                return pcm, sr, None
+                return pcm, sr
         # stdout closed: the worker died mid-job
-        _watch_stop.set()
         _cbx_proc = None
         _cbx_last_rss = 0
-        if _watch_hit.get("breach"):
-            # the parent watchdog killed a runaway — speak the brake marker
-            # so the retry-after-brake path gives this job one fresh worker
-            raise RuntimeError(
-                f"حافظهٔ موتور در میانهٔ ساخت از حد گذشت ({_watch_hit['breach']}) — "
-                "این بخش متوقف شد تا دستگاه قفل نشود؛ موتور تازه\u200cسازی می\u200cشود. "
-                "همین بخش را دوباره بسازید.")
         tail = "\n".join(list(_cbx_stderr or [])[-8:])
         raise RuntimeError("موتور چترباکس ناگهان بسته شد" +
                            (":\n" + tail if tail else " — دوباره امتحان کنید."))
@@ -1415,9 +1222,7 @@ def _synth_clauses(items, payload, status):
         return 22050
     texts, live = [], []
     for i in t_items:
-        raw = i.pop("_synth_text", None)
-        c = (_cbx_sanitize(raw if raw is not None else _despoken_tail_ezafe(i["text"]))
-             if engine == "chatterbox" else (raw if raw is not None else i["text"]).strip())
+        c = _cbx_sanitize(_despoken_tail_ezafe(i["text"])) if engine == "chatterbox" else i["text"].strip()
         if c:
             texts.append(c); live.append(i)
     sr = 24000 if engine == "chatterbox" else 22050
@@ -1433,8 +1238,7 @@ def _synth_clauses(items, payload, status):
         else:
             res = piper_pcm(engine, [{"t": t} for t in texts], payload.get("speed", 1.0),
                             payload.get("noise", 0.667), payload.get("noisew", 0.8), status)
-        pcm, sr, parts = res
-        parts = parts if parts is not None else [pcm]
+        pcm, sr, parts = res if len(res) == 3 else (res[0], res[1], [res[0]])
         for i, p in zip(live, parts):
             i["pcm"] = p
     for i in t_items:
@@ -1494,46 +1298,7 @@ def _assemble(entry):
     return np.concatenate(out) if out else np.zeros(1, dtype=np.int16)
 
 
-def _mem_report(tag):
-    try:
-        import psutil
-        pr = psutil.Process()
-        _diag("mem", tag=tag, main_rss_mb=int(pr.memory_info().rss // 1048576),
-              swap_mb=_swap_used_mb(), swap_growth_mb=_swap_growth_mb(),
-              threads=pr.num_threads())
-    except Exception:
-        pass
-
-
-_MAIN_RSS_CAP_MB = 6000  # mirrored in _MEM_POLICY["main"]["cap"]
-
-
-def _main_watchdog():
-    """The 75% ceiling always governed the worker; MAIN had no cap because it
-    was assumed light — the assumption that hid four crashes. Now main gets
-    its own hard bound, checked before every job."""
-    try:
-        import psutil
-        rss = int(psutil.Process().memory_info().rss // 1048576)
-        avail = int(psutil.virtual_memory().available // 1048576)
-    except Exception:
-        return
-    ok, why = _mem_check("main", rss, avail)
-    if not ok:
-        _diag("mem_gate", role="main", action="refuse", rss_mb=rss, avail_mb=avail, reason=why)
-        if why.startswith("rss"):
-            amount = (f"{faDigits(round(rss / 1024, 1))} گیگابایت" if rss >= 1024
-                      else f"{faDigits(rss)} مگابایت")
-            msg = (f"هستهٔ برنامه به سقف حافظهٔ خود رسیده ({amount}) — "
-                   "برنامه را ببندید و دوباره باز کنید؛ این وضعیت ثبت شد تا ریشه\u200cیابی شود.")
-        else:
-            msg = ("حافظهٔ آزاد دستگاه کم است و سواپ در همین نشست زیاد شده — "
-                   "چند برنامهٔ دیگر را ببندید و دوباره بکوشید.")
-        raise RuntimeError(msg)
-
-
 def _mem_preflight(status):
-    _main_watchdog()
     try:
         import psutil
         total_mb = psutil.virtual_memory().total // (1024 * 1024)
@@ -1548,10 +1313,10 @@ def _mem_preflight(status):
         avail_mb = psutil.virtual_memory().available // (1024 * 1024)
     except Exception:
         avail_mb = None
-    if _swap_growth_mb() > 10000:
+    if _swap_hot(10000, avail_mb):
         raise RuntimeError(
-            f"برنامه در همین نشست {faDigits(_swap_growth_mb() // 1024)} گیگابایت سواپ اشغال کرده — "
-            "برنامه را ببندید و دوباره باز کنید؛ با باز شدن دوباره، شمارش از صفر آغاز می\u200cشود.")
+            "حافظهٔ آزاد دستگاه کم است و سواپ در همین نشست زیاد شده — "
+            "چند برنامهٔ دیگر را ببندید و دوباره بکوشید.")
     if avail_mb is not None and avail_mb < 2000:
         raise RuntimeError(
             f"حافظهٔ آزاد برای صدای چترباکس کافی نیست ({faDigits(avail_mb)} مگابایت). "
@@ -1582,39 +1347,11 @@ def _gulp_pcm(payload, status):
 
 import itertools as _it
 _GULP_PCM = {}
-_SPILL_DIR = None
-
-
-def _spill_entry(entry, gid):
-    """Main-process prevention, not defense: an entry's audio arrays move to
-    disk immediately after assembly and come back as read-only memory-maps.
-    RAM cost of a stored entry drops to ~zero while patching stays exact —
-    a memory-mapped array slices and concatenates like any other. Session
-    length no longer grows the main process."""
-    global _SPILL_DIR
-    import tempfile
-    if _SPILL_DIR is None:
-        _SPILL_DIR = tempfile.mkdtemp(prefix="ava-spill-")
-    for k, i in enumerate(entry.get("items", [])):
-        p = i.get("pcm")
-        if isinstance(p, np.ndarray) and len(p) and not isinstance(p, np.memmap):
-            path = os.path.join(_SPILL_DIR, f"g{gid}-i{k}.npy")
-            np.save(path, np.ascontiguousarray(p, dtype=np.int16))
-            i["pcm"] = np.load(path, mmap_mode="r")
-    return entry
-
-
 _gulp_ids = _it.count(1)
 
 
 def reset_gulps():
     _GULP_PCM.clear()
-    global _SPILL_DIR
-    if _SPILL_DIR:
-        import shutil
-        shutil.rmtree(_SPILL_DIR, ignore_errors=True)
-        _SPILL_DIR = None
-
 
 
 def _silence_runs(pcm, sr, min_ms=70):
@@ -1663,20 +1400,6 @@ def _cbx_continuous(items, payload, status):
         _diag("continuous_bail", reason="align_none" if aligned is None else
               f"count_{len(aligned)}_vs_{sum(words_per)}")
         return None
-    # ---- CARRIER MODE for small chunks (field lesson of builds 68-70) ----
-    # Micro-sentences make the model glide: measured 0-9 ms of usable quiet,
-    # so EVERY cut lands in voice and no dressing saves it. The piper carrier
-    # proved the alternative: each short chunk is spoken behind a carrier
-    # sentence, the model's reliable stop after a LONG sentence yields true
-    # silence, the chunk is extracted after it, and chunks + timed zeros
-    # assemble without ever cutting flowing speech.
-    short = [i["text"].strip() for i in t_items if len(i["text"].strip()) < 25]
-    if short:
-        raise RuntimeError(
-            "بخش\u200cهای خیلی کوتاه میان مکث\u200cها با صدای چترباکس درست خوانده نمی\u200cشوند "
-            f"(مثل «{short[0][:20]}») — هر بخش را یک جملهٔ کامل کنید، "
-            "یا برای این متن صدای گیرو یا امیر را برگزینید که بخش\u200cهای کوتاه را درست می\u200cخوانند.")
-
     # ---- SILENCE-FIRST boundary location (the field lesson of build 65) ----
     # wav2vec2's word timings drift on this audio; a drifted search window
     # made a cut land a quarter-second INSIDE the next word («دوس|تانِ»,
@@ -1710,7 +1433,7 @@ def _cbx_continuous(items, payload, status):
             _diag("cuts_by_silence", runs=len(runs), mode="nearest")
         if len(chosen) == B and all(chosen[k][2] < chosen[k + 1][2] for k in range(B - 1)):
             for r in chosen:
-                cuts.append(_zc_snap(pcm, _fry_snap(pcm, r[2], sr), sr))
+                cuts.append(_zc_snap(pcm, r[2], sr))
         else:
             chosen = None
     else:
@@ -1729,15 +1452,7 @@ def _cbx_continuous(items, payload, status):
         _diag("continuous_bail", reason="no_dip" if not ok_all else "slices_insane")
         return None   # no true dip to cut in → fragments with real pauses
     for k, i in enumerate(t_items):
-        # boundary grade decides the dressing: cuts in true silence keep the
-        # short safety fade; VOICED cuts (micro-sentence glide, measured at
-        # 0.57-0.69 voicing) get a long 40 ms landing and a 20 ms rise —
-        # when clean surgery is impossible, graceful surgery is mandatory.
-        q_out = _voicing_score(pcm, cuts[k + 1], sr) if k + 1 < len(cuts) - 1 else 0.0
-        q_in = _voicing_score(pcm, cuts[k], sr) if k > 0 else 0.0
-        i["pcm"] = _fade_asym(pcm[cuts[k]:cuts[k + 1]].copy(), sr,
-                              in_ms=20 if q_in >= 0.4 else 12,
-                              out_ms=40 if q_out >= 0.4 else 15)
+        i["pcm"] = _fade_asym(pcm[cuts[k]:cuts[k + 1]].copy(), sr)
     tk = 0
     prev_t = None
     for idx, i in enumerate(items):
@@ -1846,7 +1561,7 @@ def generate_gulp(payload, status):
                          ("exaggeration", "cfg_weight", "temperature", "cbx_speed",
                           "speed", "noise", "noisew") if k in payload}}
     _ensure_valid(entry, "تولید", status)
-    _GULP_PCM[gid] = _spill_entry(entry, gid)
+    _GULP_PCM[gid] = entry
     return pcm_to_mp3(_assemble(entry), sr), gid
 
 
@@ -1884,127 +1599,7 @@ def _align_feed(pcm, sr):
     return pcm.astype(np.float32) / 32768.0
 
 
-_align_proc = None
-_RESPAWNS = {}
-
-
-def _respawn_permit(role, limit=3, window=600):
-    """Churn governor: a role may respawn at most `limit` times per
-    `window` seconds. Beyond that the app STOPS churning and says so —
-    respawn storms were themselves a memory pathology (each spike
-    ratchets macOS swap)."""
-    import collections
-    dq = _RESPAWNS.setdefault(role, collections.deque())
-    now = time.time()
-    while dq and now - dq[0] > window:
-        dq.popleft()
-    if len(dq) >= limit:
-        raise RuntimeError(
-            f"موتور {role} چند بار پیاپی از نو راه\u200cاندازی شد و متوقف شد تا دستگاه آرام بماند — "
-            "چند لحظه صبر کنید و دوباره بکوشید؛ اگر تکرار شد لاگ را بفرستید.")
-    dq.append(now)
-
-
-def _align_ensure(status):
-    global _align_proc
-    if _align_proc is not None and _align_proc.poll() is None:
-        return _align_proc
-    _respawn_permit("align")
-    creation = {"creationflags": 0x08000000} if os.name == "nt" else {}
-    status("بارگذاری هم\u200cترازساز (یک\u200cبار برای کل نشست)…")
-    _align_proc = subprocess.Popen([sys.executable, "--align-server"],
-                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                   stderr=subprocess.DEVNULL, **creation)
-    return _align_proc
-
-
-def align_server_main():
-    """Persistent alignment worker: loads wav2vec2 ONCE, serves line-JSON
-    requests for the app's lifetime. Flat footprint, zero per-call churn."""
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            task = json.loads(line)
-            pcm = np.fromfile(task["pcm_path"], dtype=np.int16)
-            res = _align_words_core(pcm, int(task["sr"]), task["text"], lambda m: None)
-            out = {"ok": res is not None,
-                   "spans": [[w, int(a), int(b)] for w, a, b in (res or [])]}
-        except Exception as e:
-            out = {"ok": False, "err": f"{type(e).__name__}: {str(e)[:80]}"}
-        sys.stdout.write(json.dumps(out, ensure_ascii=False) + "\n")
-        sys.stdout.flush()
-
-
-def align_worker_main(task_path):
-    """Disposable alignment worker: torch, torchaudio, and the wav2vec2
-    model live and DIE here. Four identical main-process deaths (56 GB, 18
-    threads) with every guard aimed at the chatterbox worker — the aligner
-    was the resident torch stack in main all along. Now nothing of it
-    survives a call."""
-    import json as _json
-    with open(task_path, encoding="utf-8") as f:
-        task = _json.load(f)
-    pcm = np.fromfile(task["pcm_path"], dtype=np.int16)
-    res = _align_words_core(pcm, int(task["sr"]), task["text"], lambda m: None)
-    out = {"ok": res is not None,
-           "spans": [[w, int(a), int(b)] for w, a, b in (res or [])]}
-    with open(task["out_path"], "w", encoding="utf-8") as f:
-        _json.dump(out, f, ensure_ascii=False)
-    try:
-        import psutil
-        _diag("align_worker_exit", rss_mb=int(psutil.Process().memory_info().rss // 1048576))
-    except Exception:
-        pass
-
-
 def _align_words(pcm, sr, text, status):
-    """Subprocess wrapper with the historical signature. The heavy body is
-    _align_words_core, executed only inside the disposable worker."""
-    global _align_proc
-    import tempfile
-    _mem_report("align_call")
-    with tempfile.TemporaryDirectory() as td:
-        pcm_path = os.path.join(td, "a.raw")
-        np.asarray(pcm, dtype=np.int16).tofile(pcm_path)
-        try:
-            status("هم\u200cترازسازی واژه\u200cها…")
-            p = _align_ensure(status)
-            p.stdin.write((json.dumps({"pcm_path": pcm_path, "sr": int(sr),
-                                       "text": text}, ensure_ascii=False) + "\n").encode("utf-8"))
-            p.stdin.flush()
-            raw = p.stdout.readline()
-            if not raw:
-                _align_proc = None
-                _diag("align_worker_fail", err="server closed")
-                return None
-            out = json.loads(raw.decode("utf-8", "ignore"))
-            # steady-state hygiene: retire the server only on a TRUE cap breach
-            try:
-                import psutil
-                rss = int(psutil.Process(p.pid).memory_info().rss // 1048576)
-                ok_h, _wh = _mem_check("align", rss, None)
-                if not ok_h:
-                    _diag("mem_gate", role="align", action="retire_after_reply", rss=rss)
-                    p.terminate()
-                    _align_proc = None
-            except Exception:
-                pass
-        except RuntimeError:
-            raise
-        except Exception as e:
-            _align_proc = None
-            _diag("align_worker_fail", err=f"{type(e).__name__}: {str(e)[:90]}")
-            return None
-    if not out.get("ok"):
-        if out.get("err"):
-            _diag("align_worker_fail", err=out["err"])
-        return None
-    return [(w, a, b) for w, a, b in out["spans"]]
-
-
-def _align_words_core(pcm, sr, text, status):
     """Force-align clause audio to its words → [(word, start_sample, end_sample)].
     Returns None when alignment isn't trustworthy; caller falls back."""
     _load_aligner(status)
@@ -2086,25 +1681,6 @@ def _refine_cut(pcm, lo, hi, sr):
     w = max(1, sr // 1000)
     sm = np.convolve(seg, np.ones(w) / w, mode="same")
     return lo + int(np.argmin(sm))
-
-
-def _fry_snap(pcm, pos, sr):
-    """If the neighborhood of a cut carries pulse structure (fry), move the
-    cut into the inter-pulse floor right AFTER a pulse's decay — a cut
-    landing mid-pulse is the sharpest stutter the app can produce."""
-    a, b = max(0, pos - int(0.030 * sr)), min(len(pcm), pos + int(0.030 * sr))
-    seg = pcm[a:b].astype(np.float64)
-    if len(seg) < 200:
-        return pos
-    sm = np.abs(seg)
-    k = max(1, sr // 200)
-    env = np.convolve(sm, np.ones(k) / k, mode="same")
-    floor = np.percentile(env, 25)
-    pk = np.percentile(env, 95)
-    if pk < 4 * max(floor, 40.0):
-        return pos  # no pulse structure here
-    j = int(np.argmin(env))
-    return a + j
 
 
 def _zc_snap(pcm, pos, sr, radius_ms=2.0):
@@ -2250,7 +1826,6 @@ def _gap_cut(pcm, aligned, i, sr):
             return _zc_snap(pcm, vlo + g, sr), True
     lo, hi = int(aligned[i][2]), int(aligned[i + 1][1])
     return max(0, (lo + hi) // 2), False
-
 
 
 def _band_displaced(pcm, sr):
@@ -2541,31 +2116,17 @@ def _sweep_stubs(pcm, sr):
             merged[-1] = (merged[-1][0], i1)
         else:
             merged.append((i0, i1))
-    def _aperiodic(i0, i1):
-        seg = pcm[i0:i1].astype(np.float64)
-        if len(seg) < 200:
-            return True
-        seg = seg - seg.mean()
-        if float(np.sqrt(np.mean(seg ** 2))) < 60.0:
-            return True
-        ac = np.correlate(seg, seg, "full")[len(seg) - 1:]
-        ac = ac / (ac[0] + 1e-12)
-        l1, l2 = int(sr / 400), min(int(sr / 55), len(ac) - 1)
-        return l2 <= l1 or float(np.max(ac[l1:l2])) < 0.40
-
     changed = True
     while changed and len(merged) > 1:
         changed = False
         if (merged[-1][1] - merged[-1][0] < int(0.120 * sr)
-                and merged[-1][0] - merged[-2][1] >= int(0.150 * sr)
-                and _aperiodic(*merged[-1])):
+                and merged[-1][0] - merged[-2][1] >= int(0.150 * sr)):
             _diag("stub_sweep", edge="trail", ms=int(1000 * (merged[-1][1] - merged[-1][0]) / sr))
             pcm = pcm[:merged[-2][1] + int(0.040 * sr)]
             merged = merged[:-1]
             changed = True
         elif (merged[0][1] - merged[0][0] < int(0.120 * sr)
-                and merged[1][0] - merged[0][1] >= int(0.150 * sr)
-                and _aperiodic(*merged[0])):
+                and merged[1][0] - merged[0][1] >= int(0.150 * sr)):
             _diag("stub_sweep", edge="lead", ms=int(1000 * (merged[0][1] - merged[0][0]) / sr))
             cutp = max(0, merged[1][0] - int(0.040 * sr))
             pcm = pcm[cutp:]
@@ -2640,11 +2201,14 @@ def _word_surgery(entry, old_item, new_item, sel_start, sel_end, payload, status
         _diag("surgery_synth", engine=engine, sr2=sr2, entry_sr=sr, n=len(pcm))
         out = _resample(pcm, sr2, sr)
         if engine != "chatterbox" and _band_displaced(out, sr):
-            # (build 72) same honest contract as everywhere else: this is the
-            # model failing on a short sentence, not a transient to retry.
-            raise RuntimeError(
-                "این صدا جمله\u200cهای خیلی کوتاه را خراب می\u200cخواند (محدودیت خود مدل). "
-                "متن این بخش را به یک جملهٔ کامل برسانید یا صدای دیگری برگزینید.")
+            _diag("band_displaced_retry", engine=engine)
+            res = piper_pcm(engine, [{"t": txt}], payload.get("speed", 1.0),
+                            payload.get("noise", 0.667), payload.get("noisew", 0.8), status)
+            out = _resample(res[0], res[1], sr)
+            if _band_displaced(out, sr):
+                raise RuntimeError(
+                    "خروجی این صدا دوبار پشت‌سرهم خراب از موتور بیرون آمد (طیف جابه‌جا). "
+                    "این اشکال ثبت شد — لطفاً لاگ برنامه را بفرستید.")
         return out
 
     if mid_words:
@@ -2751,22 +2315,6 @@ def _cbx_patch_middle(entry, new_items, pre, suf, payload, status):
     return True
 
 
-def _fa_errors(fn):
-    def wrapped(*a, **k):
-        try:
-            return fn(*a, **k)
-        except RuntimeError:
-            raise
-        except Exception as e:
-            _diag("internal_error", where=fn.__name__, err=type(e).__name__, msg=str(e)[:120])
-            raise RuntimeError(
-                f"خطای داخلی برنامه رخ داد و ثبت شد ({type(e).__name__}). "
-                "لطفاً لاگ برنامه را بفرستید.")
-    wrapped.__name__ = fn.__name__
-    return wrapped
-
-
-@_fa_errors
 def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
     """Regenerate only the clauses that the edit/selection touched; every
     other clause's audio is reused bit-identical."""
@@ -2840,9 +2388,6 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
                 done = False
         if not done:
             sr2 = _synth_clauses(middle, payload, status)
-            # (build 72) the former trailing-«.» padding is REMOVED: field
-            # audio proved piper SPEAKS a lone period as a word — the padding
-            # was itself the measured amir gibberish.
             _diag("patch_clauses", engine=payload.get("engine"), sr2=sr2, entry_sr=entry["sr"])
             for i in middle:
                 p = i.get("pcm")
@@ -2853,16 +2398,24 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
                 for i in middle:
                     p = i.get("pcm")
                     if p is not None and len(p) and _band_displaced(p, sr2):
-# (build 72) padded-retry and demodulation are REMOVED
-                        # from this ladder: piper synthesizes PER SENTENCE, so
-                        # a carrier cannot lengthen the failing sentence, and
-                        # the demod verifier shipped baseband noise to the
-                        # user's ears. A weights-level limitation gets an
-                        # honest instruction, not manufactured audio.
-                        raise RuntimeError(
-                            "این صدا جمله\u200cهای خیلی کوتاه را خراب می\u200cخواند (محدودیت خود مدل). "
-                            "متن این بخش را به یک جملهٔ کامل برسانید یا صدای دیگری برگزینید.")
-                        break  # unreachable after the raise; kept loop shape
+                        _diag("band_displaced_retry", engine=payload.get("engine"))
+                        vk = payload.get("engine")
+                        u = PIPER_VOICES.get(vk)
+                        if u:
+                            for q in (MODELS_DIR / u.rsplit("/", 1)[-1],
+                                      Path(str(MODELS_DIR / u.rsplit("/", 1)[-1]) + ".json")):
+                                try:
+                                    q.unlink()
+                                except OSError:
+                                    pass
+                        _synth_clauses(middle, payload, status)
+                        bad = [j for j in middle if j.get("pcm") is not None
+                               and len(j["pcm"]) and _band_displaced(j["pcm"], sr2)]
+                        if bad:
+                            raise RuntimeError(
+                                "خروجی این صدا دوبار پشت‌سرهم خراب از موتور بیرون آمد (طیف جابه‌جا). "
+                                "این اشکال ثبت شد — لطفاً لاگ برنامه را بفرستید.")
+                        break
             if sr2 != entry["sr"]:
                 for i in middle:
                     p = i.get("pcm")
@@ -2907,7 +2460,6 @@ def splice_gulps(ids, status) -> bytes:
     return pcm_to_mp3(np.concatenate(out), target)
 
 
-@_fa_errors
 def generate(payload, status) -> bytes:
     mp3, gid = generate_gulp(payload, status)
     _GULP_PCM.pop(gid, None)
