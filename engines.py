@@ -28,16 +28,23 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 82
-BUILD_FA = "\u06f8\u06f2"
+BUILD = 84
+BUILD_FA = "\u06f8\u06f4"
 
 
 def _diag(tag, **kv):
     """Silent forensic breadcrumbs into stderr/log. Never user-facing, never raises."""
+    line = "[ava-diag] " + tag + " " + " ".join(f"{k}={v}" for k, v in kv.items()) + "\n"
     try:
-        import sys as _s
-        _s.stderr.write("[ava-diag] " + tag + " " +
-                        " ".join(f"{k}={v}" for k, v in kv.items()) + "\n")
+        sys.stderr.write(line)
+    except UnicodeEncodeError:
+        # legacy Windows codepage on this stream: degrade to ASCII escapes
+        # rather than lose the breadcrumb (Persian text and Persian user
+        # folders both reach this line).
+        try:
+            sys.stderr.write(line.encode("unicode_escape").decode("ascii"))
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -430,24 +437,99 @@ def _find_espeak_data():
     return None
 
 
-def _ensure_local_espeak():
-    """Copy espeak data out of the bundle into a plain real folder, once."""
-    target = MODELS_DIR / "espeak-ng-data"
-    if (target / "phontab").exists():
-        return target
-    found = _find_espeak_data()
-    if found is None:
-        return None
+def _is_ascii_path(p):
     try:
-        shutil.copytree(found, target, dirs_exist_ok=True)
-        if (target / "phontab").exists():
-            return target
+        str(p).encode("ascii")
+        return True
+    except UnicodeEncodeError:
+        return False
+
+
+def _win_short_path(p):
+    """Windows 8.3 short name (pure ASCII when available) for a C library
+    that only speaks the narrow ANSI API."""
+    try:
+        import ctypes
+        buf = ctypes.create_unicode_buffer(1024)
+        n = ctypes.windll.kernel32.GetShortPathNameW(str(p), buf, 1024)
+        return Path(buf.value) if n else None
     except Exception:
-        pass
+        return None
+
+
+def _espeak_safe_root():
+    """Where espeak-ng-data may live on Windows when the home folder is not
+    ASCII: Public is ASCII on every Windows install; the system drive root
+    is the last resort."""
+    for cand in (Path(os.environ.get("PUBLIC", r"C:\Users\Public")) / "AvaModels",
+                 Path(os.environ.get("SystemDrive", "C:") + "\\") / "AvaModels"):
+        try:
+            cand.mkdir(parents=True, exist_ok=True)
+            if _is_ascii_path(cand):
+                return cand
+        except Exception:
+            continue
+    return None
+
+
+def _ensure_local_espeak():
+    """Copy espeak data out of the bundle into a plain real folder, once —
+    and, on Windows, into a folder whose path is pure ASCII. espeak-ng is a
+    C library that opens its files through the narrow ANSI API: a Persian
+    username makes the home path unrepresentable, espeak cannot find its
+    phontab, and every light voice dies at phonemization (field-measured,
+    masked as a wave.Error)."""
+    found = _find_espeak_data()
+    roots = [MODELS_DIR]
+    if os.name == "nt" and not _is_ascii_path(MODELS_DIR):
+        safe = _espeak_safe_root()
+        roots = ([safe] if safe else []) + roots
+    for root in roots:
+        target = root / "espeak-ng-data"
+        try:
+            if not (target / "phontab").exists():
+                if found is None:
+                    continue
+                shutil.copytree(found, target, dirs_exist_ok=True)
+            if not (target / "phontab").exists():
+                continue
+            if os.name == "nt" and not _is_ascii_path(target):
+                short = _win_short_path(target)
+                if short is not None and _is_ascii_path(short) and (short / "phontab").exists():
+                    _diag("espeak_path", mode="short83", path=str(short))
+                    return short
+                continue  # not usable by espeak; try the next root
+            _diag("espeak_path", mode="direct", ascii=_is_ascii_path(target), path=str(target))
+            return target
+        except Exception as e:
+            _diag("espeak_path_fail", root=str(root), err=type(e).__name__)
+            continue
     return found
 
 
 def piper_worker_main(task_path: str) -> None:
+    """Helper-process entry. Any failure is reported as one ASCII-safe
+    [ava-error] line carrying the ROOT cause (chained causes included) and
+    a clean non-zero exit — never an OS "unhandled exception" dialog."""
+    try:
+        _piper_worker_body(task_path)
+    except BaseException as e:
+        chain, cur, seen = [], e, 0
+        while cur is not None and seen < 6:
+            chain.append(f"{type(cur).__name__}: {str(cur)[:160]}")
+            cur = cur.__context__ or cur.__cause__
+            seen += 1
+        root = chain[-1] if chain else "unknown"
+        try:
+            sys.stderr.write("[ava-error] " + (" <= ".join(chain)).encode("unicode_escape").decode("ascii") + "\n")
+            sys.stderr.write("[ava-root] " + root.encode("unicode_escape").decode("ascii") + "\n")
+            sys.stderr.flush()
+        except Exception:
+            pass
+        os._exit(1)
+
+
+def _piper_worker_body(task_path: str) -> None:
     """Runs inside the helper process. Synthesizes a list of segments
     ({"t": text} | {"p": seconds}) into one wav, splicing real silence."""
     task = json.loads(Path(task_path).read_text(encoding="utf-8"))
@@ -457,8 +539,8 @@ def piper_worker_main(task_path: str) -> None:
         _pv = _md.version("piper-tts")
     except Exception:
         _pv = "?"
-    sys.stderr.write(f"[ava-diag] piper={_pv} data={data_dir} "
-                     f"phontab={(data_dir / 'phontab').exists() if data_dir else None}\n")
+    _diag("piper_env", piper=_pv, data=data_dir,
+          phontab=(data_dir / "phontab").exists() if data_dir else None)
     if data_dir is None:
         raise RuntimeError("espeak-ng-data missing from the app bundle — rebuild needed")
     # env semantics: espeak expects the PARENT of the espeak-ng-data folder here
@@ -469,7 +551,12 @@ def piper_worker_main(task_path: str) -> None:
     segments = task.get("segments") or [{"t": task["text"]}]
 
     def synth_to(path, text):
-        with wave.open(path, "wb") as wf:
+        # NOT a `with` block: if synthesis throws before piper has set the
+        # wave header, the context manager's close() raises its own
+        # "# channels not specified" and BURIES the real cause (field-
+        # measured). Close defensively and re-raise the original.
+        wf = wave.open(path, "wb")
+        try:
             try:
                 from piper import SynthesisConfig
                 sc = SynthesisConfig(length_scale=length_scale,
@@ -479,6 +566,17 @@ def piper_worker_main(task_path: str) -> None:
             except ImportError:
                 voice.synthesize(text, wf, length_scale=length_scale,
                                  noise_scale=float(task["noise"]), noise_w=float(task["noisew"]))
+        except BaseException:
+            try:
+                wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(22050)
+            except Exception:
+                pass  # header already set by piper — nothing to repair
+            try:
+                wf.close()
+            except Exception:
+                pass
+            raise
+        wf.close()
 
     import numpy as _np
     pieces, sr = [], 0
@@ -574,11 +672,23 @@ def piper_pcm(voice_key, segments, speed, noise_scale, noise_w, status):
         try:
             for ln in (proc.stderr or b"").decode("utf-8", "ignore").splitlines():
                 if "[ava-diag]" in ln:
-                    sys.stderr.write(ln + "\n")
+                    _diag("worker", line=ln.replace("[ava-diag] ", ""))
         except Exception:
             pass
         if proc.returncode != 0:
             tail = (proc.stderr or b"").decode("utf-8", "ignore").strip().splitlines()[-6:]
+            errtxt = (proc.stderr or b"").decode("utf-8", "ignore")
+            root = next((l.split("]", 1)[1].strip() for l in errtxt.splitlines()
+                         if l.startswith("[ava-root]")), None)
+            if root:
+                try:
+                    root = root.encode("ascii").decode("unicode_escape")
+                except Exception:
+                    pass
+                _diag("piper_worker_root", root=root[:160])
+                raise RuntimeError(
+                    "موتور صدای سبک نتوانست این بخش را بسازد. علت: " + root +
+                    "\nاین اشکال ثبت شد — اگر تکرار شد لاگ برنامه را بفرستید.")
             raise RuntimeError("موتور صدای سبک خطا داد:\n" + "\n".join(tail) if tail
                               else f"موتور صدای سبک با کد {proc.returncode} بسته شد (خطای داخلی).")
         with wave.open(out.name, "rb") as wf:
@@ -1053,8 +1163,10 @@ _cbx_last_rss = 0  # worker rss (MB) as of its last finished job
 def chatterbox_worker_main():
     """Runs inside the helper process: serve generation requests over stdio."""
     def status(msg, pct=None):
+        # ASCII on the wire: no OS codepage can break the protocol, and
+        # json.loads on the parent side restores the exact Persian string.
         sys.stdout.write(json.dumps({"type": "status", "msg": msg, "pct": pct},
-                                    ensure_ascii=False) + "\n")
+                                    ensure_ascii=True) + "\n")
         sys.stdout.flush()
     for line in sys.stdin:
         line = line.strip()
@@ -1098,13 +1210,13 @@ def chatterbox_worker_main():
                        or _swap_hot(4000, avail_mb))
             sys.stdout.write(json.dumps({"type": "result", "path": f.name, "sr": sr,
                                          "rss_mb": rss, "recycle": recycle},
-                                        ensure_ascii=False) + "\n")
+                                        ensure_ascii=True) + "\n")
             sys.stdout.flush()
             if recycle:
                 break  # retire: the OS reclaims every leaked byte
         except Exception as e:
             sys.stdout.write(json.dumps({"type": "error", "error": str(e)},
-                                        ensure_ascii=False) + "\n")
+                                        ensure_ascii=True) + "\n")
             sys.stdout.flush()
 
 
@@ -1161,7 +1273,7 @@ def chatterbox_via_worker(req, status):
                 _cbx_proc = None
                 _cbx_last_rss = 0
         p = _cbx_ensure()
-        line = json.dumps(req, ensure_ascii=False) + "\n"
+        line = json.dumps(req, ensure_ascii=True) + "\n"  # Persian text + Persian paths
         try:
             p.stdin.write(line); p.stdin.flush()
         except Exception:

@@ -10,6 +10,20 @@ os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 # Windows: torch and onnxruntime each bundle the Intel OpenMP DLL; without this
 # flag, initializing both aborts the process instantly (the classic silent crash).
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+# Windows ships a legacy ANSI codepage (cp1252/cp1256) on stdio, which cannot
+# encode a single Persian letter: the worker's first Persian status message
+# died with "charmap codec can't encode characters in position 27". Persian is
+# this app's native language — no stream, path, or username may break it.
+# These lines run BEFORE any helper-process dispatch, so every process the app
+# starts inherits UTF-8. errors="replace" guarantees a diagnostic can never
+# itself crash a run.
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+os.environ.setdefault("PYTHONUTF8", "1")
+for _s in ("stdout", "stderr"):
+    try:
+        getattr(sys, _s).reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 # Helper-process modes: synthesis runs isolated from the app window.
 if len(sys.argv) > 2 and sys.argv[1] == "--piper-worker":
