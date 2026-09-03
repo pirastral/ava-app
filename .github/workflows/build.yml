@@ -77,8 +77,24 @@ jobs:
       - name: Package with ditto
         run: |
           set -euo pipefail
-          ditto -c -k --sequesterRsrc --keepParent "dist/Avaye Javid Shah.app" "Ava-macOS-v${{ steps.v.outputs.n }}.zip"
-          ls -lh "Ava-macOS-v${{ steps.v.outputs.n }}.zip"
+          Z="Ava-macOS-v${{ steps.v.outputs.n }}.zip"
+          ditto -c -k --sequesterRsrc --keepParent "dist/Avaye Javid Shah.app" "$Z"
+          ls -lh "$Z"
+
+      # Prove the package is sound BEFORE it is published: file type, zip
+      # integrity, and a real test-expansion with Apple's own extractor.
+      - name: Verify the package
+        run: |
+          set -euo pipefail
+          Z="Ava-macOS-v${{ steps.v.outputs.n }}.zip"
+          file "$Z"
+          shasum -a 256 "$Z"
+          unzip -t "$Z" > /dev/null && echo "zip integrity OK"
+          rm -rf _verify && mkdir _verify
+          ditto -x -k "$Z" _verify
+          test -x "_verify/Avaye Javid Shah.app/Contents/MacOS/Avaye Javid Shah"
+          echo "expanded cleanly, main binary present and executable"
+          rm -rf _verify
 
       - uses: actions/upload-artifact@v4
         with:
@@ -154,6 +170,18 @@ jobs:
         continue-on-error: true
       - name: What will be released
         run: ls -lh *.zip || { echo "no packages were produced"; exit 1; }
+
+      # the artifact round-trip is the only place the bytes could change
+      # between building and publishing — verify them here too.
+      - name: Verify the packages that are about to be published
+        run: |
+          set -euo pipefail
+          for z in *.zip; do
+            echo "--- $z"
+            file "$z"
+            shasum -a 256 "$z"
+            unzip -t "$z" > /dev/null && echo "    integrity OK"
+          done
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.v.outputs.n }}
