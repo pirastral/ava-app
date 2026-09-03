@@ -1,11 +1,13 @@
 # Ava — build workflow
 # ---------------------------------------------------------------------------
-# DELIVERY RULE: the person downloading must get ONE zip that opens on the
-# first double-click. GitHub always wraps an artifact in a zip named after the
-# artifact, so nothing user-facing is published as an artifact at all — the
-# app is published as a RELEASE ASSET, which downloads as the file itself.
-# The two artifacts below are internal plumbing (1-day retention) that only
-# carry the zips to the release job.
+# DELIVERY MODEL, final form:
+#   * NO artifacts are produced at all. Each job publishes its own file
+#     straight to the Release, so there is nothing on the Actions page to
+#     download by mistake and nothing can ever be nested inside anything.
+#   * macOS ships as a .dmg — the format macOS is built to open. Double-click
+#     mounts it, drag the app to Applications. Archive Utility is never
+#     involved, so "unsupported format" cannot happen.
+#   * Windows ships as a plain zip, which Windows opens natively.
 name: build
 
 on:
@@ -17,6 +19,8 @@ on:
 jobs:
   macos:
     runs-on: macos-14
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -27,7 +31,6 @@ jobs:
         run: |
           set -x
           python --version
-          pip --version
           sw_vers
           uname -m
 
@@ -38,14 +41,12 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      # build.spec needs icon.icns on macOS, and the repo carries only
-      # icon.png / icon.ico — so the .icns is generated here from icon.png.
+      # build.spec needs icon.icns on macOS and the repo carries only
+      # icon.png / icon.ico, so the .icns is generated here.
       - name: Create icon.icns from icon.png
         run: |
           set -euo pipefail
-          if [ -f icon.icns ]; then
-            echo "icon.icns already in the repo — using it"
-          else
+          if [ ! -f icon.icns ]; then
             rm -rf icon.iconset && mkdir icon.iconset
             for s in 16 32 128 256 512; do
               sips -z $s $s icon.png --out "icon.iconset/icon_${s}x${s}.png" > /dev/null
@@ -61,10 +62,7 @@ jobs:
         run: |
           set -euo pipefail
           pyinstaller build.spec --noconfirm
-
-      - name: Show what was built (diagnostic)
-        if: always()
-        run: ls -la dist || true
+          ls -la dist
 
       - name: Read build number
         id: v
@@ -74,37 +72,42 @@ jobs:
           echo "build number: $N"
           echo "n=$N" >> "$GITHUB_OUTPUT"
 
-      - name: Package with ditto
+      - name: Build the disk image
         run: |
           set -euo pipefail
-          Z="Ava-macOS-v${{ steps.v.outputs.n }}.zip"
-          ditto -c -k --sequesterRsrc --keepParent "dist/Avaye Javid Shah.app" "$Z"
-          ls -lh "$Z"
+          D="Ava-macOS-v${{ steps.v.outputs.n }}.dmg"
+          rm -rf dmgroot && mkdir dmgroot
+          cp -R "dist/Avaye Javid Shah.app" dmgroot/
+          ln -s /Applications "dmgroot/Applications"
+          hdiutil create -volname "Avaye Javid Shah" -srcfolder dmgroot \
+                         -ov -format UDZO "$D"
+          ls -lh "$D"
 
-      # Prove the package is sound BEFORE it is published: file type, zip
-      # integrity, and a real test-expansion with Apple's own extractor.
-      - name: Verify the package
+      # Prove the image mounts and the app inside it is intact, BEFORE release
+      - name: Verify the disk image
         run: |
           set -euo pipefail
-          Z="Ava-macOS-v${{ steps.v.outputs.n }}.zip"
-          file "$Z"
-          shasum -a 256 "$Z"
-          unzip -t "$Z" > /dev/null && echo "zip integrity OK"
-          rm -rf _verify && mkdir _verify
-          ditto -x -k "$Z" _verify
-          test -x "_verify/Avaye Javid Shah.app/Contents/MacOS/Avaye Javid Shah"
-          echo "expanded cleanly, main binary present and executable"
-          rm -rf _verify
+          D="Ava-macOS-v${{ steps.v.outputs.n }}.dmg"
+          hdiutil verify "$D"
+          hdiutil attach "$D" -nobrowse -readonly -mountpoint /tmp/avachk
+          test -x "/tmp/avachk/Avaye Javid Shah.app/Contents/MacOS/Avaye Javid Shah"
+          echo "mounted OK, app present and executable"
+          hdiutil detach /tmp/avachk
 
-      - uses: actions/upload-artifact@v4
+      # published straight from this job — no artifact, nothing to nest
+      - uses: softprops/action-gh-release@v2
         with:
-          name: release-payload-mac
-          path: Ava-macOS-v${{ steps.v.outputs.n }}.zip
-          retention-days: 1
-          compression-level: 0
+          tag_name: v${{ steps.v.outputs.n }}
+          name: نسخهٔ ${{ steps.v.outputs.n }}
+          files: Ava-macOS-v${{ steps.v.outputs.n }}.dmg
+          body: |
+            مک: فایل .dmg را باز کنید و برنامه را به پوشهٔ Applications بکشید.
+            ویندوز: فایل .zip را باز کنید و پوشه را هرجا می‌خواهید بگذارید.
 
   windows:
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -120,18 +123,12 @@ jobs:
       - name: Build
         run: pyinstaller build.spec --noconfirm
 
-      - name: Show what was built (diagnostic)
-        if: always()
-        shell: pwsh
-        run: Get-ChildItem dist | Select-Object Mode, Length, Name
-
       - name: Read build number
         id: v
         shell: bash
         run: |
           set -euo pipefail
           N=$(grep -m1 -oE 'BUILD = [0-9]+' engines.py | grep -oE '[0-9]+')
-          echo "build number: $N"
           echo "n=$N" >> "$GITHUB_OUTPUT"
 
       - name: Package
@@ -140,52 +137,8 @@ jobs:
           Compress-Archive -Path "dist/Avaye Javid Shah" -DestinationPath "Ava-Windows-v${{ steps.v.outputs.n }}.zip" -Force
           Get-Item "Ava-Windows-v${{ steps.v.outputs.n }}.zip" | Select-Object Name, Length
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-payload-win
-          path: Ava-Windows-v${{ steps.v.outputs.n }}.zip
-          retention-days: 1
-          compression-level: 0
-
-  # Publishes whatever succeeded. If one platform fails, the other is still
-  # released instead of the whole run being wasted.
-  release:
-    needs: [macos, windows]
-    if: always()
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - id: v
-        run: |
-          set -euo pipefail
-          N=$(grep -m1 -oE 'BUILD = [0-9]+' engines.py | grep -oE '[0-9]+')
-          echo "n=$N" >> "$GITHUB_OUTPUT"
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: release-payload-*
-          merge-multiple: true
-          path: .
-        continue-on-error: true
-      - name: What will be released
-        run: ls -lh *.zip || { echo "no packages were produced"; exit 1; }
-
-      # the artifact round-trip is the only place the bytes could change
-      # between building and publishing — verify them here too.
-      - name: Verify the packages that are about to be published
-        run: |
-          set -euo pipefail
-          for z in *.zip; do
-            echo "--- $z"
-            file "$z"
-            shasum -a 256 "$z"
-            unzip -t "$z" > /dev/null && echo "    integrity OK"
-          done
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.v.outputs.n }}
           name: نسخهٔ ${{ steps.v.outputs.n }}
-          files: "*.zip"
-          body: |
-            دانلود مستقیم — یک فایل، یک‌بار دوبار-کلیک.
+          files: Ava-Windows-v${{ steps.v.outputs.n }}.zip
