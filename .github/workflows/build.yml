@@ -1,10 +1,11 @@
 # Ava — build workflow
 # ---------------------------------------------------------------------------
-# DELIVERY RULE (learned the hard way): the person downloading must get ONE
-# zip that opens on the first double-click. GitHub ALWAYS wraps an artifact in
-# a zip named after the artifact, so an artifact must never contain a zip —
-# it contains the app itself. For a true single-file download, the Release
-# asset below is the zip itself, with no wrapper at all.
+# DELIVERY RULE: the person downloading must get ONE zip that opens on the
+# first double-click. GitHub always wraps an artifact in a zip named after the
+# artifact, so nothing user-facing is published as an artifact at all — the
+# app is published as a RELEASE ASSET, which downloads as the file itself.
+# The two artifacts below are internal plumbing (1-day retention) that only
+# carry the zips to the release job.
 name: build
 
 on:
@@ -22,37 +23,50 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Versions (diagnostic)
+        run: |
+          set -x
+          python --version
+          pip --version
+          sw_vers
+          uname -m
+
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          set -euo pipefail
+          python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements.txt
           pip install pyinstaller
 
       - name: Build
-        run: pyinstaller build.spec --noconfirm
+        run: |
+          set -euo pipefail
+          pyinstaller build.spec --noconfirm
+
+      - name: Show what was built (diagnostic)
+        if: always()
+        run: ls -la dist || true
 
       - name: Read build number
         id: v
-        run: echo "n=$(python -c "import re;print(re.search(r'BUILD = (\d+)',open('engines.py').read()).group(1))")" >> $GITHUB_OUTPUT
+        run: |
+          set -euo pipefail
+          N=$(grep -m1 -oE 'BUILD = [0-9]+' engines.py | grep -oE '[0-9]+')
+          echo "build number: $N"
+          echo "n=$N" >> "$GITHUB_OUTPUT"
 
-      # ARTIFACT: the .app itself, NEVER a zip. Downloading this from the
-      # Actions page gives exactly one zip holding "Avaye Javid Shah.app" —
-      # double-click once, the app is there. (This is how it behaved up to 82.)
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Ava-macOS
-          path: dist/Avaye Javid Shah.app
-
-      # RELEASE ASSET: packaged with ditto so symlinks, permissions and the
-      # executable bit survive. A release download is the file itself.
-      - name: Package for release
-        run: ditto -c -k --sequesterRsrc --keepParent "dist/Avaye Javid Shah.app" "Ava-macOS-v${{ steps.v.outputs.n }}.zip"
+      - name: Package with ditto
+        run: |
+          set -euo pipefail
+          ditto -c -k --sequesterRsrc --keepParent "dist/Avaye Javid Shah.app" "Ava-macOS-v${{ steps.v.outputs.n }}.zip"
+          ls -lh "Ava-macOS-v${{ steps.v.outputs.n }}.zip"
 
       - uses: actions/upload-artifact@v4
         with:
           name: release-payload-mac
           path: Ava-macOS-v${{ steps.v.outputs.n }}.zip
           retention-days: 1
+          compression-level: 0
 
   windows:
     runs-on: windows-latest
@@ -64,58 +78,67 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements.txt
           pip install pyinstaller
 
       - name: Build
         run: pyinstaller build.spec --noconfirm
 
+      - name: Show what was built (diagnostic)
+        if: always()
+        shell: pwsh
+        run: Get-ChildItem dist | Select-Object Mode, Length, Name
+
       - name: Read build number
         id: v
         shell: bash
-        run: echo "n=$(python -c "import re;print(re.search(r'BUILD = (\d+)',open('engines.py').read()).group(1))")" >> $GITHUB_OUTPUT
+        run: |
+          set -euo pipefail
+          N=$(grep -m1 -oE 'BUILD = [0-9]+' engines.py | grep -oE '[0-9]+')
+          echo "build number: $N"
+          echo "n=$N" >> "$GITHUB_OUTPUT"
 
-      # same rule: the artifact holds the program folder, not a zip
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Ava-Windows
-          path: dist/Avaye Javid Shah
-
-      - name: Package for release
+      - name: Package
         shell: pwsh
-        run: Compress-Archive -Path "dist/Avaye Javid Shah" -DestinationPath "Ava-Windows-v${{ steps.v.outputs.n }}.zip" -Force
+        run: |
+          Compress-Archive -Path "dist/Avaye Javid Shah" -DestinationPath "Ava-Windows-v${{ steps.v.outputs.n }}.zip" -Force
+          Get-Item "Ava-Windows-v${{ steps.v.outputs.n }}.zip" | Select-Object Name, Length
 
       - uses: actions/upload-artifact@v4
         with:
           name: release-payload-win
           path: Ava-Windows-v${{ steps.v.outputs.n }}.zip
           retention-days: 1
+          compression-level: 0
 
-  # Publishes both zips as Release assets on EVERY build of main, tagged with
-  # the build number from engines.py. Release downloads have no wrapper: one
-  # file, one double-click — this is the link to send to anyone else.
+  # Publishes whatever succeeded. If one platform fails, the other is still
+  # released instead of the whole run being wasted.
   release:
     needs: [macos, windows]
+    if: always()
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
       - id: v
-        run: echo "n=$(python -c "import re;print(re.search(r'BUILD = (\d+)',open('engines.py').read()).group(1))")" >> $GITHUB_OUTPUT
+        run: |
+          set -euo pipefail
+          N=$(grep -m1 -oE 'BUILD = [0-9]+' engines.py | grep -oE '[0-9]+')
+          echo "n=$N" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
           pattern: release-payload-*
           merge-multiple: true
           path: .
-      - run: ls -lh *.zip
+        continue-on-error: true
+      - name: What will be released
+        run: ls -lh *.zip || { echo "no packages were produced"; exit 1; }
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.v.outputs.n }}
           name: نسخهٔ ${{ steps.v.outputs.n }}
-          files: |
-            Ava-macOS-v${{ steps.v.outputs.n }}.zip
-            Ava-Windows-v${{ steps.v.outputs.n }}.zip
+          files: "*.zip"
           body: |
             دانلود مستقیم — یک فایل، یک‌بار دوبار-کلیک.
