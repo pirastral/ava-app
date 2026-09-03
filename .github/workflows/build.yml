@@ -1,31 +1,26 @@
-name: Build Ava
+# Ava — build workflow
+# ---------------------------------------------------------------------------
+# DELIVERY RULE (learned the hard way): the person downloading must get ONE
+# zip that opens on the first double-click. GitHub ALWAYS wraps an artifact in
+# a zip named after the artifact, so an artifact must never contain a zip —
+# it contains the app itself. For a true single-file download, the Release
+# asset below is the zip itself, with no wrapper at all.
+name: build
 
 on:
-  workflow_dispatch:
   push:
     branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            name: macOS
-          - os: windows-latest
-            name: Windows
-    runs-on: ${{ matrix.os }}
+  macos:
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Put the Hugging Face token into the app
-        shell: bash
-        run: printf '%s' "${{ secrets.HF_TOKEN }}" > token.txt
 
       - name: Install dependencies
         run: |
@@ -33,29 +28,94 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Make macOS icon (.icns)
-        if: runner.os == 'macOS'
-        run: |
-          mkdir icon.iconset
-          for s in 16 32 64 128 256 512; do
-            sips -z $s $s icon.png --out icon.iconset/icon_${s}x${s}.png
-            sips -z $((s*2)) $((s*2)) icon.png --out icon.iconset/icon_${s}x${s}@2x.png
-          done
-          iconutil -c icns icon.iconset -o icon.icns
-
-      - name: Build the app
+      - name: Build
         run: pyinstaller build.spec --noconfirm
 
-      - name: Package (macOS)
-        if: runner.os == 'macOS'
-        run: ditto -c -k --sequesterRsrc --keepParent "dist/Avaye Javid Shah.app" Ava-macOS.zip
+      - name: Read build number
+        id: v
+        run: echo "n=$(python -c "import re;print(re.search(r'BUILD = (\d+)',open('engines.py').read()).group(1))")" >> $GITHUB_OUTPUT
 
-      - name: Package (Windows)
-        if: runner.os == 'Windows'
-        run: Compress-Archive -Path "dist/Avaye Javid Shah" -DestinationPath Ava-Windows.zip
+      # ARTIFACT: the .app itself, NEVER a zip. Downloading this from the
+      # Actions page gives exactly one zip holding "Avaye Javid Shah.app" —
+      # double-click once, the app is there. (This is how it behaved up to 82.)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ava-macOS
+          path: dist/Avaye Javid Shah.app
+
+      # RELEASE ASSET: packaged with ditto so symlinks, permissions and the
+      # executable bit survive. A release download is the file itself.
+      - name: Package for release
+        run: ditto -c -k --sequesterRsrc --keepParent "dist/Avaye Javid Shah.app" "Ava-macOS-v${{ steps.v.outputs.n }}.zip"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Ava-${{ matrix.name }}
-          path: Ava-*.zip
-          retention-days: 30
+          name: release-payload-mac
+          path: Ava-macOS-v${{ steps.v.outputs.n }}.zip
+          retention-days: 1
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build
+        run: pyinstaller build.spec --noconfirm
+
+      - name: Read build number
+        id: v
+        shell: bash
+        run: echo "n=$(python -c "import re;print(re.search(r'BUILD = (\d+)',open('engines.py').read()).group(1))")" >> $GITHUB_OUTPUT
+
+      # same rule: the artifact holds the program folder, not a zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ava-Windows
+          path: dist/Avaye Javid Shah
+
+      - name: Package for release
+        shell: pwsh
+        run: Compress-Archive -Path "dist/Avaye Javid Shah" -DestinationPath "Ava-Windows-v${{ steps.v.outputs.n }}.zip" -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-payload-win
+          path: Ava-Windows-v${{ steps.v.outputs.n }}.zip
+          retention-days: 1
+
+  # Publishes both zips as Release assets on EVERY build of main, tagged with
+  # the build number from engines.py. Release downloads have no wrapper: one
+  # file, one double-click — this is the link to send to anyone else.
+  release:
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: echo "n=$(python -c "import re;print(re.search(r'BUILD = (\d+)',open('engines.py').read()).group(1))")" >> $GITHUB_OUTPUT
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-payload-*
+          merge-multiple: true
+          path: .
+      - run: ls -lh *.zip
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.v.outputs.n }}
+          name: نسخهٔ ${{ steps.v.outputs.n }}
+          files: |
+            Ava-macOS-v${{ steps.v.outputs.n }}.zip
+            Ava-Windows-v${{ steps.v.outputs.n }}.zip
+          body: |
+            دانلود مستقیم — یک فایل، یک‌بار دوبار-کلیک.
