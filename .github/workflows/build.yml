@@ -1,9 +1,11 @@
 # Ava — build workflow
 # ---------------------------------------------------------------------------
 # DELIVERY MODEL, final form:
-#   * NO artifacts are produced at all. Each job publishes its own file
-#     straight to the Release, so there is nothing on the Actions page to
-#     download by mistake and nothing can ever be nested inside anything.
+#   * TWO download paths, neither ever nested:
+#       Actions -> Artifacts -> Ava-macOS  -> expand -> ONE .dmg file
+#       Releases -> نسخهٔ NN -> Ava-macOS-vNN.dmg  (no wrapper at all)
+#     RULE: an artifact must never contain a zip, because GitHub already
+#     wraps every artifact in one. That nesting was introduced by mistake.
 #   * macOS ships as a .dmg — the format macOS is built to open. Double-click
 #     mounts it, drag the app to Applications. Archive Utility is never
 #     involved, so "unsupported format" cannot happen.
@@ -94,7 +96,16 @@ jobs:
           echo "mounted OK, app present and executable"
           hdiutil detach /tmp/avachk
 
-      # published straight from this job — no artifact, nothing to nest
+      # ARTIFACT — the familiar path: Actions -> Artifacts -> Ava-macOS.
+      # It holds ONE file, the .dmg. Expand it, double-click the .dmg, drag
+      # the app to Applications. No zip inside a zip, ever again.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ava-macOS
+          path: Ava-macOS-v${{ steps.v.outputs.n }}.dmg
+          compression-level: 0
+
+      # RELEASE — the one-step path: the .dmg downloads as itself, no wrapper.
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.v.outputs.n }}
@@ -136,6 +147,13 @@ jobs:
         run: |
           Compress-Archive -Path "dist/Avaye Javid Shah" -DestinationPath "Ava-Windows-v${{ steps.v.outputs.n }}.zip" -Force
           Get-Item "Ava-Windows-v${{ steps.v.outputs.n }}.zip" | Select-Object Name, Length
+
+      # ARTIFACT — Actions -> Artifacts -> Ava-Windows holds the program
+      # folder itself, so expanding it gives the folder directly.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ava-Windows
+          path: dist/Avaye Javid Shah
 
       - uses: softprops/action-gh-release@v2
         with:
