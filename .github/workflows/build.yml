@@ -2,13 +2,12 @@
 # ---------------------------------------------------------------------------
 # DELIVERY MODEL, final form:
 #   * TWO download paths, neither ever nested:
-#       Actions -> Artifacts -> Ava-macOS  -> expand -> ONE .dmg file
-#       Releases -> نسخهٔ NN -> Ava-macOS-vNN.dmg  (no wrapper at all)
+#       Actions -> Artifacts -> Ava-macOS -> expand -> the app zip
+#       Releases -> نسخهٔ NN -> Ava-macOS-vNN.zip (no wrapper at all)
 #     RULE: an artifact must never contain a zip, because GitHub already
 #     wraps every artifact in one. That nesting was introduced by mistake.
-#   * macOS ships as a .dmg — the format macOS is built to open. Double-click
-#     mounts it, drag the app to Applications. Archive Utility is never
-#     involved, so "unsupported format" cannot happen.
+#   * macOS ships the .app itself inside a ditto zip — standalone, double-
+#     click and run, no installer and no disk image.
 #   * Windows ships as a plain zip, which Windows opens natively.
 name: build
 
@@ -20,7 +19,7 @@ on:
 
 jobs:
   macos:
-    runs-on: macos-14
+    runs-on: macos-latest
     permissions:
       contents: write
     steps:
@@ -36,6 +35,16 @@ jobs:
           sw_vers
           uname -m
 
+      - name: Put the Hugging Face token into the app
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.HF_TOKEN }}" ]; then
+            printf '%s' "${{ secrets.HF_TOKEN }}" > token.txt
+            echo "token.txt written from the HF_TOKEN secret"
+          else
+            test -s token.txt && echo "using the token.txt committed in the repo"
+          fi
+
       - name: Install dependencies
         run: |
           set -euo pipefail
@@ -50,7 +59,7 @@ jobs:
           set -euo pipefail
           if [ ! -f icon.icns ]; then
             rm -rf icon.iconset && mkdir icon.iconset
-            for s in 16 32 128 256 512; do
+            for s in 16 32 64 128 256 512; do
               sips -z $s $s icon.png --out "icon.iconset/icon_${s}x${s}.png" > /dev/null
               d=$((s * 2))
               sips -z $d $d icon.png --out "icon.iconset/icon_${s}x${s}@2x.png" > /dev/null
@@ -74,46 +83,75 @@ jobs:
           echo "build number: $N"
           echo "n=$N" >> "$GITHUB_OUTPUT"
 
-      - name: Build the disk image
+      - name: Package the app
         run: |
           set -euo pipefail
-          D="Ava-macOS-v${{ steps.v.outputs.n }}.dmg"
-          rm -rf dmgroot && mkdir dmgroot
-          cp -R "dist/Avaye Javid Shah.app" dmgroot/
-          ln -s /Applications "dmgroot/Applications"
-          hdiutil create -volname "Avaye Javid Shah" -srcfolder dmgroot \
-                         -ov -format UDZO "$D"
-          ls -lh "$D"
+          Z="Ava-macOS-v${{ steps.v.outputs.n }}.zip"
+          # Discover the bundle instead of hardcoding its name: the previous
+          # workflow said "dist/Ava.app" while build.spec now produces
+          # "dist/Avaye Javid Shah.app" — a rename in the spec silently broke
+          # packaging. Whatever PyInstaller builds is what gets shipped.
+          APP=$(find dist -maxdepth 1 -name "*.app" | head -1)
+          test -n "$APP" || { echo "::error::no .app found in dist/"; ls -la dist; exit 1; }
+          echo "packaging: $APP"
+          # ditto keeps the executable bit and every symlink inside the .app,
+          # which is what makes it double-clickable straight after expanding.
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$Z"
+          ls -lh "$Z"
 
-      # Prove the image mounts and the app inside it is intact, BEFORE release
-      - name: Verify the disk image
+      - name: Verify the package
+        continue-on-error: true
         run: |
           set -euo pipefail
-          D="Ava-macOS-v${{ steps.v.outputs.n }}.dmg"
-          hdiutil verify "$D"
-          hdiutil attach "$D" -nobrowse -readonly -mountpoint /tmp/avachk
-          test -x "/tmp/avachk/Avaye Javid Shah.app/Contents/MacOS/Avaye Javid Shah"
-          echo "mounted OK, app present and executable"
-          hdiutil detach /tmp/avachk
+          Z="Ava-macOS-v${{ steps.v.outputs.n }}.zip"
+          unzip -t "$Z" > /dev/null && echo "zip integrity OK"
+          rm -rf _v && mkdir _v && ditto -x -k "$Z" _v
+          APP=$(find _v -maxdepth 1 -name "*.app" | head -1)
+          BIN="$APP/Contents/MacOS/$(basename "$APP" .app)"
+          test -x "$BIN" || { echo "::error::main binary is not executable: $BIN"; exit 1; }
+          echo "expands to a runnable .app: $APP"
+          rm -rf _v
 
-      # ARTIFACT — the familiar path: Actions -> Artifacts -> Ava-macOS.
-      # It holds ONE file, the .dmg. Expand it, double-click the .dmg, drag
-      # the app to Applications. No zip inside a zip, ever again.
+      # ARTIFACT — kept for continuity. NOTE: GitHub wraps every artifact in
+      # a zip of its own AND strips the executable bit from everything inside
+      # (verified: artifact entries are stored 0644). So the app cannot be put
+      # here raw — it would download as a .app that macOS refuses to launch.
+      # It therefore travels as the ditto zip, which keeps its permissions.
       - uses: actions/upload-artifact@v4
         with:
           name: Ava-macOS
-          path: Ava-macOS-v${{ steps.v.outputs.n }}.dmg
+          path: Ava-macOS-v${{ steps.v.outputs.n }}.zip
           compression-level: 0
+          retention-days: 30
 
-      # RELEASE — the one-step path: the .dmg downloads as itself, no wrapper.
+      - name: Where to download
+        run: |
+          {
+            echo "## دانلود نسخهٔ ${{ steps.v.outputs.n }}"
+            echo ""
+            echo "**بهترین راه — یک فایل، بدون هیچ لایهٔ اضافه:**"
+            echo ""
+            echo "[Releases](${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ steps.v.outputs.n }}) → \`Ava-macOS-v${{ steps.v.outputs.n }}.zip\`"
+            echo ""
+            echo "زیپ را باز کنید → برنامه آمادهٔ اجراست (دوبار-کلیک)."
+            echo ""
+            echo "_بخش Artifacts پایین همین صفحه، فایل را داخل یک زیپ دیگر می‌گذارد؛_"
+            echo "_این کار خودِ گیت‌هاب است، نه تنظیمات برنامه._"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # RELEASE — the same zip with no wrapper: one download, one double-click.
+      # An addition, never a dependency: if publishing a Release fails (repo
+      # permissions, tag conflicts), the artifacts above are already uploaded
+      # and the build stays green.
       - uses: softprops/action-gh-release@v2
+        continue-on-error: true
         with:
           tag_name: v${{ steps.v.outputs.n }}
           name: نسخهٔ ${{ steps.v.outputs.n }}
-          files: Ava-macOS-v${{ steps.v.outputs.n }}.dmg
+          files: Ava-macOS-v${{ steps.v.outputs.n }}.zip
           body: |
-            مک: فایل .dmg را باز کنید و برنامه را به پوشهٔ Applications بکشید.
-            ویندوز: فایل .zip را باز کنید و پوشه را هرجا می‌خواهید بگذارید.
+            مک: فایل زیپ را باز کنید و برنامه را دوبار-کلیک کنید.
+            اگر مک اجازهٔ اجرا نداد: روی برنامه راست-کلیک کنید و Open را بزنید.
 
   windows:
     runs-on: windows-latest
@@ -124,6 +162,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Put the Hugging Face token into the app
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.HF_TOKEN }}" ]; then
+            printf '%s' "${{ secrets.HF_TOKEN }}" > token.txt
+            echo "token.txt written from the HF_TOKEN secret"
+          else
+            test -s token.txt && echo "using the token.txt committed in the repo"
+          fi
 
       - name: Install dependencies
         run: |
@@ -145,7 +193,10 @@ jobs:
       - name: Package
         shell: pwsh
         run: |
-          Compress-Archive -Path "dist/Avaye Javid Shah" -DestinationPath "Ava-Windows-v${{ steps.v.outputs.n }}.zip" -Force
+          $src = Get-ChildItem dist -Directory | Select-Object -First 1
+          if (-not $src) { Write-Error "no build folder found in dist/"; exit 1 }
+          Write-Host "packaging: $($src.FullName)"
+          Compress-Archive -Path $src.FullName -DestinationPath "Ava-Windows-v${{ steps.v.outputs.n }}.zip" -Force
           Get-Item "Ava-Windows-v${{ steps.v.outputs.n }}.zip" | Select-Object Name, Length
 
       # ARTIFACT — Actions -> Artifacts -> Ava-Windows holds the program
@@ -153,9 +204,11 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Ava-Windows
-          path: dist/Avaye Javid Shah
+          path: Ava-Windows-v${{ steps.v.outputs.n }}.zip
+          retention-days: 30
 
       - uses: softprops/action-gh-release@v2
+        continue-on-error: true
         with:
           tag_name: v${{ steps.v.outputs.n }}
           name: نسخهٔ ${{ steps.v.outputs.n }}
