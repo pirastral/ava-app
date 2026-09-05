@@ -113,21 +113,17 @@ jobs:
           echo "expands to a runnable .app: $APP"
           rm -rf _v
 
-      # ARTIFACT — expanding the download must reveal ONE item: the app.
-      # An artifact's "path" becomes the ROOT of the zip, so pointing it at
-      # the .app uploads the app's INSIDES (Contents, Frameworks, MacOS…) and
-      # destroys the bundle. The app is therefore staged alone in a folder,
-      # and that folder is the root: the zip then holds exactly the .app.
+      # PRIMARY ARTIFACT — the app itself, staged alone so the download
+      # expands to exactly one item: "…app".
       - name: Stage the app alone
         run: |
           set -euo pipefail
           APP=$(find dist -maxdepth 1 -name "*.app" | head -1)
           test -n "$APP" || { echo "::error::no .app in dist/"; ls -la dist; exit 1; }
           rm -rf stage && mkdir stage
-          ditto "$APP" "stage/$(basename "$APP")"     # ditto keeps symlinks + permissions
-          ls -la stage
-          test -x "stage/$(basename "$APP")/Contents/MacOS/$(basename "$APP" .app)"
-          echo "staged one item: $(basename "$APP")"
+          ditto "$APP" "stage/$(basename "$APP")"
+          echo "staged: $(ls stage)"
+          echo "symlinks inside the staged app: $(find stage -type l | wc -l | tr -d ' ')"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -135,12 +131,22 @@ jobs:
           path: stage
           retention-days: 30
 
+      # FALLBACK ARTIFACT — the ditto zip, guaranteed to preserve symlinks,
+      # permissions and the code signature. Only needed if the primary one
+      # above turns out not to survive the round trip.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ava-macOS-zip
+          path: Ava-macOS-v${{ steps.v.outputs.n }}.zip
+          compression-level: 0
+          retention-days: 30
+
       - name: Where to download
         run: |
           {
             echo "## دانلود نسخهٔ ${{ steps.v.outputs.n }}"
             echo ""
-            echo "**بهترین راه — یک فایل، بدون هیچ لایهٔ اضافه:**"
+            echo "**برای مک حتماً از این راه دانلود کنید — یک فایل، بدون لایهٔ اضافه:**"
             echo ""
             echo "[Releases](${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ steps.v.outputs.n }}) → \`Ava-macOS-v${{ steps.v.outputs.n }}.zip\`"
             echo ""
@@ -212,6 +218,8 @@ jobs:
 
       # ARTIFACT — Actions -> Artifacts -> Ava-Windows holds the program
       # folder itself, so expanding it gives the folder directly.
+      # Windows has no code signature to preserve, so the program folder can
+      # travel raw: staged alone so the download expands to exactly one item.
       - name: Stage the program folder alone
         shell: pwsh
         run: |
@@ -234,3 +242,48 @@ jobs:
           tag_name: v${{ steps.v.outputs.n }}
           name: نسخهٔ ${{ steps.v.outputs.n }}
           files: Ava-Windows-v${{ steps.v.outputs.n }}.zip
+
+  # Downloads the macOS artifact back out of GitHub and reports exactly what
+  # survived the round trip: symlinks, the executable bit, and the code
+  # signature. This replaces guessing about what artifacts do to a .app.
+  check-macos-artifact:
+    needs: macos
+    runs-on: macos-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Ava-macOS
+          path: got
+
+      - name: What survived the artifact round trip
+        run: |
+          set +e
+          APP=$(find got -maxdepth 1 -name "*.app" | head -1)
+          echo "top level of the download:"; ls -la got
+          BIN="$APP/Contents/MacOS/$(basename "$APP" .app)"
+          SYM=$(find "$APP" -type l | wc -l | tr -d ' ')
+          echo ""
+          echo "app bundle          : $APP"
+          echo "symlinks preserved  : $SYM   (the build has ~700)"
+          echo "main binary         : $BIN"
+          echo "exists              : $([ -f "$BIN" ] && echo yes || echo NO)"
+          echo "executable bit      : $([ -x "$BIN" ] && echo yes || echo NO)"
+          echo "permissions         : $(stat -f '%Sp' "$BIN" 2>/dev/null)"
+          echo ""
+          echo "code signature check:"
+          codesign --verify --deep --strict --verbose=2 "$APP" 2>&1 | tail -5
+          echo ""
+          echo "can it actually start? (2s launch test)"
+          "$BIN" --version > /tmp/out.txt 2>&1 &
+          PID=$!
+          sleep 2
+          if kill -0 $PID 2>/dev/null; then echo "  process is ALIVE -> the app runs"; kill $PID; else
+            echo "  process exited: $(cat /tmp/out.txt | head -3)"; fi
+          {
+            echo "### macOS artifact round-trip"
+            echo ""
+            echo "| check | result |"
+            echo "|---|---|"
+            echo "| symlinks preserved | $SYM of ~700 |"
+            echo "| executable bit | $([ -x "$BIN" ] && echo yes || echo NO) |"
+          } >> "$GITHUB_STEP_SUMMARY"
