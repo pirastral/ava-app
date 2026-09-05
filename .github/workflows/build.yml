@@ -1,11 +1,12 @@
 # Ava — build workflow
 # ---------------------------------------------------------------------------
 # DELIVERY MODEL, final form:
-#   * TWO download paths, neither ever nested:
-#       Actions -> Artifacts -> Ava-macOS -> expand -> the app zip
-#       Releases -> نسخهٔ NN -> Ava-macOS-vNN.zip (no wrapper at all)
-#     RULE: an artifact must never contain a zip, because GitHub already
-#     wraps every artifact in one. That nesting was introduced by mistake.
+#   RULE: an artifact must NEVER contain an archive. GitHub already wraps
+#   every artifact in a zip of its own, so anything archived inside it lands
+#   as a zip inside a zip. The artifacts here hold the application itself:
+#       Actions -> Artifacts -> Ava-macOS  -> expand -> "…app" ready to run
+#       Releases -> نسخهٔ NN -> the same app in a ditto zip (permissions and
+#       symlinks guaranteed) for sending to someone else.
 #   * macOS ships the .app itself inside a ditto zip — standalone, double-
 #     click and run, no installer and no disk image.
 #   * Windows ships as a plain zip, which Windows opens natively.
@@ -112,16 +113,19 @@ jobs:
           echo "expands to a runnable .app: $APP"
           rm -rf _v
 
-      # ARTIFACT — kept for continuity. NOTE: GitHub wraps every artifact in
-      # a zip of its own AND strips the executable bit from everything inside
-      # (verified: artifact entries are stored 0644). So the app cannot be put
-      # here raw — it would download as a .app that macOS refuses to launch.
-      # It therefore travels as the ditto zip, which keeps its permissions.
+      # ARTIFACT — the .app ITSELF, never an archive. Download Ava-macOS.zip,
+      # expand it once, and the application is right there.
+      - name: Locate the app for upload
+        id: app
+        run: |
+          set -euo pipefail
+          APP=$(find dist -maxdepth 1 -name "*.app" | head -1)
+          echo "path=$APP" >> "$GITHUB_OUTPUT"
+          echo "uploading: $APP"
       - uses: actions/upload-artifact@v4
         with:
           name: Ava-macOS
-          path: Ava-macOS-v${{ steps.v.outputs.n }}.zip
-          compression-level: 0
+          path: ${{ steps.app.outputs.path }}
           retention-days: 30
 
       - name: Where to download
@@ -204,7 +208,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Ava-Windows
-          path: Ava-Windows-v${{ steps.v.outputs.n }}.zip
+          path: dist/*/
           retention-days: 30
 
       - uses: softprops/action-gh-release@v2
