@@ -113,30 +113,16 @@ jobs:
           echo "expands to a runnable .app: $APP"
           rm -rf _v
 
-      # PRIMARY ARTIFACT — the app itself, staged alone so the download
-      # expands to exactly one item: "…app".
-      - name: Stage the app alone
-        run: |
-          set -euo pipefail
-          APP=$(find dist -maxdepth 1 -name "*.app" | head -1)
-          test -n "$APP" || { echo "::error::no .app in dist/"; ls -la dist; exit 1; }
-          rm -rf stage && mkdir stage
-          ditto "$APP" "stage/$(basename "$APP")"
-          echo "staged: $(ls stage)"
-          echo "symlinks inside the staged app: $(find stage -type l | wc -l | tr -d ' ')"
-
+      # ARTIFACT — the ditto zip, and it MUST be a zip.
+      # MEASURED ON A MAC RUNNER (job check-macos-artifact): uploading the
+      # .app raw returns "symlinks preserved: 0 of ~700" and "executable bit:
+      # NO". GitHub's artifact pipeline dereferences every symlink and strips
+      # permissions, which leaves a bundle macOS cannot launch. The ditto zip
+      # travels through intact. GitHub's own wrapper around it is unavoidable
+      # here — the RELEASE below has no wrapper and is the better download.
       - uses: actions/upload-artifact@v4
         with:
           name: Ava-macOS
-          path: stage
-          retention-days: 30
-
-      # FALLBACK ARTIFACT — the ditto zip, guaranteed to preserve symlinks,
-      # permissions and the code signature. Only needed if the primary one
-      # above turns out not to survive the round trip.
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Ava-macOS-zip
           path: Ava-macOS-v${{ steps.v.outputs.n }}.zip
           compression-level: 0
           retention-days: 30
@@ -246,6 +232,9 @@ jobs:
   # Downloads the macOS artifact back out of GitHub and reports exactly what
   # survived the round trip: symlinks, the executable bit, and the code
   # signature. This replaces guessing about what artifacts do to a .app.
+  # Runs the built app on a Mac and reports WHY it fails, if it fails.
+  # Static checks all pass (binary min-macOS 11.0, bundle complete, mode 0755,
+  # token valid), so anything left is launch-time: Gatekeeper or a crash.
   check-macos-artifact:
     needs: macos
     runs-on: macos-latest
@@ -255,35 +244,40 @@ jobs:
           name: Ava-macOS
           path: got
 
-      - name: What survived the artifact round trip
+      - name: Unpack exactly as a user would
+        run: |
+          set -euo pipefail
+          Z=$(find got -name "*.zip" | head -1)
+          ditto -x -k "$Z" out
+          ls -la out
+
+      - name: Diagnose the app
         run: |
           set +e
-          APP=$(find got -maxdepth 1 -name "*.app" | head -1)
-          echo "top level of the download:"; ls -la got
+          APP=$(find out -maxdepth 1 -name "*.app" | head -1)
           BIN="$APP/Contents/MacOS/$(basename "$APP" .app)"
-          SYM=$(find "$APP" -type l | wc -l | tr -d ' ')
+          echo "=== structure ==="
+          echo "symlinks: $(find "$APP" -type l | wc -l | tr -d ' ')"
+          echo "binary  : $([ -x "$BIN" ] && echo executable || echo NOT-EXECUTABLE)"
+          echo "min macOS required: $(otool -l "$BIN" | grep -A3 LC_BUILD_VERSION | grep minos)"
           echo ""
-          echo "app bundle          : $APP"
-          echo "symlinks preserved  : $SYM   (the build has ~700)"
-          echo "main binary         : $BIN"
-          echo "exists              : $([ -f "$BIN" ] && echo yes || echo NO)"
-          echo "executable bit      : $([ -x "$BIN" ] && echo yes || echo NO)"
-          echo "permissions         : $(stat -f '%Sp' "$BIN" 2>/dev/null)"
+          echo "=== code signature ==="
+          codesign --verify --deep --strict --verbose=2 "$APP" 2>&1 | tail -8
           echo ""
-          echo "code signature check:"
-          codesign --verify --deep --strict --verbose=2 "$APP" 2>&1 | tail -5
+          echo "=== Gatekeeper assessment (what a downloaded copy faces) ==="
+          xattr -w com.apple.quarantine "0081;00000000;Safari;" "$APP" 2>/dev/null
+          spctl -a -t exec -vvv "$APP" 2>&1 | tail -5
+          xattr -dr com.apple.quarantine "$APP"
           echo ""
-          echo "can it actually start? (2s launch test)"
-          "$BIN" --version > /tmp/out.txt 2>&1 &
+          echo "=== actually launching it (5s) ==="
+          "$BIN" > /tmp/o.txt 2>&1 &
           PID=$!
-          sleep 2
-          if kill -0 $PID 2>/dev/null; then echo "  process is ALIVE -> the app runs"; kill $PID; else
-            echo "  process exited: $(cat /tmp/out.txt | head -3)"; fi
-          {
-            echo "### macOS artifact round-trip"
-            echo ""
-            echo "| check | result |"
-            echo "|---|---|"
-            echo "| symlinks preserved | $SYM of ~700 |"
-            echo "| executable bit | $([ -x "$BIN" ] && echo yes || echo NO) |"
-          } >> "$GITHUB_STEP_SUMMARY"
+          sleep 5
+          if kill -0 $PID 2>/dev/null; then
+            echo "PROCESS ALIVE -> the app starts fine; any failure on your Mac is Gatekeeper/quarantine"
+            kill $PID
+          else
+            wait $PID; RC=$?
+            echo "PROCESS EXITED with code $RC — output follows:"
+            cat /tmp/o.txt | tail -40
+          fi
