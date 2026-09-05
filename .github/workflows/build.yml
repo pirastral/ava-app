@@ -113,19 +113,26 @@ jobs:
           echo "expands to a runnable .app: $APP"
           rm -rf _v
 
-      # ARTIFACT — the .app ITSELF, never an archive. Download Ava-macOS.zip,
-      # expand it once, and the application is right there.
-      - name: Locate the app for upload
-        id: app
+      # ARTIFACT — expanding the download must reveal ONE item: the app.
+      # An artifact's "path" becomes the ROOT of the zip, so pointing it at
+      # the .app uploads the app's INSIDES (Contents, Frameworks, MacOS…) and
+      # destroys the bundle. The app is therefore staged alone in a folder,
+      # and that folder is the root: the zip then holds exactly the .app.
+      - name: Stage the app alone
         run: |
           set -euo pipefail
           APP=$(find dist -maxdepth 1 -name "*.app" | head -1)
-          echo "path=$APP" >> "$GITHUB_OUTPUT"
-          echo "uploading: $APP"
+          test -n "$APP" || { echo "::error::no .app in dist/"; ls -la dist; exit 1; }
+          rm -rf stage && mkdir stage
+          ditto "$APP" "stage/$(basename "$APP")"     # ditto keeps symlinks + permissions
+          ls -la stage
+          test -x "stage/$(basename "$APP")/Contents/MacOS/$(basename "$APP" .app)"
+          echo "staged one item: $(basename "$APP")"
+
       - uses: actions/upload-artifact@v4
         with:
           name: Ava-macOS
-          path: ${{ steps.app.outputs.path }}
+          path: stage
           retention-days: 30
 
       - name: Where to download
@@ -205,10 +212,20 @@ jobs:
 
       # ARTIFACT — Actions -> Artifacts -> Ava-Windows holds the program
       # folder itself, so expanding it gives the folder directly.
+      - name: Stage the program folder alone
+        shell: pwsh
+        run: |
+          $src = Get-ChildItem dist -Directory | Select-Object -First 1
+          if (-not $src) { Write-Error "no build folder in dist/"; exit 1 }
+          Remove-Item stage -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path stage | Out-Null
+          Copy-Item $src.FullName -Destination stage -Recurse -Force
+          Get-ChildItem stage
+
       - uses: actions/upload-artifact@v4
         with:
           name: Ava-Windows
-          path: dist/*/
+          path: stage
           retention-days: 30
 
       - uses: softprops/action-gh-release@v2
