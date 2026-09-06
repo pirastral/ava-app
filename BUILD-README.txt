@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist (repo: github.com/pirastral/ava-app)
 ======================================================================
-This zip is the COMPLETE application source as of update 91.
+This zip is the COMPLETE application source as of update 92.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -14,6 +14,20 @@ Replace these files in the repo (paths identical):
                       THE FOLDER MUST EXIST IN THE REPO or PyInstaller fails.
   icon.png / icon.ico – unchanged
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 92 (on top of 91)
+  FIELD LOG (91): BOTH doors silent for 75 s — including generateContent, which answers
+  the diacritizer in seconds. So the endpoint is not the variable; the generation is
+  (long, or looping — TTS models are known to loop on unusual input). Therefore:
+  - the classic door now STREAMS (streamGenerateContent, SSE): audio chunks arrive as
+    they are made, the status shows seconds received, the timeout is between chunks
+    (90 s to first chunk, 45 s gap) instead of one silent wait for a final answer
+  - a runaway generation (audio far beyond the transcript's length) is cut and named
+  - the prompt frame is a third of its size (the long "audio profile" was a suspect)
+  - keys dialog: "⚡ آزمایش اتصال" sends a six-word request on the selected model and
+    reports exactly what happened: seconds of audio and elapsed, or the reason
+  FIRST TEST TO RUN: keys dialog → آزمایش اتصال with model 2.5 Flash. Then 3.1.
+  Its result (and the google_stream line in ava.log) decides the next move.
 
 WHAT CHANGED IN 91 (on top of 90)
   Google request path: the FIELD LOG showed the Interactions endpoint accepting the
@@ -54,6 +68,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۹۱»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۹۲»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

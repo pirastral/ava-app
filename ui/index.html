@@ -356,7 +356,7 @@
     </div>
   </div>
 
-  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۹۱</span>
+  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۹۲</span>
     <span class="warn">تنها از نسخه‌ای از این برنامه استفاده کنید که مستقیماً از توسعه‌دهنده دریافت کرده‌اید؛ نسخه‌های دریافتی از منابع ناشناس ممکن است حاوی بدافزار باشند.</span>
   </footer>
 </div>
@@ -409,7 +409,9 @@
     <div class="row" style="margin-top:10px">
       <button class="chip" type="button" id="gKeyAdd">＋ افزودن کلید</button>
       <button class="chip" type="button" id="gKeyGet">دریافت کلید رایگان ↗</button>
+      <button class="chip" type="button" id="gKeyProbe" title="یک جملهٔ کوتاه با مدل انتخاب‌شده می‌فرستد و دقیقاً گزارش می‌دهد چه شد">⚡ آزمایش اتصال</button>
     </div>
+    <p class="dnote" id="gProbeOut" style="margin-top:8px;min-height:1.4em"></p>
   </div>
 </div>
 
@@ -990,6 +992,17 @@
   document.getElementById("gKeysOverlay").addEventListener("click", e => { if(e.target === e.currentTarget) closeKeys(); });
   document.getElementById("gKeyAdd").onclick = () => { const r = keyRow(null); document.getElementById("gKeyList").appendChild(r); r.querySelector("input").focus(); };
   document.getElementById("gKeyGet").onclick = () => window.pywebview.api.open_url("https://aistudio.google.com/apikey");
+  document.getElementById("gKeyProbe").onclick = async () => {
+    const out = document.getElementById("gProbeOut"), btn = document.getElementById("gKeyProbe");
+    const keys = [...document.querySelectorAll("#gKeyList input")].map(i => i.value.trim()).filter(Boolean);
+    try{ await window.pywebview.api.google_keys_set(keys); }catch(e){}
+    btn.disabled = true; out.textContent = "در حال آزمایش… (تا ۹۰ ثانیه)"; out.style.color = "";
+    try{
+      const r = await window.pywebview.api.google_probe(document.getElementById("gModel").value);
+      out.textContent = (r.ok ? "✓ " : "✕ ") + r.msg; out.style.color = r.ok ? "var(--tile)" : "var(--danger)";
+    }catch(e){ out.textContent = "✕ " + e; out.style.color = "var(--danger)"; }
+    btn.disabled = false;
+  };
 
 window.addEventListener('pywebviewready', function(){
   try{ pywebview.api.build().then(function(b){

@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 91
-BUILD_FA = "\u06f9\u06f1"
+BUILD = 92
+BUILD_FA = "\u06f9\u06f2"
 
 
 def _diag(tag, **kv):
@@ -2983,16 +2983,10 @@ def google_prompt(text, cfg):
     if len(speakers) == 2:
         a, b = speakers[0].get("name", ""), speakers[1].get("name", "")
         duo = f"This is a conversation between {a} and {b}. Every line of the transcript begins with the speaker's name and a colon.\n"
-    head = ("# AUDIO PROFILE: Ava\nOne seasoned narrator. Identity, timbre, accent and energy stay EXACTLY the same in every recording of this document.\n"
-            "## THE SCENE\nA quiet, treated studio. One take, steady microphone distance, no background sound.\n"
-            "### DIRECTOR'S NOTES\n"
-            f"Style: {style}\n"
-            f"Language: {lang_note}\n"
-            "Pacing: steady and consistent from the first word to the last.\n"
-            + duo +
-            "Synthesize speech for the TRANSCRIPT below exactly as written — nothing added, nothing skipped. "
-            "Never read these notes aloud, and never pronounce bracketed tags; perform them.\n"
-            "#### TRANSCRIPT\n")
+    head = (f"Narrator: one consistent voice, same identity in every recording. Style: {style} "
+            f"Language: {lang_note} " + duo +
+            "Read ONLY the transcript below, exactly as written; do not read these instructions; perform bracketed tags, never say them.\n"
+            "TRANSCRIPT:\n")
     return head + google_text(text, model)
 
 
@@ -3067,7 +3061,91 @@ def _google_decode(b64, mime):
     return pcm, sr
 
 
-_G_TIMEOUT = 75   # seconds a single TTS request may stay silent before we try the other door
+_G_TIMEOUT = 75   # seconds a door may stay silent before the other door is tried (Interactions)
+_G_FIRST_BYTE = 90   # seconds until the FIRST streamed chunk must arrive
+_G_GAP = 45          # seconds between streamed chunks
+
+
+def _google_stream(url, body, key, expect_sec, status):
+    """streamGenerateContent (SSE): audio parts are collected as they arrive.
+    Runs in a helper thread so cancel can abandon it; reports progress; if the
+    model keeps producing far beyond the transcript's plausible length it is
+    looping — the stream is cut and the request reported as such."""
+    _check_cancel()
+    box = {"parts": [], "mime": "", "done": False, "bytes": 0}
+    cap = int(24000 * 2 * (expect_sec * 3 + 15))   # raw PCM bytes at ~3x the plausible length
+
+    def run():
+        try:
+            with requests.post(url + "?alt=sse", json=body, timeout=(20, _G_FIRST_BYTE), stream=True,
+                               headers={"x-goog-api-key": key, "Content-Type": "application/json"}) as r:
+                box["code"] = r.status_code
+                if r.status_code != 200:
+                    try:
+                        box["msg"] = r.json().get("error", {}).get("message", "") or r.text[:200]
+                    except Exception:
+                        box["msg"] = r.text[:200]
+                    return
+                import base64
+                for line in r.iter_lines(chunk_size=8192):
+                    if _CANCEL.is_set():
+                        return
+                    if not line or not line.startswith(b"data:"):
+                        continue
+                    try:
+                        ev = json.loads(line[5:].strip())
+                    except Exception:
+                        continue
+                    if "error" in ev:
+                        box["msg"] = str(ev["error"].get("message", ev["error"]))[:200]; box["code"] = 500; return
+                    for c in ev.get("candidates", []):
+                        for p in (c.get("content") or {}).get("parts", []):
+                            inl = p.get("inlineData") or p.get("inline_data")
+                            if inl and inl.get("data"):
+                                box["parts"].append(inl["data"]); box["mime"] = inl.get("mimeType") or inl.get("mime_type") or box["mime"]
+                                box["bytes"] += len(inl["data"]) * 3 // 4
+                            elif p.get("text"):
+                                box["text"] = (box.get("text") or "") + p["text"]
+                    if box["bytes"] > cap:
+                        box["looping"] = True; return
+                box["done"] = True
+        except BaseException as e:   # noqa
+            box["e"] = e
+    th = threading.Thread(target=run, daemon=True); th.start()
+    import time
+    last_bytes, last_t, t0 = 0, time.time(), time.time()
+    while th.is_alive():
+        th.join(0.25)
+        if _CANCEL.is_set():
+            raise Cancelled()
+        if box["bytes"] != last_bytes:
+            last_bytes, last_t = box["bytes"], time.time()
+            status(f"گوگل: صدا در حال رسیدن… {faDigits(int(box['bytes'] / 48000))} ثانیه")
+        elif box["bytes"] and time.time() - last_t > _G_GAP:
+            box["stalled"] = True; break
+    if box["bytes"]:
+        status(f"گوگل: {faDigits(int(box['bytes'] / 48000))} ثانیه صدا رسید" + (" — ناقص" if box.get("stalled") else ""))
+    _diag("google_stream", code=box.get("code"), ms=int((time.time() - t0) * 1000), parts=len(box["parts"]),
+          audio_s=round(box["bytes"] / 48000, 1), expect_s=round(expect_sec, 1),
+          looping=box.get("looping", False), stalled=box.get("stalled", False), text=(box.get("text") or "")[:60])
+    if "e" in box and not box["parts"]:
+        raise box["e"]
+    if box.get("code") not in (None, 200) and not box["parts"]:
+        raise _GoogleHTTP(box["code"], box.get("msg", ""))
+    if box.get("looping"):
+        raise RuntimeError("گوگل در خواندن این بخش به دورِ باطل افتاد (صدای بسیار بلندتر از متن) — متن را کوتاه‌تر کنید یا مدل 2.5 Flash را امتحان کنید.")
+    if not box["parts"]:
+        if box.get("text"):
+            raise _GoogleHTTP(500, "text instead of audio: " + box["text"][:80])
+        raise _GoogleHTTP(500, "no audio in response")
+    import base64
+    raw = b"".join(base64.b64decode(p) for p in box["parts"])
+    m = re.search(r"rate=(\d+)", box["mime"] or "")
+    sr = int(m.group(1)) if m else 24000
+    pcm = np.frombuffer(raw[: len(raw) - len(raw) % 2], dtype="<i2").astype(np.int16)
+    if len(pcm) < sr // 20:
+        raise _GoogleHTTP(500, "empty audio")
+    return pcm, sr
 
 
 def _google_call(text, cfg, status):
@@ -3079,7 +3157,8 @@ def _google_call(text, cfg, status):
     is skipped for the other one, and if BOTH stay silent the request fails
     at once with a clear message — no minutes-long retry ladder."""
     model = cfg.get("g_model") or "gemini-3.1-flash-tts-preview"
-    doors = [("generateContent", f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+    expect_sec = max(3.0, len(google_text(text, model)) / 11.0)   # Persian ≈ 11 chars per second of speech
+    doors = [("streamGenerateContent", f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent",
               _google_legacy_body(text, cfg)),
              ("interactions", _GOOGLE_URL, _google_body(text, cfg))]
 
@@ -3088,6 +3167,10 @@ def _google_call(text, cfg, status):
         for name, url, body in doors:
             _check_cancel()
             try:
+                if name == "streamGenerateContent":
+                    pcm_sr = _google_stream(url, body, key, expect_sec, status)
+                    _diag("google_door", door=name)
+                    return pcm_sr
                 data = _google_post(url, body, key, timeout=_G_TIMEOUT)
             except requests.Timeout as e:
                 _diag("google_timeout", door=name, s=_G_TIMEOUT)
@@ -3109,6 +3192,26 @@ def _google_call(text, cfg, status):
             raise RuntimeError("گوگل این درخواست را نپذیرفت: " + rejects[-1].msg[:160])
         raise timeouts[-1]
     return google_rotate(call, status, "گوگل")
+
+
+def google_probe(model, status):
+    """Six-word request on the chosen model, reported precisely: door, HTTP,
+    elapsed, seconds of audio. Turns 'no answer' into a measured fact."""
+    import time
+    _job_start()
+    keys = _google_usable_keys()
+    if not keys:
+        return {"ok": False, "msg": "کلید فعالی ثبت نشده است."}
+    cfg = {"g_model": model or "gemini-2.5-flash-preview-tts", "g_preset": "neutral", "g_lang": "fa",
+           "g_voice": "Charon", "g_stable": False}
+    text = "سلام. این یک آزمایش کوتاه است."
+    t0 = time.time()
+    try:
+        pcm, sr = _google_call(text, cfg, status)
+        return {"ok": True, "msg": f"پاسخ رسید: {faDigits(round(len(pcm) / sr, 1))} ثانیه صدا در {faDigits(round(time.time() - t0, 1))} ثانیه ({cfg['g_model']})",
+                "seconds": round(len(pcm) / sr, 1), "elapsed": round(time.time() - t0, 1)}
+    except Exception as e:
+        return {"ok": False, "msg": f"{str(e)[:200]} — پس از {faDigits(round(time.time() - t0, 1))} ثانیه", "elapsed": round(time.time() - t0, 1)}
 
 
 # --- tone consistency: measure, compare, regenerate outliers ---------------

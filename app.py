@@ -172,6 +172,13 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    def google_probe(self, model=None):
+        try:
+            import engines
+            return engines.google_probe(model, self._status)
+        except Exception as e:
+            return {"ok": False, "msg": str(e)}
+
     def google_keys_set(self, keys):
         try:
             import engines
