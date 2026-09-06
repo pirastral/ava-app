@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist (repo: github.com/pirastral/ava-app)
 ======================================================================
-This zip is the COMPLETE application source as of update 90.
+This zip is the COMPLETE application source as of update 91.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -14,6 +14,23 @@ Replace these files in the repo (paths identical):
                       THE FOLDER MUST EXIST IN THE REPO or PyInstaller fails.
   icon.png / icon.ico – unchanged
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 91 (on top of 90)
+  Google request path: the FIELD LOG showed the Interactions endpoint accepting the
+    request and staying silent for 180 s x3 ("Read timed out"), from a network where
+    generateContent (the diacritizer's endpoint) answers in seconds. So generateContent
+    is tried first, Interactions second; a door silent for 75 s is skipped for the
+    other; both silent -> immediate clear error (no minutes-long retry ladder).
+    Network errors now name the exception in the status and the log.
+  Cancel: "✕ لغو" beside the generate button while anything runs — abandons the
+    in-flight Google request, kills the piper helper, kills the chatterbox worker
+    (respawns on next use). Works for generation, apply-to-all, per-part regenerate
+    and diacritization. Parts already built are kept.
+  Keys: every key field has an eye toggle inside it. NO KEY SHIPS WITH THE APP — a
+    key seen on first run is the user's own Gemini key from earlier حرکت‌گذاری use,
+    seeded from AvaModels/ezafe_keys.json on that machine. With no active key the
+    generate button is disabled in Google mode, with a hint.
+  Google parts are 600 chars (was 800) to keep each request short.
 
 WHAT CHANGED IN 90
   Layout: the engine selector is the first control; text tools and settings follow it.
@@ -37,6 +54,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۹۰»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۹۱»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

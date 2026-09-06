@@ -131,6 +131,15 @@ class Api:
         import engines
         return {"n": engines.BUILD, "fa": engines.BUILD_FA}
 
+    # ---- 91: cancel whatever is running, in every engine -------------------
+    def cancel(self):
+        try:
+            import engines
+            engines.cancel()
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # ---- 90: chatterbox voice library --------------------------------------
     def cbx_voices(self):
         try:

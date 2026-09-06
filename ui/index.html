@@ -171,6 +171,14 @@
   .toggle{display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 14px;border:1px solid var(--line);border-radius:12px;background:var(--paper);font-size:.85rem;cursor:pointer}
   .toggle input{width:16px;height:16px;margin:0}
   .kstate{min-width:120px;font-size:.8rem}
+  /* 91: password field with an eye toggle inside it */
+  .pw{position:relative;display:flex;flex:1;min-width:0}
+  .pw input{width:100%;padding-inline-end:44px}
+  .pw .eye{position:absolute;inset-inline-end:6px;top:50%;transform:translateY(-50%);width:32px;height:32px;border:none;background:none;cursor:pointer;font-size:1rem;color:var(--muted);border-radius:8px;display:inline-flex;align-items:center;justify-content:center}
+  .pw .eye:hover{background:var(--paper);color:var(--ink)}
+  .pw .eye.on{color:var(--tile)}
+  /* 91: cancel — only while something runs */
+  .btn-cancel{background:var(--danger,#c0392b);color:#fff}
 </style>
 </head>
 <body>
@@ -226,7 +234,7 @@
         <option value="openai">OpenAI GPT — دقیق، کلید لازم</option>
         <option value="anthropic">Anthropic Claude — دقیق، کلید لازم</option>
       </select>
-      <input type="password" id="ezafeKey" placeholder="کلید API — یک‌بار وارد کنید، روی دستگاه ذخیره می‌شود" hidden>
+      <span class="pw" id="ezafeKeyWrap" hidden><input type="password" id="ezafeKey" placeholder="کلید API — یک‌بار وارد کنید، روی دستگاه ذخیره می‌شود"><button type="button" class="eye" title="نمایش / پنهان‌کردن">👁</button></span>
       <button class="chip" type="button" id="ezafeKeysBtn" hidden title="کلیدهای گوگل — همان کلیدهای موتور گوگل">🔑 کلیدهای گوگل</button>
       <button class="btn btn-primary" id="ezafeBtn" type="button">حرکت‌گذاری خودکار</button>
     </div>
@@ -326,6 +334,7 @@
 
     <div class="btnrow">
       <button class="btn btn-gold" id="genBtn"><span class="spin" id="spin"></span>♪ تبدیل به گفتار و ساخت MP3</button>
+      <button class="btn btn-cancel" id="cancelBtn" type="button" hidden title="متوقف‌کردن کار جاری در همهٔ موتورها">✕ لغو</button>
     </div>
     <div class="bar" id="bar"><div id="barFill"></div></div>
     <div class="status" id="status">آماده — متن را بنویسید و دکمه را بزنید.</div>
@@ -347,7 +356,7 @@
     </div>
   </div>
 
-  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۹۰</span>
+  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۹۱</span>
     <span class="warn">تنها از نسخه‌ای از این برنامه استفاده کنید که مستقیماً از توسعه‌دهنده دریافت کرده‌اید؛ نسخه‌های دریافتی از منابع ناشناس ممکن است حاوی بدافزار باشند.</span>
   </footer>
 </div>
@@ -427,6 +436,10 @@
 
 <script>
   const $ = id => document.getElementById(id);
+  const genBtn = $("genBtn"), spin = $("spin"), result = $("result"), player = $("player"), saveBtn = $("saveBtn");
+  const gulpsEl = $("gulps"), gulpBox = $("gulpBox"), finalBox = $("finalBox"),
+        spliceBtn = $("spliceBtn"), finalMsg = $("finalMsg");
+  let busy = false;
   const faNum = n => String(n).replace(/\d/g, d => "۰۱۲۳۴۵۶۷۸۹"[d]);
 
   const root = document.documentElement, themeBtn = $("themeBtn");
@@ -449,7 +462,7 @@
   const ezafeBtn = $("ezafeBtn"), ezafeTool = $("ezafeTool"), ezafeKey = $("ezafeKey");
   function syncEzafeTool(){
     const t = ezafeTool.value, gem = t.startsWith("gemini");
-    ezafeKey.hidden = t === "local" || gem;
+    $("ezafeKeyWrap").hidden = t === "local" || gem;
     $("ezafeKeysBtn").hidden = !gem;
   }
   $("ezafeKeysBtn").onclick = () => openKeys();
@@ -457,7 +470,7 @@
   ezafeBtn.onclick = async () => {
     const txt = textEl.value.trim();
     if(!txt){ say("اول متن فارسی را بنویسید یا جای‌گذاری کنید.", "err"); return; }
-    ezafeBtn.disabled = true;
+    ezafeBtn.disabled = true; setBusy(true);
     say("در حال حرکت‌گذاری خودکار…", "ok");
     try{
       const res = await window.pywebview.api.ezafe(textEl.value, ezafeTool.value, ezafeKey.value);
@@ -466,9 +479,9 @@
       textEl.dispatchEvent(new Event("input"));
       say("حرکت‌های پیشنهادی در متن گذاشته شد — پیش از ساخت گفتار می‌توانید آن‌ها را ویرایش کنید.", "ok");
     }catch(e){
-      say(e.message || String(e), "err");
+      say(isCancel(e) ? "لغو شد." : (e.message || String(e)), isCancel(e) ? "ok" : "err");
     }finally{
-      ezafeBtn.disabled = false;
+      ezafeBtn.disabled = false; setBusy(false);
     }
   };
 
@@ -545,7 +558,7 @@
     gTagsBtn.title = tags ? "برچسب‌های صوتی گوگل — حالت، سرعت، مکث و واکنش‌ها" : "برچسب‌ها فقط در مدل 3.1 Flash کار می‌کنند";
     if(!tags) gTagsDD.classList.remove("open");
   }
-  voiceSel.onchange = syncEngine;
+  voiceSel.onchange = () => { syncEngine(); syncGenGate(); };
   $("gDuo").onchange = syncDuo;
   $("gModel").onchange = syncModel;
   $("gPreset").onchange = () => { const c = $("gCustom"); c.hidden = $("gPreset").value !== "custom"; if(!c.hidden) c.focus(); };
@@ -565,6 +578,41 @@
     $("gDuo").checked = false; $("gStable").checked = true; syncEngine();
   };
 
+  /* ---------- 91: چشمک نمایش کلید ---------- */
+  function bindEyes(scope){
+    scope.querySelectorAll(".pw .eye").forEach(b => b.onclick = () => {
+      const i = b.parentElement.querySelector("input");
+      const show = i.type === "password";
+      i.type = show ? "text" : "password"; b.classList.toggle("on", show);
+    });
+  }
+  bindEyes(document);
+
+  /* ---------- 91: لغو ---------- */
+  let cancelled = false;
+  const cancelBtn = $("cancelBtn");
+  function setBusy(on){
+    busy = on; genBtn.disabled = on || genBlocked(); cancelBtn.hidden = !on;
+    if(on){ cancelled = false; spin.classList.add("show"); } else spin.classList.remove("show");
+  }
+  cancelBtn.onclick = async () => {
+    cancelled = true; cancelBtn.disabled = true;
+    say("در حال لغو…", "ok");
+    try{ await window.pywebview.api.cancel(); }catch(e){}
+    cancelBtn.disabled = false;
+  };
+  const isCancel = e => cancelled || /لغو شد/.test(e && (e.message || String(e)));
+
+  /* ---------- 91: بدون کلید فعال، گوگل قابل تولید نیست ---------- */
+  let activeKeys = 0;
+  function genBlocked(){ return voiceSel.value === "google" && activeKeys === 0; }
+  function syncGenGate(){
+    if(busy) return;
+    const blocked = genBlocked();
+    genBtn.disabled = blocked;
+    genBtn.title = blocked ? "برای موتور گوگل اول یک کلید فعال از «کلیدهای گوگل» ثبت کنید" : "";
+  }
+
   const statusEl = $("status"), bar = $("bar"), barFill = $("barFill");
   function say(msg, cls){ statusEl.className = "status" + (cls ? " " + cls : ""); statusEl.textContent = msg; }
   window.avaStatus = ({msg, pct}) => { say(msg, "ok");
@@ -576,11 +624,8 @@
   });
 
   /* ---------- ساخت گفتار: بخش‌به‌بخش (gulp) ---------- */
-  const genBtn = $("genBtn"), spin = $("spin"), result = $("result"), player = $("player"), saveBtn = $("saveBtn");
-  const gulpsEl = $("gulps"), gulpBox = $("gulpBox"), finalBox = $("finalBox"),
-        spliceBtn = $("spliceBtn"), finalMsg = $("finalMsg");
   let gulps = [];        // {text, voice, b64, id}
-  let finalB64 = null, busy = false;
+  let finalB64 = null;
 
   // تقسیم بدون ازدست‌دادن حتی یک نویسه — همان منطق موتور
   function splitSentences(text, maxLen = 280){
@@ -702,10 +747,11 @@
     gulps.forEach(g => g.settings = { ...s });
     gulpsEl.querySelectorAll(".g-sett").forEach(c => c.classList.add("on"));
     gsOverlay.classList.remove("show");
-    busy = true; genBtn.disabled = true; spin.classList.add("show");
+    setBusy(true);
     try{
       const rows = [...gulpsEl.children];
       for(let i = 0; i < gulps.length; i++){
+        if(cancelled) throw new Error("لغو شد");
         const g = gulps[i], row = rows[i];
         const rta = row && row.querySelector(".gedit textarea");
         if(rta && rta.value.trim()) g.text = rta.value.trim();
@@ -720,9 +766,9 @@
       markFinalStale();
     }catch(e){
       bar.classList.remove("show");
-      say(e.message || String(e), "err");
+      say(isCancel(e) ? "لغو شد." : (e.message || String(e)), isCancel(e) ? "ok" : "err");
     }finally{
-      busy = false; genBtn.disabled = false; spin.classList.remove("show");
+      setBusy(false);
     }
   };
 
@@ -794,7 +840,7 @@
       regenBtn.onmousedown = e => e.preventDefault();   // انتخاب متن هنگام کلیک نپرد
       regenBtn.onclick = async () => {
         if(busy) return;
-        busy = true; st.textContent = "در حال ساخت…";
+        setBusy(true); st.textContent = "در حال ساخت…";
         try{
           g.text = ta.value.trim() || g.text;   // همیشه از ویرایشگر همین بخش می‌خواند
           if(g.sel){
@@ -818,8 +864,8 @@
           }
           st.textContent = "";
           markFinalStale();
-        }catch(e){ st.textContent = ""; say(e.message || String(e), "err"); }
-        finally{ busy = false; }
+        }catch(e){ st.textContent = ""; say(isCancel(e) ? "لغو شد." : (e.message || String(e)), isCancel(e) ? "ok" : "err"); }
+        finally{ setBusy(false); }
       };
       gulpsEl.appendChild(div);
     });
@@ -831,17 +877,18 @@
     if(busy) return;
     const txt = textEl.value.trim();
     if(!txt){ say("اول متن فارسی را بنویسید یا جای‌گذاری کنید.", "err"); return; }
-    busy = true; genBtn.disabled = true; spin.classList.add("show");
+    setBusy(true);
     result.classList.remove("show");
     finalMsg.className = "finalmsg"; finalMsg.textContent = ""; finalB64 = null;
     try{ await window.pywebview.api.reset_gulps(); }catch(e){}
     const vid = voiceSel.value;
     seedSettings = snapGlobals();
     // Google keeps its tone inside a call and re-rolls it between calls, so its parts are long
-    gulps = splitSentences(txt, vid === "google" ? 800 : 280).map(t => ({ text: t, voice: vid, b64: null, id: null, settings: null }));
+    gulps = splitSentences(txt, vid === "google" ? 600 : 280).map(t => ({ text: t, voice: vid, b64: null, id: null, settings: null }));
     renderGulps();
     try{
       for(let i = 0; i < gulps.length; i++){
+        if(cancelled) throw new Error("لغو شد");
         say(`در حال ساخت گفتار… بخش ${faNum(i+1)} از ${faNum(gulps.length)}`, "ok");
         const res = await window.pywebview.api.generate_gulp(gulpPayload(gulps[i]));
         if(!res.ok) throw new Error(res.error || "خطای ناشناخته");
@@ -852,9 +899,10 @@
       say("همهٔ بخش‌ها آماده شد — بشنوید، در صورت نیاز بخش‌ها را اصلاح کنید و در پایان متصل کنید.", "ok");
     }catch(e){
       bar.classList.remove("show");
-      say(e.message || String(e), "err");
+      if(isCancel(e)){ say("لغو شد — بخش‌های ساخته‌شده مانده‌اند؛ می‌توانید ادامه دهید یا از نو بسازید.", "ok"); renderGulps(); }
+      else say(e.message || String(e), "err");
     }finally{
-      busy = false; genBtn.disabled = false; spin.classList.remove("show");
+      setBusy(false);
     }
   };
 
@@ -911,15 +959,17 @@
   function keyRow(k){
     const row = document.createElement("div"); row.className = "row"; row.style.margin = "8px 0";
     const [label, color] = KSTATE[k ? k.state : "ok"] || KSTATE.ok;
-    row.innerHTML = `<input type="password" placeholder="کلید تازه را اینجا بچسبانید"><span class="kstate" style="color:${k ? color : "var(--muted)"}">${k ? label : "تازه"}</span><button class="chip" type="button">✕</button>`;
+    row.innerHTML = `<span class="pw"><input type="password" placeholder="کلید تازه را اینجا بچسبانید"><button type="button" class="eye" title="نمایش / پنهان‌کردن">👁</button></span><span class="kstate" style="color:${k ? color : "var(--muted)"}">${k ? label : "تازه"}</span><button class="chip" type="button">✕</button>`;
     row.querySelector("input").value = k ? k.key : "";
-    row.querySelector("button").onclick = () => row.remove();
+    row.querySelector(".row > .chip, button.chip").onclick = () => row.remove();
+    bindEyes(row);
     return row;
   }
   function keysSummary(keys){
     const ok = keys.filter(k => k.state === "ok").length;
     const el = document.getElementById("gKeysState");
     el.textContent = keys.length ? `— ${faNum(keys.length)} کلید، ${faNum(ok)} فعال` : "— هنوز کلیدی ثبت نشده";
+    activeKeys = ok; syncGenGate();
   }
   async function openKeys(){
     const list = document.getElementById("gKeyList"); list.innerHTML = "";

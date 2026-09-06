@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 90
-BUILD_FA = "\u06f9\u06f0"
+BUILD = 91
+BUILD_FA = "\u06f9\u06f1"
 
 
 def _diag(tag, **kv):
@@ -52,6 +52,40 @@ try:
     _diag("session", build=BUILD)
 except Exception:
     pass
+
+
+# ---------------------------------------------------------------------------
+# Cancel (91) — one switch that every engine honours: the cloud call is polled
+# and abandoned, the piper helper is killed, the chatterbox worker is killed
+# (it respawns on next use). Cleared whenever a new job starts.
+# ---------------------------------------------------------------------------
+_CANCEL = threading.Event()
+_PIPER_PROC = {"p": None}
+
+
+class Cancelled(RuntimeError):
+    def __init__(self):
+        super().__init__("عملیات لغو شد.")
+
+
+def cancel():
+    _CANCEL.set()
+    for p in (_PIPER_PROC.get("p"), globals().get("_cbx_proc")):
+        try:
+            if p is not None and p.poll() is None:
+                p.terminate()
+        except Exception:
+            pass
+    _diag("cancel")
+
+
+def _check_cancel():
+    if _CANCEL.is_set():
+        raise Cancelled()
+
+
+def _job_start():
+    _CANCEL.clear()
 
 
 def _final_decay(pcm, sr, win=0.030, fade=0.060, frac=0.15):
@@ -395,6 +429,7 @@ def _ezafe_anthropic(text, key, status):
 
 
 def ezafe_apply(text: str, status, tool: str = "local", key: str = "") -> str:
+    _job_start()
     tool = tool or "local"
     if tool.startswith("gemini"):
         # Google tools draw on the shared key list (same keys as the Google
@@ -677,8 +712,16 @@ def piper_pcm(voice_key, segments, speed, noise_scale, noise_w, status):
     taskf.close()
     try:
         creation = {"creationflags": 0x08000000} if os.name == "nt" else {}
-        proc = subprocess.run([sys.executable, "--piper-worker", taskf.name],
-                              capture_output=True, timeout=600, **creation)
+        _check_cancel()
+        proc = subprocess.Popen([sys.executable, "--piper-worker", taskf.name],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, **creation)
+        _PIPER_PROC["p"] = proc
+        try:
+            out_b, err_b = proc.communicate(timeout=600)
+        finally:
+            _PIPER_PROC["p"] = None
+        _check_cancel()
+        proc = subprocess.CompletedProcess(proc.args, proc.returncode, out_b, err_b)
         try:
             for ln in (proc.stderr or b"").decode("utf-8", "ignore").splitlines():
                 if "[ava-diag]" in ln:
@@ -1313,6 +1356,7 @@ def chatterbox_via_worker(req, status):
                     pass
                 _cbx_proc = None
                 _cbx_last_rss = 0
+        _check_cancel()
         p = _cbx_ensure()
         line = json.dumps(req, ensure_ascii=True) + "\n"  # Persian text + Persian paths
         try:
@@ -1360,6 +1404,7 @@ def chatterbox_via_worker(req, status):
         # stdout closed: the worker died mid-job
         _cbx_proc = None
         _cbx_last_rss = 0
+        _check_cancel()
         tail = "\n".join(list(_cbx_stderr or [])[-8:])
         raise RuntimeError("موتور چترباکس ناگهان بسته شد" +
                            (":\n" + tail if tail else " — دوباره امتحان کنید."))
@@ -1694,6 +1739,7 @@ def _slices_sane(cuts, total):
 
 def generate_gulp(payload, status):
     """One gulp → clause-wise synthesis, stored per clause for surgical patching."""
+    _job_start()
     text = payload["text"].strip()
     if payload["engine"] == "google":
         pcm, sr = google_pcm(text, payload, status)
@@ -2489,6 +2535,7 @@ def _cbx_patch_middle(entry, new_items, pre, suf, payload, status):
 def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
     """Regenerate only the clauses that the edit/selection touched; every
     other clause's audio is reused bit-identical."""
+    _job_start()
     entry = _GULP_PCM.get(int(gid))
     if entry is None:
         raise RuntimeError("این بخش دیگر در حافظه نیست — دوباره «تبدیل به گفتار» را بزنید.")
@@ -2829,8 +2876,11 @@ def google_rotate(call, status, what="گوگل"):
     last = None
     for key in keys:
         for attempt in range(3):
+            _check_cancel()
             try:
                 return call(key)
+            except Cancelled:
+                raise
             except _GoogleHTTP as e:
                 last = e
                 if e.code == 429:
@@ -2842,12 +2892,19 @@ def google_rotate(call, status, what="گوگل"):
                     _google_mark(key, "bad"); status(f"{what}: این کلید پذیرفته نشد — کلید بعدی…")
                     break
                 if e.code >= 500:
-                    status(f"{what}: خطای موقت سرور — تلاش دوباره ({attempt + 2}/3)…"); time.sleep(2 + attempt * 2)
+                    _diag("google_5xx", code=e.code, msg=e.msg[:120])
+                    status(f"{what}: خطای موقت سرور ({e.code}) — تلاش دوباره ({attempt + 2}/3)…")
+                    for _ in range(4 * (2 + attempt * 2)):
+                        _check_cancel(); time.sleep(0.25)
                     continue
                 raise RuntimeError(f"{what}: {e.msg}")
             except requests.RequestException as e:
                 last = e
-                status(f"{what}: مشکل اتصال — تلاش دوباره ({attempt + 2}/3)…"); time.sleep(2 + attempt * 2)
+                why = type(e).__name__ + (": " + str(e)[:90] if str(e) else "")
+                _diag("google_net", err=why)
+                status(f"{what}: مشکل اتصال ({why}) — تلاش دوباره ({attempt + 2}/3)…")
+                for _ in range(4 * (2 + attempt * 2)):
+                    _check_cancel(); time.sleep(0.25)
         else:
             continue
     raise RuntimeError(f"{what}: با هیچ کلیدی موفق نشد — " + (getattr(last, "msg", None) or str(last) or "؟"))
@@ -2858,10 +2915,27 @@ class _GoogleHTTP(Exception):
         super().__init__(f"HTTP {code}: {msg}"); self.code = code; self.msg = msg
 
 
-def _google_post(url, body, key, timeout=180):
-    r = requests.post(url, json=body, timeout=timeout,
-                      headers={"x-goog-api-key": key, "Content-Type": "application/json",
-                               "Api-Revision": "2026-05-20"})
+def _google_post(url, body, key, timeout=120):
+    """POST in a helper thread so a cancel can abandon it mid-flight."""
+    _check_cancel()
+    box = {}
+
+    def run():
+        try:
+            box["r"] = requests.post(url, json=body, timeout=timeout,
+                                     headers={"x-goog-api-key": key, "Content-Type": "application/json",
+                                              "Api-Revision": "2026-05-20"})
+        except BaseException as e:   # noqa — carried back to the caller's thread
+            box["e"] = e
+    th = threading.Thread(target=run, daemon=True); th.start()
+    while th.is_alive():
+        th.join(0.25)
+        if _CANCEL.is_set():
+            raise Cancelled()
+    if "e" in box:
+        raise box["e"]
+    r = box["r"]
+    _diag("google_http", code=r.status_code, ms=int(r.elapsed.total_seconds() * 1000), bytes=len(r.content))
     if r.status_code != 200:
         try:
             msg = r.json().get("error", {}).get("message", "") or r.text[:200]
@@ -2993,26 +3067,47 @@ def _google_decode(b64, mime):
     return pcm, sr
 
 
+_G_TIMEOUT = 75   # seconds a single TTS request may stay silent before we try the other door
+
+
 def _google_call(text, cfg, status):
-    body = _google_body(text, cfg)
-    model = body["model"]
-    tried_legacy = {"v": False}
+    """Two doors to the same model. FIELD LOG (build 90): the Interactions
+    endpoint accepted the request and then stayed silent for 180 s, three
+    times, from a network where generateContent (the diacritizer's endpoint)
+    answers in seconds. So generateContent goes first; Interactions is the
+    fallback for a model the classic endpoint rejects. A door that times out
+    is skipped for the other one, and if BOTH stay silent the request fails
+    at once with a clear message — no minutes-long retry ladder."""
+    model = cfg.get("g_model") or "gemini-3.1-flash-tts-preview"
+    doors = [("generateContent", f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+              _google_legacy_body(text, cfg)),
+             ("interactions", _GOOGLE_URL, _google_body(text, cfg))]
 
     def call(key):
-        try:
-            data = _google_post(_GOOGLE_URL, body, key)
-        except _GoogleHTTP as e:
-            # an endpoint that doesn't know this model/shape → the classic form
-            if e.code in (400, 404) and not tried_legacy["v"] and "api key" not in e.msg.lower():
-                tried_legacy["v"] = True
-                data = _google_post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-                                    _google_legacy_body(text, cfg), key)
-            else:
+        rejects, timeouts = [], []
+        for name, url, body in doors:
+            _check_cancel()
+            try:
+                data = _google_post(url, body, key, timeout=_G_TIMEOUT)
+            except requests.Timeout as e:
+                _diag("google_timeout", door=name, s=_G_TIMEOUT)
+                status(f"گوگل: درِ {name} پاسخ نداد ({_G_TIMEOUT} ثانیه) — درِ دیگر…")
+                timeouts.append(e); continue
+            except _GoogleHTTP as e:
+                if e.code in (400, 404) and "api key" not in e.msg.lower():
+                    _diag("google_reject", door=name, code=e.code, msg=e.msg[:100])
+                    rejects.append(e); continue
                 raise
-        found = _find_audio_b64(data)
-        if not found:
-            raise _GoogleHTTP(500, "no audio in response")   # the documented text-instead-of-audio glitch → retry
-        return _google_decode(*found)
+            found = _find_audio_b64(data)
+            if not found:
+                raise _GoogleHTTP(500, "no audio in response")   # documented text-instead-of-audio glitch → retry
+            _diag("google_door", door=name)
+            return _google_decode(*found)
+        if timeouts and len(timeouts) == len(doors):
+            raise RuntimeError(f"گوگل هیچ پاسخی نداد ({_G_TIMEOUT} ثانیه از هر دو مسیر). اتصال اینترنت یا وی‌پی‌ان را بررسی کنید و دوباره بزنید.")
+        if rejects:
+            raise RuntimeError("گوگل این درخواست را نپذیرفت: " + rejects[-1].msg[:160])
+        raise timeouts[-1]
     return google_rotate(call, status, "گوگل")
 
 
@@ -3078,6 +3173,7 @@ def google_pcm(text, cfg, status):
     chunks = _split_sentences(text, max_len=900) if len(text) > 900 else [text]
     waves, sr = [], 24000
     for ci, chunk in enumerate(chunks, 1):
+        _check_cancel()
         status("گوگل: در حال ساخت گفتار…" + (f" ({ci}/{len(chunks)})" if len(chunks) > 1 else ""))
         best = None
         for take in range(3 if cfg.get("g_stable", True) else 1):
