@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist (repo: github.com/pirastral/ava-app)
 ======================================================================
-This zip is the COMPLETE application source as of update 92.
+This zip is the COMPLETE application source as of update 94.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -14,6 +14,37 @@ Replace these files in the repo (paths identical):
                       THE FOLDER MUST EXIST IN THE REPO or PyInstaller fails.
   icon.png / icon.ico – unchanged
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 94 (on top of 93)
+  Google clause surgery. Editing or selecting inside a Google part no longer re-does
+  the whole part: the clauses the edit/selection touched are regenerated WITH one
+  neighbouring clause on each side as prosodic context, the new clause is cut out at
+  its own pause boundaries (silence-first, the same machinery as the local engines),
+  loudness-matched, and spliced into the original at its pause boundaries with a
+  12 ms crossfade. Untouched clauses are kept bit-identical (verified in tests).
+  A clause = sentence stop / newline / pause tag (pause tags stay with the clause
+  before them; reaction tags open the next clause; mid-sentence tags never split).
+  Falls back to a whole-part take when nothing can be kept (single clause, everything
+  changed, or the recording has fewer stops than clauses) and says so.
+  Part size dropdown ("طول بخش‌ها"): four options, remembered separately for Google
+  (300/600/900/1200, default 600) and the local engines (180/280/400/500, default 280).
+
+WHAT CHANGED IN 93 (on top of 92)
+  «یکدستی لحن» REMOVED. FIELD LOG (92): for a 15-second tagged transcript it produced
+  takes of 40.8 / 40.6 / 56 / 60 s — the model read the first half and emitted silence
+  for the rest — because the feature forced temperature 0.35 (degenerate audio) and
+  because its pitch audit treated [whispers]/[sighs]/[very slow] as drift and re-rolled
+  three times, then tripped the runaway guard (the error). With it off, one take at
+  the model's default temperature read the whole text (15.4 s / 18.9 s files).
+    - no temperature override on either door
+    - one take per part, no audit, no re-rolls, no loudness matching
+    - the runaway guard only fires at 6x the estimate + 60 s (tagged slow reading
+      legitimately runs 2-3x); the estimate now counts pause/reaction tags and [slow]
+  Consistency is carried only by what costs nothing: the identical prompt frame per
+  document and long parts.
+  FREE-TIER NOTE seen in the log: gemini-3.1-flash-tts free tier = 10 requests/day
+  per key ("limit: 10"). The re-roll loop was burning them. For volume use 2.5 Flash,
+  or several keys (rotation handles the quota switch automatically).
 
 WHAT CHANGED IN 92 (on top of 91)
   FIELD LOG (91): BOTH doors silent for 75 s — including generateContent, which answers
@@ -68,6 +99,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۹۲»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۹۴»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

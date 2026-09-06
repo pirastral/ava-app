@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 92
-BUILD_FA = "\u06f9\u06f2"
+BUILD = 94
+BUILD_FA = "\u06f9\u06f4"
 
 
 def _diag(tag, **kv):
@@ -1552,7 +1552,6 @@ _gulp_ids = _it.count(1)
 
 def reset_gulps():
     _GULP_PCM.clear()
-    _GOOGLE_REF.clear()   # a fresh document gets a fresh tone reference
 
 
 def _silence_runs(pcm, sr, min_ms=70):
@@ -1774,7 +1773,7 @@ def generate_gulp(payload, status):
                          ("exaggeration", "cfg_weight", "temperature", "cbx_speed",
                           "speed", "noise", "noisew", "cbx_voice",
                           "g_model", "g_lang", "g_voice", "g_preset", "g_style",
-                          "g_speakers", "g_stable") if k in payload}}
+                          "g_speakers") if k in payload}}
     _ensure_valid(entry, "تولید", status)
     _GULP_PCM[gid] = entry
     return pcm_to_mp3(_assemble(entry), sr), gid
@@ -2542,9 +2541,17 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
     _ensure_valid(entry, "پایهٔ ویرایش", status)
     new_text = new_text.strip()
     if payload["engine"] == "google" or entry.get("engine") == "google":
-        # Google has no clause structure to reuse — a part is one recording,
-        # and splicing a re-rolled fragment into it is exactly the drift we fight.
         cfg = payload if payload["engine"] == "google" else {**entry["payload"], **payload, "engine": "google"}
+        # 94: clause surgery — regenerate only the clauses the edit/selection
+        # touched (with their neighbours as prosodic context), cut the new
+        # clause out at its pause boundaries and splice it into the original
+        # at the same kind of boundary. Falls back to a whole-part take.
+        if entry.get("engine") == "google" and len(entry["items"]) == 1 and entry["items"][0].get("pcm") is not None:
+            done = _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status)
+            if done:
+                entry["payload"] = {k: cfg[k] for k in cfg if k.startswith("g_")}
+                _ensure_valid(entry, "ویرایش", status)
+                return pcm_to_mp3(_assemble(entry), entry["sr"]), done, "clauses"
         pcm, sr = google_pcm(new_text, cfg, status)
         items = _clause_split(new_text, "google")
         items[0]["pcm"] = pcm
@@ -2776,7 +2783,6 @@ GOOGLE_PRESETS = {
     "spiritual":   "Spiritual and serene. Reverent, gentle, contemplative, very calm.",
 }
 _GKEYS_FILE = MODELS_DIR / "google_keys.json"
-_GOOGLE_REF = {}          # tone reference of the current document (first recording)
 _GOOGLE_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
 
 
@@ -3002,12 +3008,12 @@ def _google_body(text, cfg):
     if lang_code:
         for x in sc:
             x["language"] = lang_code
-    body = {"model": model, "input": google_prompt(text, cfg),
+    # FIELD LOG (92): a forced low temperature (0.35) made the model read the
+    # first half of a tagged text and emit silence for the rest. Temperature
+    # stays at the model's default — no override, on either door.
+    return {"model": model, "input": google_prompt(text, cfg),
             "response_format": {"type": "audio"},
             "generation_config": {"speech_config": sc}}
-    if cfg.get("g_stable", True):
-        body["generation_config"]["temperature"] = 0.35
-    return body
 
 
 def _google_legacy_body(text, cfg):
@@ -3020,8 +3026,6 @@ def _google_legacy_body(text, cfg):
     else:
         vc = {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": cfg.get("g_voice") or "Charon"}}}
     gc = {"responseModalities": ["AUDIO"], "speechConfig": vc}
-    if cfg.get("g_stable", True):
-        gc["temperature"] = 0.35
     return {"contents": [{"parts": [{"text": google_prompt(text, cfg)}]}], "generationConfig": gc}
 
 
@@ -3073,7 +3077,7 @@ def _google_stream(url, body, key, expect_sec, status):
     looping — the stream is cut and the request reported as such."""
     _check_cancel()
     box = {"parts": [], "mime": "", "done": False, "bytes": 0}
-    cap = int(24000 * 2 * (expect_sec * 3 + 15))   # raw PCM bytes at ~3x the plausible length
+    cap = int(24000 * 2 * (expect_sec * 6 + 60))   # only a true runaway: 6x the estimate + a minute
 
     def run():
         try:
@@ -3157,7 +3161,11 @@ def _google_call(text, cfg, status):
     is skipped for the other one, and if BOTH stay silent the request fails
     at once with a clear message — no minutes-long retry ladder."""
     model = cfg.get("g_model") or "gemini-3.1-flash-tts-preview"
-    expect_sec = max(3.0, len(google_text(text, model)) / 11.0)   # Persian ≈ 11 chars per second of speech
+    gt = google_text(text, model)
+    # Persian ≈ 11 chars/s, plus ~1.5 s per pause/reaction tag, plus 50 % for slow tags
+    expect_sec = max(3.0, len(gt) / 11.0 + 1.5 * len(re.findall(r"\[(?:short pause|long pause|sighs?|laughs?|gasps?|coughs?|crying)\]", gt)))
+    if re.search(r"\[(?:very )?slow\]", gt):
+        expect_sec *= 1.5
     doors = [("streamGenerateContent", f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent",
               _google_legacy_body(text, cfg)),
              ("interactions", _GOOGLE_URL, _google_body(text, cfg))]
@@ -3203,7 +3211,7 @@ def google_probe(model, status):
     if not keys:
         return {"ok": False, "msg": "کلید فعالی ثبت نشده است."}
     cfg = {"g_model": model or "gemini-2.5-flash-preview-tts", "g_preset": "neutral", "g_lang": "fa",
-           "g_voice": "Charon", "g_stable": False}
+           "g_voice": "Charon"}
     text = "سلام. این یک آزمایش کوتاه است."
     t0 = time.time()
     try:
@@ -3214,62 +3222,13 @@ def google_probe(model, status):
         return {"ok": False, "msg": f"{str(e)[:200]} — پس از {faDigits(round(time.time() - t0, 1))} ثانیه", "elapsed": round(time.time() - t0, 1)}
 
 
-# --- tone consistency: measure, compare, regenerate outliers ---------------
-def _f0_median(pcm, sr):
-    """Median fundamental (Hz) over voiced 40 ms frames — autocorrelation,
-    60–400 Hz. 0.0 when nothing voiced was found."""
-    x = pcm.astype(np.float32) / 32768.0
-    win = int(sr * 0.04); hop = win // 2
-    if len(x) < win * 4:
-        return 0.0
-    lo, hi = int(sr / 400), int(sr / 60)
-    peak = float(np.max(np.abs(x))) or 1.0
-    f0s = []
-    for i in range(0, len(x) - win, hop):
-        fr = x[i:i + win]
-        if np.sqrt(np.mean(fr * fr)) < 0.08 * peak:
-            continue
-        fr = fr - fr.mean()
-        ac = np.correlate(fr, fr, "full")[win - 1:]
-        if ac[0] <= 0:
-            continue
-        seg = ac[lo:hi] / ac[0]
-        k = int(np.argmax(seg))
-        if seg[k] > 0.45:
-            f0s.append(sr / (lo + k))
-    return float(np.median(f0s)) if len(f0s) >= 8 else 0.0
-
-
-def _google_signature(pcm, sr):
-    x = pcm.astype(np.float32)
-    rms = float(np.sqrt(np.mean(x * x))) or 1.0
-    return {"f0": _f0_median(pcm, sr), "rms": rms}
-
-
-def _google_drift(sig, ref):
-    """How far a recording sits from the document's reference: 0 = same."""
-    if not ref or not sig["f0"] or not ref["f0"]:
-        return 0.0
-    return abs(float(np.log2(sig["f0"] / ref["f0"])))
-
-
-def _google_match_loudness(pcm, sig, ref):
-    if not ref:
-        return pcm
-    g = float(np.clip(ref["rms"] / (sig["rms"] or 1.0), 0.5, 2.0))
-    if abs(g - 1.0) < 0.05:
-        return pcm
-    return np.clip(pcm.astype(np.float32) * g, -32768, 32767).astype(np.int16)
-
-
-_G_DRIFT_MAX = 0.22   # ≈ 16 % in pitch — beyond this the narrator has "changed"
-
-
+# --- tone consistency (90-92) REMOVED. FIELD LOG (92): the pitch audit
+# treated [whispers] / [sighs] / [very slow] — deliberate expression — as
+# drift and re-rolled 40-60 s takes three times, then tripped the runaway
+# guard. Consistency is now carried only by what costs nothing: the identical
+# prompt frame per document and long parts. One take per part.
 def google_pcm(text, cfg, status):
-    """Whole-gulp synthesis with the consistency loop: identical prompt frame,
-    low temperature, loudness matched to the document's first recording, and
-    any take whose pitch signature drifts too far is re-rolled (up to 3 takes,
-    the closest wins)."""
+    """Whole-gulp synthesis: one take per part, the model's own defaults."""
     text = text.strip()
     if not text:
         raise RuntimeError("این بخش متنی برای خواندن ندارد.")
@@ -3278,23 +3237,183 @@ def google_pcm(text, cfg, status):
     for ci, chunk in enumerate(chunks, 1):
         _check_cancel()
         status("گوگل: در حال ساخت گفتار…" + (f" ({ci}/{len(chunks)})" if len(chunks) > 1 else ""))
-        best = None
-        for take in range(3 if cfg.get("g_stable", True) else 1):
-            pcm, sr = _google_call(chunk, cfg, status)
-            sig = _google_signature(pcm, sr)
-            d = _google_drift(sig, _GOOGLE_REF)
-            if best is None or d < best[2]:
-                best = (pcm, sig, d)
-            if d <= _G_DRIFT_MAX:
-                break
-            status(f"گوگل: لحن این بخش با ابتدای متن نمی‌خواند — برداشت دوباره ({take + 2}/3)…")
-        pcm, sig, d = best
-        _diag("google_take", f0=round(sig["f0"], 1), ref=round(_GOOGLE_REF.get("f0", 0) or 0, 1), drift=round(d, 3))
-        if not _GOOGLE_REF:
-            _GOOGLE_REF.update(sig)
-        elif cfg.get("g_stable", True):
-            pcm = _google_match_loudness(pcm, sig, _GOOGLE_REF)
+        pcm, sr = _google_call(chunk, cfg, status)
+        _diag("google_take", audio_s=round(len(pcm) / sr, 1), chars=len(chunk))
         waves.append(pcm)
         if ci < len(chunks):
             waves.append(np.zeros(int(sr * 0.25), dtype=np.int16))
     return np.concatenate(waves), sr
+
+
+# ---------------------------------------------------------------------------
+# Google clause surgery (94)
+# ---------------------------------------------------------------------------
+_G_PAUSE_TAG = re.compile(r"\[(?:short pause|long pause|مکث بلند|مکث)\]")
+_G_SENT_END = re.compile(r"[.!?؟…]+[\"»)\]]*\s+|\n+")
+
+
+def _g_clauses(text):
+    """Google-text clauses. A clause ends at a sentence stop, a newline, or a
+    PAUSE tag (which stays with the clause before it — that is where the
+    silence falls). Other tags never split: a reaction/state tag opens the
+    clause that follows it, a mid-sentence tag stays inside its sentence.
+    Fragments without real words merge forward. Returns [(text, (start, end))]."""
+    cuts = set()
+    for m in _G_SENT_END.finditer(text):
+        cuts.add(m.end())
+    for m in _G_PAUSE_TAG.finditer(text):
+        mm = re.compile(r"\s+").match(text, m.end())
+        cuts.add(mm.end() if mm else m.end())
+    cuts = sorted(c for c in cuts if 0 < c < len(text))
+    spans, pos = [], 0
+    for c in cuts:
+        spans.append((pos, c)); pos = c
+    spans.append((pos, len(text)))
+    spans = [(a, b) for a, b in spans if text[a:b].strip()]
+    # merge fragments that carry no words (tags only / a stray mark) forward
+    out = []
+    k = 0
+    while k < len(spans):
+        a, b = spans[k]
+        words = re.sub(r"\[[^\]]+\]", "", text[a:b]).strip()
+        if len(re.findall(r"\w+", words)) == 0:
+            # a pause tag is the silence AFTER the previous clause → backward;
+            # any other wordless fragment (reaction/state tags) → forward
+            if _G_PAUSE_TAG.search(text[a:b]) and out:
+                out[-1] = (out[-1][0], b); k += 1; continue
+            if k + 1 < len(spans):
+                spans[k + 1] = (a, spans[k + 1][1]); k += 1; continue
+            if out:
+                out[-1] = (out[-1][0], b); k += 1; continue
+        out.append((a, b)); k += 1
+    return [(text[a:b], (a, b)) for a, b in out]
+
+
+def _g_boundaries(pcm, sr, clauses):
+    """Sample positions of the B = len(clauses)-1 clause boundaries inside a
+    recording: silence-first (the model's own stops), longest silences first
+    when there are more than needed, expected position by text proportion
+    breaking ties. None when the recording has fewer stops than clauses."""
+    B = len(clauses) - 1
+    if B <= 0:
+        return []
+    total_chars = sum(len(c[0]) for c in clauses) or 1
+    expect, acc = [], 0
+    for c in clauses[:-1]:
+        acc += len(c[0])
+        expect.append(int(len(pcm) * acc / total_chars))
+    for min_ms in (110, 70):
+        runs = _silence_runs(pcm, sr, min_ms=min_ms)
+        if len(runs) >= B:
+            break
+    if len(runs) < B:
+        _diag("g_boundaries", runs=len(runs), need=B, mode="fail")
+        return None
+    if len(runs) == B:
+        chosen = runs; mode = "exact"
+    else:
+        # keep the B runs nearest the proportional estimates, order-preserving,
+        # but never let a chosen run drift beyond a third of the recording
+        avail, chosen = list(runs), []
+        for m in expect:
+            if not avail:
+                break
+            pick = min(avail, key=lambda r: abs(r[2] - m))
+            if abs(pick[2] - m) > len(pcm) / 3:
+                _diag("g_boundaries", runs=len(runs), need=B, mode="fail_far")
+                return None
+            chosen.append(pick)
+            avail = [r for r in avail if r[2] > pick[2]]
+        mode = "nearest"
+    if len(chosen) != B or any(chosen[k][2] >= chosen[k + 1][2] for k in range(B - 1)):
+        _diag("g_boundaries", runs=len(runs), need=B, mode="fail_order")
+        return None
+    _diag("g_boundaries", runs=len(runs), need=B, mode=mode)
+    return [_zc_snap(pcm, r[2], sr) for r in chosen]
+
+
+def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
+    """Replace only the changed/selected clauses of a Google part. Returns
+    the number of clauses regenerated, or 0 when a whole-part take is the
+    honest fallback (single clause, everything changed, boundaries unfound)."""
+    import difflib
+    old_text, pcm, sr = entry["text"], entry["items"][0]["pcm"], entry["sr"]
+    oc, nc = _g_clauses(old_text), _g_clauses(new_text)
+    if len(oc) < 2 or len(nc) < 1:
+        return 0
+    sm = difflib.SequenceMatcher(None, [c[0].strip() for c in oc], [c[0].strip() for c in nc], autojunk=False)
+    ops = [o for o in sm.get_opcodes() if o[0] != "equal"]
+    if ops:
+        i0, i1 = min(o[1] for o in ops), max(o[2] for o in ops)
+        j0, j1 = min(o[3] for o in ops), max(o[4] for o in ops)
+    else:
+        # text unchanged: the selection names the clause(s) to redo
+        if sel_start is None or sel_end is None or sel_end <= sel_start:
+            return 0
+        hit = [k for k, c in enumerate(nc) if c[1][0] < sel_end and c[1][1] > sel_start]
+        if not hit:
+            return 0
+        i0 = j0 = hit[0]; i1 = j1 = hit[-1] + 1
+    if ops and sel_start is not None and sel_end is not None and sel_end > sel_start:
+        # a selection widens the range; outside the changed span old and new
+        # clauses correspond 1:1 (prefix: same index, suffix: shifted by delta)
+        hit = [k for k, c in enumerate(nc) if c[1][0] < sel_end and c[1][1] > sel_start]
+        if hit:
+            delta = len(oc) - len(nc)
+            nj0, nj1 = min(j0, hit[0]), max(j1, hit[-1] + 1)
+            if nj0 < j0:
+                i0 = min(i0, nj0)
+            if nj1 > j1:
+                i1 = max(i1, nj1 + delta)
+            j0, j1 = nj0, nj1
+    if i0 <= 0 and i1 >= len(oc):
+        return 0                                    # everything changed: nothing to save
+    if j1 <= j0:
+        # pure deletion: drop the old clauses' audio, keep the neighbours
+        cuts = _g_boundaries(pcm, sr, oc)
+        if cuts is None:
+            return 0
+        b = [0] + cuts + [len(pcm)]
+        out = _crossfade_join([x for x in (pcm[:b[i0]], pcm[b[i1]:]) if len(x)], sr)
+        entry.update({"items": [{"kind": "t", "text": new_text.strip(), "span": (0, len(new_text.strip())), "pcm": out}],
+                      "text": new_text.strip()})
+        _diag("g_clause_patch", removed=i1 - i0)
+        return i1 - i0
+    cuts = _g_boundaries(pcm, sr, oc)
+    if cuts is None:
+        return 0
+    b = [0] + cuts + [len(pcm)]
+    # regenerate the changed clauses with one neighbour on each side as
+    # prosodic context, then keep only the middle
+    before = nc[j0 - 1][0].strip() if j0 > 0 else ""
+    after = nc[j1][0].strip() if j1 < len(nc) else ""
+    middle = " ".join(c[0].strip() for c in nc[j0:j1])
+    gen_text = " ".join(x for x in (before, middle, after) if x)
+    status(f"گوگل: بازسازی {faDigits(j1 - j0)} قطعه با بافت اطرافش…")
+    new_pcm, nsr = google_pcm(gen_text, cfg, status)
+    gcl = _g_clauses(gen_text)
+    k0 = 1 if before else 0
+    k1 = k0 + (j1 - j0)
+    if len(gcl) != k1 + (1 if after else 0):
+        _diag("g_clause_patch", reason=f"gen_clauses_{len(gcl)}_vs_{k1 + (1 if after else 0)}")
+        return 0
+    gcuts = _g_boundaries(new_pcm, nsr, gcl)
+    if gcuts is None:
+        return 0
+    gb = [0] + gcuts + [len(new_pcm)]
+    seg = new_pcm[gb[k0]:gb[k1]]
+    if nsr != sr:
+        seg = _resample(seg, nsr, sr)
+    # loudness: the new clause sits at the part's level
+    old_rms = float(np.sqrt(np.mean(pcm.astype(np.float64) ** 2))) or 1.0
+    seg_rms = float(np.sqrt(np.mean(seg.astype(np.float64) ** 2))) or 1.0
+    g = float(np.clip(old_rms / seg_rms, 0.5, 2.0))
+    if abs(g - 1.0) > 0.05:
+        seg = np.clip(seg.astype(np.float32) * g, -32768, 32767).astype(np.int16)
+    seg = _sweep_stubs(seg, sr)
+    parts = [x for x in (pcm[:b[i0]], seg, pcm[b[i1]:]) if len(x)]
+    out = _crossfade_join(parts, sr, ms=12)
+    entry.update({"items": [{"kind": "t", "text": new_text.strip(), "span": (0, len(new_text.strip())), "pcm": out}],
+                  "text": new_text.strip()})
+    _diag("g_clause_patch", old=(i0, i1), new=(j0, j1), kept_ms=int((len(pcm) - (b[i1] - b[i0])) * 1000 / sr))
+    return j1 - j0

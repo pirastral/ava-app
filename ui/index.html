@@ -245,6 +245,11 @@
     <p class="sub e-local">همهٔ صداها متن‌باز و رایگان‌اند و کاملاً روی همین دستگاه اجرا می‌شوند. برای هر صدا، بار اول مدل آن یک‌بار دانلود و برای همیشه روی دستگاه ذخیره می‌شود.</p>
     <p class="sub g-only" hidden>گوگل صدا را در سرور می‌سازد؛ نیازی به دانلود و رم ندارد، اما اینترنت و کلید لازم است. سهمیهٔ رایگان روزانه دارد؛ با کلید پولی، بی‌محدودیت‌تر است.</p>
     <div class="grid">
+      <!-- 94: طول بخش‌ها -->
+      <div style="grid-column:1/-1">
+        <label for="partSize">طول بخش‌ها <small style="opacity:.7" id="partSizeHint"></small></label>
+        <select id="partSize"></select>
+      </div>
       <!-- 90: صدای چترباکس — نمونه‌های آماده یا نمونهٔ خود کاربر -->
       <div class="cbx" style="grid-column:1/-1">
         <label for="cbxVoice">صدای چترباکس <small style="opacity:.7">— نمونه‌های آماده یا نمونهٔ خودتان (۸ تا ۱۵ ثانیه، یک نفر، بی‌موسیقی)</small></label>
@@ -322,9 +327,6 @@
         <div class="row"><input class="ctl-in" type="text" id="gSpkB" value="علی" style="max-width:140px"><select id="gVoiceB"></select></div>
       </div>
       <div class="g-only" hidden style="grid-column:1/-1">
-        <label class="toggle"><input type="checkbox" id="gStable" checked> یکدستی لحن <small style="opacity:.7">— بخش‌های ناهمخوان (تغییر جنس صدا، پرش ریتم) خودکار بررسی و بازسازی می‌شوند</small></label>
-      </div>
-      <div class="g-only" hidden style="grid-column:1/-1">
         <button class="chip" type="button" id="gKeysBtn">🔑 کلیدهای گوگل <span id="gKeysState" style="opacity:.7;margin-inline-start:6px"></span></button>
       </div>
       <div style="grid-column:1/-1">
@@ -356,7 +358,7 @@
     </div>
   </div>
 
-  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۹۲</span>
+  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۹۴</span>
     <span class="warn">تنها از نسخه‌ای از این برنامه استفاده کنید که مستقیماً از توسعه‌دهنده دریافت کرده‌اید؛ نسخه‌های دریافتی از منابع ناشناس ممکن است حاوی بدافزار باشند.</span>
   </footer>
 </div>
@@ -541,8 +543,24 @@
   gTagsBtn.onclick = e => { e.stopPropagation(); if(!gTagsBtn.disabled) gTagsDD.classList.toggle("open"); };
   document.addEventListener("click", () => gTagsDD.classList.remove("open"));
   $("gTagsMenu").addEventListener("click", e => e.stopPropagation());
+  /* ---------- 94: طول بخش‌ها — چهار گزینه، جدا برای گوگل و موتورهای محلی ---------- */
+  const PART_SIZES = {
+    google: [[300, "کوتاه — ۳۰۰ نویسه (~۲۵ ثانیه) — ویرایش ارزان‌تر"], [600, "متوسط — ۶۰۰ نویسه (~۵۰ ثانیه)"],
+             [900, "بلند — ۹۰۰ نویسه (~۷۵ ثانیه)"], [1200, "خیلی بلند — ۱۲۰۰ نویسه (~۱۰۰ ثانیه) — خطر افت کیفیت"]],
+    local:  [[180, "کوتاه — ۱۸۰ نویسه"], [280, "متوسط — ۲۸۰ نویسه"], [400, "بلند — ۴۰۰ نویسه"], [500, "خیلی بلند — ۵۰۰ نویسه — خطر افت کیفیت"]] };
+  const partSize = { google: 600, local: 280 };
+  const partFamily = () => voiceSel.value === "google" ? "google" : "local";
+  function fillPartSizes(){
+    const fam = partFamily(), sel = $("partSize");
+    sel.innerHTML = PART_SIZES[fam].map(([v, l]) => `<option value="${v}"${v === partSize[fam] ? " selected" : ""}>${l}</option>`).join("");
+    $("partSizeHint").textContent = fam === "google"
+      ? "— هر بخش یک درخواست به گوگل است؛ بخش بلندتر = درخواست کمتر، ویرایش هر بخش گران‌تر"
+      : "— برای صداهای محلی، بیش از ۲۸۰ نویسه کیفیت را پایین می‌آورد";
+  }
+  $("partSize").addEventListener("change", () => { partSize[partFamily()] = +$("partSize").value; });
   function syncEngine(){
     const v = voiceSel.value, g = v === "google", cbx = v === "chatterbox", ppr = ["mana","gyro","amir"].includes(v);
+    fillPartSizes();
     document.querySelectorAll(".cbx").forEach(e => e.hidden = !cbx);
     document.querySelectorAll(".ppr").forEach(e => e.hidden = !ppr);
     document.querySelectorAll(".g-only").forEach(e => e.hidden = !g);
@@ -577,7 +595,7 @@
     $("cbxVoice").value = "default";
     $("gModel").value = "gemini-3.1-flash-tts-preview"; $("gLang").value = "fa"; $("gVoice").value = "Charon";
     $("gPreset").value = "neutral"; $("gCustom").value = ""; $("gCustom").hidden = true;
-    $("gDuo").checked = false; $("gStable").checked = true; syncEngine();
+    $("gDuo").checked = false; syncEngine();
   };
 
   /* ---------- 91: چشمک نمایش کلید ---------- */
@@ -658,8 +676,7 @@
       g_preset: s && s.gPreset ? s.gPreset : $("gPreset").value,
       g_style: $("gCustom").value,
       g_speakers: duo ? [{ name: $("gSpkA").value.trim(), voice: $("gVoiceA").value },
-                         { name: $("gSpkB").value.trim(), voice: $("gVoiceB").value }] : [],
-      g_stable: $("gStable").checked };
+                         { name: $("gSpkB").value.trim(), voice: $("gVoiceB").value }] : [] };
   }
   function gulpPayload(g){
     const s = g.settings;
@@ -854,6 +871,10 @@
             div.querySelector("audio").src = "data:audio/mpeg;base64," + g.b64;
             say(res.mode === "words"
               ? "بخش " + faNum(idx+1) + ": جراحی واژه‌ای — فقط " + faNum(res.changed) + " واژه بازتولید و در جای خود پیوند شد."
+              : res.mode === "clauses"
+              ? "بخش " + faNum(idx+1) + ": جراحی گوگل — فقط " + faNum(res.changed) + " جمله با بافت اطرافش بازسازی و در سکوت‌های خودش پیوند شد."
+              : res.mode === "full" && g.voice === "google"
+              ? "بخش " + faNum(idx+1) + ": همهٔ بخش دوباره ساخته شد (جملهٔ دست‌نخورده‌ای برای نگه‌داشتن نبود)."
               : "بخش " + faNum(idx+1) + ": " + faNum(res.changed) + " قطعهٔ دربرگیرنده بازتولید شد؛ بقیه دست‌نخورده ماند.", "ok");
             g.sel = null; rw.classList.remove("sel");
           }else{
@@ -886,7 +907,7 @@
     const vid = voiceSel.value;
     seedSettings = snapGlobals();
     // Google keeps its tone inside a call and re-rolls it between calls, so its parts are long
-    gulps = splitSentences(txt, vid === "google" ? 600 : 280).map(t => ({ text: t, voice: vid, b64: null, id: null, settings: null }));
+    gulps = splitSentences(txt, partSize[vid === "google" ? "google" : "local"]).map(t => ({ text: t, voice: vid, b64: null, id: null, settings: null }));
     renderGulps();
     try{
       for(let i = 0; i < gulps.length; i++){
