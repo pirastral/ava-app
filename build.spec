@@ -3,7 +3,7 @@
 import sys
 from PyInstaller.utils.hooks import collect_all, copy_metadata
 
-datas, binaries, hiddenimports = [("ui", "ui"), ("token.txt", "."), ("icon.png", ".")], [], []
+datas, binaries, hiddenimports = [("ui", "ui"), ("token.txt", "."), ("icon.png", "."), ("voices", "voices")], [], []
 for pkg in ["torch", "torchaudio", "chatterbox", "transformers", "tokenizers",
             "piper", "onnxruntime", "lameenc", "perth", "s3tokenizer",
             "librosa", "safetensors", "huggingface_hub", "numpy", "requests",

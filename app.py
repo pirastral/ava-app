@@ -131,6 +131,45 @@ class Api:
         import engines
         return {"n": engines.BUILD, "fa": engines.BUILD_FA}
 
+    # ---- 90: chatterbox voice library --------------------------------------
+    def cbx_voices(self):
+        try:
+            import engines
+            return {"ok": True, "voices": engines.cbx_voices()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def cbx_voice_add(self):
+        """Pick a clip with the OS file dialog and add it to the user library."""
+        try:
+            import engines
+            result = self._window.create_file_dialog(
+                webview.OPEN_DIALOG, directory=_downloads_dir(), allow_multiple=False,
+                file_types=("Audio (*.wav;*.mp3;*.m4a;*.flac;*.ogg;*.aac)",))
+            if not result:
+                return {"ok": False, "error": "cancelled"}
+            path = result if isinstance(result, str) else result[0]
+            v = engines.cbx_voice_add(path)
+            return {"ok": True, "voice": v, "voices": engines.cbx_voices()}
+        except Exception as e:
+            traceback.print_exc()
+            return {"ok": False, "error": str(e)}
+
+    # ---- 90: Google keys (shared by the Google voice and the diacritizer) --
+    def google_keys(self):
+        try:
+            import engines
+            return {"ok": True, "keys": engines.google_keys_status()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def google_keys_set(self, keys):
+        try:
+            import engines
+            return {"ok": True, "keys": engines.google_keys_set(list(keys or []))}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     def open_url(self, url):
         try:
             import webbrowser

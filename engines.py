@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 88
-BUILD_FA = "\u06f8\u06f8"
+BUILD = 90
+BUILD_FA = "\u06f9\u06f0"
 
 
 def _diag(tag, **kv):
@@ -363,9 +363,13 @@ def _ezafe_gemini(text, key, status, models=None, label="Gemini"):
                 timeout=120)
             if r.status_code == 200:
                 return r.json()["candidates"][0]["content"]["parts"][0]["text"]
-            last_err = r.json().get("error", {}).get("message", f"HTTP {r.status_code}")
+            try:
+                last_err = r.json().get("error", {}).get("message", f"HTTP {r.status_code}")
+            except Exception:
+                last_err = f"HTTP {r.status_code}"
             if not any(k in last_err.lower() for k in ("not found", "not available", "no longer", "deprecated")):
-                break
+                # quota / bad key / server errors are the key-rotation's business
+                raise _GoogleHTTP(r.status_code, last_err)
         raise RuntimeError(label + ": " + (last_err or "?"))
     return _llm_map(text, status, label, call)
 
@@ -392,14 +396,20 @@ def _ezafe_anthropic(text, key, status):
 
 def ezafe_apply(text: str, status, tool: str = "local", key: str = "") -> str:
     tool = tool or "local"
+    if tool.startswith("gemini"):
+        # Google tools draw on the shared key list (same keys as the Google
+        # voice): a typed key joins the list; quota → next key, automatically.
+        key = (key or "").strip()
+        if key and key not in [k["key"] for k in google_keys()]:
+            google_keys_set([k["key"] for k in google_keys()] + [key])
+        fn = _ezafe_gemini_pro if tool == "gemini_pro" else _ezafe_gemini
+        return google_rotate(lambda k: fn(text, k, status), status, "حرکت‌گذاری")
     if tool != "local":
-        keyname = "gemini" if tool.startswith("gemini") else tool
-        key = (key or "").strip() or load_key(keyname)
+        key = (key or "").strip() or load_key(tool)
         if not key:
             raise RuntimeError("برای این ابزار، کلید API لازم است — آن را در کادر کلید وارد کنید (فقط یک‌بار).")
-        save_key(keyname, key)
-        fn = {"openai": _ezafe_openai, "gemini": _ezafe_gemini,
-              "gemini_pro": _ezafe_gemini_pro, "anthropic": _ezafe_anthropic}[tool]
+        save_key(tool, key)
+        fn = {"openai": _ezafe_openai, "anthropic": _ezafe_anthropic}[tool]
         return fn(text, key, status)
     return _ezafe_local(text, status)
 
@@ -822,7 +832,7 @@ def faDigits(n):
 
 
 _PAUSE_RE = re.compile(r"\[\s*(مکث بلند|مکث)\s*\]")
-_PAUSE_SPLIT = re.compile(r"(\[\s*مکث بلند\s*\]|\[\s*مکث\s*\]|…|—)")
+_PAUSE_SPLIT = re.compile(r"(\[\s*مکث بلند\s*\]|\[\s*مکث\s*\])")   # 90: … and — are plain punctuation again
 
 
 def _pause_val(tok):
@@ -920,6 +930,13 @@ def _clause_split(text, engine):
     spans, so a later patch can regenerate only the touched pieces.
     Light voices break at commas too; chatterbox only at sentence ends
     (its cross-comma prosody is worth keeping)."""
+    if engine == "google":
+        # Google reads the whole gulp in ONE call (consistency lives inside a
+        # call, drift lives between calls) and handles pauses itself, so a
+        # gulp is a single clause spanning the entire text.
+        t = text.strip()
+        a = text.index(t) if t else 0
+        return [{"kind": "t", "text": t, "span": (a, a + len(t))}]
     marks = _CLAUSE_END_STRONG + ("،" if engine != "chatterbox" else "")
     items, pos = [], 0
     for part in _PAUSE_SPLIT.split(text):
@@ -1019,9 +1036,32 @@ def _split_sentences(text, max_len=280):
     return parts or [text[:max_len]]
 
 
-def chatterbox_pcm(text, exaggeration, cfg_weight, temperature, status, speed=1.0):
+_CBX_VOICE = {"path": None, "default": None}
+
+
+def _cbx_set_voice(model, path, exaggeration):
+    """Condition chatterbox on a reference clip (zero-shot clone) — prepared
+    once per voice and cached on the model, so a clone costs seconds on first
+    use rather than on every chunk. None restores the built-in default voice."""
+    path = path or None
+    if _CBX_VOICE["default"] is None:
+        _CBX_VOICE["default"] = model.conds
+    if path == _CBX_VOICE["path"]:
+        return
+    if path is None:
+        model.conds = _CBX_VOICE["default"]
+    else:
+        if not os.path.isfile(path):
+            raise RuntimeError("نمونهٔ صدای انتخاب‌شده پیدا نشد: " + os.path.basename(str(path)))
+        model.prepare_conditionals(path, exaggeration=float(exaggeration))
+    _CBX_VOICE["path"] = path
+    _diag("cbx_voice", path=os.path.basename(str(path)) if path else "default")
+
+
+def chatterbox_pcm(text, exaggeration, cfg_weight, temperature, status, speed=1.0, voice_path=None):
     import torch
     model = _load_chatterbox(status)
+    _cbx_set_voice(model, voice_path, exaggeration)
     import gc
     # pause tags: [مکث] = 0.5s silence, [مکث بلند] = 1.2s — spliced into the audio
     segments = []
@@ -1182,7 +1222,8 @@ def chatterbox_worker_main():
                 pcm, sr = chatterbox_pcm(t, req.get("exaggeration", 0.8),
                                          req.get("cfg_weight", 1.0),
                                          req.get("temperature", 0.0), status,
-                                         speed=req.get("speed", 1.0))
+                                         speed=req.get("speed", 1.0),
+                                         voice_path=req.get("voice_path") or None)
                 parts.append(pcm)
             offs, o = [], 0
             for p in parts:
@@ -1346,7 +1387,8 @@ def _synth_clauses(items, payload, status):
                  "exaggeration": payload.get("exaggeration", 0.8),
                  "cfg_weight": payload.get("cfg_weight", 1.0),
                  "temperature": payload.get("temperature", 0.0),
-                 "speed": payload.get("cbx_speed", 1.0)}, status)
+                 "speed": payload.get("cbx_speed", 1.0),
+                 "voice_path": cbx_voice_path(payload.get("cbx_voice"))}, status)
         else:
             res = piper_pcm(engine, [{"t": t} for t in texts], payload.get("speed", 1.0),
                             payload.get("noise", 0.667), payload.get("noisew", 0.8), status)
@@ -1449,7 +1491,8 @@ def _gulp_pcm(payload, status):
              "exaggeration": payload.get("exaggeration", 0.8),
              "cfg_weight": payload.get("cfg_weight", 1.0),
              "temperature": payload.get("temperature", 0.0),
-             "speed": payload.get("cbx_speed", 1.0)}, status)
+             "speed": payload.get("cbx_speed", 1.0),
+             "voice_path": cbx_voice_path(payload.get("cbx_voice"))}, status)
     segs = _pause_segments(text)
     if not any("t" in s for s in segs):
         raise RuntimeError("این بخش متنی برای خواندن ندارد — فقط نشانهٔ مکث است.")
@@ -1464,6 +1507,7 @@ _gulp_ids = _it.count(1)
 
 def reset_gulps():
     _GULP_PCM.clear()
+    _GOOGLE_REF.clear()   # a fresh document gets a fresh tone reference
 
 
 def _silence_runs(pcm, sr, min_ms=70):
@@ -1504,7 +1548,8 @@ def _cbx_continuous(items, payload, status):
          "exaggeration": payload.get("exaggeration", 0.8),
          "cfg_weight": payload.get("cfg_weight", 1.0),
          "temperature": payload.get("temperature", 0.0),
-         "speed": payload.get("cbx_speed", 1.0)}, status)
+         "speed": payload.get("cbx_speed", 1.0),
+         "voice_path": cbx_voice_path(payload.get("cbx_voice"))}, status)
     pcm, sr = res[0], res[1]
     aligned = _align_words(pcm, sr, spoken, status)
     words_per = [len(re.findall(r"\S+", i["text"])) for i in t_items]
@@ -1650,6 +1695,16 @@ def _slices_sane(cuts, total):
 def generate_gulp(payload, status):
     """One gulp → clause-wise synthesis, stored per clause for surgical patching."""
     text = payload["text"].strip()
+    if payload["engine"] == "google":
+        pcm, sr = google_pcm(text, payload, status)
+        items = _clause_split(text, "google")
+        items[0]["pcm"] = pcm
+        gid = next(_gulp_ids)
+        entry = {"sr": sr, "items": items, "text": text, "engine": "google",
+                 "payload": {k: payload[k] for k in payload if k.startswith("g_")}}
+        _ensure_valid(entry, "تولید", status)
+        _GULP_PCM[gid] = entry
+        return pcm_to_mp3(_assemble(entry), sr), gid
     items = _clause_split(text, payload["engine"])
     if not any(i["kind"] == "t" for i in items):
         raise RuntimeError("این بخش متنی برای خواندن ندارد — فقط نشانهٔ مکث است.")
@@ -1671,7 +1726,9 @@ def generate_gulp(payload, status):
     entry = {"sr": sr, "items": items, "text": text, "engine": payload["engine"],
              "payload": {k: payload[k] for k in
                          ("exaggeration", "cfg_weight", "temperature", "cbx_speed",
-                          "speed", "noise", "noisew") if k in payload}}
+                          "speed", "noise", "noisew", "cbx_voice",
+                          "g_model", "g_lang", "g_voice", "g_preset", "g_style",
+                          "g_speakers", "g_stable") if k in payload}}
     _ensure_valid(entry, "تولید", status)
     _GULP_PCM[gid] = entry
     return pcm_to_mp3(_assemble(entry), sr), gid
@@ -2305,7 +2362,8 @@ def _word_surgery(entry, old_item, new_item, sel_start, sel_end, payload, status
                  "exaggeration": payload.get("exaggeration", 0.8),
                  "cfg_weight": payload.get("cfg_weight", 1.0),
                  "temperature": payload.get("temperature", 0.0),
-                 "speed": payload.get("cbx_speed", 1.0)}, status)
+                 "speed": payload.get("cbx_speed", 1.0),
+                 "voice_path": cbx_voice_path(payload.get("cbx_voice"))}, status)
         else:
             res = piper_pcm(engine, [{"t": txt}], payload.get("speed", 1.0),
                             payload.get("noise", 0.667), payload.get("noisew", 0.8), status)
@@ -2379,7 +2437,8 @@ def _cbx_patch_middle(entry, new_items, pre, suf, payload, status):
          "exaggeration": payload.get("exaggeration", 0.8),
          "cfg_weight": payload.get("cfg_weight", 1.0),
          "temperature": payload.get("temperature", 0.0),
-         "speed": payload.get("cbx_speed", 1.0)}, status)
+         "speed": payload.get("cbx_speed", 1.0),
+         "voice_path": cbx_voice_path(payload.get("cbx_voice"))}, status)
     pcm, sr2 = res[0], res[1]
     sr = entry["sr"]
     pcm = _resample(pcm, sr2, sr)
@@ -2435,6 +2494,17 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
         raise RuntimeError("این بخش دیگر در حافظه نیست — دوباره «تبدیل به گفتار» را بزنید.")
     _ensure_valid(entry, "پایهٔ ویرایش", status)
     new_text = new_text.strip()
+    if payload["engine"] == "google" or entry.get("engine") == "google":
+        # Google has no clause structure to reuse — a part is one recording,
+        # and splicing a re-rolled fragment into it is exactly the drift we fight.
+        cfg = payload if payload["engine"] == "google" else {**entry["payload"], **payload, "engine": "google"}
+        pcm, sr = google_pcm(new_text, cfg, status)
+        items = _clause_split(new_text, "google")
+        items[0]["pcm"] = pcm
+        entry.update({"sr": sr, "items": items, "text": new_text, "engine": "google",
+                      "payload": {k: cfg[k] for k in cfg if k.startswith("g_")}})
+        _ensure_valid(entry, "ویرایش", status)
+        return pcm_to_mp3(_assemble(entry), sr), 1, "full"
     has_sel = sel_start is not None and sel_end is not None and sel_end > sel_start
     # the gulp's clause structure follows its BASE voice; a different voice in
     # the payload re-voices only the selection (the flanks' audio is reusable
@@ -2576,3 +2646,456 @@ def generate(payload, status) -> bytes:
     mp3, gid = generate_gulp(payload, status)
     _GULP_PCM.pop(gid, None)
     return mp3
+
+
+# ---------------------------------------------------------------------------
+# Chatterbox voice library (90) — reference clips, bundled and user-added
+# ---------------------------------------------------------------------------
+_VOICE_EXT = (".wav", ".mp3", ".m4a", ".flac", ".ogg", ".aac")
+_USER_VOICES = MODELS_DIR / "voices"
+
+
+def cbx_voices():
+    """Every reference clip the app knows: bundled ones first (shipped inside
+    the app's voices/ folder), then the user's own (AvaModels/voices)."""
+    out = []
+    for builtin, root in ((True, _res_path("voices")), (False, _USER_VOICES)):
+        try:
+            files = sorted(p for p in Path(root).iterdir() if p.suffix.lower() in _VOICE_EXT)
+        except Exception:
+            continue
+        for p in files:
+            out.append({"id": ("b:" if builtin else "u:") + p.name, "name": p.stem,
+                        "path": str(p), "builtin": builtin})
+    return out
+
+
+def cbx_voice_path(voice_id):
+    """Resolve a voice id from the UI to a clip path; '' / 'default' / unknown
+    → None (the built-in default voice)."""
+    if not voice_id or voice_id == "default":
+        return None
+    for v in cbx_voices():
+        if v["id"] == voice_id:
+            return v["path"]
+    return None
+
+
+def cbx_voice_add(src_path):
+    """Copy a user's clip into the library. Returns the new voice entry."""
+    src = Path(src_path)
+    if not src.is_file() or src.suffix.lower() not in _VOICE_EXT:
+        raise RuntimeError("فایل صوتی معتبر نیست — WAV یا MP3 (۸ تا ۱۵ ثانیه، یک گوینده) انتخاب کنید.")
+    _USER_VOICES.mkdir(parents=True, exist_ok=True)
+    dst = _USER_VOICES / src.name
+    k = 2
+    while dst.exists() and dst.read_bytes() != src.read_bytes():
+        dst = _USER_VOICES / f"{src.stem} ({k}){src.suffix}"; k += 1
+    if not dst.exists():
+        shutil.copy2(src, dst)
+    return {"id": "u:" + dst.name, "name": dst.stem, "path": str(dst), "builtin": False}
+
+
+# ---------------------------------------------------------------------------
+# Google Gemini TTS (90) — cloud engine; keys rotate, tone is kept consistent
+# ---------------------------------------------------------------------------
+GOOGLE_VOICES = ["Zephyr", "Puck", "Charon", "Kore", "Fenrir", "Leda", "Orus", "Aoede", "Callirrhoe",
+                 "Autonoe", "Enceladus", "Iapetus", "Umbriel", "Algieba", "Despina", "Erinome", "Algenib",
+                 "Rasalgethi", "Laomedeia", "Achernar", "Alnilam", "Schedar", "Gacrux", "Pulcherrima",
+                 "Achird", "Zubenelgenubi", "Vindemiatrix", "Sadachbia", "Sadaltager", "Sulafat"]
+GOOGLE_MODELS = {"gemini-3.1-flash-tts-preview": {"tags": True},
+                 "gemini-2.5-flash-preview-tts": {"tags": False},
+                 "gemini-2.5-pro-preview-tts": {"tags": False}}
+GOOGLE_PRESETS = {
+    "neutral":     "Natural and neutral. Clear, warm, unhurried — like a trusted friend reading aloud.",
+    "audiobook":   "Audiobook narrator. Calm, measured, intimate; lets sentences land; never rushes.",
+    "news":        "Broadcast news anchor. Formal, crisp, authoritative, evenly paced, no drama.",
+    "breaking":    "Breaking-news reader. Serious, urgent, slightly faster, tight and controlled.",
+    "documentary": "Nature-documentary narrator. Warm, dignified, gently wondering, slow and spacious.",
+    "kids":        "Children's storyteller. Kind, playful, expressive, gently animated, patient.",
+    "poem":        "Classical poetry recital. Meter-aware, deliberate, with meaningful rests at line ends.",
+    "speech":      "Passionate public speaker. Confident projection, rising energy, purposeful pauses.",
+    "radio":       "Radio advertisement host. Bright, upbeat, energetic, smiling voice.",
+    "podcast":     "Casual podcast host. Conversational, relaxed, friendly, natural rhythm.",
+    "teacher":     "Patient teacher explaining step by step. Clear, encouraging, slow on key points.",
+    "ivr":         "Phone-system guide. Polite, formal, very clear articulation, even pace.",
+    "suspense":    "Suspenseful, mysterious narration. Low, quiet intensity, careful pacing.",
+    "joy":         "Joyful and lively. Warm smile in the voice, buoyant, energetic but clear.",
+    "sad":         "Sad and quiet. Soft, slow, tender, restrained emotion.",
+    "whisper":     "Whispered, hushed delivery throughout — intimate and close.",
+    "dryhumor":    "Dry humor. Deadpan, understated, slightly amused, perfectly timed.",
+    "sports":      "Sports commentator. Excited, fast, vivid, rising with the action.",
+    "epic":        "Epic and grand. Deep, resonant, heroic, slow and monumental.",
+    "spiritual":   "Spiritual and serene. Reverent, gentle, contemplative, very calm.",
+}
+_GKEYS_FILE = MODELS_DIR / "google_keys.json"
+_GOOGLE_REF = {}          # tone reference of the current document (first recording)
+_GOOGLE_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
+
+
+def google_keys():
+    """[{key, until, bad}] in rotation order. Seeds itself once from the old
+    single Gemini key so nobody has to re-enter anything."""
+    try:
+        data = json.loads(_GKEYS_FILE.read_text(encoding="utf-8"))
+        keys = [k for k in data.get("keys", []) if isinstance(k, dict) and k.get("key")]
+    except Exception:
+        keys = []
+    if not keys:
+        legacy = load_key("gemini")
+        if legacy:
+            keys = [{"key": legacy, "until": 0, "bad": False}]
+            _google_keys_write(keys)
+    return keys
+
+
+def _google_keys_write(keys):
+    try:
+        MODELS_DIR.mkdir(exist_ok=True)
+        _GKEYS_FILE.write_text(json.dumps({"keys": keys}), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def google_keys_set(key_strings):
+    """Replace the list from the UI; state of unchanged keys is preserved."""
+    old = {k["key"]: k for k in google_keys()}
+    keys = []
+    for ks in key_strings:
+        ks = (ks or "").strip()
+        if ks and ks not in [k["key"] for k in keys]:
+            keys.append(old.get(ks, {"key": ks, "until": 0, "bad": False}))
+    _google_keys_write(keys)
+    # the legacy single slot follows the list — and is cleared with it, so an
+    # emptied list stays empty instead of quietly re-seeding from it
+    save_key("gemini", keys[0]["key"] if keys else "")
+    return google_keys_status()
+
+
+def google_keys_status():
+    import time
+    now = time.time()
+    out = []
+    for k in google_keys():
+        state = "bad" if k.get("bad") else ("exhausted" if k.get("until", 0) > now else "ok")
+        out.append({"key": k["key"], "masked": k["key"][:6] + "•" * 8 + k["key"][-4:] if len(k["key"]) > 12 else "••••",
+                    "state": state, "until": k.get("until", 0)})
+    return out
+
+
+def _google_next_midnight_pacific():
+    """Google's daily quotas reset at midnight Pacific time."""
+    import time
+    from datetime import datetime, timedelta
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("America/Los_Angeles")
+        now = datetime.now(tz)
+        nxt = (now + timedelta(days=1)).replace(hour=0, minute=5, second=0, microsecond=0)
+        return nxt.timestamp()
+    except Exception:
+        return time.time() + 24 * 3600
+
+
+def _google_mark(key, state):
+    keys = google_keys()
+    for k in keys:
+        if k["key"] == key:
+            if state == "exhausted":
+                k["until"] = _google_next_midnight_pacific()
+            elif state == "bad":
+                k["bad"] = True
+            elif state == "ok":
+                k["until"] = 0; k["bad"] = False
+    _google_keys_write(keys)
+
+
+def _google_usable_keys():
+    import time
+    now = time.time()
+    return [k["key"] for k in google_keys() if not k.get("bad") and k.get("until", 0) <= now]
+
+
+def google_rotate(call, status, what="گوگل"):
+    """Run call(key) over the key list: quota → next key (this one sleeps till
+    the Pacific midnight), invalid → next key (flagged), transient 5xx → retry
+    the same key up to 3 times. Raises a Farsi error naming the remedy."""
+    import time
+    keys = _google_usable_keys()
+    if not keys:
+        if google_keys():
+            raise RuntimeError("سهمیهٔ همهٔ کلیدهای گوگل برای امروز تمام شده یا نامعتبرند — کلید تازه‌ای بیفزایید یا فردا دوباره بیایید.")
+        raise RuntimeError("کلید گوگل ثبت نشده است — از دکمهٔ «کلیدهای گوگل» یک کلید رایگان وارد کنید.")
+    last = None
+    for key in keys:
+        for attempt in range(3):
+            try:
+                return call(key)
+            except _GoogleHTTP as e:
+                last = e
+                if e.code == 429:
+                    if "per minute" in e.msg.lower() or "rpm" in e.msg.lower():
+                        status(f"{what}: محدودیت دقیقه‌ای — ۲۰ ثانیه صبر…"); time.sleep(20); continue
+                    _google_mark(key, "exhausted"); status(f"{what}: سهمیهٔ این کلید تمام شد — کلید بعدی…")
+                    break
+                if e.code in (401, 403) or (e.code == 400 and "api key" in e.msg.lower()):
+                    _google_mark(key, "bad"); status(f"{what}: این کلید پذیرفته نشد — کلید بعدی…")
+                    break
+                if e.code >= 500:
+                    status(f"{what}: خطای موقت سرور — تلاش دوباره ({attempt + 2}/3)…"); time.sleep(2 + attempt * 2)
+                    continue
+                raise RuntimeError(f"{what}: {e.msg}")
+            except requests.RequestException as e:
+                last = e
+                status(f"{what}: مشکل اتصال — تلاش دوباره ({attempt + 2}/3)…"); time.sleep(2 + attempt * 2)
+        else:
+            continue
+    raise RuntimeError(f"{what}: با هیچ کلیدی موفق نشد — " + (getattr(last, "msg", None) or str(last) or "؟"))
+
+
+class _GoogleHTTP(Exception):
+    def __init__(self, code, msg):
+        super().__init__(f"HTTP {code}: {msg}"); self.code = code; self.msg = msg
+
+
+def _google_post(url, body, key, timeout=180):
+    r = requests.post(url, json=body, timeout=timeout,
+                      headers={"x-goog-api-key": key, "Content-Type": "application/json",
+                               "Api-Revision": "2026-05-20"})
+    if r.status_code != 200:
+        try:
+            msg = r.json().get("error", {}).get("message", "") or r.text[:200]
+        except Exception:
+            msg = r.text[:200]
+        raise _GoogleHTTP(r.status_code, msg)
+    return r.json()
+
+
+_G_PAUSE_LONG = re.compile(r"\[\s*مکث بلند\s*\]")
+_G_PAUSE = re.compile(r"\[\s*مکث\s*\]")
+_G_TAG = re.compile(r"\[[A-Za-z][A-Za-z ,=.'-]{0,40}\]")
+
+
+def google_text(text, model):
+    """The text as Google should see it: the app's own pause markers become
+    Google's pause tags (3.1) or punctuation (2.5, which reads tags aloud)."""
+    t = text
+    if GOOGLE_MODELS.get(model, {}).get("tags", True):
+        t = _G_PAUSE_LONG.sub(" [long pause] ", t)
+        t = _G_PAUSE.sub(" [short pause] ", t)
+    else:
+        t = _G_PAUSE_LONG.sub(".\n\n", t)
+        t = _G_PAUSE.sub("… ", t)
+        t = _G_TAG.sub(" ", t)
+    t = re.sub(r"[ \t]+", " ", t)
+    t = re.sub(r" *\n *", "\n", t)
+    return t.strip()
+
+
+def google_prompt(text, cfg):
+    """Google's controllable-TTS prompt: a fixed audio profile + director's
+    notes, identical for every chunk of a document, then the transcript."""
+    model = cfg.get("g_model") or "gemini-3.1-flash-tts-preview"
+    preset = cfg.get("g_preset") or "neutral"
+    style = (cfg.get("g_style") or "").strip() if preset == "custom" else GOOGLE_PRESETS.get(preset, GOOGLE_PRESETS["neutral"])
+    if not style:
+        style = GOOGLE_PRESETS["neutral"]
+    lang = cfg.get("g_lang") or "fa"
+    lang_note = {"fa": "Persian (Farsi) as spoken in Iran — standard Tehran pronunciation. Diacritics (harakat) in the text mark exact vowels; follow them.",
+                 "en": "English.",
+                 "auto": "the language of the transcript."}.get(lang, "the language of the transcript.")
+    speakers = cfg.get("g_speakers") or []
+    duo = ""
+    if len(speakers) == 2:
+        a, b = speakers[0].get("name", ""), speakers[1].get("name", "")
+        duo = f"This is a conversation between {a} and {b}. Every line of the transcript begins with the speaker's name and a colon.\n"
+    head = ("# AUDIO PROFILE: Ava\nOne seasoned narrator. Identity, timbre, accent and energy stay EXACTLY the same in every recording of this document.\n"
+            "## THE SCENE\nA quiet, treated studio. One take, steady microphone distance, no background sound.\n"
+            "### DIRECTOR'S NOTES\n"
+            f"Style: {style}\n"
+            f"Language: {lang_note}\n"
+            "Pacing: steady and consistent from the first word to the last.\n"
+            + duo +
+            "Synthesize speech for the TRANSCRIPT below exactly as written — nothing added, nothing skipped. "
+            "Never read these notes aloud, and never pronounce bracketed tags; perform them.\n"
+            "#### TRANSCRIPT\n")
+    return head + google_text(text, model)
+
+
+def _google_body(text, cfg):
+    model = cfg.get("g_model") or "gemini-3.1-flash-tts-preview"
+    speakers = cfg.get("g_speakers") or []
+    lang = cfg.get("g_lang") or "fa"
+    lang_code = {"fa": "fa-IR", "en": "en-US"}.get(lang)
+    if len(speakers) == 2:
+        sc = [{"speaker": s.get("name", ""), "voice": s.get("voice") or "Charon"} for s in speakers]
+    else:
+        sc = [{"voice": cfg.get("g_voice") or "Charon"}]
+    if lang_code:
+        for x in sc:
+            x["language"] = lang_code
+    body = {"model": model, "input": google_prompt(text, cfg),
+            "response_format": {"type": "audio"},
+            "generation_config": {"speech_config": sc}}
+    if cfg.get("g_stable", True):
+        body["generation_config"]["temperature"] = 0.35
+    return body
+
+
+def _google_legacy_body(text, cfg):
+    """generateContent form, for keys/models the Interactions endpoint rejects."""
+    speakers = cfg.get("g_speakers") or []
+    if len(speakers) == 2:
+        vc = {"multiSpeakerVoiceConfig": {"speakerVoiceConfigs": [
+            {"speaker": s.get("name", ""), "voiceConfig": {"prebuiltVoiceConfig": {"voiceName": s.get("voice") or "Charon"}}}
+            for s in speakers]}}
+    else:
+        vc = {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": cfg.get("g_voice") or "Charon"}}}
+    gc = {"responseModalities": ["AUDIO"], "speechConfig": vc}
+    if cfg.get("g_stable", True):
+        gc["temperature"] = 0.35
+    return {"contents": [{"parts": [{"text": google_prompt(text, cfg)}]}], "generationConfig": gc}
+
+
+def _find_audio_b64(obj):
+    """Locate the audio payload wherever the response nests it."""
+    if isinstance(obj, dict):
+        if obj.get("type") == "audio" and isinstance(obj.get("data"), str):
+            return obj["data"], obj.get("mime_type") or obj.get("mimeType") or ""
+        inl = obj.get("inlineData") or obj.get("inline_data")
+        if isinstance(inl, dict) and isinstance(inl.get("data"), str):
+            return inl["data"], inl.get("mimeType") or inl.get("mime_type") or ""
+        for v in obj.values():
+            r = _find_audio_b64(v)
+            if r:
+                return r
+    elif isinstance(obj, list):
+        for v in obj:
+            r = _find_audio_b64(v)
+            if r:
+                return r
+    return None
+
+
+def _google_decode(b64, mime):
+    import base64
+    raw = base64.b64decode(b64)
+    m = re.search(r"rate=(\d+)", mime or "")
+    sr = int(m.group(1)) if m else 24000
+    if raw[:4] == b"RIFF":
+        import io
+        with wave.open(io.BytesIO(raw)) as wf:
+            sr = wf.getframerate()
+            raw = wf.readframes(wf.getnframes())
+    pcm = np.frombuffer(raw[: len(raw) - len(raw) % 2], dtype="<i2").astype(np.int16)
+    if len(pcm) < sr // 20:
+        raise RuntimeError("گوگل به‌جای صدا، پاسخ خالی برگرداند — دوباره تلاش کنید.")
+    return pcm, sr
+
+
+def _google_call(text, cfg, status):
+    body = _google_body(text, cfg)
+    model = body["model"]
+    tried_legacy = {"v": False}
+
+    def call(key):
+        try:
+            data = _google_post(_GOOGLE_URL, body, key)
+        except _GoogleHTTP as e:
+            # an endpoint that doesn't know this model/shape → the classic form
+            if e.code in (400, 404) and not tried_legacy["v"] and "api key" not in e.msg.lower():
+                tried_legacy["v"] = True
+                data = _google_post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                                    _google_legacy_body(text, cfg), key)
+            else:
+                raise
+        found = _find_audio_b64(data)
+        if not found:
+            raise _GoogleHTTP(500, "no audio in response")   # the documented text-instead-of-audio glitch → retry
+        return _google_decode(*found)
+    return google_rotate(call, status, "گوگل")
+
+
+# --- tone consistency: measure, compare, regenerate outliers ---------------
+def _f0_median(pcm, sr):
+    """Median fundamental (Hz) over voiced 40 ms frames — autocorrelation,
+    60–400 Hz. 0.0 when nothing voiced was found."""
+    x = pcm.astype(np.float32) / 32768.0
+    win = int(sr * 0.04); hop = win // 2
+    if len(x) < win * 4:
+        return 0.0
+    lo, hi = int(sr / 400), int(sr / 60)
+    peak = float(np.max(np.abs(x))) or 1.0
+    f0s = []
+    for i in range(0, len(x) - win, hop):
+        fr = x[i:i + win]
+        if np.sqrt(np.mean(fr * fr)) < 0.08 * peak:
+            continue
+        fr = fr - fr.mean()
+        ac = np.correlate(fr, fr, "full")[win - 1:]
+        if ac[0] <= 0:
+            continue
+        seg = ac[lo:hi] / ac[0]
+        k = int(np.argmax(seg))
+        if seg[k] > 0.45:
+            f0s.append(sr / (lo + k))
+    return float(np.median(f0s)) if len(f0s) >= 8 else 0.0
+
+
+def _google_signature(pcm, sr):
+    x = pcm.astype(np.float32)
+    rms = float(np.sqrt(np.mean(x * x))) or 1.0
+    return {"f0": _f0_median(pcm, sr), "rms": rms}
+
+
+def _google_drift(sig, ref):
+    """How far a recording sits from the document's reference: 0 = same."""
+    if not ref or not sig["f0"] or not ref["f0"]:
+        return 0.0
+    return abs(float(np.log2(sig["f0"] / ref["f0"])))
+
+
+def _google_match_loudness(pcm, sig, ref):
+    if not ref:
+        return pcm
+    g = float(np.clip(ref["rms"] / (sig["rms"] or 1.0), 0.5, 2.0))
+    if abs(g - 1.0) < 0.05:
+        return pcm
+    return np.clip(pcm.astype(np.float32) * g, -32768, 32767).astype(np.int16)
+
+
+_G_DRIFT_MAX = 0.22   # ≈ 16 % in pitch — beyond this the narrator has "changed"
+
+
+def google_pcm(text, cfg, status):
+    """Whole-gulp synthesis with the consistency loop: identical prompt frame,
+    low temperature, loudness matched to the document's first recording, and
+    any take whose pitch signature drifts too far is re-rolled (up to 3 takes,
+    the closest wins)."""
+    text = text.strip()
+    if not text:
+        raise RuntimeError("این بخش متنی برای خواندن ندارد.")
+    chunks = _split_sentences(text, max_len=900) if len(text) > 900 else [text]
+    waves, sr = [], 24000
+    for ci, chunk in enumerate(chunks, 1):
+        status("گوگل: در حال ساخت گفتار…" + (f" ({ci}/{len(chunks)})" if len(chunks) > 1 else ""))
+        best = None
+        for take in range(3 if cfg.get("g_stable", True) else 1):
+            pcm, sr = _google_call(chunk, cfg, status)
+            sig = _google_signature(pcm, sr)
+            d = _google_drift(sig, _GOOGLE_REF)
+            if best is None or d < best[2]:
+                best = (pcm, sig, d)
+            if d <= _G_DRIFT_MAX:
+                break
+            status(f"گوگل: لحن این بخش با ابتدای متن نمی‌خواند — برداشت دوباره ({take + 2}/3)…")
+        pcm, sig, d = best
+        _diag("google_take", f0=round(sig["f0"], 1), ref=round(_GOOGLE_REF.get("f0", 0) or 0, 1), drift=round(d, 3))
+        if not _GOOGLE_REF:
+            _GOOGLE_REF.update(sig)
+        elif cfg.get("g_stable", True):
+            pcm = _google_match_loudness(pcm, sig, _GOOGLE_REF)
+        waves.append(pcm)
+        if ci < len(chunks):
+            waves.append(np.zeros(int(sr * 0.25), dtype=np.int16))
+    return np.concatenate(waves), sr
