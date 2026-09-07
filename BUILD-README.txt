@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist (repo: github.com/pirastral/ava-app)
 ======================================================================
-This zip is the COMPLETE application source as of update 95.
+This zip is the COMPLETE application source as of update 101.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -13,7 +13,91 @@ Replace these files in the repo (paths identical):
                       (wav/mp3, one speaker, no music) — the file name is the voice name.
                       THE FOLDER MUST EXIST IN THE REPO or PyInstaller fails.
   icon.png / icon.ico – unchanged
+  builtin_keys.json – NEW (101): Freesound / Jamendo keys shipped with the app
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 101 (on top of 100)
+  Freesound is the default music source. The owner's Freesound API key and Jamendo client
+  id ship inside the app in builtin_keys.json (bundled by build.spec; ADD THIS FILE TO THE
+  REPO). A key the user saves in the panel overrides the built-in one. Anyone holding the
+  app can read these keys — acceptable for this private family app; NEVER do this in the
+  commercial product (keys belong on the server).
+
+WHAT CHANGED IN 100 (on top of 99)
+  Music providers («منبع موسیقی» in the music panel), free-first:
+    - Openverse (DEFAULT): no key; CC0 / public-domain music aggregated from Freesound,
+      Jamendo, Wikimedia. Anonymous use is rate-limited (fine for a person).
+    - Freesound: free key (freesound.org → freesound.org/apiv2/apply); filtered to CC0 and
+      20–900 s; uses the HQ MP3 preview (downloads would need OAuth). Best for beds/ambience.
+    - Jamendo: free client_id (devportal.jamendo.com); instrumental tracks; CC BY / BY-NC —
+      the app records author/license/page and shows the credit line to include.
+    - Lyria 3.5: paid key only ($0.08/track) — kept as an option.
+    - Own file: WAV/MP3/OGG/FLAC from disk.
+    Every chosen track is decoded (WAV natively; MP3/OGG/FLAC via soundfile), becomes the
+    bed, and is saved to the library with provider + license + author. Mood presets map to
+    search terms per provider. Keys for Freesound/Jamendo stored like the other API keys.
+  Word-level Google surgery: decided NOT to build (audible seams); clause-level stays.
+
+WHAT CHANGED IN 99 (on top of 98)
+  Icons: every emoji glyph replaced by Lucide SVG icons (ISC license, https://lucide.dev),
+    inlined as a sprite in index.html — served locally, no network, theme-aware via
+    currentColor. Delete is the trash icon; eye/eye-off toggles; tag, key, music, plus,
+    settings, pencil, refresh, arrows, copy, undo/redo, sun/moon, download, zap, sparkles.
+  Undo / redo for the parts list: every structural change (move, duplicate, delete,
+    regenerate, append, clear) is remembered; ⌘Z / Ctrl+Z and ⇧⌘Z / Ctrl+Y (and the two
+    header buttons). Inside a text field the field's own undo is left alone. Deleted parts
+    keep their audio in the engine so undo restores them intact.
+  Lyria has NO free tier ($0.08 per track, billing-enabled project only). A free-tier key
+    answers 403 for music while being fine for speech: such answers no longer flag the key;
+    the user gets one clear message about needing a paid key.
+  Answered, not built: Lyria has no sound-effects library; word-level Google surgery is
+    feasible with Transcribe timestamps (see chat) and is the proposed next feature.
+
+WHAT CHANGED IN 98 (on top of 97)
+  Additive generation: the first «تبدیل به گفتار» starts a document; later ones APPEND the
+  main text's new content as new parts (no reset, continuity lead-in continues). Pressing it
+  again with unchanged text does nothing but explain. «🗑 پاک‌کردن همهٔ بخش‌ها» starts over.
+  Part toolbar: every part has a header «بخش A · ۱ از ۵» — the LETTER is the part's
+  identity, given once and never reused in a document; the NUMBER is its current position.
+  Icon buttons ▲ ▼ ⧉ ✕ (move up/down, duplicate with its audio cloned, delete).
+  Music library: every Lyria bed is saved on this machine (AvaModels/music, WAV + manifest)
+  and listed under «موسیقی‌های قبلی» in the music panel; picking one costs nothing.
+  Tag note rewritten: a tag applies to what FOLLOWS it; state tags last until the next tag
+  of their kind or the end of the part; event tags fire once; no closing tags.
+  Prices (Google, Sept 2026): Lyria 3.5 ≈ $0.08 per track; 3.5 Transcribe ≈ $0.005/min.
+
+WHAT CHANGED IN 97 (on top of 96)
+  Lead-in duplication fixed. FIELD (96): the previous part's last clause was heard twice
+  — its tail words («یا یک شورا میگرفت») were missing from the transcript, so the cut was
+  placed at the midpoint of a window that actually contained speech. The boundary is now
+  found in the AUDIO of the window between the two anchor words (longest silence), with
+  the transcript gap only as a fallback. Handles both mis-heard and omitted words.
+  RTL editors fixed. The text areas used unicode-bidi:plaintext, which lets each line take
+  its direction from its first strong character — a line starting with [serious] became
+  left-to-right and scrambled. Base direction is now always RTL (unicode-bidi:isolate);
+  English tags are simply LTR runs inside it. Applies to the main text and part editors.
+  One clause per line: on generate and after diacritization the main text is reflowed so
+  every sentence (and every pause tag) ends a line; part editors show their text the same
+  way. Selecting a sentence is now a line selection. Newlines are harmless to every engine.
+  Part editors of Google parts get the "🏷 برچسب‌ها" dropup (opens downward), exactly
+  where local parts have their two pause chips.
+
+WHAT CHANGED IN 96 (on top of 95)
+  Gemini 3.5 Transcribe (GA Aug 26): word-level timestamps are now the FIRST source of
+    clause boundaries for Google surgery and lead-in trimming (language-independent,
+    diacritic-insensitive alignment); the silence heuristic is the fallback. One
+    transcription per recording, cached.
+  Captions: SRT / VTT export after the final file — timing from the recording, text from
+    the user's own clauses (tags stripped), monotonic across the splice breath.
+  Lyria 3.5 background music: checkbox in the final box → preset / custom description,
+    level relative to voice, ducking under speech, fade; "♪ ساخت موسیقی" previews the bed;
+    the final step returns TWO files (clean + with music). Bed generated once per document.
+    WAV requested; stereo 44.1 kHz decoded to mono; MP3 fallback via soundfile.
+  Persian: every user-facing string in the app (UI, statuses, errors) and the whole guide
+    rewritten as natural Persian, not translated English.
+  NOTE for the commercial plan: no Gemini 3.5 TTS exists (checked the full changelog to
+    Sept 4, 2026); 3.1 Flash TTS is the latest speech model. temperature/top_p/top_k are
+    deprecated since July 21.
 
 WHAT CHANGED IN 95 (on top of 94)
   Boundary finder fixed. FIELD LOG (94): "g_boundaries runs=17 need=2 mode=nearest" — the
@@ -115,6 +199,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۹۵»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۰۱»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

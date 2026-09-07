@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 95
-BUILD_FA = "\u06f9\u06f5"
+BUILD = 101
+BUILD_FA = "\u06f1\u06f0\u06f1"
 
 
 def _diag(tag, **kv):
@@ -65,7 +65,7 @@ _PIPER_PROC = {"p": None}
 
 class Cancelled(RuntimeError):
     def __init__(self):
-        super().__init__("عملیات لغو شد.")
+        super().__init__("لغو شد.")
 
 
 def cancel():
@@ -122,7 +122,7 @@ def pcm_to_mp3(pcm_int16: np.ndarray, sample_rate: int) -> bytes:
 def _download(url: str, dest: Path, status, label: str):
     if dest.exists() and dest.stat().st_size > 0:
         return
-    status(f"در حال دانلود {label}…")
+    status(f"دانلود {label}…")
     tmp = dest.with_suffix(dest.suffix + ".part")
     with requests.get(url, stream=True, timeout=60) as r:
         r.raise_for_status()
@@ -133,7 +133,7 @@ def _download(url: str, dest: Path, status, label: str):
                 f.write(chunk)
                 done += len(chunk)
                 if total:
-                    status(f"در حال دانلود {label}… ٪{int(done*100/total)}", pct=int(done * 100 / total))
+                    status(f"دانلود {label}… {int(done*100/total)}٪", pct=int(done * 100 / total))
     tmp.rename(dest)
 
 
@@ -159,7 +159,7 @@ def _hook_hf_progress(status):
                     if self.total and self.total > 1024 * 1024:  # only real files
                         pct = int(self.n * 100 / self.total)
                         name = (self.desc or "مدل").split("/")[-1][:40]
-                        status(f"در حال دانلود {name}… ٪{pct}", pct=pct)
+                        status(f"دانلود {name}… {pct}٪", pct=pct)
                 except Exception:
                     pass
 
@@ -268,7 +268,7 @@ def _load_ezafe(status):
     if _ezafe is not None:
         return _ezafe
     _hook_hf_progress(status)
-    status("در حال آماده‌سازی مدل محلی حرکت‌گذاری… (بار اول حدود ۷۰ مگابایت دانلود می‌شود)")
+    status("مدل محلیِ حرکت‌گذاری دارد آماده می‌شود… (بار اول حدود ۷۰ مگابایت دانلود دارد)")
     from transformers import AutoTokenizer, AutoModelForTokenClassification
     tok = AutoTokenizer.from_pretrained("abreza/persian-ezafe-albert")
     mdl = AutoModelForTokenClassification.from_pretrained("abreza/persian-ezafe-albert")
@@ -297,7 +297,7 @@ def _mark_word(word: str) -> str:
 def _ezafe_local(text: str, status) -> str:
     import torch
     tok, mdl = _load_ezafe(status)
-    status("در حال حرکت‌گذاری با مدل محلی…")
+    status("حرکت‌گذاری با مدل محلی…")
     out_lines = []
     for line in text.split("\n"):
         words = line.split()
@@ -359,7 +359,7 @@ def _llm_map(text, status, label, call_one):
     chunks = _llm_chunks(text)
     out = []
     for i, ch in enumerate(chunks, 1):
-        status(f"حرکت‌گذاری با {label}… بخش {i} از {len(chunks)}")
+        status(f"حرکت‌گذاری با {label}… تکهٔ {i} از {len(chunks)}")
         t = _clean_llm(call_one(ch))
         if _skeleton(t) != _skeleton(ch):
             t = _clean_llm(call_one(ch))
@@ -442,7 +442,7 @@ def ezafe_apply(text: str, status, tool: str = "local", key: str = "") -> str:
     if tool != "local":
         key = (key or "").strip() or load_key(tool)
         if not key:
-            raise RuntimeError("برای این ابزار، کلید API لازم است — آن را در کادر کلید وارد کنید (فقط یک‌بار).")
+            raise RuntimeError("این ابزار کلید API می‌خواهد؛ یک بار در کادر کلید واردش کنید تا ذخیره شود.")
         save_key(tool, key)
         fn = {"openai": _ezafe_openai, "anthropic": _ezafe_anthropic}[tool]
         return fn(text, key, status)
@@ -680,7 +680,7 @@ def _voice_config_guard(voice_key, onnx, url, status):
     if sr == want:
         return
     _diag("voice_config", voice=voice_key, declared=sr, want=want, action="redownload")
-    status(f"پیکربندی صدای {voice_key} نادرست بود — در حال ترمیم…")
+    status(f"تنظیمات صدای {voice_key} خراب بود؛ دارم درستش می‌کنم…")
     for p in (cfg, onnx):
         try:
             p.unlink()
@@ -703,7 +703,7 @@ def piper_pcm(voice_key, segments, speed, noise_scale, noise_w, status):
     _download(url + ".json", Path(str(onnx) + ".json"), status, "پیکربندی صدا")
     _voice_config_guard(voice_key, onnx, url, status)
 
-    status("در حال ساخت گفتار…")
+    status("دارم گفتار را می‌سازم…")
     segments = [({"t": _strip_orphan_marks(s["t"])} if "t" in s else s) for s in segments]
     out = tempfile.NamedTemporaryFile(suffix=".wav", delete=False); out.close()
     taskf = tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w", encoding="utf-8")
@@ -740,16 +740,16 @@ def piper_pcm(voice_key, segments, speed, noise_scale, noise_w, status):
                     pass
                 _diag("piper_worker_root", root=root[:160])
                 raise RuntimeError(
-                    "موتور صدای سبک نتوانست این بخش را بسازد. علت: " + root +
-                    "\nاین اشکال ثبت شد — اگر تکرار شد لاگ برنامه را بفرستید.")
-            raise RuntimeError("موتور صدای سبک خطا داد:\n" + "\n".join(tail) if tail
-                              else f"موتور صدای سبک با کد {proc.returncode} بسته شد (خطای داخلی).")
+                    "موتور صداهای سبک نتوانست این بخش را بسازد. دلیل: " + root +
+                    "\nاین خطا در گزارش برنامه ثبت شد؛ اگر باز هم پیش آمد، فایل گزارش (ava.log) را بفرستید.")
+            raise RuntimeError("موتور صداهای سبک خطا داد:\n" + "\n".join(tail) if tail
+                              else f"موتور صداهای سبک با کد {proc.returncode} بسته شد (خطای داخلی).")
         with wave.open(out.name, "rb") as wf:
             sr = wf.getframerate()
             pcm = _wav_pcm(wf)
         _diag("piper_pcm", voice=voice_key, header_sr=sr, n=len(pcm))
         if len(pcm) == 0:
-            raise RuntimeError("خروجی صدا خالی بود — دوباره امتحان کنید.")
+            raise RuntimeError("صدایی ساخته نشد؛ یک بار دیگر امتحان کنید.")
         offs = None
         try:
             meta = json.loads(Path(out.name + ".offsets.json").read_text(encoding="utf-8"))
@@ -769,7 +769,7 @@ def _wav_pcm(wf):
     """Read a worker WAV defensively: reject exotic widths, downmix stereo —
     misreading interleaved channels as mono is pure high-frequency garbage."""
     if wf.getsampwidth() != 2:
-        raise RuntimeError("قالب صدای موتور پشتیبانی نمی‌شود (عرض نمونهٔ غیر ۱۶بیت).")
+        raise RuntimeError("قالب صدای موتور را نمی‌شناسم (نمونه‌ها ۱۶بیتی نیستند).")
     pcm = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
     if wf.getnchannels() == 2:
         pcm = pcm.reshape(-1, 2).astype(np.float32).mean(axis=1).astype(np.int16)
@@ -807,7 +807,7 @@ def _verify_repo_cache(repo_id, status, token=None):
             if isinstance(p, str) and os.path.exists(p):
                 real = os.path.getsize(os.path.realpath(p))
                 if real != size:
-                    status(f"فایل آسیب‌دیده در حافظه پیدا شد ({name}) — در حال دانلود دوبارهٔ همان فایل…")
+                    status(f"فایل {name} روی دستگاه خراب بود؛ دوباره دانلودش می‌کنم…")
                     try:
                         os.remove(os.path.realpath(p))
                     except OSError:
@@ -844,9 +844,9 @@ def _load_chatterbox(status):
     else:
         device = "cpu"
     if _hf_cached("chatterbox"):
-        status("در حال بارگذاری مدل چترباکس از حافظهٔ دستگاه… (۱ تا ۲ دقیقه)")
+        status("مدل چترباکس دارد از روی دستگاه بارگذاری می‌شود… (یکی دو دقیقه)")
     else:
-        status("فقط بار اول: در حال دانلود مدل چترباکس (حدود ۲ گیگابایت)… از این پس روی دستگاه می‌ماند.")
+        status("فقط همین یک بار: مدل چترباکس (حدود ۲ گیگابایت) دانلود می‌شود و از این به بعد روی دستگاه می‌ماند.")
 
     _orig_load = torch.load
     def _patched(*a, **k):
@@ -860,8 +860,8 @@ def _load_chatterbox(status):
         _verify_repo_cache("Thomcles/Chatterbox-TTS-Persian-Farsi", status, token=token)
     model = ChatterboxMultilingualTTS.from_pretrained(device=device)
     if not token:
-        raise RuntimeError("توکن Hugging Face در برنامه نیست — باید هنگام ساخت قرار داده شود.")
-    status("در حال آماده‌سازی صدای فارسی…")
+        raise RuntimeError("توکن Hugging Face داخل برنامه نیست؛ باید موقع ساختِ برنامه گذاشته می‌شد.")
+    status("صدای فارسی دارد آماده می‌شود…")
     fa_path = hf_hub_download(repo_id="Thomcles/Chatterbox-TTS-Persian-Farsi",
                               filename="t3_fa.safetensors", token=token)
     model.t3.load_state_dict(load_safetensors(fa_path, device="cpu"))
@@ -1095,7 +1095,7 @@ def _cbx_set_voice(model, path, exaggeration):
         model.conds = _CBX_VOICE["default"]
     else:
         if not os.path.isfile(path):
-            raise RuntimeError("نمونهٔ صدای انتخاب‌شده پیدا نشد: " + os.path.basename(str(path)))
+            raise RuntimeError("نمونهٔ صدایی که انتخاب کرده‌اید پیدا نشد: " + os.path.basename(str(path)))
         model.prepare_conditionals(path, exaggeration=float(exaggeration))
     _CBX_VOICE["path"] = path
     _diag("cbx_voice", path=os.path.basename(str(path)) if path else "default")
@@ -1130,7 +1130,7 @@ def chatterbox_pcm(text, exaggeration, cfg_weight, temperature, status, speed=1.
             waves.append(np.zeros(int(model.sr * chunk), dtype=np.float32))
             continue
         i += 1
-        status(f"در حال ساخت گفتار… بخش {i} از {total}")
+        status(f"دارم گفتار را می‌سازم… بخش {i} از {total}")
         with torch.no_grad():
             wav = model.generate(chunk, language_id=None,
                                  exaggeration=float(exaggeration),
@@ -1157,8 +1157,8 @@ def chatterbox_pcm(text, exaggeration, cfg_weight, temperature, status, speed=1.
             if _rss > _cbx_ceiling_mb(_rss, _avail) + 2000 or _avail < 800 \
                     or _swap_hot(12000, _avail):
                 raise RuntimeError(
-                    f"حافظهٔ موتور در میانهٔ ساخت از حد گذشت ({faDigits(_rss // 1024)} گیگابایت) — "
-                    "این بخش متوقف شد تا دستگاه قفل نشود؛ موتور تازه‌سازی می‌شود. "
+                    f"مصرف حافظهٔ موتور وسط کار از حد گذشت ({faDigits(_rss // 1024)} گیگابایت) — "
+                    "برای اینکه دستگاه قفل نکند، این بخش متوقف شد و موتور از نو راه می‌افتد. "
                     "همین بخش را دوباره بسازید.")
         except RuntimeError:
             raise
@@ -1166,7 +1166,7 @@ def chatterbox_pcm(text, exaggeration, cfg_weight, temperature, status, speed=1.
             pass
     audio = np.concatenate(waves)
     if abs(float(speed) - 1.0) > 0.01:
-        status("در حال تنظیم سرعت گفتار…")
+        status("دارم سرعت گفتار را تنظیم می‌کنم…")
         try:
             from audiotsm import wsola
             from audiotsm.io.array import ArrayReader, ArrayWriter
@@ -1175,7 +1175,7 @@ def chatterbox_pcm(text, exaggeration, cfg_weight, temperature, status, speed=1.
             wsola(1, speed=float(speed)).run(reader, writer)
             audio = writer.data.flatten()
         except Exception:
-            status("تنظیم سرعت در دسترس نبود — با سرعت طبیعی ساخته شد.")
+            status("تغییر سرعت ممکن نشد؛ با سرعت عادی ساخته شد.")
     return (np.clip(audio, -1, 1) * 32767).astype(np.int16), model.sr
 
 
@@ -1261,7 +1261,7 @@ def chatterbox_worker_main():
             parts, sr = [], 0
             for k, t in enumerate(texts, 1):
                 if len(texts) > 1:
-                    status(f"در حال ساخت گفتار… قطعهٔ {k} از {len(texts)}")
+                    status(f"دارم گفتار را می‌سازم… تکهٔ {k} از {len(texts)}")
                 pcm, sr = chatterbox_pcm(t, req.get("exaggeration", 0.8),
                                          req.get("cfg_weight", 1.0),
                                          req.get("temperature", 0.0), status,
@@ -1349,7 +1349,7 @@ def chatterbox_via_worker(req, status):
                 _diag("admission_recycle", rss=_cbx_last_rss, avail=avail_mb,
                       swap=_swap_used_mb(),
                       reason="ceiling" if over else ("swap" if swapped else "low_avail"))
-                status("پاک‌سازی حافظهٔ موتور پیش از ساخت این بخش…")
+                status("پیش از ساخت این بخش، حافظهٔ موتور را خالی می‌کنم…")
                 try:
                     _cbx_proc.terminate()
                 except Exception:
@@ -1375,7 +1375,7 @@ def chatterbox_via_worker(req, status):
             if t == "status":
                 status(msg.get("msg", ""), pct=msg.get("pct"))
             elif t == "error":
-                raise RuntimeError(msg.get("error", "خطای ناشناخته"))
+                raise RuntimeError(msg.get("error", "خطای نامشخص"))
             elif t == "result":
                 _cbx_last_rss = int(msg.get("rss_mb") or 0)
                 with wave.open(msg["path"], "rb") as wf:
@@ -1393,9 +1393,9 @@ def chatterbox_via_worker(req, status):
                         pass
                 if msg.get("recycle"):
                     freed = msg.get("rss_mb") or 0
-                    status(f"حافظهٔ موتور چترباکس پاک‌سازی شد ({faDigits(freed // 1024)} گیگابایت آزاد شد) — نوبت بعد چند لحظه بیشتر طول می‌کشد."
+                    status(f"حافظهٔ چترباکس خالی شد ({faDigits(freed // 1024)} گیگابایت آزاد شد)؛ دفعهٔ بعد چند ثانیه بیشتر طول می‌کشد."
                            if freed else
-                           "حافظهٔ موتور چترباکس پاک‌سازی شد — نوبت بعد چند لحظه بیشتر طول می‌کشد.")
+                           "حافظهٔ چترباکس خالی شد؛ دفعهٔ بعد چند ثانیه بیشتر طول می‌کشد.")
                     _cbx_proc = None
                     _cbx_last_rss = 0
                 if offs is not None:
@@ -1406,8 +1406,8 @@ def chatterbox_via_worker(req, status):
         _cbx_last_rss = 0
         _check_cancel()
         tail = "\n".join(list(_cbx_stderr or [])[-8:])
-        raise RuntimeError("موتور چترباکس ناگهان بسته شد" +
-                           (":\n" + tail if tail else " — دوباره امتحان کنید."))
+        raise RuntimeError("موتور چترباکس یکهو بسته شد" +
+                           (":\n" + tail if tail else " — یک بار دیگر امتحان کنید."))
 
 
 def _synth_clauses(items, payload, status):
@@ -1505,8 +1505,8 @@ def _mem_preflight(status):
         total_mb = None
     if total_mb is not None and total_mb < 7000:
         raise RuntimeError(
-            f"صدای چترباکس روی این دستگاه اجرا نمی‌شود — دست‌کم ۸ گیگابایت رم لازم دارد "
-            f"(این دستگاه: {total_mb // 1024} گیگابایت). از صداهای سبک (مانا، ژیرو، امیر) استفاده کنید.")
+            f"چترباکس روی این دستگاه اجرا نمی‌شود؛ دست‌کم ۸ گیگابایت رم می‌خواهد "
+            f"(این دستگاه {total_mb // 1024} گیگابایت دارد). به‌جایش از صداهای سبک — مانا، ژیرو یا امیر — استفاده کنید.")
     try:
         import psutil
         avail_mb = psutil.virtual_memory().available // (1024 * 1024)
@@ -1514,15 +1514,15 @@ def _mem_preflight(status):
         avail_mb = None
     if _swap_hot(10000, avail_mb):
         raise RuntimeError(
-            "حافظهٔ آزاد دستگاه کم است و سواپ در همین نشست زیاد شده — "
-            "چند برنامهٔ دیگر را ببندید و دوباره بکوشید.")
+            "حافظهٔ دستگاه کم آمده و سواپ در همین نشست خیلی بالا رفته — "
+            "چند برنامهٔ دیگر را ببندید و دوباره امتحان کنید.")
     if avail_mb is not None and avail_mb < 2000:
         raise RuntimeError(
-            f"حافظهٔ آزاد برای صدای چترباکس کافی نیست ({faDigits(avail_mb)} مگابایت). "
-            "چند برنامهٔ دیگر را ببندید و دوباره امتحان کنید — ادامه‌دادن در این وضعیت دستگاه را قفل می‌کند.")
+            f"حافظهٔ آزاد برای چترباکس کم است (فقط {faDigits(avail_mb)} مگابایت). "
+            "چند برنامهٔ دیگر را ببندید و دوباره امتحان کنید؛ ادامه‌دادن در این وضعیت دستگاه را قفل می‌کند.")
     if avail_mb is not None and avail_mb < 4500:
-        status(f"هشدار: حافظهٔ آزاد کم است ({avail_mb // 1024} گیگابایت) — ممکن است کند پیش برود؛ "
-               "بستن برنامه‌های دیگر کمک می‌کند.")
+        status(f"هشدار: حافظهٔ آزاد کم است ({avail_mb // 1024} گیگابایت)؛ ممکن است کار کند پیش برود. "
+               "اگر برنامه‌های دیگر را ببندید، کمک می‌کند.")
 
 
 def _gulp_pcm(payload, status):
@@ -1540,7 +1540,7 @@ def _gulp_pcm(payload, status):
              "voice_path": cbx_voice_path(payload.get("cbx_voice"))}, status)
     segs = _pause_segments(text)
     if not any("t" in s for s in segs):
-        raise RuntimeError("این بخش متنی برای خواندن ندارد — فقط نشانهٔ مکث است.")
+        raise RuntimeError("در این بخش چیزی برای خواندن نیست؛ فقط نشانهٔ مکث دارد.")
     return piper_pcm(engine, segs, payload.get("speed", 1.0),
                      payload.get("noise", 0.667), payload.get("noisew", 0.8), status)
 
@@ -1552,7 +1552,24 @@ _gulp_ids = _it.count(1)
 
 def reset_gulps():
     _GULP_PCM.clear()
+    _MUSIC.update({"pcm": None, "sr": None, "prompt": ""})
     _G_LAST["tail"] = ""   # a new document starts without a lead-in
+
+
+def clone_gulp(gid):
+    """A duplicate part with its own id — audio copied, no synthesis (98)."""
+    import copy
+    entry = _GULP_PCM.get(int(gid))
+    if entry is None:
+        raise RuntimeError("این بخش دیگر در حافظه نیست؛ یک بار دیگر «تبدیل به گفتار» را بزنید.")
+    new = copy.deepcopy(entry)
+    ngid = next(_gulp_ids)
+    _GULP_PCM[ngid] = new
+    return ngid, pcm_to_mp3(_assemble(new), new["sr"])
+
+
+def drop_gulp(gid):
+    _GULP_PCM.pop(int(gid), None)
 
 
 def _silence_runs(pcm, sr, min_ms=70):
@@ -1665,7 +1682,7 @@ def _cbx_continuous(items, payload, status):
             nxt_t = next((j for j in items[idx + 1:] if j["kind"] == "t"), None)
             sec_fill = _budget_pause(prev_t, i, nxt_t, sr)
             i["pcm"] = _pause_fill(pcm, cuts[tk], sr, sec_fill)
-    status("مکث‌ها با هم‌ترازی در جای نشانه‌ها بریده شدند — متن یک‌جا و طبیعی خوانده شد.")
+    status("متن یک‌نفس و طبیعی خوانده شد و مکث‌ها با هم‌ترازی درست سر جای نشانه‌ها نشستند.")
     return sr
 
 
@@ -1686,20 +1703,20 @@ def _verify_entry(entry, where):
         assert int(entry["sr"]) > 0, "sr"
     except AssertionError as e:
         raise RuntimeError(
-            f"ناهماهنگی داخلی در ساخت صدا شناسایی شد (مرحلهٔ {where}/{e}). "
-            "برای جلوگیری از خروجی خراب، این بخش را دوباره کامل بازتولید کنید.")
+            f"در ساخت صدا یک ناسازگاری داخلی پیدا شد (مرحلهٔ {where}/{e}). "
+            "برای اینکه خروجی خراب نشود، این بخش را کامل از نو بسازید.")
 
 
 def _heal_entry(entry, status):
     """A corrupt gulp is rebuilt from its own text and stored settings —
     repair first, error only if repair itself fails."""
-    status("ناهماهنگی داخلی شناسایی شد — ترمیم خودکار این بخش…")
+    status("یک ناسازگاری داخلی پیدا شد؛ این بخش خودکار ترمیم می‌شود…")
     payload = dict(entry.get("payload") or {})
     payload["engine"] = entry.get("engine") or payload.get("engine") or "chatterbox"
     payload["text"] = entry["text"]
     items = _clause_split(entry["text"], payload["engine"])
     if not any(i["kind"] == "t" for i in items):
-        raise RuntimeError("ترمیم ممکن نیست — این بخش متنی برای خواندن ندارد.")
+        raise RuntimeError("چیزی برای ترمیم نیست؛ این بخش متنی ندارد.")
     sr = None
     if (payload["engine"] == "chatterbox"
             and any(i["kind"] == "p" for i in items)
@@ -1715,7 +1732,7 @@ def _heal_entry(entry, status):
         sr = _synth_clauses(items, payload, status)
     entry.update({"items": items, "sr": sr})
     _verify_entry(entry, "ترمیم")
-    status("بخش خودکار ترمیم و از نو ساخته شد.")
+    status("این بخش خودبه‌خود ترمیم و از نو ساخته شد.")
 
 
 def _ensure_valid(entry, where, status):
@@ -1728,8 +1745,8 @@ def _ensure_valid(entry, where, status):
             raise
         except Exception as e:
             raise RuntimeError(
-                f"ترمیم خودکار این بخش ممکن نشد ({str(e)[:60]}) — "
-                "بخش را دستی دوباره بسازید و اتصال اینترنت را بررسی کنید.")
+                f"نشد این بخش را خودکار ترمیم کنیم ({str(e)[:60]}) — "
+                "اینترنت را چک کنید و این بخش را دستی دوباره بسازید.")
 
 
 def _slices_sane(cuts, total):
@@ -1754,7 +1771,7 @@ def generate_gulp(payload, status):
         return pcm_to_mp3(_assemble(entry), sr), gid
     items = _clause_split(text, payload["engine"])
     if not any(i["kind"] == "t" for i in items):
-        raise RuntimeError("این بخش متنی برای خواندن ندارد — فقط نشانهٔ مکث است.")
+        raise RuntimeError("در این بخش چیزی برای خواندن نیست؛ فقط نشانهٔ مکث دارد.")
     sr = None
     if (payload["engine"] == "chatterbox"
             and any(i["kind"] == "p" for i in items)
@@ -1762,7 +1779,7 @@ def generate_gulp(payload, status):
         try:
             sr = _cbx_continuous(items, payload, status)
         except Exception as e:
-            status(f"خواندن یک‌جا ممکن نشد ({str(e)[:40]}) — تکه‌به‌تکه ساخته می‌شود.")
+            status(f"یک‌نفس خواندن جواب نداد ({str(e)[:40]})؛ تکه‌تکه می‌سازیم.")
             sr = None
         if sr is None:
             for i in items:
@@ -1791,12 +1808,12 @@ def _load_aligner(status):
     try:
         import psutil
         if psutil.virtual_memory().total // (1024 * 1024) < 8000:
-            raise RuntimeError("این دستگاه برای هم‌ترازی واژه‌ای حافظهٔ کافی ندارد")
+            raise RuntimeError("حافظهٔ این دستگاه برای هم‌ترازیِ واژه‌به‌واژه کافی نیست")
     except RuntimeError:
         raise
     except Exception:
         pass
-    status("بار اول: در حال دانلود مدل هم‌ترازی واژه‌ها (~۱٫۲ گیگابایت)… فقط همین یک‌بار.")
+    status("فقط همین یک بار: مدل هم‌ترازی واژه‌ها (حدود ۱٫۲ گیگابایت) دانلود می‌شود…")
     _hook_hf_progress(status)
     from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
     repo = "jonatasgrosman/wav2vec2-large-xlsr-53-persian"
@@ -1804,7 +1821,7 @@ def _load_aligner(status):
     mdl = Wav2Vec2ForCTC.from_pretrained(repo)
     mdl.eval()
     _ALIGN.update(model=mdl, proc=proc)
-    status("مدل هم‌ترازی آماده شد.")
+    status("مدل هم‌ترازی آماده است.")
 
 
 def _align_feed(pcm, sr):
@@ -2424,12 +2441,12 @@ def _word_surgery(entry, old_item, new_item, sel_start, sel_end, payload, status
             out = _resample(res[0], res[1], sr)
             if _band_displaced(out, sr):
                 raise RuntimeError(
-                    "خروجی این صدا دوبار پشت‌سرهم خراب از موتور بیرون آمد (طیف جابه‌جا). "
-                    "این اشکال ثبت شد — لطفاً لاگ برنامه را بفرستید.")
+                    "این صدا دو بار پشت سر هم خروجی خراب داد (طیف صدا جابه‌جا شده). "
+                    "این خطا در گزارش برنامه ثبت شد؛ لطفاً فایل گزارش (ava.log) را بفرستید.")
         return out
 
     if mid_words:
-        status(f"جراحی واژه‌ای: بازتولید «{' '.join(mid_words)[:40]}»…")
+        status(f"جراحی واژه‌ای: فقط «{' '.join(mid_words)[:40]}» دوباره ساخته می‌شود…")
         ctx_l = [new_words[pre_w - 1]] if pre_w > 0 else []
         ctx_r = [new_words[len(new_words) - suf_w]] if suf_w > 0 else []
         synth_words = ctx_l + mid_words + ctx_r
@@ -2446,7 +2463,7 @@ def _word_surgery(entry, old_item, new_item, sel_start, sel_end, payload, status
             if trimmed is not None:
                 new_mid = trimmed
             else:
-                status("هم‌ترازیِ برشِ زمینه قابل‌اعتماد نبود — بازتولید بدون زمینه…")
+                status("برشِ متنِ کناری قابل اعتماد نبود؛ بدون متن کناری می‌سازیم…")
                 new_mid = synth(mid_words)
     else:
         new_mid = np.zeros(int(sr * 0.05), dtype=np.int16)  # pure deletion → tiny breath
@@ -2529,7 +2546,7 @@ def _cbx_patch_middle(entry, new_items, pre, suf, payload, status):
             nxt_t = next((j for j in mid[idx + 1:] if j["kind"] == "t"), None)
             sec_fill = _budget_pause(prev_t, i, nxt_t, sr)
             i["pcm"] = _pause_fill(pcm, cutp, sr, sec_fill)
-    status("قطعهٔ کوتاه با متن همسایه یک‌جا خوانده و با هم‌ترازی جدا شد.")
+    status("تکهٔ کوتاه را همراه متن کناری‌اش یک‌جا خواندیم و بعد با هم‌ترازی جدایش کردیم.")
     return True
 
 
@@ -2539,7 +2556,7 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
     _job_start()
     entry = _GULP_PCM.get(int(gid))
     if entry is None:
-        raise RuntimeError("این بخش دیگر در حافظه نیست — دوباره «تبدیل به گفتار» را بزنید.")
+        raise RuntimeError("این بخش دیگر در حافظه نیست؛ یک بار دیگر «تبدیل به گفتار» را بزنید.")
     _ensure_valid(entry, "پایهٔ ویرایش", status)
     new_text = new_text.strip()
     if payload["engine"] == "google" or entry.get("engine") == "google":
@@ -2569,7 +2586,7 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
     split_engine = entry.get("engine") if has_sel else payload["engine"]
     new_items = _clause_split(new_text, split_engine)
     if not any(i["kind"] == "t" for i in new_items):
-        raise RuntimeError("این بخش متنی برای خواندن ندارد — فقط نشانهٔ مکث است.")
+        raise RuntimeError("در این بخش چیزی برای خواندن نیست؛ فقط نشانهٔ مکث دارد.")
     old_items = entry["items"]
     same_engine = has_sel or payload["engine"] == entry.get("engine")
 
@@ -2614,10 +2631,10 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
             if r:
                 mode, words_done = "words", r
         except Exception as e:
-            status(f"هم‌ترازی واژه‌ای ممکن نشد ({str(e)[:50]}) — کل قطعه بازتولید می‌شود.")
+            status(f"هم‌ترازی واژه‌ای جواب نداد ({str(e)[:50]})؛ کل تکه دوباره ساخته می‌شود.")
     middle = [] if mode == "words" else [i for i in mid_new if i["kind"] == "t"]
     if middle:
-        status(f"بازتولید {faDigits(len(middle))} قطعهٔ تغییرکرده…")
+        status(f"ساخت دوبارهٔ {faDigits(len(middle))} تکهٔ تغییرکرده…")
         done = False
         if (payload["engine"] == "chatterbox"
                 and any(len(i["text"]) < 40 for i in middle)):
@@ -2652,8 +2669,8 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
                                and len(j["pcm"]) and _band_displaced(j["pcm"], sr2)]
                         if bad:
                             raise RuntimeError(
-                                "خروجی این صدا دوبار پشت‌سرهم خراب از موتور بیرون آمد (طیف جابه‌جا). "
-                                "این اشکال ثبت شد — لطفاً لاگ برنامه را بفرستید.")
+                                "این صدا دو بار پشت سر هم خروجی خراب داد (طیف صدا جابه‌جا شده). "
+                                "این خطا در گزارش برنامه ثبت شد؛ لطفاً فایل گزارش (ava.log) را بفرستید.")
                         break
             if sr2 != entry["sr"]:
                 for i in middle:
@@ -2674,29 +2691,34 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
     return pcm_to_mp3(_assemble(entry), entry["sr"]), changed, mode
 
 
-def splice_gulps(ids, status) -> bytes:
+def _splice_pcm(ids, status):
     """Join stored gulps in order — resampling if voices with different
     sample rates were mixed — with a short breath between parts."""
     try:
         entries = [_GULP_PCM[int(i)] for i in ids]
     except KeyError:
-        raise RuntimeError("برخی بخش‌ها دیگر در حافظه نیستند — دوباره «تبدیل به گفتار» را بزنید.")
+        raise RuntimeError("بعضی از بخش‌ها دیگر در حافظه نیستند؛ یک بار دیگر «تبدیل به گفتار» را بزنید.")
     if not entries:
-        raise RuntimeError("بخشی برای اتصال وجود ندارد.")
-    status("در حال اتصال بخش‌ها و ساخت فایل نهایی…")
+        raise RuntimeError("بخشی نیست که به هم بچسبانیم.")
+    status("دارم بخش‌ها را به هم می‌چسبانم و فایل نهایی را می‌سازم…")
     for k, e in enumerate(entries, 1):
-        _ensure_valid(e, f"اتصال بخش {faDigits(k)}", status)
+        _ensure_valid(e, f"چسباندن بخش {faDigits(k)}", status)
     parts = [(_assemble(e), e["sr"]) for e in entries]
     target = max(sr for _, sr in parts)
     _diag("splice", srs=",".join(str(s) for _, s in parts), target=target)
-    gap = np.zeros(int(target * 0.12), dtype=np.int16)
+    gap = np.zeros(int(target * 0.12), dtype=np.int16)   # the "breath" between parts
     out = []
     for k, (pcm, sr) in enumerate(parts):
         pcm = _resample(pcm, sr, target)
         out.append(pcm)
         if k < len(parts) - 1:
             out.append(gap)
-    return pcm_to_mp3(np.concatenate(out), target)
+    return np.concatenate(out), target
+
+
+def splice_gulps(ids, status) -> bytes:
+    pcm, sr = _splice_pcm(ids, status)
+    return pcm_to_mp3(pcm, sr)
 
 
 def generate(payload, status) -> bytes:
@@ -2742,7 +2764,7 @@ def cbx_voice_add(src_path):
     """Copy a user's clip into the library. Returns the new voice entry."""
     src = Path(src_path)
     if not src.is_file() or src.suffix.lower() not in _VOICE_EXT:
-        raise RuntimeError("فایل صوتی معتبر نیست — WAV یا MP3 (۸ تا ۱۵ ثانیه، یک گوینده) انتخاب کنید.")
+        raise RuntimeError("این فایل صوتی به درد نمی‌خورد؛ یک WAV یا MP3 هشت تا پانزده‌ثانیه‌ای با صدای یک نفر انتخاب کنید.")
     _USER_VOICES.mkdir(parents=True, exist_ok=True)
     dst = _USER_VOICES / src.name
     k = 2
@@ -2880,8 +2902,8 @@ def google_rotate(call, status, what="گوگل"):
     keys = _google_usable_keys()
     if not keys:
         if google_keys():
-            raise RuntimeError("سهمیهٔ همهٔ کلیدهای گوگل برای امروز تمام شده یا نامعتبرند — کلید تازه‌ای بیفزایید یا فردا دوباره بیایید.")
-        raise RuntimeError("کلید گوگل ثبت نشده است — از دکمهٔ «کلیدهای گوگل» یک کلید رایگان وارد کنید.")
+            raise RuntimeError("سهمیهٔ امروزِ همهٔ کلیدهای گوگل تمام شده یا کلیدها معتبر نیستند؛ یک کلید تازه اضافه کنید یا فردا سر بزنید.")
+        raise RuntimeError("هنوز کلید گوگل ندارید؛ از دکمهٔ «کلیدهای گوگل» یک کلید رایگان وارد کنید.")
     last = None
     for key in keys:
         for attempt in range(3):
@@ -2894,15 +2916,15 @@ def google_rotate(call, status, what="گوگل"):
                 last = e
                 if e.code == 429:
                     if "per minute" in e.msg.lower() or "rpm" in e.msg.lower():
-                        status(f"{what}: محدودیت دقیقه‌ای — ۲۰ ثانیه صبر…"); time.sleep(20); continue
-                    _google_mark(key, "exhausted"); status(f"{what}: سهمیهٔ این کلید تمام شد — کلید بعدی…")
+                        status(f"{what}: به سقف درخواست در دقیقه خوردیم — ۲۰ ثانیه صبر می‌کنیم…"); time.sleep(20); continue
+                    _google_mark(key, "exhausted"); status(f"{what}: سهمیهٔ امروزِ این کلید ته کشید؛ می‌رویم سراغ کلید بعدی…")
                     break
                 if e.code in (401, 403) or (e.code == 400 and "api key" in e.msg.lower()):
-                    _google_mark(key, "bad"); status(f"{what}: این کلید پذیرفته نشد — کلید بعدی…")
+                    _google_mark(key, "bad"); status(f"{what}: این کلید را قبول نکرد؛ می‌رویم سراغ کلید بعدی…")
                     break
                 if e.code >= 500:
                     _diag("google_5xx", code=e.code, msg=e.msg[:120])
-                    status(f"{what}: خطای موقت سرور ({e.code}) — تلاش دوباره ({attempt + 2}/3)…")
+                    status(f"{what}: سرور گوگل موقتاً خطا داد ({e.code}) — تلاش {attempt + 2} از ۳…")
                     for _ in range(4 * (2 + attempt * 2)):
                         _check_cancel(); time.sleep(0.25)
                     continue
@@ -2911,12 +2933,12 @@ def google_rotate(call, status, what="گوگل"):
                 last = e
                 why = type(e).__name__ + (": " + str(e)[:90] if str(e) else "")
                 _diag("google_net", err=why)
-                status(f"{what}: مشکل اتصال ({why}) — تلاش دوباره ({attempt + 2}/3)…")
+                status(f"{what}: اتصال برقرار نشد ({why}) — تلاش {attempt + 2} از ۳…")
                 for _ in range(4 * (2 + attempt * 2)):
                     _check_cancel(); time.sleep(0.25)
         else:
             continue
-    raise RuntimeError(f"{what}: با هیچ کلیدی موفق نشد — " + (getattr(last, "msg", None) or str(last) or "؟"))
+    raise RuntimeError(f"{what}: با هیچ‌کدام از کلیدها جواب نگرفتیم — " + (getattr(last, "msg", None) or str(last) or "؟"))
 
 
 class _GoogleHTTP(Exception):
@@ -3064,7 +3086,7 @@ def _google_decode(b64, mime):
             raw = wf.readframes(wf.getnframes())
     pcm = np.frombuffer(raw[: len(raw) - len(raw) % 2], dtype="<i2").astype(np.int16)
     if len(pcm) < sr // 20:
-        raise RuntimeError("گوگل به‌جای صدا، پاسخ خالی برگرداند — دوباره تلاش کنید.")
+        raise RuntimeError("گوگل به جای صدا جواب خالی داد؛ دوباره امتحان کنید.")
     return pcm, sr
 
 
@@ -3127,11 +3149,11 @@ def _google_stream(url, body, key, expect_sec, status):
             raise Cancelled()
         if box["bytes"] != last_bytes:
             last_bytes, last_t = box["bytes"], time.time()
-            status(f"گوگل: صدا در حال رسیدن… {faDigits(int(box['bytes'] / 48000))} ثانیه")
+            status(f"گوگل: صدا دارد می‌رسد… {faDigits(int(box['bytes'] / 48000))} ثانیه")
         elif box["bytes"] and time.time() - last_t > _G_GAP:
             box["stalled"] = True; break
     if box["bytes"]:
-        status(f"گوگل: {faDigits(int(box['bytes'] / 48000))} ثانیه صدا رسید" + (" — ناقص" if box.get("stalled") else ""))
+        status(f"گوگل: {faDigits(int(box['bytes'] / 48000))} ثانیه صدا رسید" + (" — ناتمام ماند" if box.get("stalled") else ""))
     _diag("google_stream", code=box.get("code"), ms=int((time.time() - t0) * 1000), parts=len(box["parts"]),
           audio_s=round(box["bytes"] / 48000, 1), expect_s=round(expect_sec, 1),
           looping=box.get("looping", False), stalled=box.get("stalled", False), text=(box.get("text") or "")[:60])
@@ -3140,7 +3162,7 @@ def _google_stream(url, body, key, expect_sec, status):
     if box.get("code") not in (None, 200) and not box["parts"]:
         raise _GoogleHTTP(box["code"], box.get("msg", ""))
     if box.get("looping"):
-        raise RuntimeError("گوگل در خواندن این بخش به دورِ باطل افتاد (صدای بسیار بلندتر از متن) — متن را کوتاه‌تر کنید یا مدل 2.5 Flash را امتحان کنید.")
+        raise RuntimeError("گوگل موقع خواندن این بخش گیر کرد و همین‌طور ادامه داد (صدا خیلی بلندتر از متن شد)؛ متن را کوتاه‌تر کنید یا مدل 2.5 Flash را امتحان کنید.")
     if not box["parts"]:
         if box.get("text"):
             raise _GoogleHTTP(500, "text instead of audio: " + box["text"][:80])
@@ -3185,7 +3207,7 @@ def _google_call(text, cfg, status):
                 data = _google_post(url, body, key, timeout=_G_TIMEOUT)
             except requests.Timeout as e:
                 _diag("google_timeout", door=name, s=_G_TIMEOUT)
-                status(f"گوگل: درِ {name} پاسخ نداد ({_G_TIMEOUT} ثانیه) — درِ دیگر…")
+                status(f"گوگل از مسیر {name} جواب نداد ({_G_TIMEOUT} ثانیه)؛ مسیر دیگر را امتحان می‌کنم…")
                 timeouts.append(e); continue
             except _GoogleHTTP as e:
                 if e.code in (400, 404) and "api key" not in e.msg.lower():
@@ -3198,9 +3220,9 @@ def _google_call(text, cfg, status):
             _diag("google_door", door=name)
             return _google_decode(*found)
         if timeouts and len(timeouts) == len(doors):
-            raise RuntimeError(f"گوگل هیچ پاسخی نداد ({_G_TIMEOUT} ثانیه از هر دو مسیر). اتصال اینترنت یا وی‌پی‌ان را بررسی کنید و دوباره بزنید.")
+            raise RuntimeError(f"گوگل جواب نداد ({_G_TIMEOUT} ثانیه از هر دو مسیر صبر کردیم). اینترنت یا وی‌پی‌ان را چک کنید و دوباره بزنید.")
         if rejects:
-            raise RuntimeError("گوگل این درخواست را نپذیرفت: " + rejects[-1].msg[:160])
+            raise RuntimeError("گوگل این درخواست را قبول نکرد: " + rejects[-1].msg[:160])
         raise timeouts[-1]
     return google_rotate(call, status, "گوگل")
 
@@ -3212,17 +3234,17 @@ def google_probe(model, status):
     _job_start()
     keys = _google_usable_keys()
     if not keys:
-        return {"ok": False, "msg": "کلید فعالی ثبت نشده است."}
+        return {"ok": False, "msg": "هیچ کلید فعالی ثبت نشده."}
     cfg = {"g_model": model or "gemini-2.5-flash-preview-tts", "g_preset": "neutral", "g_lang": "fa",
            "g_voice": "Charon"}
-    text = "سلام. این یک آزمایش کوتاه است."
+    text = "سلام. این فقط یک آزمایش کوتاه است."
     t0 = time.time()
     try:
         pcm, sr = _google_call(text, cfg, status)
-        return {"ok": True, "msg": f"پاسخ رسید: {faDigits(round(len(pcm) / sr, 1))} ثانیه صدا در {faDigits(round(time.time() - t0, 1))} ثانیه ({cfg['g_model']})",
+        return {"ok": True, "msg": f"جواب رسید: {faDigits(round(len(pcm) / sr, 1))} ثانیه صدا، در {faDigits(round(time.time() - t0, 1))} ثانیه ({cfg['g_model']})",
                 "seconds": round(len(pcm) / sr, 1), "elapsed": round(time.time() - t0, 1)}
     except Exception as e:
-        return {"ok": False, "msg": f"{str(e)[:200]} — پس از {faDigits(round(time.time() - t0, 1))} ثانیه", "elapsed": round(time.time() - t0, 1)}
+        return {"ok": False, "msg": f"{str(e)[:200]} — بعد از {faDigits(round(time.time() - t0, 1))} ثانیه", "elapsed": round(time.time() - t0, 1)}
 
 
 # --- tone consistency (90-92) REMOVED. FIELD LOG (92): the pitch audit
@@ -3252,18 +3274,18 @@ def google_pcm(text, cfg, status):
     without the lead-in rather than shipped with a duplicated sentence."""
     text = text.strip()
     if not text:
-        raise RuntimeError("این بخش متنی برای خواندن ندارد.")
+        raise RuntimeError("در این بخش چیزی برای خواندن نیست.")
     chunks = _split_sentences(text, max_len=900) if len(text) > 900 else [text]
     waves, sr = [], 24000
     lead = _g_lead_in(text, cfg)
     for ci, chunk in enumerate(chunks, 1):
         _check_cancel()
-        status("گوگل: در حال ساخت گفتار…" + (f" ({ci}/{len(chunks)})" if len(chunks) > 1 else ""))
+        status("گوگل دارد گفتار را می‌سازد…" + (f" ({ci}/{len(chunks)})" if len(chunks) > 1 else ""))
         pcm = None
         if lead and ci == 1:
             full, sr = _google_call(lead + " " + chunk, cfg, status)
             cl = [(lead, (0, len(lead)))] + [(c, sp) for c, sp in _g_clauses(chunk)]
-            cuts = _g_boundaries(full, sr, cl) if len(cl) > 1 else None
+            cuts = _g_bounds(full, sr, cl, status, {"fa": "fa-IR", "en": "en-US"}.get(cfg.get("g_lang"))) if len(cl) > 1 else None
             if cuts:
                 pcm = full[cuts[0]:]
                 # the cut sits mid-pause: drop the leading half so the part
@@ -3277,7 +3299,7 @@ def google_pcm(text, cfg, status):
                 _diag("google_leadin", trimmed_ms=int((len(full) - len(pcm)) * 1000 / sr), kept_ms=int(len(pcm) * 1000 / sr))
             else:
                 _diag("google_leadin", mode="fail_regen_plain")
-                status("گوگل: مرز جملهٔ راهنما پیدا نشد — ساخت بی‌راهنما…")
+                status("گوگل: مرز جملهٔ راهنما پیدا نشد؛ بدون راهنما می‌سازم…")
         if pcm is None:
             pcm, sr = _google_call(chunk, cfg, status)
         _diag("google_take", audio_s=round(len(pcm) / sr, 1), chars=len(chunk))
@@ -3432,7 +3454,7 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
         return 0                                    # everything changed: nothing to save
     if j1 <= j0:
         # pure deletion: drop the old clauses' audio, keep the neighbours
-        cuts = _g_boundaries(pcm, sr, oc)
+        cuts = _g_bounds(pcm, sr, oc, status, {"fa": "fa-IR", "en": "en-US"}.get(cfg.get("g_lang")))
         if cuts is None:
             return 0
         b = [0] + cuts + [len(pcm)]
@@ -3441,7 +3463,8 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
                       "text": new_text.strip()})
         _diag("g_clause_patch", removed=i1 - i0)
         return i1 - i0
-    cuts = _g_boundaries(pcm, sr, oc)
+    lang = {"fa": "fa-IR", "en": "en-US"}.get(cfg.get("g_lang"))
+    cuts = _g_bounds(pcm, sr, oc, status, lang)
     if cuts is None:
         return 0
     b = [0] + cuts + [len(pcm)]
@@ -3451,7 +3474,7 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
     after = nc[j1][0].strip() if j1 < len(nc) else ""
     middle = " ".join(c[0].strip() for c in nc[j0:j1])
     gen_text = " ".join(x for x in (before, middle, after) if x)
-    status(f"گوگل: بازسازی {faDigits(j1 - j0)} قطعه با بافت اطرافش…")
+    status(f"گوگل: {faDigits(j1 - j0)} جمله را همراه جمله‌های کناری‌اش دوباره می‌سازد…")
     new_pcm, nsr = google_pcm(gen_text, cfg, status)
     gcl = _g_clauses(gen_text)
     k0 = 1 if before else 0
@@ -3459,7 +3482,7 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
     if len(gcl) != k1 + (1 if after else 0):
         _diag("g_clause_patch", reason=f"gen_clauses_{len(gcl)}_vs_{k1 + (1 if after else 0)}")
         return 0
-    gcuts = _g_boundaries(new_pcm, nsr, gcl)
+    gcuts = _g_bounds(new_pcm, nsr, gcl, status, lang)
     if gcuts is None:
         return 0
     gb = [0] + gcuts + [len(new_pcm)]
@@ -3486,3 +3509,559 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
                   "text": new_text.strip()})
     _diag("g_clause_patch", old=(i0, i1), new=(j0, j1), kept_ms=int((len(pcm) - (b[i1] - b[i0])) * 1000 / sr))
     return j1 - j0
+
+
+# ---------------------------------------------------------------------------
+# Gemini 3.5 Transcribe (96) — word timestamps: exact clause boundaries in any
+# language, and the timing source for captions.
+# ---------------------------------------------------------------------------
+GOOGLE_TRANSCRIBE = "gemini-3.5-transcribe"
+_G_WORDS_CACHE = {}          # sha1(pcm) -> words
+_G_WORDS_ON = {"on": True}   # switched off by the UI or after repeated failures
+
+
+def _norm_word(w):
+    w = re.sub(r"[\u064B-\u0652\u0670\u0640\u200c\u200d]", "", w)        # harakat, tatweel, ZWNJ
+    w = w.replace("ي", "ی").replace("ك", "ک").replace("ۀ", "ه").replace("ة", "ه")
+    w = re.sub(r"\[[^\]]+\]", "", w)
+    return re.sub(r"[\W_]+", "", w).lower()
+
+
+def _text_words(text):
+    return [t for t in (_norm_word(x) for x in re.sub(r"\[[^\]]+\]", " ", text).split()) if t]
+
+
+def _parse_secs(v):
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str):
+        m = re.match(r"^\s*([0-9.]+)\s*s?\s*$", v)
+        if m:
+            return float(m.group(1))
+    if isinstance(v, dict):                      # {"seconds": 1, "nanos": 500000000}
+        return float(v.get("seconds", 0)) + float(v.get("nanos", 0)) / 1e9
+    return None
+
+
+def _find_words(obj):
+    """Locate a word-timestamp list wherever the response nests it."""
+    if isinstance(obj, dict):
+        for k in ("words", "word_timestamps", "wordTimestamps"):
+            if isinstance(obj.get(k), list) and obj[k] and isinstance(obj[k][0], dict):
+                out = []
+                for w in obj[k]:
+                    txt = w.get("word") or w.get("text") or ""
+                    st = _parse_secs(w.get("start") if "start" in w else w.get("startTime", w.get("start_time", w.get("startOffset", w.get("start_offset")))))
+                    en = _parse_secs(w.get("end") if "end" in w else w.get("endTime", w.get("end_time", w.get("endOffset", w.get("end_offset")))))
+                    if txt and st is not None and en is not None:
+                        out.append((txt, st, en))
+                if out:
+                    return out
+        for v in obj.values():
+            r = _find_words(v)
+            if r:
+                return r
+    elif isinstance(obj, list):
+        for v in obj:
+            r = _find_words(v)
+            if r:
+                return r
+    return None
+
+
+def google_words(pcm, sr, status, lang=None):
+    """[(word, start_s, end_s)] for a recording, or None. Cached per recording."""
+    if not _G_WORDS_ON["on"] or not _google_usable_keys():
+        return None
+    import hashlib, base64, io
+    key = hashlib.sha1(pcm.tobytes()[:200000] + str(len(pcm)).encode()).hexdigest()
+    if key in _G_WORDS_CACHE:
+        return _G_WORDS_CACHE[key]
+    p = _resample(pcm, sr, 16000) if sr != 16000 else pcm
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(16000); wf.writeframes(p.tobytes())
+    body = {"contents": [{"parts": [{"inlineData": {"mimeType": "audio/wav", "data": base64.b64encode(buf.getvalue()).decode()}}]}],
+            "generationConfig": {"audioTranscriptionConfig": {"wordTimestamp": True,
+                                 **({"languageCodes": [lang]} if lang else {})}}}
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GOOGLE_TRANSCRIBE}:generateContent"
+    try:
+        status("دارم صدا را با زمان‌بندی رونویسی می‌کنم…")
+        data = google_rotate(lambda k: _google_post(url, body, k, timeout=120), status, "رونویسی")
+        words = _find_words(data)
+        _diag("google_words", n=len(words or []), audio_s=round(len(pcm) / sr, 1))
+        _G_WORDS_CACHE[key] = words
+        return words
+    except Cancelled:
+        raise
+    except Exception as e:
+        _diag("google_words", err=str(e)[:120])
+        return None
+
+
+def _g_boundaries_words(pcm, sr, clauses, words):
+    """Clause boundaries from word timestamps: align our clause words to the
+    transcript (order-preserving, diacritic-insensitive) and cut midway in
+    the gap after each clause's last matched word. None if alignment is thin."""
+    import difflib
+    B = len(clauses) - 1
+    if B <= 0:
+        return []
+    ours, owner = [], []
+    for k, (c, _) in enumerate(clauses):
+        ws = _text_words(c)
+        ours += ws; owner += [k] * len(ws)
+    tw = [_norm_word(w) for w, _, _ in words]
+    if not ours or not tw:
+        return None
+    sm = difflib.SequenceMatcher(None, ours, tw, autojunk=False)
+    m2t = {}
+    for a, b, n in sm.get_matching_blocks():
+        for i in range(n):
+            m2t[a + i] = b + i
+    if len(m2t) < 0.6 * len(ours):
+        _diag("g_words_align", matched=len(m2t), of=len(ours), mode="thin")
+        return None
+    cuts = []
+    for k in range(B):
+        last = [i for i in range(len(ours)) if owner[i] == k and i in m2t]
+        nxt = [i for i in range(len(ours)) if owner[i] == k + 1 and i in m2t]
+        if not last or not nxt:
+            _diag("g_words_align", clause=k, mode="unmatched")
+            return None
+        j, j2 = m2t[last[-1]], m2t[nxt[0]]
+        # Between the two anchors there may be words the ASR mis-heard OR
+        # omitted entirely (FIELD, 96: «یا یک شورا میگرفت» went missing and the
+        # midpoint cut it in half). So the boundary is found in the AUDIO of
+        # that window: the longest silence in it. Only if the audio shows no
+        # silence there do we fall back to the widest transcript gap.
+        a, b = int(words[j][2] * sr), int(words[j2][1] * sr)
+        if b - a > sr * 0.05:
+            runs = _silence_runs(pcm[a:b], sr, min_ms=70)
+            if runs:
+                r = max(runs, key=lambda r: r[1] - r[0])
+                cuts.append(a + r[2]); continue
+        best_gap, best_t = -1.0, words[j][2]
+        for q in range(j, j2):
+            gap = words[q + 1][1] - words[q][2]
+            if gap > best_gap:
+                best_gap, best_t = gap, (words[q][2] + words[q + 1][1]) / 2 if gap > 0 else words[q][2]
+        cuts.append(int(best_t * sr))
+    if any(cuts[k] >= cuts[k + 1] for k in range(B - 1)) or cuts[-1] >= len(pcm):
+        return None
+    _diag("g_boundaries", need=B, mode="words", ms=[int(c * 1000 / sr) for c in cuts])
+    return [_zc_snap(pcm, c, sr) for c in cuts]
+
+
+def _g_bounds(pcm, sr, clauses, status, lang=None):
+    """Word timestamps first (exact, language-independent); the silence
+    heuristic when transcription is unavailable or the alignment is thin."""
+    if len(clauses) <= 1:
+        return []
+    words = google_words(pcm, sr, status, lang)
+    if words:
+        cuts = _g_boundaries_words(pcm, sr, clauses, words)
+        if cuts is not None:
+            return cuts
+    return _g_boundaries(pcm, sr, clauses)
+
+
+# ---------------------------------------------------------------------------
+# Captions (96) — SRT / VTT from the parts' own text and their measured timing
+# ---------------------------------------------------------------------------
+def _fmt_srt(t):
+    h = int(t // 3600); m = int(t % 3600 // 60); s_ = t % 60
+    return f"{h:02d}:{m:02d}:{int(s_):02d},{int(round((s_ - int(s_)) * 1000)):03d}"
+
+
+def _caption_text(t):
+    t = re.sub(r"\[[^\]]+\]", "", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def captions_for(ids, status):
+    """Cues per clause across the spliced document, using the same splice
+    timing (0.12 s breath between parts). Returns {"srt", "vtt", "cues"}."""
+    cues, t0 = [], 0.0
+    for gid in ids:
+        entry = _GULP_PCM.get(int(gid))
+        if entry is None:
+            raise RuntimeError("این بخش دیگر در حافظه نیست؛ یک بار دیگر «تبدیل به گفتار» را بزنید.")
+        pcm, sr = _assemble(entry), entry["sr"]
+        dur = len(pcm) / sr
+        if entry.get("engine") == "google":
+            cl = _g_clauses(entry["text"])
+            cuts = _g_bounds(pcm, sr, cl, status, {"fa": "fa-IR", "en": "en-US"}.get((entry.get("payload") or {}).get("g_lang")))
+            if cuts is None:
+                cuts = []
+                cl = [(entry["text"], (0, len(entry["text"])))]
+        else:
+            # local engines already know each clause's audio
+            cl, cuts, pos = [], [], 0
+            for it in entry["items"]:
+                n = len(it["pcm"]) if it["kind"] == "t" else int(it["sec"] * sr)
+                if it["kind"] == "t":
+                    cl.append((it["text"], (0, 0)))
+                    if pos + n < len(pcm):
+                        cuts.append(pos + n)
+                pos += n
+            cuts = cuts[:len(cl) - 1]
+        b = [0] + list(cuts) + [len(pcm)]
+        for k, (c, _) in enumerate(cl):
+            txt = _caption_text(c)
+            if not txt:
+                continue
+            cues.append((t0 + b[k] / sr + (0.05 if k else 0), t0 + b[k + 1] / sr - 0.05, txt))
+        t0 += dur + 0.12
+    srt = "\n".join(f"{i}\n{_fmt_srt(a)} --> {_fmt_srt(b)}\n{txt}\n" for i, (a, b, txt) in enumerate(cues, 1))
+    vtt = "WEBVTT\n\n" + "\n".join(f"{_fmt_srt(a).replace(',', '.')} --> {_fmt_srt(b).replace(',', '.')}\n{txt}\n" for a, b, txt in cues)
+    return {"srt": srt, "vtt": vtt, "cues": [{"start": a, "end": b, "text": t} for a, b, t in cues]}
+
+
+# ---------------------------------------------------------------------------
+# Lyria 3.5 (96) — background music for the final file, mixed under the voice
+# ---------------------------------------------------------------------------
+LYRIA_MODEL = "lyria-3.5"
+MUSIC_PRESETS = {
+    "piano":     "Soft, slow solo piano with gentle sustain and a warm, intimate tone.",
+    "ambient":   "Calm ambient pads and slow evolving textures, no melody in the foreground, very even.",
+    "strings":   "Slow, warm string ensemble, long bowed chords, cinematic but restrained.",
+    "acoustic":  "Gentle fingerpicked acoustic guitar, slow tempo, warm and unhurried.",
+    "lofi":      "Mellow lo-fi beat at 70 BPM, soft Rhodes chords, light vinyl texture, laid-back.",
+    "cinematic": "Understated cinematic underscore: low strings, soft piano, distant percussion, slow build that never peaks.",
+    "persian":   "Slow, meditative Persian classical mood on santur and tar with a soft daf, no vocals, gentle and contemplative.",
+    "oud":       "Slow oud and ney in a meditative Middle Eastern mode, sparse, warm, no vocals.",
+    "corporate": "Clean, light, optimistic background music with soft piano and muted guitar, steady pulse, unobtrusive.",
+    "suspense":  "Low, quiet, tense underscore with slow pulses and dark pads, restrained, no climax.",
+    "children":  "Light, playful, gentle music box and soft xylophone, slow and kind.",
+    "night":     "Quiet nocturne: soft piano and faint strings, nocturnal and still.",
+}
+_MUSIC = {"pcm": None, "sr": None, "prompt": ""}
+
+
+def lyria_music(preset, custom, seconds, status):
+    """A steady, instrumental background bed of roughly `seconds` seconds.
+    The bed is generated ONCE per document and cached; the mix is redone
+    cheaply for any level/ducking change."""
+    import base64, io
+    prompt = (custom or "").strip() or MUSIC_PRESETS.get(preset or "piano", MUSIC_PRESETS["piano"])
+    want = int(min(180, max(60, seconds + 8)))
+    text = (f"{prompt} Instrumental only, no vocals, no lyrics. About {want} seconds long. "
+            "This is background music under spoken narration: keep it steady and unobtrusive from start to end, "
+            "no sudden dynamics, no drum fills, no big climax, consistent mood throughout, gentle ending.")
+    body = {"model": LYRIA_MODEL, "input": text, "response_format": {"type": "audio", "mime_type": "audio/wav"}}
+    status("دارم موسیقی پس‌زمینه را می‌سازم… (شاید یک دقیقه‌ای طول بکشد)")
+    # Lyria has NO free tier ($0.08 per track, paid projects only). A free-tier
+    # key answers 403/429 here while being perfectly good for speech, so those
+    # answers must not flag the key — try each key, then say what is needed.
+    data, denied = None, []
+    for key in _google_usable_keys():
+        _check_cancel()
+        try:
+            data = _google_post(_GOOGLE_URL, body, key, timeout=300); break
+        except _GoogleHTTP as e:
+            if e.code in (402, 403, 429) or "billing" in e.msg.lower():
+                denied.append(e.msg[:80]); continue
+            raise RuntimeError("موسیقی: " + e.msg[:160])
+    if data is None:
+        if not _google_usable_keys():
+            raise RuntimeError("هنوز کلید گوگل ندارید؛ از دکمهٔ «کلیدهای گوگل» یک کلید وارد کنید.")
+        raise RuntimeError("ساخت موسیقی با لیریا فقط با کلیدِ پولی (پروژه‌ای که صورت‌حساب دارد) کار می‌کند؛ لیریا طرح رایگان ندارد — هر قطعه حدود ۸ سنت. "
+                           + ("پاسخ گوگل: " + denied[-1] if denied else ""))
+    found = _find_audio_b64(data)
+    if not found:
+        raise RuntimeError("لیریا موسیقی‌ای تحویل نداد؛ دوباره امتحان کنید یا حال‌وهوای دیگری بخواهید.")
+    raw = base64.b64decode(found[0])
+    if raw[:4] == b"RIFF":
+        with wave.open(io.BytesIO(raw)) as wf:
+            msr, ch, sw = wf.getframerate(), wf.getnchannels(), wf.getsampwidth()
+            frames = wf.readframes(wf.getnframes())
+        if sw == 2:
+            a = np.frombuffer(frames, dtype="<i2").astype(np.float32)
+        elif sw == 3:
+            b3 = np.frombuffer(frames, dtype=np.uint8).reshape(-1, 3)
+            a = ((b3[:, 0].astype(np.int32) | (b3[:, 1].astype(np.int32) << 8) | (b3[:, 2].astype(np.int32) << 16)) << 8 >> 8).astype(np.float32) / 256.0
+        else:
+            a = np.frombuffer(frames, dtype="<i4").astype(np.float32) / 65536.0
+        if ch > 1:
+            a = a.reshape(-1, ch).mean(axis=1)
+        mono = np.clip(a, -32768, 32767).astype(np.int16)
+    else:
+        try:
+            import soundfile as sf
+            a, msr = sf.read(io.BytesIO(raw), dtype="float32", always_2d=True)
+            mono = np.clip(a.mean(axis=1) * 32767, -32768, 32767).astype(np.int16)
+        except Exception:
+            raise RuntimeError("موسیقی با قالبی رسید که برنامه نمی‌تواند بخواند (WAV خواسته بودیم).")
+    _MUSIC.update({"pcm": mono, "sr": msr, "prompt": text})
+    _diag("lyria", seconds=round(len(mono) / msr, 1), sr=msr)
+    try:
+        music_save(mono, msr, "lyria", (custom or "").strip() or MUSIC_PRESETS.get(preset or "piano", "")[:40])
+    except Exception as e:
+        _diag("music_save", err=str(e)[:80])
+    return mono, msr
+
+
+# --- music library (98): every paid-for bed is kept on this machine -------
+_MUSIC_DIR = MODELS_DIR / "music"
+
+
+def music_save(pcm, sr, preset, custom):
+    """Store a bed as 16-bit mono WAV plus a manifest line. Returns the entry."""
+    import time
+    _MUSIC_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y-%m-%d-%H-%M-%S")
+    name = f"{stamp}-{preset}.wav"
+    with wave.open(str(_MUSIC_DIR / name), "wb") as wf:
+        wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(int(sr)); wf.writeframes(pcm.astype(np.int16).tobytes())
+    entry = {"file": name, "preset": preset, "custom": custom, "seconds": round(len(pcm) / sr, 1), "created": stamp}
+    lib = music_list()
+    lib.insert(0, entry)
+    (_MUSIC_DIR / "library.json").write_text(json.dumps(lib, ensure_ascii=False), encoding="utf-8")
+    return entry
+
+
+def music_list():
+    try:
+        lib = json.loads((_MUSIC_DIR / "library.json").read_text(encoding="utf-8"))
+        return [e for e in lib if (_MUSIC_DIR / e["file"]).exists()]
+    except Exception:
+        return []
+
+
+def music_load(file):
+    """Make a saved bed the current one (no generation, no cost)."""
+    p = _MUSIC_DIR / os.path.basename(file)
+    if not p.exists():
+        raise RuntimeError("این موسیقی دیگر روی دستگاه نیست.")
+    with wave.open(str(p)) as wf:
+        sr = wf.getframerate()
+        pcm = np.frombuffer(wf.readframes(wf.getnframes()), dtype="<i2").astype(np.int16)
+    _MUSIC.update({"pcm": pcm, "sr": sr, "prompt": file})
+    return pcm, sr
+
+
+def music_delete(file):
+    p = _MUSIC_DIR / os.path.basename(file)
+    if p.exists():
+        p.unlink()
+    lib = [e for e in music_list() if e["file"] != os.path.basename(file)]
+    (_MUSIC_DIR / "library.json").write_text(json.dumps(lib, ensure_ascii=False), encoding="utf-8")
+    return lib
+
+
+def _envelope(x, sr, attack=0.03, release=0.4, win=0.02):
+    """Smoothed loudness envelope (0..1) of a float signal."""
+    n = max(1, int(sr * win))
+    rms = np.sqrt(np.convolve(x * x, np.ones(n) / n, mode="same"))
+    peak = float(rms.max()) or 1.0
+    e = rms / peak
+    out = np.empty_like(e)
+    a_up, a_dn = np.exp(-1.0 / (sr * attack)), np.exp(-1.0 / (sr * release))
+    v = 0.0
+    for i in range(len(e)):
+        c = a_up if e[i] > v else a_dn
+        v = c * v + (1 - c) * e[i]
+        out[i] = v
+    return out
+
+
+def mix_music(voice, vsr, music, msr, level_db=-16.0, duck=True, duck_db=8.0, fade_in=1.5, fade_out=3.0):
+    """Voice with music underneath: music loudness set relative to the voice,
+    optional ducking under speech, fade in/out, a 2 s musical tail."""
+    if msr != vsr:
+        music = _resample(music, msr, vsr)
+    v = voice.astype(np.float32)
+    tail = int(vsr * 2.0)
+    total = len(v) + tail
+    m = music.astype(np.float32)
+    if len(m) < total:                              # loop with a 1 s crossfade
+        pieces, xf = [m], int(vsr * 1.0)
+        while sum(len(p) for p in pieces) - xf * (len(pieces) - 1) < total:
+            pieces.append(m)
+        m = _crossfade_join(pieces, vsr, ms=1000).astype(np.float32) if len(pieces) > 1 else m
+    m = m[:total]
+    if len(m) < total:
+        m = np.concatenate([m, np.zeros(total - len(m), dtype=np.float32)])
+    vr = float(np.sqrt(np.mean(v * v))) or 1.0
+    mr = float(np.sqrt(np.mean(m * m))) or 1.0
+    m *= (vr / mr) * (10 ** (level_db / 20.0))
+    if duck:
+        env = _envelope(v / 32768.0, vsr)
+        g = 1.0 - (1.0 - 10 ** (-duck_db / 20.0)) * env
+        m[:len(v)] *= g
+    fi, fo = int(vsr * fade_in), int(vsr * fade_out)
+    if fi:
+        m[:fi] *= np.linspace(0, 1, fi)
+    if fo:
+        m[-fo:] *= np.linspace(1, 0, fo)
+    out = m.copy()
+    out[:len(v)] += v
+    pk = float(np.abs(out).max()) or 1.0
+    if pk > 32000:
+        out *= 32000 / pk
+    return out.astype(np.int16)
+
+
+def final_files(ids, music_cfg, status):
+    """The clean final file, and — when music is requested — a second file
+    with the music bed mixed under it. Both returned as MP3 bytes."""
+    clean_pcm, sr = _splice_pcm(ids, status)
+    out = {"clean": pcm_to_mp3(clean_pcm, sr), "seconds": round(len(clean_pcm) / sr, 1)}
+    if music_cfg and music_cfg.get("on"):
+        if _MUSIC["pcm"] is None:
+            lyria_music(music_cfg.get("preset"), music_cfg.get("custom"), len(clean_pcm) / sr, status)
+        status("دارم موسیقی را زیر صدا می‌گذارم…")
+        mixed = mix_music(clean_pcm, sr, _MUSIC["pcm"], _MUSIC["sr"],
+                          level_db=float(music_cfg.get("level_db", -16)), duck=bool(music_cfg.get("duck", True)),
+                          fade_out=float(music_cfg.get("fade", 3.0)))
+        out["music"] = pcm_to_mp3(mixed, sr)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Free music providers (100) — Openverse (no key), Freesound, Jamendo, own file
+# ---------------------------------------------------------------------------
+MUSIC_PROVIDERS = ["freesound", "openverse", "jamendo", "lyria", "file"]
+
+
+def builtin_key(name):
+    """Keys shipped inside the app (builtin_keys.json) for the free music
+    sources — used only when the user has not saved their own."""
+    try:
+        return (json.loads(_res_path("builtin_keys.json").read_text(encoding="utf-8")) or {}).get(name, "") or ""
+    except Exception:
+        return ""
+
+
+def music_key(name):
+    return load_key(name) or builtin_key(name)
+MOOD_QUERIES = {
+    "piano": "calm solo piano", "ambient": "ambient pad drone", "strings": "slow string ensemble",
+    "acoustic": "acoustic guitar fingerpicking", "lofi": "lofi chill beat", "cinematic": "cinematic underscore",
+    "persian": "santur tar persian", "oud": "oud ney meditation", "corporate": "light corporate background",
+    "suspense": "dark tense underscore", "children": "music box playful", "night": "nocturne quiet piano",
+}
+
+
+def _decode_audio(raw):
+    """PCM mono int16 + rate from WAV/MP3/OGG/FLAC bytes."""
+    import io
+    if raw[:4] == b"RIFF":
+        with wave.open(io.BytesIO(raw)) as wf:
+            sr, ch, sw = wf.getframerate(), wf.getnchannels(), wf.getsampwidth()
+            frames = wf.readframes(wf.getnframes())
+        if sw != 2:
+            raise RuntimeError("این فایل WAV شانزده‌بیتی نیست.")
+        a = np.frombuffer(frames, dtype="<i2").astype(np.float32)
+        if ch > 1:
+            a = a.reshape(-1, ch).mean(axis=1)
+        return a.astype(np.int16), sr
+    try:
+        import soundfile as sf
+        a, sr = sf.read(io.BytesIO(raw), dtype="float32", always_2d=True)
+    except Exception as e:
+        raise RuntimeError("این قالب صوتی را نمی‌توانم بخوانم (" + type(e).__name__ + ")؛ WAV، MP3، OGG یا FLAC بدهید.")
+    return np.clip(a.mean(axis=1) * 32767, -32768, 32767).astype(np.int16), int(sr)
+
+
+def _http_get_json(url, params, headers=None, timeout=30):
+    r = requests.get(url, params=params, headers=headers or {}, timeout=timeout)
+    if r.status_code != 200:
+        raise RuntimeError(f"HTTP {r.status_code}: {r.text[:120]}")
+    return r.json()
+
+
+def music_search(provider, query, key, status):
+    """Up to 10 candidates: {id, title, author, seconds, license, preview, download, page}."""
+    _check_cancel()
+    q = (query or "").strip() or "ambient"
+    status(f"جست‌وجوی موسیقی در {provider}…")
+    out = []
+    if provider == "openverse":
+        data = _http_get_json("https://api.openverse.org/v1/audio/",
+                              {"q": q, "category": "music", "license": "cc0,pdm", "page_size": 12, "mature": "false"},
+                              headers={"User-Agent": "Ava/100 (narration app)"})
+        for it in data.get("results", []):
+            if not it.get("url"):
+                continue
+            out.append({"id": it.get("id"), "title": it.get("title") or "—", "author": it.get("creator") or "",
+                        "seconds": round((it.get("duration") or 0) / 1000), "license": (it.get("license") or "").upper(),
+                        "preview": it.get("url"), "download": it.get("url"), "page": it.get("foreign_landing_url") or ""})
+    elif provider == "freesound":
+        if not key:
+            raise RuntimeError("برای Freesound کلید لازم است: در freesound.org ثبت‌نام کنید و از freesound.org/apiv2/apply کلید بگیرید.")
+        data = _http_get_json("https://freesound.org/apiv2/search/text/",
+                              {"query": q, "filter": 'license:"Creative Commons 0" duration:[20 TO 900]',
+                               "fields": "id,name,username,license,duration,previews,url", "sort": "rating_desc",
+                               "page_size": 12, "token": key})
+        for it in data.get("results", []):
+            pv = (it.get("previews") or {}).get("preview-hq-mp3") or (it.get("previews") or {}).get("preview-lq-mp3")
+            if not pv:
+                continue
+            out.append({"id": it.get("id"), "title": it.get("name") or "—", "author": it.get("username") or "",
+                        "seconds": round(it.get("duration") or 0), "license": "CC0", "preview": pv, "download": pv, "page": it.get("url") or ""})
+    elif provider == "jamendo":
+        if not key:
+            raise RuntimeError("برای Jamendo کلید (client_id) لازم است: در devportal.jamendo.com یک اپ بسازید و شناسه‌اش را بردارید.")
+        data = _http_get_json("https://api.jamendo.com/v3.0/tracks/",
+                              {"client_id": key, "format": "json", "limit": 12, "search": q, "include": "licenses",
+                               "vocalinstrumental": "instrumental", "audioformat": "mp32", "order": "popularity_total"})
+        for it in data.get("results", []):
+            if not it.get("audio"):
+                continue
+            lic = (it.get("license_ccurl") or "").rstrip("/").split("/")
+            lic_txt = ("CC " + lic[-2].upper()) if len(lic) >= 2 and lic[-2] else "CC"
+            out.append({"id": it.get("id"), "title": it.get("name") or "—", "author": it.get("artist_name") or "",
+                        "seconds": int(it.get("duration") or 0), "license": lic_txt, "preview": it["audio"],
+                        "download": it.get("audiodownload") or it["audio"], "page": it.get("shareurl") or ""})
+    else:
+        raise RuntimeError("این منبع جست‌وجو ندارد.")
+    _diag("music_search", provider=provider, n=len(out))
+    if not out:
+        raise RuntimeError("چیزی پیدا نشد؛ عبارت دیگری امتحان کنید.")
+    return out
+
+
+def music_fetch(provider, item, status):
+    """Download the chosen track, decode it, make it the current bed, keep it."""
+    _check_cancel()
+    url = item.get("download") or item.get("preview")
+    if not url:
+        raise RuntimeError("این قطعه نشانی دانلود ندارد.")
+    status("دانلود موسیقی…")
+    r = requests.get(url, timeout=120, headers={"User-Agent": "Ava/100 (narration app)"})
+    if r.status_code != 200:
+        raise RuntimeError(f"دانلود نشد (HTTP {r.status_code}).")
+    pcm, sr = _decode_audio(r.content)
+    if len(pcm) < sr * 5:
+        raise RuntimeError("این قطعه کمتر از پنج ثانیه است؛ برای پس‌زمینه کوتاه است.")
+    _MUSIC.update({"pcm": pcm, "sr": sr, "prompt": f"{provider}:{item.get('title', '')}"})
+    entry = music_save(pcm, sr, provider, item.get("title", ""))
+    entry.update({"author": item.get("author", ""), "license": item.get("license", ""), "page": item.get("page", "")})
+    lib = music_list()
+    for e in lib:
+        if e["file"] == entry["file"]:
+            e.update({"author": entry["author"], "license": entry["license"], "page": entry["page"]})
+    (_MUSIC_DIR / "library.json").write_text(json.dumps(lib, ensure_ascii=False), encoding="utf-8")
+    _diag("music_fetch", provider=provider, seconds=round(len(pcm) / sr, 1), license=entry["license"])
+    return pcm, sr, entry
+
+
+def music_import(path, status):
+    """A file from disk becomes the bed and joins the library."""
+    p = Path(path)
+    if not p.is_file():
+        raise RuntimeError("فایل پیدا نشد.")
+    pcm, sr = _decode_audio(p.read_bytes())
+    _MUSIC.update({"pcm": pcm, "sr": sr, "prompt": "file:" + p.name})
+    entry = music_save(pcm, sr, "file", p.stem)
+    return pcm, sr, entry
+
+
+def music_credit(entry):
+    """The attribution line a CC-BY track needs; empty for CC0/PD/own/Lyria."""
+    lic = (entry or {}).get("license", "").upper()
+    if not entry or lic in ("", "CC0", "PDM", "PUBLIC DOMAIN") or entry.get("preset") in ("lyria", "file"):
+        return ""
+    return f"موسیقی: «{entry.get('custom') or entry.get('file')}» از {entry.get('author', '')} — {lic} — {entry.get('page', '')}"

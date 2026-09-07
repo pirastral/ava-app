@@ -107,14 +107,142 @@ class Api:
             traceback.print_exc()
             return {"ok": False, "error": str(e)}
 
-    def splice(self, ids):
+    def splice(self, ids, music=None):
+        """Final file(s): always the clean one; with music when asked (96)."""
         try:
             import engines
-            mp3 = engines.splice_gulps(ids, self._status)
-            b64 = base64.b64encode(mp3).decode("ascii")
-            return {"ok": True, "b64": b64, "kb": len(mp3) // 1024}
+            engines._job_start()
+            files = engines.final_files(ids, music, self._status)
+            out = {"ok": True, "b64": base64.b64encode(files["clean"]).decode("ascii"),
+                   "kb": len(files["clean"]) // 1024, "seconds": files["seconds"]}
+            if "music" in files:
+                out["b64_music"] = base64.b64encode(files["music"]).decode("ascii")
+                out["kb_music"] = len(files["music"]) // 1024
+            return out
         except Exception as e:
             traceback.print_exc()
+            return {"ok": False, "error": str(e)}
+
+    # ---- 96: background music (Lyria 3.5) -----------------------------------
+    def music_generate(self, preset="piano", custom="", seconds=60):
+        try:
+            import engines
+            engines._job_start()
+            pcm, sr = engines.lyria_music(preset, custom, float(seconds), self._status)
+            mp3 = engines.pcm_to_mp3(pcm, sr)
+            return {"ok": True, "b64": base64.b64encode(mp3).decode("ascii"), "seconds": round(len(pcm) / sr, 1)}
+        except Exception as e:
+            traceback.print_exc()
+            return {"ok": False, "error": str(e)}
+
+    def clone_gulp(self, gid):
+        try:
+            import engines
+            ngid, mp3 = engines.clone_gulp(gid)
+            return {"ok": True, "gulp": ngid, "b64": base64.b64encode(mp3).decode("ascii")}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def drop_gulp(self, gid):
+        try:
+            import engines
+            engines.drop_gulp(gid)
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def music_list(self):
+        try:
+            import engines
+            return {"ok": True, "items": engines.music_list()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def music_load(self, file):
+        try:
+            import engines
+            pcm, sr = engines.music_load(file)
+            return {"ok": True, "b64": base64.b64encode(engines.pcm_to_mp3(pcm, sr)).decode("ascii"), "seconds": round(len(pcm) / sr, 1)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def music_delete(self, file):
+        try:
+            import engines
+            return {"ok": True, "items": engines.music_delete(file)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def music_search(self, provider, query, key=""):
+        try:
+            import engines
+            engines._job_start()
+            if key and provider in ("freesound", "jamendo"):
+                engines.save_key(provider, key)
+            key = key or engines.music_key(provider)
+            return {"ok": True, "items": engines.music_search(provider, query, key, self._status)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def music_fetch(self, provider, item):
+        try:
+            import engines
+            engines._job_start()
+            pcm, sr, entry = engines.music_fetch(provider, item, self._status)
+            return {"ok": True, "b64": base64.b64encode(engines.pcm_to_mp3(pcm, sr)).decode("ascii"),
+                    "seconds": round(len(pcm) / sr, 1), "entry": entry, "credit": engines.music_credit(entry)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def music_import(self):
+        try:
+            import engines
+            result = self._window.create_file_dialog(
+                webview.OPEN_DIALOG, directory=_downloads_dir(), allow_multiple=False,
+                file_types=("Audio (*.wav;*.mp3;*.ogg;*.flac;*.m4a)",))
+            if not result:
+                return {"ok": False, "error": "cancelled"}
+            path = result if isinstance(result, str) else result[0]
+            pcm, sr, entry = engines.music_import(path, self._status)
+            return {"ok": True, "b64": base64.b64encode(engines.pcm_to_mp3(pcm, sr)).decode("ascii"),
+                    "seconds": round(len(pcm) / sr, 1), "entry": entry}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def music_keys(self):
+        try:
+            import engines
+            return {"ok": True, "freesound": engines.music_key("freesound"), "jamendo": engines.music_key("jamendo"),
+                    "builtin": {"freesound": not engines.load_key("freesound") and bool(engines.builtin_key("freesound")),
+                                "jamendo": not engines.load_key("jamendo") and bool(engines.builtin_key("jamendo"))}}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def music_presets(self):
+        import engines
+        return {"ok": True, "presets": list(engines.MUSIC_PRESETS.keys())}
+
+    # ---- 96: captions -------------------------------------------------------
+    def captions(self, ids):
+        try:
+            import engines
+            engines._job_start()
+            return {"ok": True, **engines.captions_for(ids, self._status)}
+        except Exception as e:
+            traceback.print_exc()
+            return {"ok": False, "error": str(e)}
+
+    def save_text(self, text, ext="srt"):
+        try:
+            name = "ava-" + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "." + ext
+            result = self._window.create_file_dialog(
+                webview.SAVE_DIALOG, directory=_downloads_dir(), save_filename=name)
+            if not result:
+                return {"ok": False, "error": "cancelled"}
+            path = result if isinstance(result, str) else result[0]
+            Path(path).write_text(text, encoding="utf-8")
+            return {"ok": True, "path": str(path)}
+        except Exception as e:
             return {"ok": False, "error": str(e)}
 
     def ezafe(self, text, tool="local", key=""):
@@ -195,9 +323,9 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def save_mp3(self, b64):
+    def save_mp3(self, b64, suffix=""):
         try:
-            name = "ava-" + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + ".mp3"
+            name = "ava-" + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + (("-" + suffix) if suffix else "") + ".mp3"
             result = self._window.create_file_dialog(
                 webview.SAVE_DIALOG, directory=_downloads_dir(), save_filename=name)
             if not result:
