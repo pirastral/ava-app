@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist (repo: github.com/pirastral/ava-app)
 ======================================================================
-This zip is the COMPLETE application source as of update 94.
+This zip is the COMPLETE application source as of update 95.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -14,6 +14,22 @@ Replace these files in the repo (paths identical):
                       THE FOLDER MUST EXIST IN THE REPO or PyInstaller fails.
   icon.png / icon.ico – unchanged
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 95 (on top of 94)
+  Boundary finder fixed. FIELD LOG (94): "g_boundaries runs=17 need=2 mode=nearest" — the
+  estimate for a clause end was computed from raw characters, and half of the first clause
+  was tags ([serious], [short pause]) that produce no speech; the estimate overshot onto the
+  comma breath after «قسمتِ سوم،», so the old clause was cut short and the new one duplicated
+  its opening. Now: estimates from SPOKEN characters only; candidate silences ranked by
+  LENGTH (real stops in the recording are 0.7–2.0 s, comma breaths 0.13–0.23 s), validated
+  against the estimates; the extracted clause must fit the part's speaking rate or the
+  surgery falls back to a whole-part take.
+  Continuity between parts (toggle «پیوستگی میان بخش‌ها», default on): Google has no seed
+  and no previous-text parameter, so each part is generated with the previous part's last
+  clause spoken first as a lead-in and trimmed off at its pause boundary; the model hears
+  where it left off. ~10 % more audio per part. If the trim boundary is not found the part
+  is regenerated plain — never shipped with a duplicated sentence. Each part pins its own
+  lead-in so a later regeneration stays continuous with the right neighbour.
 
 WHAT CHANGED IN 94 (on top of 93)
   Google clause surgery. Editing or selecting inside a Google part no longer re-does
@@ -99,6 +115,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۹۴»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۹۵»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

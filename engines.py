@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 94
-BUILD_FA = "\u06f9\u06f4"
+BUILD = 95
+BUILD_FA = "\u06f9\u06f5"
 
 
 def _diag(tag, **kv):
@@ -1552,6 +1552,7 @@ _gulp_ids = _it.count(1)
 
 def reset_gulps():
     _GULP_PCM.clear()
+    _G_LAST["tail"] = ""   # a new document starts without a lead-in
 
 
 def _silence_runs(pcm, sr, min_ms=70):
@@ -1741,11 +1742,12 @@ def generate_gulp(payload, status):
     _job_start()
     text = payload["text"].strip()
     if payload["engine"] == "google":
+        lead_in = _g_lead_in(text, payload)
         pcm, sr = google_pcm(text, payload, status)
         items = _clause_split(text, "google")
         items[0]["pcm"] = pcm
         gid = next(_gulp_ids)
-        entry = {"sr": sr, "items": items, "text": text, "engine": "google",
+        entry = {"sr": sr, "items": items, "text": text, "engine": "google", "lead_in": lead_in,
                  "payload": {k: payload[k] for k in payload if k.startswith("g_")}}
         _ensure_valid(entry, "تولید", status)
         _GULP_PCM[gid] = entry
@@ -2542,6 +2544,7 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
     new_text = new_text.strip()
     if payload["engine"] == "google" or entry.get("engine") == "google":
         cfg = payload if payload["engine"] == "google" else {**entry["payload"], **payload, "engine": "google"}
+        cfg = {**cfg, "g_lead_in": entry.get("lead_in", "")}   # pinned at generation time
         # 94: clause surgery — regenerate only the clauses the edit/selection
         # touched (with their neighbours as prosodic context), cut the new
         # clause out at its pause boundaries and splice it into the original
@@ -3227,21 +3230,62 @@ def google_probe(model, status):
 # drift and re-rolled 40-60 s takes three times, then tripped the runaway
 # guard. Consistency is now carried only by what costs nothing: the identical
 # prompt frame per document and long parts. One take per part.
+_G_LAST = {"tail": ""}   # last clause of the previous Google part in this document
+
+
+def _g_lead_in(text, cfg):
+    """The lead-in for a part: the previous part's last clause, unless the
+    caller pinned one (regeneration) or continuity is off."""
+    if cfg.get("g_continuity", True) is False:
+        return ""
+    if "g_lead_in" in cfg:
+        return (cfg.get("g_lead_in") or "").strip()
+    return _G_LAST["tail"]
+
+
 def google_pcm(text, cfg, status):
-    """Whole-gulp synthesis: one take per part, the model's own defaults."""
+    """Whole-gulp synthesis, one take per part. CONTINUITY (95): Google has
+    no seed and no previous-text parameter, so each part is generated with
+    the previous part's last clause spoken first as a lead-in — the model
+    hears where it left off — and the lead-in is cut off at its pause
+    boundary. If that boundary cannot be found, the part is regenerated
+    without the lead-in rather than shipped with a duplicated sentence."""
     text = text.strip()
     if not text:
         raise RuntimeError("این بخش متنی برای خواندن ندارد.")
     chunks = _split_sentences(text, max_len=900) if len(text) > 900 else [text]
     waves, sr = [], 24000
+    lead = _g_lead_in(text, cfg)
     for ci, chunk in enumerate(chunks, 1):
         _check_cancel()
         status("گوگل: در حال ساخت گفتار…" + (f" ({ci}/{len(chunks)})" if len(chunks) > 1 else ""))
-        pcm, sr = _google_call(chunk, cfg, status)
+        pcm = None
+        if lead and ci == 1:
+            full, sr = _google_call(lead + " " + chunk, cfg, status)
+            cl = [(lead, (0, len(lead)))] + [(c, sp) for c, sp in _g_clauses(chunk)]
+            cuts = _g_boundaries(full, sr, cl) if len(cl) > 1 else None
+            if cuts:
+                pcm = full[cuts[0]:]
+                # the cut sits mid-pause: drop the leading half so the part
+                # starts within ~60 ms of its first word (parts get their own
+                # breath at splice time)
+                x = np.abs(pcm.astype(np.int32))
+                thr = max(80, int(0.02 * (x.max() or 1)))
+                nz = np.flatnonzero(x > thr)
+                if len(nz):
+                    pcm = pcm[max(0, int(nz[0]) - int(sr * 0.06)):]
+                _diag("google_leadin", trimmed_ms=int((len(full) - len(pcm)) * 1000 / sr), kept_ms=int(len(pcm) * 1000 / sr))
+            else:
+                _diag("google_leadin", mode="fail_regen_plain")
+                status("گوگل: مرز جملهٔ راهنما پیدا نشد — ساخت بی‌راهنما…")
+        if pcm is None:
+            pcm, sr = _google_call(chunk, cfg, status)
         _diag("google_take", audio_s=round(len(pcm) / sr, 1), chars=len(chunk))
         waves.append(pcm)
         if ci < len(chunks):
             waves.append(np.zeros(int(sr * 0.25), dtype=np.int16))
+    cl = _g_clauses(text)
+    _G_LAST["tail"] = cl[-1][0].strip() if cl else ""
     return np.concatenate(waves), sr
 
 
@@ -3289,46 +3333,64 @@ def _g_clauses(text):
     return [(text[a:b], (a, b)) for a, b in out]
 
 
+def _g_speech_len(text):
+    """Characters that are actually spoken: no tags, no punctuation, no spaces."""
+    return len(re.sub(r"\[[^\]]+\]|[\W_]+", "", text))
+
+
 def _g_boundaries(pcm, sr, clauses):
     """Sample positions of the B = len(clauses)-1 clause boundaries inside a
-    recording: silence-first (the model's own stops), longest silences first
-    when there are more than needed, expected position by text proportion
-    breaking ties. None when the recording has fewer stops than clauses."""
+    recording. FIELD LOG (94): estimating by raw text proportion put a
+    boundary after «قسمتِ سوم،» — half of that clause's characters were tags
+    that produce no speech, and the nearest silence to a wrong estimate was a
+    comma breath. Now: estimates by SPOKEN characters, candidates ranked by
+    silence LENGTH (a sentence stop or [short pause] is far longer than a
+    comma), validated against the estimates; None when it does not add up."""
     B = len(clauses) - 1
     if B <= 0:
         return []
-    total_chars = sum(len(c[0]) for c in clauses) or 1
+    total = sum(_g_speech_len(c[0]) for c in clauses) or 1
     expect, acc = [], 0
     for c in clauses[:-1]:
-        acc += len(c[0])
-        expect.append(int(len(pcm) * acc / total_chars))
+        acc += _g_speech_len(c[0])
+        expect.append(int(len(pcm) * acc / total))
+    runs = None
     for min_ms in (110, 70):
         runs = _silence_runs(pcm, sr, min_ms=min_ms)
         if len(runs) >= B:
             break
-    if len(runs) < B:
-        _diag("g_boundaries", runs=len(runs), need=B, mode="fail")
+    if not runs or len(runs) < B:
+        _diag("g_boundaries", runs=len(runs or []), need=B, mode="fail")
         return None
+    tol = max(int(sr * 1.5), int(0.45 * len(pcm) / (B + 1)))
+    def ok(ch):
+        return len(ch) == B and all(ch[k][2] < ch[k + 1][2] for k in range(B - 1)) and \
+               all(abs(ch[k][2] - expect[k]) <= tol for k in range(B))
     if len(runs) == B:
-        chosen = runs; mode = "exact"
+        chosen, mode = list(runs), "exact"
+        if not ok(chosen):
+            _diag("g_boundaries", runs=B, need=B, mode="fail_exact_far")
+            return None
     else:
-        # keep the B runs nearest the proportional estimates, order-preserving,
-        # but never let a chosen run drift beyond a third of the recording
-        avail, chosen = list(runs), []
-        for m in expect:
-            if not avail:
-                break
-            pick = min(avail, key=lambda r: abs(r[2] - m))
-            if abs(pick[2] - m) > len(pcm) / 3:
-                _diag("g_boundaries", runs=len(runs), need=B, mode="fail_far")
+        # 1) the B longest silences, in order — the model's real stops
+        longest = sorted(sorted(runs, key=lambda r: r[1] - r[0], reverse=True)[:B], key=lambda r: r[2])
+        if ok(longest):
+            chosen, mode = longest, "longest"
+        else:
+            # 2) per boundary, the nearest silence to its estimate, order-preserving
+            avail, chosen = list(runs), []
+            for m in expect:
+                cand = [r for r in avail if (not chosen or r[2] > chosen[-1][2])]
+                if not cand:
+                    break
+                pick = min(cand, key=lambda r: abs(r[2] - m))
+                chosen.append(pick)
+            mode = "nearest"
+            if not ok(chosen):
+                _diag("g_boundaries", runs=len(runs), need=B, mode="fail_nearest")
                 return None
-            chosen.append(pick)
-            avail = [r for r in avail if r[2] > pick[2]]
-        mode = "nearest"
-    if len(chosen) != B or any(chosen[k][2] >= chosen[k + 1][2] for k in range(B - 1)):
-        _diag("g_boundaries", runs=len(runs), need=B, mode="fail_order")
-        return None
-    _diag("g_boundaries", runs=len(runs), need=B, mode=mode)
+    _diag("g_boundaries", runs=len(runs), need=B, mode=mode,
+          ms=[int(r[2] * 1000 / sr) for r in chosen], expect_ms=[int(e * 1000 / sr) for e in expect])
     return [_zc_snap(pcm, r[2], sr) for r in chosen]
 
 
@@ -3404,6 +3466,13 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
     seg = new_pcm[gb[k0]:gb[k1]]
     if nsr != sr:
         seg = _resample(seg, nsr, sr)
+    # sanity: the new clause must fit the part's speaking rate — a cut at the
+    # wrong silence produces a fragment far too short or long for its words
+    rate = len(pcm) / max(1, _g_speech_len(old_text))            # samples per spoken char
+    want = rate * max(1, _g_speech_len(middle))
+    if not (0.45 * want <= len(seg) <= 2.2 * want):
+        _diag("g_clause_patch", reason="segment_duration", got_ms=int(len(seg) * 1000 / sr), want_ms=int(want * 1000 / sr))
+        return 0
     # loudness: the new clause sits at the part's level
     old_rms = float(np.sqrt(np.mean(pcm.astype(np.float64) ** 2))) or 1.0
     seg_rms = float(np.sqrt(np.mean(seg.astype(np.float64) ** 2))) or 1.0

@@ -312,6 +312,9 @@
         <input class="ctl-in" id="gCustom" hidden style="width:100%;margin-top:8px" placeholder="سبک دلخواه، فارسی یا انگلیسی: «آرام و شمرده، مثل گویندهٔ مستند»">
       </div>
       <div class="g-only" hidden style="grid-column:1/-1">
+        <label class="toggle"><input type="checkbox" id="gCont" checked> پیوستگی میان بخش‌ها <small style="opacity:.7">— جملهٔ آخر بخش قبل اول خوانده و بریده می‌شود تا لحن ادامه پیدا کند (~۱۰٪ صدای بیشتر)</small></label>
+      </div>
+      <div class="g-only" hidden style="grid-column:1/-1">
         <label class="toggle"><input type="checkbox" id="gDuo"> گفت‌وگوی دو نفره <small style="opacity:.7">— هر خط با نام گوینده و دونقطه شروع می‌شود: «سارا: سلام»</small></label>
       </div>
       <div class="g-only" hidden id="gSolo">
@@ -358,7 +361,7 @@
     </div>
   </div>
 
-  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۹۴</span>
+  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۹۵</span>
     <span class="warn">تنها از نسخه‌ای از این برنامه استفاده کنید که مستقیماً از توسعه‌دهنده دریافت کرده‌اید؛ نسخه‌های دریافتی از منابع ناشناس ممکن است حاوی بدافزار باشند.</span>
   </footer>
 </div>
@@ -595,7 +598,7 @@
     $("cbxVoice").value = "default";
     $("gModel").value = "gemini-3.1-flash-tts-preview"; $("gLang").value = "fa"; $("gVoice").value = "Charon";
     $("gPreset").value = "neutral"; $("gCustom").value = ""; $("gCustom").hidden = true;
-    $("gDuo").checked = false; syncEngine();
+    $("gDuo").checked = false; $("gCont").checked = true; syncEngine();
   };
 
   /* ---------- 91: چشمک نمایش کلید ---------- */
@@ -676,7 +679,8 @@
       g_preset: s && s.gPreset ? s.gPreset : $("gPreset").value,
       g_style: $("gCustom").value,
       g_speakers: duo ? [{ name: $("gSpkA").value.trim(), voice: $("gVoiceA").value },
-                         { name: $("gSpkB").value.trim(), voice: $("gVoiceB").value }] : [] };
+                         { name: $("gSpkB").value.trim(), voice: $("gVoiceB").value }] : [],
+      g_continuity: $("gCont").checked };
   }
   function gulpPayload(g){
     const s = g.settings;
