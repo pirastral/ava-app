@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist (repo: github.com/pirastral/ava-app)
 ======================================================================
-This zip is the COMPLETE application source as of update 106.
+This zip is the COMPLETE application source as of update 107.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -14,7 +14,23 @@ Replace these files in the repo (paths identical):
                       THE FOLDER MUST EXIST IN THE REPO or PyInstaller fails.
   icon.png / icon.ico – unchanged
   builtin_keys.json – NEW (101): Freesound / Jamendo keys shipped with the app
+  en_strings.py     – NEW (107): English renderings of engine messages
+  voices/           – NOW POPULATED (107): 63 clips + voices.json
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 107 (on top of 106)
+  Built-in Chatterbox voice library: 63 reference clips (Charon, Laomedeia, Leda,
+    Sadaltager, Schedar, Zephyr × up to 15 styles) in voices/ with voices.json — mono
+    24 kHz WAV, leading silence trimmed, first 12 s of speech, ~36 MB. ADD THE WHOLE
+    voices/ FOLDER TO THE REPO (build.spec bundles it). Chatterbox conditions on a clip
+    the first time it is used and caches it.
+  Voice picker: a menu of voices; hovering (or clicking) a voice opens its styles as a
+    sub-menu; the user's own samples sit under one group. The hidden <select id=cbxVoice>
+    still carries the value, so nothing else changed.
+  English: a language selector in the header (فارسی / English). English switches the
+    whole chrome to LTR and translates every UI string, status and error (engine messages
+    are translated at the app boundary: en_strings.py — ADD THIS FILE TO THE REPO). The
+    text areas stay RTL always. App name in English: Avaye Javid Shah. Choice remembered.
 
 WHAT CHANGED IN 106 (on top of 105) — visual only
   Contrast: crisper lines, deeper ink, stronger card shadows; dark theme panels stand off
@@ -271,6 +287,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۰۶»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۰۷»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

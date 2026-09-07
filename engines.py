@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 106
-BUILD_FA = "\u06f1\u06f0\u06f6"
+BUILD = 107
+BUILD_FA = "\u06f1\u06f0\u06f7"
 
 
 def _diag(tag, **kv):
@@ -2768,17 +2768,31 @@ _USER_VOICES = MODELS_DIR / "voices"
 
 
 def cbx_voices():
-    """Every reference clip the app knows: bundled ones first (shipped inside
-    the app's voices/ folder), then the user's own (AvaModels/voices)."""
+    """Every reference clip the app knows. Bundled clips come from voices/
+    with a manifest (voice × style); the user's own live in AvaModels/voices.
+    Each entry: id, name, path, builtin, voice, style."""
     out = []
-    for builtin, root in ((True, _res_path("voices")), (False, _USER_VOICES)):
-        try:
-            files = sorted(p for p in Path(root).iterdir() if p.suffix.lower() in _VOICE_EXT)
-        except Exception:
-            continue
-        for p in files:
-            out.append({"id": ("b:" if builtin else "u:") + p.name, "name": p.stem,
-                        "path": str(p), "builtin": builtin})
+    root = Path(_res_path("voices"))
+    manifest = {}
+    try:
+        for m in json.loads((root / "voices.json").read_text(encoding="utf-8")):
+            manifest[m["file"]] = m
+    except Exception:
+        pass
+    try:
+        for p in sorted(x for x in root.iterdir() if x.suffix.lower() in _VOICE_EXT):
+            m = manifest.get(p.name, {})
+            voice = m.get("voice") or (p.stem.split("__")[0].capitalize() if "__" in p.stem else p.stem)
+            style = m.get("style") or (p.stem.split("__", 1)[1].replace("_", " ") if "__" in p.stem else "")
+            out.append({"id": "b:" + p.name, "name": f"{voice} · {style}" if style else voice, "path": str(p),
+                        "builtin": True, "voice": voice, "style": style, "seconds": m.get("seconds")})
+    except Exception:
+        pass
+    try:
+        for p in sorted(x for x in _USER_VOICES.iterdir() if x.suffix.lower() in _VOICE_EXT):
+            out.append({"id": "u:" + p.name, "name": p.stem, "path": str(p), "builtin": False, "voice": "", "style": p.stem})
+    except Exception:
+        pass
     return out
 
 

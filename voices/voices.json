@@ -1,0 +1,380 @@
+[
+{
+"file": "charon__audio_book.wav",
+"voice": "Charon",
+"style": "audio book",
+"seconds": 12.0
+},
+{
+"file": "charon__calm_narrative.wav",
+"voice": "Charon",
+"style": "calm narrative",
+"seconds": 12.0
+},
+{
+"file": "charon__childrens_book.wav",
+"voice": "Charon",
+"style": "childrens book",
+"seconds": 12.0
+},
+{
+"file": "charon__classic_poetry.wav",
+"voice": "Charon",
+"style": "classic poetry",
+"seconds": 12.0
+},
+{
+"file": "charon__documentary.wav",
+"voice": "Charon",
+"style": "documentary",
+"seconds": 12.0
+},
+{
+"file": "charon__epic.wav",
+"voice": "Charon",
+"style": "epic",
+"seconds": 12.0
+},
+{
+"file": "charon__happy_and_energetic.wav",
+"voice": "Charon",
+"style": "happy and energetic",
+"seconds": 12.0
+},
+{
+"file": "charon__mysterious.wav",
+"voice": "Charon",
+"style": "mysterious",
+"seconds": 12.0
+},
+{
+"file": "charon__neutral.wav",
+"voice": "Charon",
+"style": "neutral",
+"seconds": 12.0
+},
+{
+"file": "charon__podcast.wav",
+"voice": "Charon",
+"style": "podcast",
+"seconds": 12.0
+},
+{
+"file": "charon__sad.wav",
+"voice": "Charon",
+"style": "sad",
+"seconds": 12.0
+},
+{
+"file": "charon__sarcastic.wav",
+"voice": "Charon",
+"style": "sarcastic",
+"seconds": 12.0
+},
+{
+"file": "charon__speech.wav",
+"voice": "Charon",
+"style": "speech",
+"seconds": 12.0
+},
+{
+"file": "charon__sports_anchor.wav",
+"voice": "Charon",
+"style": "sports anchor",
+"seconds": 12.0
+},
+{
+"file": "charon__teacher.wav",
+"voice": "Charon",
+"style": "teacher",
+"seconds": 12.0
+},
+{
+"file": "laomedeia__audio_book.wav",
+"voice": "Laomedeia",
+"style": "audio book",
+"seconds": 12.0
+},
+{
+"file": "laomedeia__calm_narrative.wav",
+"voice": "Laomedeia",
+"style": "calm narrative",
+"seconds": 12.0
+},
+{
+"file": "laomedeia__childrens_book.wav",
+"voice": "Laomedeia",
+"style": "childrens book",
+"seconds": 12.0
+},
+{
+"file": "laomedeia__classic_poetry.wav",
+"voice": "Laomedeia",
+"style": "classic poetry",
+"seconds": 12.0
+},
+{
+"file": "laomedeia__epic.wav",
+"voice": "Laomedeia",
+"style": "epic",
+"seconds": 12.0
+},
+{
+"file": "laomedeia__happy_and_energetic.wav",
+"voice": "Laomedeia",
+"style": "happy and energetic",
+"seconds": 12.0
+},
+{
+"file": "laomedeia__mysterious.wav",
+"voice": "Laomedeia",
+"style": "mysterious",
+"seconds": 12.0
+},
+{
+"file": "laomedeia__neutral.wav",
+"voice": "Laomedeia",
+"style": "neutral",
+"seconds": 12.0
+},
+{
+"file": "laomedeia__podcast.wav",
+"voice": "Laomedeia",
+"style": "podcast",
+"seconds": 12.0
+},
+{
+"file": "laomedeia__sarcastic.wav",
+"voice": "Laomedeia",
+"style": "sarcastic",
+"seconds": 12.0
+},
+{
+"file": "laomedeia__sports_anchor.wav",
+"voice": "Laomedeia",
+"style": "sports anchor",
+"seconds": 12.0
+},
+{
+"file": "leda__calm_narrative.wav",
+"voice": "Leda",
+"style": "calm narrative",
+"seconds": 12.0
+},
+{
+"file": "leda__childrens_book.wav",
+"voice": "Leda",
+"style": "childrens book",
+"seconds": 12.0
+},
+{
+"file": "leda__classic_poetry.wav",
+"voice": "Leda",
+"style": "classic poetry",
+"seconds": 12.0
+},
+{
+"file": "leda__epic.wav",
+"voice": "Leda",
+"style": "epic",
+"seconds": 12.0
+},
+{
+"file": "leda__happy_and_energetic.wav",
+"voice": "Leda",
+"style": "happy and energetic",
+"seconds": 12.0
+},
+{
+"file": "leda__mysterious.wav",
+"voice": "Leda",
+"style": "mysterious",
+"seconds": 12.0
+},
+{
+"file": "leda__neutral.wav",
+"voice": "Leda",
+"style": "neutral",
+"seconds": 12.0
+},
+{
+"file": "leda__podcast.wav",
+"voice": "Leda",
+"style": "podcast",
+"seconds": 12.0
+},
+{
+"file": "leda__sports_anchor.wav",
+"voice": "Leda",
+"style": "sports anchor",
+"seconds": 12.0
+},
+{
+"file": "sadaltager__audio_book.wav",
+"voice": "Sadaltager",
+"style": "audio book",
+"seconds": 12.0
+},
+{
+"file": "sadaltager__calm_narrative.wav",
+"voice": "Sadaltager",
+"style": "calm narrative",
+"seconds": 12.0
+},
+{
+"file": "sadaltager__epic.wav",
+"voice": "Sadaltager",
+"style": "epic",
+"seconds": 12.0
+},
+{
+"file": "sadaltager__neutral.wav",
+"voice": "Sadaltager",
+"style": "neutral",
+"seconds": 12.0
+},
+{
+"file": "sadaltager__podcast.wav",
+"voice": "Sadaltager",
+"style": "podcast",
+"seconds": 12.0
+},
+{
+"file": "schedar__audio_book.wav",
+"voice": "Schedar",
+"style": "audio book",
+"seconds": 12.0
+},
+{
+"file": "schedar__calm_narrative.wav",
+"voice": "Schedar",
+"style": "calm narrative",
+"seconds": 12.0
+},
+{
+"file": "schedar__childrens_book.wav",
+"voice": "Schedar",
+"style": "childrens book",
+"seconds": 12.0
+},
+{
+"file": "schedar__classic_poetry.wav",
+"voice": "Schedar",
+"style": "classic poetry",
+"seconds": 12.0
+},
+{
+"file": "schedar__epic.wav",
+"voice": "Schedar",
+"style": "epic",
+"seconds": 12.0
+},
+{
+"file": "schedar__neutral.wav",
+"voice": "Schedar",
+"style": "neutral",
+"seconds": 12.0
+},
+{
+"file": "schedar__podcast.wav",
+"voice": "Schedar",
+"style": "podcast",
+"seconds": 12.0
+},
+{
+"file": "zephyr__audio_book.wav",
+"voice": "Zephyr",
+"style": "audio book",
+"seconds": 12.0
+},
+{
+"file": "zephyr__calm_narrative.wav",
+"voice": "Zephyr",
+"style": "calm narrative",
+"seconds": 12.0
+},
+{
+"file": "zephyr__childrens_book.wav",
+"voice": "Zephyr",
+"style": "childrens book",
+"seconds": 12.0
+},
+{
+"file": "zephyr__classic_poetry.wav",
+"voice": "Zephyr",
+"style": "classic poetry",
+"seconds": 12.0
+},
+{
+"file": "zephyr__documentary.wav",
+"voice": "Zephyr",
+"style": "documentary",
+"seconds": 12.0
+},
+{
+"file": "zephyr__epic.wav",
+"voice": "Zephyr",
+"style": "epic",
+"seconds": 12.0
+},
+{
+"file": "zephyr__happy_and_energetic.wav",
+"voice": "Zephyr",
+"style": "happy and energetic",
+"seconds": 12.0
+},
+{
+"file": "zephyr__mysterious.wav",
+"voice": "Zephyr",
+"style": "mysterious",
+"seconds": 12.0
+},
+{
+"file": "zephyr__neutral.wav",
+"voice": "Zephyr",
+"style": "neutral",
+"seconds": 12.0
+},
+{
+"file": "zephyr__news_anchor.wav",
+"voice": "Zephyr",
+"style": "news anchor",
+"seconds": 12.0
+},
+{
+"file": "zephyr__podcast.wav",
+"voice": "Zephyr",
+"style": "podcast",
+"seconds": 12.0
+},
+{
+"file": "zephyr__radio_ad.wav",
+"voice": "Zephyr",
+"style": "radio ad",
+"seconds": 12.0
+},
+{
+"file": "zephyr__sad.wav",
+"voice": "Zephyr",
+"style": "sad",
+"seconds": 12.0
+},
+{
+"file": "zephyr__sarcastic.wav",
+"voice": "Zephyr",
+"style": "sarcastic",
+"seconds": 12.0
+},
+{
+"file": "zephyr__speech.wav",
+"voice": "Zephyr",
+"style": "speech",
+"seconds": 12.0
+},
+{
+"file": "zephyr__sports_anchor.wav",
+"voice": "Zephyr",
+"style": "sports anchor",
+"seconds": 12.0
+}
+]
