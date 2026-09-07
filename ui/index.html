@@ -6,14 +6,14 @@
 <title>@kamangir31 - آوای جاوید شاه</title>
 <style>
   :root{
-    --paper:#f7f3ea; --panel:#fffdf7; --ink:#20242e; --muted:#6b7080;
-    --line:#e3dcc9; --tile:#0e7a83; --tile-deep:#0a5d64; --gold:#b98a2e;
-    --danger:#b3402f; --shadow:0 10px 30px rgba(32,36,46,.08); --radius:18px;
+    --paper:#f3eee2; --panel:#fffdf8; --ink:#171b24; --muted:#5b6172;
+    --line:#cfc6ad; --tile:#0b6f78; --tile-deep:#094f56; --gold:#a97c22;
+    --danger:#b3402f; --shadow:0 10px 30px rgba(32,36,46,.13); --radius:18px;
   }
   [data-theme="dark"]{
-    --paper:#101522; --panel:#171e30; --ink:#eef0f6; --muted:#9aa2b8;
-    --line:#2a3350; --tile:#2fbfc9; --tile-deep:#1d99a3; --gold:#d8ad55;
-    --danger:#e57358; --shadow:0 12px 34px rgba(0,0,0,.45);
+    --paper:#0c111c; --panel:#1a2236; --ink:#f2f4fa; --muted:#a7afc4;
+    --line:#37426a; --tile:#3ccbd6; --tile-deep:#22a3ad; --gold:#e2b75f;
+    --danger:#ef7a5c; --shadow:0 14px 38px rgba(0,0,0,.55);
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{
@@ -51,7 +51,7 @@
   footer .warn{display:block;margin-top:6px;font-size:.72rem;opacity:.85}
   #themeBtn{border:1px solid var(--line);background:var(--panel);color:var(--ink);width:40px;height:40px;border-radius:50%;cursor:pointer;font-size:1.15rem;display:grid;place-items:center;box-shadow:var(--shadow);flex:none}
   #themeBtn:hover{border-color:var(--tile)}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px 22px;margin-bottom:18px;transition:background .35s,border-color .35s;overflow:visible}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:24px 24px;margin-bottom:22px;transition:background .35s,border-color .35s;overflow:visible}
   .manuscript{position:relative;padding:0;overflow:hidden}
   .manuscript::before{content:"";position:absolute;inset:0;pointer-events:none;border-radius:var(--radius);border:2px solid color-mix(in srgb, var(--gold) 55%, transparent)}
   .manuscript::after{content:"";position:absolute;left:0;right:0;top:0;height:6px;pointer-events:none;background:repeating-linear-gradient(90deg,var(--tile) 0 14px,transparent 14px 20px,var(--gold) 20px 26px,transparent 26px 32px);opacity:.85}
@@ -65,7 +65,7 @@
     padding:2px 10px;font:inherit;font-size:.74rem;font-weight:600;color:var(--tile);cursor:pointer}
   .chip:hover{border-color:var(--tile)}
   .endcap{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-  .gulpbox,.finalbox{border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-top:14px;overflow:visible}
+  .gulpbox,.finalbox{border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-top:18px;overflow:visible}
   .gulps,.gulp{overflow:visible}
   .gulpbox[hidden],.finalbox[hidden]{display:none}
   .finalbox{background:color-mix(in srgb, var(--gold) 5%, transparent)}
@@ -74,7 +74,7 @@
   .gulps{display:flex;flex-direction:column;gap:8px}
   .gulp{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:8px 10px}
   .gulp-row{display:flex;align-items:center;gap:8px;flex-wrap:nowrap}
-  .ghead{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+  .ghead{display:flex;align-items:center;gap:8px;margin-bottom:10px}
   .ghead .gtitle{font-weight:800;font-size:1rem;color:var(--tile);margin-inline-end:auto}
   .ghead .ico{width:32px;height:32px;padding:0;border-radius:9px;font-size:.95rem}
   .ghead .ico:disabled{opacity:.35;cursor:not-allowed}
@@ -116,9 +116,9 @@
   .tools .btn{flex:1;min-width:150px;padding:0 16px;font-size:.88rem;justify-content:center}
   h2{font-size:1.05rem;font-weight:800;margin-bottom:6px;letter-spacing:-.01em}
   .sub{color:var(--muted);font-size:.8rem;margin-bottom:13px;line-height:1.9}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px 18px}
   @media (max-width:640px){.grid{grid-template-columns:1fr}}
-  label{display:flex;justify-content:space-between;align-items:baseline;font-size:.75rem;font-weight:600;color:var(--muted);margin-bottom:6px}
+  label{display:flex;justify-content:space-between;align-items:baseline;font-size:.78rem;font-weight:700;color:var(--muted);margin-bottom:8px}
   label small{font-weight:400;font-size:.72rem}
   select{appearance:none;-webkit-appearance:none;width:100%;height:42px;padding:0 11px 0 30px;border-radius:12px;box-sizing:border-box;
     border:1px solid var(--line);background-color:var(--paper);color:var(--ink);font:inherit;font-size:.88rem;cursor:pointer;
@@ -192,6 +192,15 @@
   .toggle{display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 14px;border:1px solid var(--line);border-radius:12px;background:var(--paper);font-size:.85rem;cursor:pointer}
   .toggle input{width:16px;height:16px;margin:0}
   .kstate{min-width:120px;font-size:.8rem}
+  ::selection{background:#ffd54f;color:#1c2230}
+  textarea::selection,input::selection{background:#ffd54f;color:#1c2230}
+  input[type=range]{accent-color:var(--tile);width:100%;margin:0}
+  .ghead .toggle{height:32px;padding:0 10px;font-size:.8rem;border-radius:9px;margin:0;align-self:center;line-height:1}
+  .ghead .toggle input{margin:0}
+  .g-silence-row{display:block;padding:6px 6px 4px}
+  .g-silence-row label{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;font-size:.78rem;font-weight:700;color:var(--muted)}
+  .g-silence-row input[type=range]{display:block;width:100%;height:28px}
+  .gulp{padding:12px 14px;margin-bottom:12px;border-radius:14px}
   .ic{width:1.05em;height:1.05em;vertical-align:-0.18em;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
   .btn .ic,.chip .ic{margin-inline-end:6px}
   .ico .ic{margin:0;width:1.1em;height:1.1em}
@@ -471,7 +480,7 @@
       <div class="status" id="status" style="padding:8px 4px 2px;white-space:normal;line-height:1.6">آماده‌ام؛ متن را بنویسید و دکمه را بزنید.</div>
     </div>
   </div>
-  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۱۰۵</span>
+  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۱۰۶</span>
     <span class="warn">این برنامه را فقط از خودِ سازنده‌اش بگیرید؛ نسخه‌ای که از جای ناشناس آمده باشد ممکن است بدافزار داشته باشد.</span>
   </footer>
 </div>
@@ -976,7 +985,7 @@
       div.innerHTML = `
         <div class="ghead">
           <span class="gtitle">بخش ${faNum(idx+1)} از ${faNum(gulps.length)} — فایل ${g.name}</span>
-          <label class="toggle" style="height:32px;padding:0 10px;font-size:.8rem" title="این بخش را به یک سکوتِ خالص با طول دلخواه تبدیل می‌کند"><input type="checkbox" class="g-silence" ${g.silence ? "checked" : ""}> سکوت</label>
+          <label class="toggle" title="این بخش را به یک سکوتِ خالص با طول دلخواه تبدیل می‌کند"><input type="checkbox" class="g-silence" ${g.silence ? "checked" : ""}> سکوت</label>
           <span class="ltr">
           <button class="chip ico g-up" type="button" title="Move up" ${idx === 0 ? "disabled" : ""}><svg class="ic"><use href="#i-arrow-up"/></svg></button>
           <button class="chip ico g-down" type="button" title="Move down" ${idx === gulps.length - 1 ? "disabled" : ""}><svg class="ic"><use href="#i-arrow-down"/></svg></button>
@@ -984,9 +993,9 @@
           <button class="chip ico g-del" type="button" title="Delete"><svg class="ic"><use href="#i-trash-2"/></svg></button>
           </span>
         </div>
-        <div class="gulp-row g-silence-row" ${g.silence ? "" : "hidden"}>
-          <label style="flex:1;margin:0"><span>طول سکوت</span><small class="g-silence-val">${faNum(g.silence || 3)} ثانیه</small>
-            <input type="range" class="g-silence-len" min="1" max="50" step="1" value="${g.silence || 3}"></label>
+        <div class="g-silence-row" ${g.silence ? "" : "hidden"}>
+          <label><span>طول سکوت</span><small class="g-silence-val">${faNum(g.silence || 3)} ثانیه</small></label>
+          <input type="range" class="g-silence-len" min="1" max="50" step="1" value="${g.silence || 3}">
         </div>
         <div class="gulp-row g-audio-row" ${g.silence ? "hidden" : ""}>
           <audio controls ${g.b64 ? `src="data:audio/mpeg;base64,${g.b64}"` : ""}></audio>

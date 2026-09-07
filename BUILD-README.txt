@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist (repo: github.com/pirastral/ava-app)
 ======================================================================
-This zip is the COMPLETE application source as of update 105.
+This zip is the COMPLETE application source as of update 106.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -15,6 +15,14 @@ Replace these files in the repo (paths identical):
   icon.png / icon.ico – unchanged
   builtin_keys.json – NEW (101): Freesound / Jamendo keys shipped with the app
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 106 (on top of 105) — visual only
+  Contrast: crisper lines, deeper ink, stronger card shadows; dark theme panels stand off
+    the page. More vertical air: card padding 24, grid gaps 18, part rows spaced.
+  Selection is yellow (#ffd54f) everywhere, including text areas.
+  Silence part: header toggle aligned with the icon buttons (32 px, matching radius);
+    the silence row has its own padding, the label sits above the slider, slider full
+    width with the theme accent.
 
 WHAT CHANGED IN 105 (on top of 104)
   REVERTED the app-made pauses of 104 at the owner's request: Google pause tags are the
@@ -263,6 +271,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۰۵»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۰۶»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»
