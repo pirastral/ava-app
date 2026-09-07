@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 103
-BUILD_FA = "\u06f1\u06f0\u06f3"
+BUILD = 105
+BUILD_FA = "\u06f1\u06f0\u06f5"
 
 
 def _diag(tag, **kv):
@@ -1572,6 +1572,16 @@ def gc_gulps(keep_ids):
     return len(_GULP_PCM)
 
 
+def silence_gulp(seconds, sr=24000):
+    """A part that is pure silence of the given length (104 spacer)."""
+    seconds = float(min(50.0, max(0.2, seconds)))
+    pcm = np.zeros(int(sr * seconds), dtype=np.int16)
+    gid = next(_gulp_ids)
+    _GULP_PCM[gid] = {"sr": sr, "items": [{"kind": "t", "text": "", "span": (0, 0), "pcm": pcm}],
+                      "text": "", "engine": "silence", "payload": {"seconds": seconds}}
+    return gid, pcm_to_mp3(pcm, sr)
+
+
 def clone_gulp(gid):
     """A duplicate part with its own id — audio copied, no synthesis (98)."""
     import copy
@@ -1705,6 +1715,8 @@ def _cbx_continuous(items, payload, status):
 def _verify_entry(entry, where):
     """Structural invariants: the stored items must exactly mirror what the
     gulp's text implies. A violation raises instead of ever becoming audio."""
+    if entry.get("engine") == "silence":
+        return
     try:
         expected = _clause_split(entry["text"], entry.get("engine") or "chatterbox")
         exp_keys = [("t", i["text"]) if i["kind"] == "t" else ("p", i["sec"]) for i in expected]
@@ -3006,13 +3018,17 @@ _G_PAUSE = re.compile(r"\[\s*مکث\s*\]")
 _G_TAG = re.compile(r"\[[A-Za-z][A-Za-z ,=.'-]{0,40}\]")
 
 
+PAUSE_SECONDS = {"short pause": 0.6, "long pause": 1.5, "مکث": 0.5, "مکث بلند": 1.2}
+_G_ANY_PAUSE = re.compile(r"\[\s*(short pause|long pause|مکث بلند|مکث)\s*\]")
+
+
 def google_text(text, model):
-    """The text as Google should see it: the app's own pause markers become
-    Google's pause tags (3.1) or punctuation (2.5, which reads tags aloud).
-    A pause tag at the very start or end of a part is dropped — nothing to
-    pause between, and a trailing tag gets spoken as words."""
+    """The text as Google should see it (105: pauses are the MODEL's again).
+    The app's [مکث] markers become Google's pause tags on 3.1, punctuation on
+    2.5 (which reads tags aloud). A pause tag at the very end of a part is
+    dropped — nothing follows it inside the part, and a trailing tag gets
+    spoken as words; the splice adds the breath between parts."""
     t = text.strip()
-    t = re.sub(r"^(?:\s*\[(?:short pause|long pause|مکث بلند|مکث)\]\s*)+", "", t)
     t = re.sub(r"(?:\s*\[(?:short pause|long pause|مکث بلند|مکث)\]\s*)+$", "", t)
     if GOOGLE_MODELS.get(model, {}).get("tags", True):
         t = _G_PAUSE_LONG.sub(" [long pause] ", t)
@@ -3142,7 +3158,7 @@ def _google_stream(url, body, key, expect_sec, status):
     looping — the stream is cut and the request reported as such."""
     _check_cancel()
     box = {"parts": [], "mime": "", "done": False, "bytes": 0}
-    cap = int(24000 * 2 * (expect_sec * 6 + 60))   # only a true runaway: 6x the estimate + a minute
+    cap = int(24000 * 2 * (expect_sec * 4 + 30))   # a true runaway: 4x the estimate + 30 s (takes measure 0.8-1.0x)
 
     def run():
         try:
@@ -3202,7 +3218,7 @@ def _google_stream(url, body, key, expect_sec, status):
     if box.get("code") not in (None, 200) and not box["parts"]:
         raise _GoogleHTTP(box["code"], box.get("msg", ""))
     if box.get("looping"):
-        raise RuntimeError("گوگل موقع خواندن این بخش گیر کرد و همین‌طور ادامه داد (صدا خیلی بلندتر از متن شد)؛ متن را کوتاه‌تر کنید یا مدل 2.5 Flash را امتحان کنید.")
+        raise _GoogleHTTP(500, "runaway take: audio far beyond the text")   # retried by the rotation
     if not box["parts"]:
         if box.get("text"):
             raise _GoogleHTTP(500, "text instead of audio: " + box["text"][:80])
@@ -3308,6 +3324,74 @@ def _g_lead_in(text, cfg):
     return _G_LAST["tail"]
 
 
+def _g_pause_plan(text):
+    """[(clause_index, seconds)] — clauses that END with a pause tag, and the
+    leading pause of the part (index -1) if the text starts with one."""
+    plan = []
+    lead = re.match(r"^\s*((?:\[\s*(?:short pause|long pause|مکث بلند|مکث)\s*\]\s*)+)", text)
+    if lead:
+        plan.append((-1, sum(PAUSE_SECONDS[m] for m in _G_ANY_PAUSE.findall(lead.group(1)))))
+    for k, (c, _) in enumerate(_g_clauses(text)):
+        tail = re.search(r"((?:\[\s*(?:short pause|long pause|مکث بلند|مکث)\s*\]\s*)+)$", c.strip())
+        if tail:
+            plan.append((k, sum(PAUSE_SECONDS[m] for m in _G_ANY_PAUSE.findall(tail.group(1)))))
+    return plan
+
+
+def _g_apply_pauses(pcm, sr, text, cuts, plan):
+    """Insert real silence at the clause boundaries the plan names, topping up
+    whatever natural gap already sits there so the total equals the target."""
+    if not plan:
+        return pcm
+    cl = _g_clauses(text)
+    b = [0] + list(cuts or []) + [len(pcm)]
+    pieces, pos = [], 0
+    lead = [sec for k, sec in plan if k == -1]
+    if lead:
+        pieces.append(np.zeros(int(sr * lead[0]), dtype=np.int16))
+    want = {k: sec for k, sec in plan if k >= 0}
+    for k in range(len(cl)):
+        end = b[k + 1] if k + 1 < len(b) else len(pcm)
+        seg = pcm[pos:end]
+        if k in want:
+            target = int(sr * want[k])
+            if k == len(cl) - 1:
+                seg = np.concatenate([_fade_edges(seg, sr, ms=10) if len(seg) > sr // 10 else seg, np.zeros(target, dtype=np.int16)])
+            else:
+                runs = _silence_runs(pcm[max(0, end - sr): min(len(pcm), end + sr)], sr, min_ms=40)
+                here = [r for r in runs if r[0] <= sr <= r[1]] if runs else []
+                existing = (here[0][1] - here[0][0]) if here else 0
+                extra = max(0, target - existing)
+                seg = np.concatenate([seg, np.zeros(extra, dtype=np.int16)])
+        pieces.append(seg)
+        pos = end
+    out = np.concatenate(pieces)
+    _diag("g_pauses", n=len(plan), added_ms=int((len(out) - len(pcm)) * 1000 / sr))
+    return out
+
+
+def _g_completeness(text, words):
+    """The index of the first clause the recording clearly skipped, or None."""
+    import difflib
+    cl = _g_clauses(text)
+    ours, owner = [], []
+    for k, (c, _) in enumerate(cl):
+        ws = _text_words(c); ours += ws; owner += [k] * len(ws)
+    tw = [_norm_word(w) for w, _, _ in words]
+    if not ours or not tw:
+        return None
+    sm = difflib.SequenceMatcher(None, ours, tw, autojunk=False)
+    matched = set()
+    for a, b_, n in sm.get_matching_blocks():
+        matched.update(range(a, a + n))
+    for k in range(len(cl)):
+        idx = [i for i in range(len(ours)) if owner[i] == k]
+        if len(idx) >= 3 and sum(1 for i in idx if i in matched) < 0.4 * len(idx):
+            _diag("g_completeness", clause=k, matched=sum(1 for i in idx if i in matched), of=len(idx))
+            return k
+    return None
+
+
 def google_pcm(text, cfg, status):
     """Whole-gulp synthesis, one take per part. CONTINUITY (95): Google has
     no seed and no previous-text parameter, so each part is generated with
@@ -3353,6 +3437,20 @@ def google_pcm(text, cfg, status):
                     _diag("google_leadin", trimmed_ms=int((len(full) - len(pcm)) * 1000 / sr), kept_ms=int(len(pcm) * 1000 / sr))
         if pcm is None:
             pcm, sr = _google_call(chunk, cfg, status)
+        lang = {"fa": "fa-IR", "en": "en-US"}.get(cfg.get("g_lang"))
+        # completeness (104): the model sometimes skips a sentence. The
+        # transcript we take for boundaries also tells us — retry the take.
+        words = google_words(pcm, sr, status, lang)
+        for attempt in range(2):
+            miss = _g_completeness(chunk, words) if words else None
+            if miss is None:
+                break
+            status(f"گوگل جمله‌ای را جا انداخت — برداشت دوباره ({attempt + 2}/3)…")
+            pcm, sr = _google_call(chunk, cfg, status)
+            words = google_words(pcm, sr, status, lang)
+        else:
+            if words and _g_completeness(chunk, words) is not None:
+                status("هشدار: یک جمله در این بخش درست خوانده نشد؛ بخش را دوباره بسازید یا متنش را ساده‌تر کنید.")
         _diag("google_take", audio_s=round(len(pcm) / sr, 1), chars=len(chunk))
         waves.append(pcm)
         if ci < len(chunks):
@@ -3746,6 +3844,9 @@ def captions_for(ids, status):
             raise RuntimeError("این بخش دیگر در حافظه نیست؛ یک بار دیگر «تبدیل به گفتار» را بزنید.")
         pcm, sr = _assemble(entry), entry["sr"]
         dur = len(pcm) / sr
+        if entry.get("engine") == "silence":
+            t0 += dur + 0.12
+            continue
         if entry.get("engine") == "google":
             cl = _g_clauses(entry["text"])
             cuts = _g_bounds(pcm, sr, cl, status, {"fa": "fa-IR", "en": "en-US"}.get((entry.get("payload") or {}).get("g_lang")))

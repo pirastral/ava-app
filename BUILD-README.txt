@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist (repo: github.com/pirastral/ava-app)
 ======================================================================
-This zip is the COMPLETE application source as of update 103.
+This zip is the COMPLETE application source as of update 105.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -15,6 +15,33 @@ Replace these files in the repo (paths identical):
   icon.png / icon.ico – unchanged
   builtin_keys.json – NEW (101): Freesound / Jamendo keys shipped with the app
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 105 (on top of 104)
+  REVERTED the app-made pauses of 104 at the owner's request: Google pause tags are the
+  model's own again. [مکث] → [short pause], [مکث بلند] → [long pause] on 3.1 (punctuation
+  on 2.5, which reads tags aloud). Only a pause tag at the very END of a part is dropped
+  (a trailing tag was read aloud; the splice adds the breath). For guaranteed silence of
+  any length, use a silence part («سکوت» tick in the part header, 1–50 s slider).
+  Kept from 104: completeness audit (skipped-sentence takes regenerated), runaway retry,
+  silence parts, the two-row dock.
+
+WHAT CHANGED IN 104 (on top of 103) — from the 103 field log
+  Pauses are made by the app, not asked of Google. Pause tags ([short pause] 0.6 s,
+    [long pause] 1.5 s, [مکث] 0.5 s, [مکث بلند] 1.2 s) are stripped from the text sent;
+    the tag marks a clause boundary, the word timestamps locate that boundary in the
+    recording, and real silence is inserted there — topped up over whatever natural gap
+    already exists so the total equals the target. A tag at the start or end of a part
+    becomes silence at the start or end. Works identically on 2.5 and 3.1.
+  Completeness audit: the transcript taken for boundaries is also checked clause by
+    clause; a take that skipped a sentence (FIELD: 32 s for a 56 s text, clause
+    unmatched) is regenerated (up to 2 retries), then accepted with a warning.
+  Runaway takes are retried by the rotation instead of surfacing at once; the guard is
+    4x the estimate + 30 s (real takes measure 0.8–1.0x).
+  Silence parts: «سکوت» toggle in each part header turns the part into pure silence with
+    a 1–50 s slider; duplicable, movable, undoable; captions skip it; the music bed reacts
+    (ducking follows the voice, so it swells in silence).
+  Dock: buttons row (generate / final / cancel at the right, undo / redo at the left) with
+    the status line on its own padded row underneath.
 
 WHAT CHANGED IN 103 (on top of 102) — from the 101 field log
   Truncated takes: the model sometimes ends a stream cleanly after the first sentence
@@ -236,6 +263,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۰۳»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۰۵»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

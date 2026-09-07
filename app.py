@@ -154,6 +154,14 @@ class Api:
         import engines
         return {"ok": True, "styles": [[k, label] for k, label, _ in engines.MUSIC_STYLES]}
 
+    def silence_gulp(self, seconds):
+        try:
+            import engines
+            gid, mp3 = engines.silence_gulp(float(seconds))
+            return {"ok": True, "gulp": gid, "b64": base64.b64encode(mp3).decode("ascii")}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     def clone_gulp(self, gid):
         try:
             import engines

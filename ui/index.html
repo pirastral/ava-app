@@ -21,7 +21,7 @@
     background:radial-gradient(1200px 500px at 15% -10%, color-mix(in srgb, var(--tile) 14%, transparent), transparent 60%),var(--paper);
     color:var(--ink);min-height:100vh;transition:background .35s,color .35s;
   }
-  .wrap{max-width:960px;margin:0 auto;padding:88px 20px 150px}
+  .wrap{max-width:960px;margin:0 auto;padding:88px 20px 170px}
   header{position:fixed;top:0;left:0;right:0;z-index:60;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 22px;
     background:color-mix(in srgb, var(--panel) 82%, transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
   header > *{max-width:960px}
@@ -29,7 +29,7 @@
   .dock{position:fixed;left:0;right:0;bottom:0;z-index:60;background:color-mix(in srgb, var(--panel) 88%, transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line);padding:10px 22px 12px}
   .dock-in{max-width:960px;margin:0 auto;display:flex;flex-direction:column;gap:8px}
   .dock-row{display:flex;align-items:center;gap:10px;flex-wrap:nowrap}
-  .dock .status{margin:0;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .dock .status{margin:0;min-width:0}
   .dock .bar{margin:0}
   .dock .btn{white-space:nowrap}
   .ltr{direction:ltr;display:inline-flex;gap:6px}
@@ -460,16 +460,18 @@
   <div class="dock" id="dock">
     <div class="dock-in">
       <div class="bar" id="bar"><div id="barFill"></div></div>
-      <div class="dock-row">
-        <div class="status" id="status">آماده‌ام؛ متن را بنویسید و دکمه را بزنید.</div>
-        <button class="btn btn-cancel" id="cancelBtn" type="button" hidden title="کارِ در حال انجام را در هر موتوری که باشد متوقف می‌کند"><svg class="ic"><use href="#i-x"/></svg>لغو</button>
+      <div class="dock-row" style="justify-content:space-between">
+        <span class="row" style="gap:10px">
+          <button class="btn btn-gold" id="genBtn"><span class="spin" id="spin"></span><svg class="ic"><use href="#i-sparkles"/></svg>تبدیل به گفتار</button>
+          <button class="btn btn-primary" id="spliceBtn" disabled><svg class="ic"><use href="#i-download"/></svg>ساخت فایل نهایی</button>
+          <button class="btn btn-cancel" id="cancelBtn" type="button" hidden title="کارِ در حال انجام را در هر موتوری که باشد متوقف می‌کند"><svg class="ic"><use href="#i-x"/></svg>لغو</button>
+        </span>
         <span class="ltr"><button class="chip ico" type="button" id="undoBtn" title="Undo (⌘Z / Ctrl+Z)" disabled><svg class="ic"><use href="#i-undo-2"/></svg></button><button class="chip ico" type="button" id="redoBtn" title="Redo (⇧⌘Z / Ctrl+Y)" disabled><svg class="ic"><use href="#i-redo-2"/></svg></button></span>
-        <button class="btn btn-primary" id="spliceBtn" disabled><svg class="ic"><use href="#i-download"/></svg>ساخت فایل نهایی</button>
-        <button class="btn btn-gold" id="genBtn"><span class="spin" id="spin"></span><svg class="ic"><use href="#i-sparkles"/></svg>تبدیل به گفتار</button>
       </div>
+      <div class="status" id="status" style="padding:8px 4px 2px;white-space:normal;line-height:1.6">آماده‌ام؛ متن را بنویسید و دکمه را بزنید.</div>
     </div>
   </div>
-  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۱۰۳</span>
+  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۱۰۵</span>
     <span class="warn">این برنامه را فقط از خودِ سازنده‌اش بگیرید؛ نسخه‌ای که از جای ناشناس آمده باشد ممکن است بدافزار داشته باشد.</span>
   </footer>
 </div>
@@ -845,6 +847,7 @@
       g_continuity: $("gCont").checked };
   }
   function gulpPayload(g){
+    if(g.silence) return { engine: "silence", text: "", seconds: g.silence };
     const s = g.settings;
     return { engine: g.voice, text: g.text,
       cbx_voice: s && s.cbxVoice ? s.cbxVoice : $("cbxVoice").value,
@@ -938,6 +941,7 @@
       for(let i = 0; i < gulps.length; i++){
         if(cancelled) throw new Error("لغو شد");
         const g = gulps[i], row = rows[i];
+        if(g.silence) continue;
         const rta = row && row.querySelector(".gedit textarea");
         if(rta && rta.value.trim()) g.text = rta.value.trim();
         say("همهٔ بخش‌ها با تنظیمات تازه ساخته می‌شوند… بخش " + faNum(i+1) + " از " + faNum(gulps.length), "ok");
@@ -972,6 +976,7 @@
       div.innerHTML = `
         <div class="ghead">
           <span class="gtitle">بخش ${faNum(idx+1)} از ${faNum(gulps.length)} — فایل ${g.name}</span>
+          <label class="toggle" style="height:32px;padding:0 10px;font-size:.8rem" title="این بخش را به یک سکوتِ خالص با طول دلخواه تبدیل می‌کند"><input type="checkbox" class="g-silence" ${g.silence ? "checked" : ""}> سکوت</label>
           <span class="ltr">
           <button class="chip ico g-up" type="button" title="Move up" ${idx === 0 ? "disabled" : ""}><svg class="ic"><use href="#i-arrow-up"/></svg></button>
           <button class="chip ico g-down" type="button" title="Move down" ${idx === gulps.length - 1 ? "disabled" : ""}><svg class="ic"><use href="#i-arrow-down"/></svg></button>
@@ -979,7 +984,11 @@
           <button class="chip ico g-del" type="button" title="Delete"><svg class="ic"><use href="#i-trash-2"/></svg></button>
           </span>
         </div>
-        <div class="gulp-row">
+        <div class="gulp-row g-silence-row" ${g.silence ? "" : "hidden"}>
+          <label style="flex:1;margin:0"><span>طول سکوت</span><small class="g-silence-val">${faNum(g.silence || 3)} ثانیه</small>
+            <input type="range" class="g-silence-len" min="1" max="50" step="1" value="${g.silence || 3}"></label>
+        </div>
+        <div class="gulp-row g-audio-row" ${g.silence ? "hidden" : ""}>
           <audio controls ${g.b64 ? `src="data:audio/mpeg;base64,${g.b64}"` : ""}></audio>
           <select class="gvoice" title="صدای همین بخش — با بازتولید اعمال می‌شود">
             <option value="google">گوگل</option>
@@ -1007,7 +1016,20 @@
             </div>
           </div>
         </div>`;
-      const st = div.querySelector(".gstate"), ed = div.querySelector(".gedit");
+      const sil = div.querySelector(".g-silence"), silLen = div.querySelector(".g-silence-len"), silVal = div.querySelector(".g-silence-val");
+      async function makeSilence(secs){
+        try{ const r = await window.pywebview.api.silence_gulp(secs); if(r.ok){ g.id = r.gulp; g.b64 = r.b64; g.silence = secs; } }catch(e){}
+        markFinalStale(); syncHistBtns();
+      }
+      sil.onchange = async () => {
+        if(busy) return; remember();
+        if(sil.checked){ await makeSilence(+silLen.value); }
+        else { g.silence = 0; g.id = null; g.b64 = null; }
+        renderGulps();
+      };
+      silLen.oninput = () => { silVal.textContent = faNum(+silLen.value) + " ثانیه"; };
+      silLen.onchange = async () => { if(busy) return; remember(); await makeSilence(+silLen.value); };
+      const st = div.querySelector(".g-audio-row .gstate"), ed = div.querySelector(".gedit");
       const ta = div.querySelector(".gedit textarea");
       div.querySelector(".g-up").onclick = () => { if(busy || idx === 0) return; remember(); [gulps[idx-1], gulps[idx]] = [gulps[idx], gulps[idx-1]]; renderGulps(); markFinalStale(); };
       div.querySelector(".g-down").onclick = () => { if(busy || idx === gulps.length - 1) return; remember(); [gulps[idx+1], gulps[idx]] = [gulps[idx], gulps[idx+1]]; renderGulps(); markFinalStale(); };
@@ -1020,7 +1042,7 @@
       div.querySelector(".g-dup").onclick = async () => {
         if(busy) return;
         remember();
-        const copy = { text: g.text, voice: g.voice, b64: null, id: null, settings: g.settings ? {...g.settings} : null, name: nextPartName() };
+        const copy = { text: g.text, voice: g.voice, b64: null, id: null, settings: g.settings ? {...g.settings} : null, name: nextPartName(), silence: g.silence || 0 };
         if(g.id){
           try{ const r = await window.pywebview.api.clone_gulp(g.id); if(r.ok){ copy.id = r.gulp; copy.b64 = r.b64; } }catch(e){}
         }
@@ -1129,6 +1151,7 @@
     try{
       for(let i = start; i < gulps.length; i++){
         if(cancelled) throw new Error("لغو شد");
+        if(gulps[i].silence){ if(!gulps[i].id){ const r = await window.pywebview.api.silence_gulp(gulps[i].silence); if(r.ok){ gulps[i].id = r.gulp; gulps[i].b64 = r.b64; } } continue; }
         say(`دارم گفتار را می‌سازم… بخش ${faNum(i+1)} از ${faNum(gulps.length)}`, "ok");
         const res = await window.pywebview.api.generate_gulp(gulpPayload(gulps[i]));
         if(!res.ok) throw new Error(res.error || "خطای ناشناخته");
