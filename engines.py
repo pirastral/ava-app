@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 101
-BUILD_FA = "\u06f1\u06f0\u06f1"
+BUILD = 103
+BUILD_FA = "\u06f1\u06f0\u06f3"
 
 
 def _diag(tag, **kv):
@@ -1556,6 +1556,22 @@ def reset_gulps():
     _G_LAST["tail"] = ""   # a new document starts without a lead-in
 
 
+def new_document():
+    """Start a new document without discarding parts — undo may restore them.
+    Only the continuity tail and the current music bed are forgotten."""
+    _G_LAST["tail"] = ""
+    _MUSIC.update({"pcm": None, "sr": None, "prompt": ""})
+
+
+def gc_gulps(keep_ids):
+    """Drop every part the UI can no longer reach (not current, not in undo
+    history)."""
+    keep = {int(i) for i in keep_ids if i is not None}
+    for gid in [g for g in list(_GULP_PCM) if g not in keep]:
+        _GULP_PCM.pop(gid, None)
+    return len(_GULP_PCM)
+
+
 def clone_gulp(gid):
     """A duplicate part with its own id — audio copied, no synthesis (98)."""
     import copy
@@ -2561,7 +2577,11 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
     new_text = new_text.strip()
     if payload["engine"] == "google" or entry.get("engine") == "google":
         cfg = payload if payload["engine"] == "google" else {**entry["payload"], **payload, "engine": "google"}
-        cfg = {**cfg, "g_lead_in": entry.get("lead_in", "")}   # pinned at generation time
+        # Surgery gets NO lead-in: its neighbouring clauses already carry the
+        # prosody, and a lead-in here was trimmed at the wrong silence and
+        # returned the previous part's sentence as the "regenerated" one.
+        # A whole-part regeneration (below) keeps the part's pinned lead-in.
+        cfg = {**cfg, "g_lead_in": ""}
         # 94: clause surgery — regenerate only the clauses the edit/selection
         # touched (with their neighbours as prosodic context), cut the new
         # clause out at its pause boundaries and splice it into the original
@@ -2572,6 +2592,7 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
                 entry["payload"] = {k: cfg[k] for k in cfg if k.startswith("g_")}
                 _ensure_valid(entry, "ویرایش", status)
                 return pcm_to_mp3(_assemble(entry), entry["sr"]), done, "clauses"
+        cfg = {**cfg, "g_lead_in": entry.get("lead_in", "")}   # pinned at generation time
         pcm, sr = google_pcm(new_text, cfg, status)
         items = _clause_split(new_text, "google")
         items[0]["pcm"] = pcm
@@ -2968,11 +2989,15 @@ def _google_post(url, body, key, timeout=120):
     r = box["r"]
     _diag("google_http", code=r.status_code, ms=int(r.elapsed.total_seconds() * 1000), bytes=len(r.content))
     if r.status_code != 200:
+        msg = ""
         try:
-            msg = r.json().get("error", {}).get("message", "") or r.text[:200]
+            j = r.json()
+            if isinstance(j, list) and j:
+                j = j[0]
+            msg = (j.get("error", {}) or {}).get("message", "") if isinstance(j, dict) else ""
         except Exception:
-            msg = r.text[:200]
-        raise _GoogleHTTP(r.status_code, msg)
+            pass
+        raise _GoogleHTTP(r.status_code, msg or r.text[:200])
     return r.json()
 
 
@@ -2983,8 +3008,12 @@ _G_TAG = re.compile(r"\[[A-Za-z][A-Za-z ,=.'-]{0,40}\]")
 
 def google_text(text, model):
     """The text as Google should see it: the app's own pause markers become
-    Google's pause tags (3.1) or punctuation (2.5, which reads tags aloud)."""
-    t = text
+    Google's pause tags (3.1) or punctuation (2.5, which reads tags aloud).
+    A pause tag at the very start or end of a part is dropped — nothing to
+    pause between, and a trailing tag gets spoken as words."""
+    t = text.strip()
+    t = re.sub(r"^(?:\s*\[(?:short pause|long pause|مکث بلند|مکث)\]\s*)+", "", t)
+    t = re.sub(r"(?:\s*\[(?:short pause|long pause|مکث بلند|مکث)\]\s*)+$", "", t)
     if GOOGLE_MODELS.get(model, {}).get("tags", True):
         t = _G_PAUSE_LONG.sub(" [long pause] ", t)
         t = _G_PAUSE.sub(" [short pause] ", t)
@@ -3091,6 +3120,17 @@ def _google_decode(b64, mime):
 
 
 _G_TIMEOUT = 75   # seconds a door may stay silent before the other door is tried (Interactions)
+
+
+def _check_truncated(pcm_sr, expect_sec):
+    """FIELD (101): the model sometimes ends cleanly after the first sentence
+    of a long request (8 s of a 63 s text). That is a failed take, not a
+    short reading — raise a retryable error so the rotation takes it again."""
+    pcm, sr = pcm_sr
+    got = len(pcm) / sr
+    if expect_sec >= 8 and got < 0.35 * expect_sec:
+        _diag("google_truncated", got_s=round(got, 1), expect_s=round(expect_sec, 1))
+        raise _GoogleHTTP(500, f"truncated take: {got:.1f}s of ~{expect_sec:.0f}s")
 _G_FIRST_BYTE = 90   # seconds until the FIRST streamed chunk must arrive
 _G_GAP = 45          # seconds between streamed chunks
 
@@ -3203,6 +3243,7 @@ def _google_call(text, cfg, status):
                 if name == "streamGenerateContent":
                     pcm_sr = _google_stream(url, body, key, expect_sec, status)
                     _diag("google_door", door=name)
+                    _check_truncated(pcm_sr, expect_sec)
                     return pcm_sr
                 data = _google_post(url, body, key, timeout=_G_TIMEOUT)
             except requests.Timeout as e:
@@ -3218,7 +3259,9 @@ def _google_call(text, cfg, status):
             if not found:
                 raise _GoogleHTTP(500, "no audio in response")   # documented text-instead-of-audio glitch → retry
             _diag("google_door", door=name)
-            return _google_decode(*found)
+            pcm_sr = _google_decode(*found)
+            _check_truncated(pcm_sr, expect_sec)
+            return pcm_sr
         if timeouts and len(timeouts) == len(doors):
             raise RuntimeError(f"گوگل جواب نداد ({_G_TIMEOUT} ثانیه از هر دو مسیر صبر کردیم). اینترنت یا وی‌پی‌ان را چک کنید و دوباره بزنید.")
         if rejects:
@@ -3286,20 +3329,28 @@ def google_pcm(text, cfg, status):
             full, sr = _google_call(lead + " " + chunk, cfg, status)
             cl = [(lead, (0, len(lead)))] + [(c, sp) for c, sp in _g_clauses(chunk)]
             cuts = _g_bounds(full, sr, cl, status, {"fa": "fa-IR", "en": "en-US"}.get(cfg.get("g_lang"))) if len(cl) > 1 else None
-            if cuts:
-                pcm = full[cuts[0]:]
-                # the cut sits mid-pause: drop the leading half so the part
-                # starts within ~60 ms of its first word (parts get their own
-                # breath at splice time)
-                x = np.abs(pcm.astype(np.int32))
-                thr = max(80, int(0.02 * (x.max() or 1)))
-                nz = np.flatnonzero(x > thr)
-                if len(nz):
-                    pcm = pcm[max(0, int(nz[0]) - int(sr * 0.06)):]
-                _diag("google_leadin", trimmed_ms=int((len(full) - len(pcm)) * 1000 / sr), kept_ms=int(len(pcm) * 1000 / sr))
-            else:
+            if not cuts:
                 _diag("google_leadin", mode="fail_regen_plain")
                 status("گوگل: مرز جملهٔ راهنما پیدا نشد؛ بدون راهنما می‌سازم…")
+            else:
+                cand = full[cuts[0]:]
+                # the trim must leave roughly the part's own length; if it kept
+                # the lead-in (or dropped speech) the cut was wrong — go plain
+                spoken = _g_speech_len(google_text(chunk, cfg.get("g_model") or "")) / 11.0 * sr
+                if not (0.5 * spoken <= len(cand) <= 2.2 * spoken + sr * 3):
+                    _diag("google_leadin", mode="fail_duration", kept_ms=int(len(cand) * 1000 / sr), want_ms=int(spoken * 1000 / sr))
+                    status("گوگل: برشِ جملهٔ راهنما قابل اعتماد نبود؛ بدون راهنما می‌سازم…")
+                else:
+                    # the cut sits mid-pause: drop the leading half so the part
+                    # starts within ~60 ms of its first word (parts get their own
+                    # breath at splice time)
+                    x = np.abs(cand.astype(np.int32))
+                    thr = max(80, int(0.02 * (x.max() or 1)))
+                    nz = np.flatnonzero(x > thr)
+                    if len(nz):
+                        cand = cand[max(0, int(nz[0]) - int(sr * 0.06)):]
+                    pcm = cand
+                    _diag("google_leadin", trimmed_ms=int((len(full) - len(pcm)) * 1000 / sr), kept_ms=int(len(pcm) * 1000 / sr))
         if pcm is None:
             pcm, sr = _google_call(chunk, cfg, status)
         _diag("google_take", audio_s=round(len(pcm) / sr, 1), chars=len(chunk))
@@ -3307,7 +3358,13 @@ def google_pcm(text, cfg, status):
         if ci < len(chunks):
             waves.append(np.zeros(int(sr * 0.25), dtype=np.int16))
     cl = _g_clauses(text)
-    _G_LAST["tail"] = cl[-1][0].strip() if cl else ""
+    tail = cl[-1][0].strip() if cl else ""
+    tail = re.sub(r"\[[^\]]+\]", " ", tail)                 # no tags of any kind in a lead-in
+    tail = re.sub(r"\s+", " ", tail).strip()
+    if _g_speech_len(tail) > 160:                            # a very long last sentence → keep its end
+        words = tail.split()
+        tail = " ".join(words[-18:])
+    _G_LAST["tail"] = tail
     return np.concatenate(waves), sr
 
 
@@ -3760,7 +3817,9 @@ def lyria_music(preset, custom, seconds, status):
         try:
             data = _google_post(_GOOGLE_URL, body, key, timeout=300); break
         except _GoogleHTTP as e:
-            if e.code in (402, 403, 429) or "billing" in e.msg.lower():
+            if e.code in (401, 403) or (e.code == 400 and "api key" in e.msg.lower()):
+                _google_mark(key, "bad"); denied.append(e.msg[:80]); continue
+            if e.code in (402, 429) or "billing" in e.msg.lower():
                 denied.append(e.msg[:80]); continue
             raise RuntimeError("موسیقی: " + e.msg[:160])
     if data is None:
@@ -3850,7 +3909,7 @@ def music_delete(file):
     return lib
 
 
-def _envelope(x, sr, attack=0.03, release=0.4, win=0.02):
+def _envelope(x, sr, attack=0.2, release=0.9, win=0.03):
     """Smoothed loudness envelope (0..1) of a float signal."""
     n = max(1, int(sr * win))
     rms = np.sqrt(np.convolve(x * x, np.ones(n) / n, mode="same"))
@@ -3866,7 +3925,7 @@ def _envelope(x, sr, attack=0.03, release=0.4, win=0.02):
     return out
 
 
-def mix_music(voice, vsr, music, msr, level_db=-16.0, duck=True, duck_db=8.0, fade_in=1.5, fade_out=3.0):
+def mix_music(voice, vsr, music, msr, level_db=-16.0, duck=True, duck_db=12.0, fade_in=1.5, fade_out=3.0):
     """Voice with music underneath: music loudness set relative to the voice,
     optional ducking under speech, fade in/out, a 2 s musical tail."""
     if msr != vsr:
@@ -3887,8 +3946,12 @@ def mix_music(voice, vsr, music, msr, level_db=-16.0, duck=True, duck_db=8.0, fa
     mr = float(np.sqrt(np.mean(m * m))) or 1.0
     m *= (vr / mr) * (10 ** (level_db / 20.0))
     if duck:
+        # speech gate: the envelope is normalised and saturated so the bed sits
+        # at full duck under any real speech (≈0.2 s in) and swells back over
+        # ≈1.5 s after the voice stops — audible, never abrupt
         env = _envelope(v / 32768.0, vsr)
-        g = 1.0 - (1.0 - 10 ** (-duck_db / 20.0)) * env
+        gate = np.clip(env / 0.5, 0.0, 1.0)
+        g = 1.0 - (1.0 - 10 ** (-duck_db / 20.0)) * gate
         m[:len(v)] *= g
     fi, fo = int(vsr * fade_in), int(vsr * fade_out)
     if fi:
@@ -3936,12 +3999,33 @@ def builtin_key(name):
 
 def music_key(name):
     return load_key(name) or builtin_key(name)
-MOOD_QUERIES = {
-    "piano": "calm solo piano", "ambient": "ambient pad drone", "strings": "slow string ensemble",
-    "acoustic": "acoustic guitar fingerpicking", "lofi": "lofi chill beat", "cinematic": "cinematic underscore",
-    "persian": "santur tar persian", "oud": "oud ney meditation", "corporate": "light corporate background",
-    "suspense": "dark tense underscore", "children": "music box playful", "night": "nocturne quiet piano",
-}
+# Per-platform search recipes. Freesound: tag filters (its tags are the real
+# index); Jamendo: its genre/mood/instrument vocabulary via fuzzytags; Openverse:
+# plain text over titles/tags. Order = the app's style menu.
+MUSIC_STYLES = [
+    ("ambient",   "Ambient · ethereal synth, no drums",
+        {"freesound": ("ambient pad", 'tag:(ambient OR pad OR atmosphere OR synth)'), "jamendo": ("ambient", "ambient,relaxing"), "openverse": "ambient pad synth"}),
+    ("drone",     "Drone · deep atmosphere, no drums",
+        {"freesound": ("drone", 'tag:(drone OR atmosphere OR dark-ambient)'), "jamendo": ("drone", "ambient,dark"), "openverse": "drone atmosphere"}),
+    ("lofi",      "Lo-fi · soft beat",
+        {"freesound": ("lofi", 'tag:(lofi OR lo-fi OR chill)'), "jamendo": ("lofi", "lofi,chillout"), "openverse": "lofi chill"}),
+    ("piano",     "Piano · solo, calm",
+        {"freesound": ("piano", 'tag:(piano)'), "jamendo": ("piano", "piano,relaxing"), "openverse": "calm piano solo"}),
+    ("cinematic", "Cinematic · strings, slow",
+        {"freesound": ("cinematic", 'tag:(cinematic OR strings OR orchestral)'), "jamendo": ("cinematic", "soundtrack,cinematic"), "openverse": "cinematic strings"}),
+    ("guitar",    "Acoustic guitar · gentle",
+        {"freesound": ("acoustic guitar", 'tag:(guitar OR acoustic)'), "jamendo": ("acoustic guitar", "acoustic,guitar,relaxing"), "openverse": "acoustic guitar gentle"}),
+    ("meditation","Meditation · bowls, ney, slow",
+        {"freesound": ("meditation", 'tag:(meditation OR singing-bowl OR ney OR relaxing)'), "jamendo": ("meditation", "meditation,newage"), "openverse": "meditation"}),
+    ("persian",   "Persian · santur, tar, setar",
+        {"freesound": ("persian", 'tag:(persian OR santur OR tar OR setar OR iranian)'), "jamendo": ("persian", "persian,world"), "openverse": "santur tar persian"}),
+    ("nature",    "Nature ambience · rain, wind, forest",
+        {"freesound": ("ambience", 'tag:(rain OR wind OR forest OR nature OR ambience)'), "jamendo": ("nature ambient", "ambient,nature"), "openverse": "rain ambience"}),
+    ("musicbox",  "Music box · light, playful",
+        {"freesound": ("music box", 'tag:(music-box OR musicbox OR celesta OR playful)'), "jamendo": ("music box", "playful,children"), "openverse": "music box"}),
+]
+MOOD_QUERIES = {k: v["openverse"] for k, _, v in MUSIC_STYLES}
+MUSIC_PAGE = 8
 
 
 def _decode_audio(raw):
@@ -3972,16 +4056,20 @@ def _http_get_json(url, params, headers=None, timeout=30):
     return r.json()
 
 
-def music_search(provider, query, key, status):
-    """Up to 10 candidates: {id, title, author, seconds, license, preview, download, page}."""
+def music_search(provider, query, key, status, style="ambient", page=1):
+    """One page (MUSIC_PAGE) of candidates for a style — or a free-text query
+    when the user typed one. Returns {items, page, has_more}."""
     _check_cancel()
-    q = (query or "").strip() or "ambient"
-    status(f"جست‌وجوی موسیقی در {provider}…")
+    q = (query or "").strip()
+    recipe = next((v for k, _, v in MUSIC_STYLES if k == style), MUSIC_STYLES[0][2])
+    page = max(1, int(page or 1))
+    status(f"جست‌وجوی موسیقی در {provider}… صفحهٔ {faDigits(page)}")
     out = []
     if provider == "openverse":
         data = _http_get_json("https://api.openverse.org/v1/audio/",
-                              {"q": q, "category": "music", "license": "cc0,pdm", "page_size": 12, "mature": "false"},
-                              headers={"User-Agent": "Ava/100 (narration app)"})
+                              {"q": q or recipe["openverse"], "license": "cc0,pdm",
+                               "page_size": MUSIC_PAGE, "page": page, "mature": "false"},
+                              headers={"User-Agent": "Ava/102 (narration app)"})
         for it in data.get("results", []):
             if not it.get("url"):
                 continue
@@ -3991,10 +4079,12 @@ def music_search(provider, query, key, status):
     elif provider == "freesound":
         if not key:
             raise RuntimeError("برای Freesound کلید لازم است: در freesound.org ثبت‌نام کنید و از freesound.org/apiv2/apply کلید بگیرید.")
+        fq, ftags = recipe["freesound"]
+        flt = 'license:"Creative Commons 0" duration:[20 TO 900]' + ("" if q else " " + ftags)
         data = _http_get_json("https://freesound.org/apiv2/search/text/",
-                              {"query": q, "filter": 'license:"Creative Commons 0" duration:[20 TO 900]',
+                              {"query": q or fq, "filter": flt,
                                "fields": "id,name,username,license,duration,previews,url", "sort": "rating_desc",
-                               "page_size": 12, "token": key})
+                               "page_size": MUSIC_PAGE, "page": page, "token": key})
         for it in data.get("results", []):
             pv = (it.get("previews") or {}).get("preview-hq-mp3") or (it.get("previews") or {}).get("preview-lq-mp3")
             if not pv:
@@ -4004,9 +4094,14 @@ def music_search(provider, query, key, status):
     elif provider == "jamendo":
         if not key:
             raise RuntimeError("برای Jamendo کلید (client_id) لازم است: در devportal.jamendo.com یک اپ بسازید و شناسه‌اش را بردارید.")
-        data = _http_get_json("https://api.jamendo.com/v3.0/tracks/",
-                              {"client_id": key, "format": "json", "limit": 12, "search": q, "include": "licenses",
-                               "vocalinstrumental": "instrumental", "audioformat": "mp32", "order": "popularity_total"})
+        jq, jtags = recipe["jamendo"]
+        params = {"client_id": key, "format": "json", "limit": MUSIC_PAGE, "offset": (page - 1) * MUSIC_PAGE,
+                  "include": "licenses", "vocalinstrumental": "instrumental", "audioformat": "mp32", "order": "popularity_total"}
+        if q:
+            params["search"] = q
+        else:
+            params["fuzzytags"] = jtags
+        data = _http_get_json("https://api.jamendo.com/v3.0/tracks/", params)
         for it in data.get("results", []):
             if not it.get("audio"):
                 continue
@@ -4017,10 +4112,10 @@ def music_search(provider, query, key, status):
                         "download": it.get("audiodownload") or it["audio"], "page": it.get("shareurl") or ""})
     else:
         raise RuntimeError("این منبع جست‌وجو ندارد.")
-    _diag("music_search", provider=provider, n=len(out))
-    if not out:
-        raise RuntimeError("چیزی پیدا نشد؛ عبارت دیگری امتحان کنید.")
-    return out
+    _diag("music_search", provider=provider, style=style, page=page, n=len(out))
+    if not out and page == 1:
+        raise RuntimeError("چیزی پیدا نشد؛ سبک یا عبارت دیگری امتحان کنید.")
+    return {"items": out[:MUSIC_PAGE], "page": page, "has_more": len(out) >= MUSIC_PAGE}
 
 
 def music_fetch(provider, item, status):

@@ -135,6 +135,25 @@ class Api:
             traceback.print_exc()
             return {"ok": False, "error": str(e)}
 
+    def new_document(self):
+        try:
+            import engines
+            engines.new_document()
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def gc_gulps(self, keep_ids):
+        try:
+            import engines
+            return {"ok": True, "kept": engines.gc_gulps(keep_ids or [])}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def music_styles(self):
+        import engines
+        return {"ok": True, "styles": [[k, label] for k, label, _ in engines.MUSIC_STYLES]}
+
     def clone_gulp(self, gid):
         try:
             import engines
@@ -173,14 +192,14 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def music_search(self, provider, query, key=""):
+    def music_search(self, provider, query, key="", style="ambient", page=1):
         try:
             import engines
             engines._job_start()
             if key and provider in ("freesound", "jamendo"):
                 engines.save_key(provider, key)
             key = key or engines.music_key(provider)
-            return {"ok": True, "items": engines.music_search(provider, query, key, self._status)}
+            return {"ok": True, **engines.music_search(provider, query, key, self._status, style=style, page=page)}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 

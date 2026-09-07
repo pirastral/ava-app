@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist (repo: github.com/pirastral/ava-app)
 ======================================================================
-This zip is the COMPLETE application source as of update 101.
+This zip is the COMPLETE application source as of update 103.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -15,6 +15,43 @@ Replace these files in the repo (paths identical):
   icon.png / icon.ico – unchanged
   builtin_keys.json – NEW (101): Freesound / Jamendo keys shipped with the app
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 103 (on top of 102) — from the 101 field log
+  Truncated takes: the model sometimes ends a stream cleanly after the first sentence
+    ("audio_s=8.3 expect_s=63.0, looping=False stalled=False"). A take shorter than 35 % of
+    the text's plausible length is now a failed take → the request is retried (rotation),
+    never accepted. The lead-in is now ONE plain sentence with every tag stripped, and a
+    very long one is cut to its last 18 words — the smallest thing the model can trip on.
+  Music search: Freesound styles use OR-tag filters (wide enough to fill pages); Openverse
+    no longer uses its "music" category filter (it returned nothing).
+  Lyria: an invalid key in the list is skipped and flagged (was: raw JSON error); list-
+    shaped error bodies from Google are parsed. One of the user's keys IS invalid ("API key
+    not valid") — the key dialog shows it as نامعتبر.
+
+WHAT CHANGED IN 102 (on top of 101)
+  BUG FIXED — wrong text regenerated. Surgery inside part B inherited part B's lead-in
+    (part A's last sentence); the lead-in trim then picked the wrong silence and the
+    "regenerated" audio was part A's sentence. Surgery now never carries a lead-in.
+    Whole-part regeneration keeps its pinned lead-in, and the trim is rejected (plain
+    regeneration instead) when the kept length is implausible for the part's text.
+  Trailing/leading pause tags are dropped from a part before sending (a trailing tag was
+    read aloud); the continuity tail never carries pause tags.
+  Layout: fixed header; fixed bottom dock with status + progress, cancel, undo/redo (LTR:
+    undo left, redo right, English hints), «ساخت فایل نهایی» and «تبدیل به گفتار».
+    Generate scrolls to the parts, splice to the final box; undo/redo scroll to and flash
+    the affected parts. Only one audio player plays at a time.
+  Parts: title «بخش ۱ از ۵ — فایل A» in one blue style; LTR icon toolbar in the order
+    move up, move down, duplicate, delete. Part-editor tag menu opens UPWARD, unclipped.
+  Undo: clear-all is undoable; parts are never dropped from memory while any undo state
+    can bring them back (gc runs on what is unreachable). new_document() replaces
+    reset_gulps() in the UI flow.
+  Music: panel split into «انتخاب موسیقی» and «موسیقی انتخاب‌شده و تنظیم آمیختن»; no key
+    UI; English style names; styles use each platform's own vocabulary (Freesound tag
+    filters, Jamendo fuzzytags, Openverse text) with Ambient (no drums) first, Drone,
+    then Lo-fi; 8 results per page with paging. Ducking retuned: 12 dB, ~0.2 s in,
+    ~1.5 s swell back.
+  Speakers default to کیان / دریا. Gemini TTS allows at most TWO speakers per request —
+    more than two would need per-line generation (see chat).
 
 WHAT CHANGED IN 101 (on top of 100)
   Freesound is the default music source. The owner's Freesound API key and Jamendo client
@@ -199,6 +236,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۰۱»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۰۳»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

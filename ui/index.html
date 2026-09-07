@@ -21,8 +21,22 @@
     background:radial-gradient(1200px 500px at 15% -10%, color-mix(in srgb, var(--tile) 14%, transparent), transparent 60%),var(--paper);
     color:var(--ink);min-height:100vh;transition:background .35s,color .35s;
   }
-  .wrap{max-width:880px;margin:0 auto;padding:18px 18px 36px}
-  header{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:16px}
+  .wrap{max-width:960px;margin:0 auto;padding:88px 20px 150px}
+  header{position:fixed;top:0;left:0;right:0;z-index:60;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 22px;
+    background:color-mix(in srgb, var(--panel) 82%, transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+  header > *{max-width:960px}
+  /* ---- 102: bottom action bar ---- */
+  .dock{position:fixed;left:0;right:0;bottom:0;z-index:60;background:color-mix(in srgb, var(--panel) 88%, transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line);padding:10px 22px 12px}
+  .dock-in{max-width:960px;margin:0 auto;display:flex;flex-direction:column;gap:8px}
+  .dock-row{display:flex;align-items:center;gap:10px;flex-wrap:nowrap}
+  .dock .status{margin:0;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .dock .bar{margin:0}
+  .dock .btn{white-space:nowrap}
+  .ltr{direction:ltr;display:inline-flex;gap:6px}
+  .flash{animation:ghost 1.4s ease-out}
+  @keyframes ghost{0%{box-shadow:0 0 0 0 color-mix(in srgb, var(--tile) 55%, transparent)}60%{box-shadow:0 0 0 8px color-mix(in srgb, var(--tile) 18%, transparent)}100%{box-shadow:0 0 0 12px transparent}}
+  .subcard{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:color-mix(in srgb, var(--paper) 55%, transparent)}
+  .subcard h4{font-size:.8rem;font-weight:700;color:var(--muted);margin:0 0 10px;letter-spacing:.02em}
   .brand{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
   .brand .fa{font-weight:700;font-size:1.7rem;color:var(--tile);line-height:1.2;unicode-bidi:isolate}
   .brand .tagline{font-weight:400;font-size:.9rem;color:var(--muted)}
@@ -37,7 +51,7 @@
   footer .warn{display:block;margin-top:6px;font-size:.72rem;opacity:.85}
   #themeBtn{border:1px solid var(--line);background:var(--panel);color:var(--ink);width:40px;height:40px;border-radius:50%;cursor:pointer;font-size:1.15rem;display:grid;place-items:center;box-shadow:var(--shadow);flex:none}
   #themeBtn:hover{border-color:var(--tile)}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px;margin-bottom:16px;transition:background .35s,border-color .35s}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px 22px;margin-bottom:18px;transition:background .35s,border-color .35s;overflow:visible}
   .manuscript{position:relative;padding:0;overflow:hidden}
   .manuscript::before{content:"";position:absolute;inset:0;pointer-events:none;border-radius:var(--radius);border:2px solid color-mix(in srgb, var(--gold) 55%, transparent)}
   .manuscript::after{content:"";position:absolute;left:0;right:0;top:0;height:6px;pointer-events:none;background:repeating-linear-gradient(90deg,var(--tile) 0 14px,transparent 14px 20px,var(--gold) 20px 26px,transparent 26px 32px);opacity:.85}
@@ -51,17 +65,17 @@
     padding:2px 10px;font:inherit;font-size:.74rem;font-weight:600;color:var(--tile);cursor:pointer}
   .chip:hover{border-color:var(--tile)}
   .endcap{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-  .gulpbox,.finalbox{border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-top:13px}
+  .gulpbox,.finalbox{border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-top:14px;overflow:visible}
+  .gulps,.gulp{overflow:visible}
   .gulpbox[hidden],.finalbox[hidden]{display:none}
   .finalbox{background:color-mix(in srgb, var(--gold) 5%, transparent)}
-  .boxhead{font-size:.8rem;font-weight:700;color:var(--ink);margin-bottom:10px}
+  .boxhead{font-size:.95rem;font-weight:800;color:var(--ink);margin-bottom:12px}
   .boxhint{font-weight:400;color:var(--muted)}
   .gulps{display:flex;flex-direction:column;gap:8px}
   .gulp{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:8px 10px}
   .gulp-row{display:flex;align-items:center;gap:8px;flex-wrap:nowrap}
   .ghead{display:flex;align-items:center;gap:6px;margin-bottom:6px}
-  .ghead .gtitle{font-weight:700;font-size:.9rem;color:var(--tile);margin-inline-end:auto}
-  .ghead .gtitle small{font-weight:400;color:var(--muted);margin-inline-start:6px}
+  .ghead .gtitle{font-weight:800;font-size:1rem;color:var(--tile);margin-inline-end:auto}
   .ghead .ico{width:32px;height:32px;padding:0;border-radius:9px;font-size:.95rem}
   .ghead .ico:disabled{opacity:.35;cursor:not-allowed}
   .gulp-row .chip{white-space:nowrap;flex:none;height:30px;display:inline-flex;align-items:center}
@@ -86,7 +100,7 @@
   .gedit .chips{margin-top:6px;justify-content:flex-start}
   .gedit .chip{font-size:.7rem;padding:2px 8px}
   .gedit{overflow:visible}
-  .gedit .dd-menu{top:calc(100% + 6px);bottom:auto}
+  .gedit .dd-menu{bottom:calc(100% + 6px);top:auto;z-index:70}
   .g-sett.on{border-color:var(--gold);color:var(--gold)}
   .dialog.gs{max-width:560px}
   .gs-actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;align-items:center}
@@ -100,7 +114,7 @@
   .tools input{flex:2;min-width:200px;height:42px;box-sizing:border-box;border-radius:12px;padding:0 12px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font:inherit;font-size:.85rem;direction:ltr;text-align:left}
   .tools input::placeholder{direction:rtl;text-align:right}
   .tools .btn{flex:1;min-width:150px;padding:0 16px;font-size:.88rem;justify-content:center}
-  h2{font-size:1rem;font-weight:700;margin-bottom:4px}
+  h2{font-size:1.05rem;font-weight:800;margin-bottom:6px;letter-spacing:-.01em}
   .sub{color:var(--muted);font-size:.8rem;margin-bottom:13px;line-height:1.9}
   .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px}
   @media (max-width:640px){.grid{grid-template-columns:1fr}}
@@ -328,7 +342,7 @@
         </select>
       </div>
       <div class="g-only" hidden style="grid-column:1/-1">
-        <label for="gPreset">سبک خواندن <small style="opacity:.7">— گوگل لغزنده ندارد؛ از همین توضیح می‌فهمد چطور بخواند</small></label>
+        <label for="gPreset">سبک خواندن <small style="opacity:.7">— گوگل اسلایدر ندارد؛ از همین توضیح می‌فهمد چطور بخواند</small></label>
         <select id="gPreset"></select>
         <input class="ctl-in" id="gCustom" hidden style="width:100%;margin-top:8px" placeholder="سبک دلخواه‌تان، فارسی یا انگلیسی؛ مثلاً «آرام و شمرده، مثل گویندهٔ مستند»">
       </div>
@@ -336,7 +350,7 @@
         <label class="toggle"><input type="checkbox" id="gCont" checked> پیوستگی لحن بین بخش‌ها <small style="opacity:.7">— جملهٔ آخرِ بخش قبل اول خوانده و بعد بریده می‌شود تا لحن قطع نشود (حدود ۱۰٪ صدای بیشتر)</small></label>
       </div>
       <div class="g-only" hidden style="grid-column:1/-1">
-        <label class="toggle"><input type="checkbox" id="gDuo"> گفت‌وگوی دونفره <small style="opacity:.7">— هر خط را با اسم گوینده و دونقطه شروع کنید: «سارا: سلام»</small></label>
+        <label class="toggle"><input type="checkbox" id="gDuo"> گفت‌وگوی دونفره <small style="opacity:.7">— هر خط را با اسم گوینده و دونقطه شروع کنید: «کیان: سلام»</small></label>
       </div>
       <div class="g-only" hidden id="gSolo">
         <label for="gVoice"><span>صدا</span><small>۳۰ صدای آماده</small></label>
@@ -344,11 +358,11 @@
       </div>
       <div class="g-only" hidden id="gDuoA">
         <label><span>گویندهٔ اول</span><small>اسمش در متن و صدایش</small></label>
-        <div class="row"><input class="ctl-in" type="text" id="gSpkA" value="سارا" style="max-width:140px"><select id="gVoiceA"></select></div>
+        <div class="row"><input class="ctl-in" type="text" id="gSpkA" value="کیان" style="max-width:140px"><select id="gVoiceA"></select></div>
       </div>
       <div class="g-only" hidden id="gDuoB">
         <label><span>گویندهٔ دوم</span><small>اسمش در متن و صدایش</small></label>
-        <div class="row"><input class="ctl-in" type="text" id="gSpkB" value="علی" style="max-width:140px"><select id="gVoiceB"></select></div>
+        <div class="row"><input class="ctl-in" type="text" id="gSpkB" value="دریا" style="max-width:140px"><select id="gVoiceB"></select></div>
       </div>
       <div class="g-only" hidden style="grid-column:1/-1">
         <button class="chip" type="button" id="gKeysBtn"><svg class="ic"><use href="#i-key-round"/></svg>کلیدهای گوگل <span id="gKeysState" style="opacity:.7;margin-inline-start:6px"></span></button>
@@ -358,14 +372,8 @@
       </div>
     </div>
 
-    <div class="btnrow">
-      <button class="btn btn-gold" id="genBtn"><span class="spin" id="spin"></span><svg class="ic"><use href="#i-sparkles"/></svg>تبدیل به گفتار و ساخت MP3</button>
-      <button class="btn btn-cancel" id="cancelBtn" type="button" hidden title="کارِ در حال انجام را در هر موتوری که باشد متوقف می‌کند"><svg class="ic"><use href="#i-x"/></svg>لغو</button>
-    </div>
-    <div class="bar" id="bar"><div id="barFill"></div></div>
-    <div class="status" id="status">آماده‌ام؛ متن را بنویسید و دکمه را بزنید.</div>
     <div class="gulpbox" id="gulpBox" hidden>
-      <div class="boxhead" style="display:flex;align-items:center;gap:10px">بخش‌های گفتار <span class="boxhint" style="flex:1">— هر بخش را گوش کنید؛ اگر چیزی باید عوض شود، متنش را با «ویرایش» باز کنید، تغییر بدهید و «بازتولید» را بزنید. متنِ تازه در کادر بالا با «تبدیل به گفتار» به آخر همین فهرست اضافه می‌شود</span><button class="chip ico" type="button" id="undoBtn" title="واگرد (⌘Z / Ctrl+Z)" disabled><svg class="ic"><use href="#i-undo-2"/></svg></button><button class="chip ico" type="button" id="redoBtn" title="ازنو (⇧⌘Z / Ctrl+Y)" disabled><svg class="ic"><use href="#i-redo-2"/></svg></button><button class="chip" type="button" id="clearParts" title="همهٔ بخش‌ها را دور می‌ریزد تا از نو شروع کنید"><svg class="ic"><use href="#i-trash-2"/></svg>پاک‌کردن همهٔ بخش‌ها</button></div>
+      <div class="boxhead" style="display:flex;align-items:center;gap:10px">بخش‌های گفتار <span class="boxhint" style="flex:1">— هر بخش را گوش کنید؛ اگر چیزی باید عوض شود، متنش را با «ویرایش» باز کنید، تغییر بدهید و «بازتولید» را بزنید. متنِ تازه در کادر بالا با «تبدیل به گفتار» به آخر همین لیست اضافه می‌شود</span><button class="chip" type="button" id="clearParts" title="همهٔ بخش‌ها را دور می‌ریزد تا از نو شروع کنید"><svg class="ic"><use href="#i-trash-2"/></svg>پاک‌کردن همهٔ بخش‌ها</button></div>
       <div class="gulps" id="gulps"></div>
     </div>
     <div class="finalbox" id="finalBox" hidden>
@@ -374,62 +382,64 @@
       <div class="row" style="margin:6px 0 10px">
         <label class="toggle"><input type="checkbox" id="musicOn"> موسیقی پس‌زمینه <small style="opacity:.7">— دو فایل تحویل می‌گیرید: یکی بدون موسیقی، یکی با موسیقی</small></label>
       </div>
-      <div id="musicPanel" hidden style="border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:12px">
-        <div class="grid">
-          <div>
-            <label for="musicProvider"><span>منبع موسیقی</span><small id="musicProvHint">رایگان، بدون کلید</small></label>
-            <select id="musicProvider">
-              <option value="freesound" selected>Freesound — رایگان، کلیدش داخل برنامه است (بهترین برای فضا و بستر)</option>
-              <option value="openverse">Openverse — رایگان، بدون کلید (CC0 / عمومی)</option>
-              <option value="jamendo">Jamendo — رایگان با کلید (قطعه‌های بی‌کلام؛ نام هنرمند ذکر می‌شود)</option>
-              <option value="lyria">Lyria ۳٫۵ — ساخت با هوش مصنوعی، فقط کلید پولی (حدود ۸ سنت)</option>
-              <option value="file">فایل خودم — از روی دستگاه</option>
-            </select>
+      <div id="musicPanel" hidden style="display:grid;gap:12px;margin-bottom:12px">
+        <div class="subcard">
+          <h4>انتخاب موسیقی</h4>
+          <div class="grid">
+            <div>
+              <label for="musicProvider"><span>منبع</span><small id="musicProvHint">رایگان</small></label>
+              <select id="musicProvider">
+                <option value="freesound" selected>Freesound — رایگان (بهترین برای فضا و بستر)</option>
+                <option value="openverse">Openverse — رایگان (CC0 / عمومی)</option>
+                <option value="jamendo">Jamendo — رایگان (قطعه‌های بی‌کلام؛ نام هنرمند ذکر می‌شود)</option>
+                <option value="lyria">Lyria ۳٫۵ — ساخت با هوش مصنوعی، فقط کلید پولی</option>
+                <option value="file">فایل خودم</option>
+              </select>
+            </div>
+            <div>
+              <label for="musicPreset"><span>سبک</span><small>هر منبع با واژه‌های خودش جست‌وجو می‌شود</small></label>
+              <select id="musicPreset"></select>
+            </div>
+            <div class="mp-search" style="grid-column:1/-1">
+              <div class="row"><input class="ctl-in" type="text" id="musicQuery" style="flex:1" placeholder="عبارت دلخواه (اختیاری، انگلیسی بهتر است) — خالی بگذارید تا از سبک بالا جست‌وجو شود"><button class="chip" type="button" id="musicSearch"><svg class="ic"><use href="#i-sparkles"/></svg>جست‌وجو</button></div>
+              <div id="musicResults" style="margin-top:8px"></div>
+              <div class="row" id="musicPager" hidden style="margin-top:6px;justify-content:center">
+                <span class="ltr"><button class="chip ico" type="button" id="musicPrev" title="Previous page"><svg class="ic"><use href="#i-arrow-up"/></svg></button><span class="gstate" id="musicPageNo" style="padding:0 10px">۱</span><button class="chip ico" type="button" id="musicNext" title="Next page"><svg class="ic"><use href="#i-arrow-down"/></svg></button></span>
+              </div>
+            </div>
+            <div class="mp-lyria" hidden style="grid-column:1/-1">
+              <label for="musicCustom"><span>توصیف به زبان خودتان</span><small>اختیاری؛ اگر بنویسید، جای سبک را می‌گیرد</small></label>
+              <div class="row"><input class="ctl-in" type="text" id="musicCustom" style="flex:1" placeholder="مثلاً: پیانوی آرام با ویولن‌های دور، بدون ضرب"><button class="chip" type="button" id="musicMake"><svg class="ic"><use href="#i-music"/></svg>ساخت موسیقی</button></div>
+            </div>
+            <div class="mp-file" hidden style="grid-column:1/-1">
+              <button class="chip" type="button" id="musicImport"><svg class="ic"><use href="#i-plus"/></svg>انتخاب فایل صوتی از دستگاه</button>
+            </div>
+            <div style="grid-column:1/-1">
+              <label for="musicLib"><span>موسیقی‌های قبلی</span><small>هر چه انتخاب یا ساخته‌اید روی دستگاه مانده و رایگان دوباره استفاده می‌شود</small></label>
+              <div class="row"><select id="musicLib"><option value="">— موسیقی تازه (از منبع بالا) —</option></select><button class="chip ico" type="button" id="musicLibDel" title="Delete from library"><svg class="ic"><use href="#i-trash-2"/></svg></button></div>
+            </div>
           </div>
-          <div>
-            <label for="musicPreset"><span>حال‌وهوای موسیقی</span><small>جست‌وجو یا ساخت بر همین اساس</small></label>
-            <select id="musicPreset"></select>
+        </div>
+        <div class="subcard">
+          <h4>موسیقی انتخاب‌شده و تنظیم آمیختن</h4>
+          <div id="musicPreviewRow" hidden style="margin-bottom:10px"><audio id="musicPreview" controls style="width:100%"></audio></div>
+          <div class="row" style="margin-bottom:10px"><span class="gstate" id="musicState">هنوز موسیقی‌ای انتخاب نشده</span></div>
+          <div class="grid">
+            <div>
+              <label for="musicLevel"><span>بلندی موسیقی نسبت به صدا</span><small id="musicLevelVal">−۱۶ دسی‌بل</small></label>
+              <input type="range" id="musicLevel" min="-28" max="-6" step="1" value="-16">
+            </div>
+            <div>
+              <label for="musicFade"><span>محو شدنِ آخر کار</span><small id="musicFadeVal">۳ ثانیه</small></label>
+              <input type="range" id="musicFade" min="1" max="8" step="0.5" value="3">
+            </div>
+            <div style="grid-column:1/-1">
+              <label class="toggle"><input type="checkbox" id="musicDuck" checked> وقتی گوینده حرف می‌زند موسیقی نرم پایین برود <small style="opacity:.7">— دوازده دسی‌بل، با شیب آرام</small></label>
+            </div>
           </div>
-          <div class="mp-key" hidden style="grid-column:1/-1">
-            <label for="musicKey"><span>کلید این منبع</span><small id="musicKeyHint"></small></label>
-            <div class="row"><span class="pw"><input type="password" id="musicKey" placeholder="کلید را اینجا بچسبانید"><button type="button" class="eye" title="نمایش / پنهان‌کردن"><svg class="ic"><use href="#i-eye"/></svg></button></span><button class="chip" type="button" id="musicKeyGet">دریافت کلید رایگان ↗</button></div>
-          </div>
-          <div class="mp-search" style="grid-column:1/-1">
-            <label for="musicQuery"><span>عبارت جست‌وجو</span><small>انگلیسی نتیجهٔ بهتری می‌دهد؛ از حال‌وهوا پر می‌شود</small></label>
-            <div class="row"><input class="ctl-in" type="text" id="musicQuery" style="flex:1"><button class="chip" type="button" id="musicSearch"><svg class="ic"><use href="#i-sparkles"/></svg>جست‌وجو</button></div>
-            <div id="musicResults" style="margin-top:8px"></div>
-          </div>
-          <div class="mp-lyria" hidden>
-            <label for="musicCustom"><span>توصیف به زبان خودتان</span><small>اختیاری؛ اگر بنویسید، جای حال‌وهوا را می‌گیرد</small></label>
-            <input class="ctl-in" type="text" id="musicCustom" style="width:100%" placeholder="مثلاً: پیانوی آرام با ویولن‌های دور، بدون ضرب">
-          </div>
-          <div class="mp-file" hidden style="grid-column:1/-1">
-            <button class="chip" type="button" id="musicImport"><svg class="ic"><use href="#i-plus"/></svg>انتخاب فایل صوتی از دستگاه</button>
-          </div>
-          <div>
-            <label for="musicLevel"><span>بلندی موسیقی نسبت به صدا</span><small id="musicLevelVal">−۱۶ دسی‌بل</small></label>
-            <input type="range" id="musicLevel" min="-28" max="-6" step="1" value="-16">
-          </div>
-          <div>
-            <label for="musicFade"><span>محو شدنِ آخر کار</span><small id="musicFadeVal">۳ ثانیه</small></label>
-            <input type="range" id="musicFade" min="1" max="8" step="0.5" value="3">
-          </div>
-          <div style="grid-column:1/-1">
-            <label for="musicLib"><span>موسیقی‌های قبلی</span><small>هر موسیقی که ساخته‌اید روی همین دستگاه می‌ماند و رایگان دوباره استفاده می‌شود</small></label>
-            <div class="row"><select id="musicLib"><option value="">— یک موسیقی تازه بساز —</option></select><button class="chip ico" type="button" id="musicLibDel" title="این موسیقی را از دستگاه پاک می‌کند"><svg class="ic"><use href="#i-trash-2"/></svg></button></div>
-          </div>
-          <div style="grid-column:1/-1" class="row">
-            <label class="toggle"><input type="checkbox" id="musicDuck" checked> وقتی گوینده حرف می‌زند موسیقی کم شود <small style="opacity:.7">— موقع حرف‌زدن، موسیقی خودبه‌خود می‌رود زیر صدا</small></label>
-            <button class="chip mp-lyria" type="button" id="musicMake" hidden><svg class="ic"><use href="#i-music"/></svg>ساخت موسیقی</button>
-            <span class="gstate" id="musicState">هنوز موسیقی‌ای ساخته نشده</span>
-          </div>
-          <div style="grid-column:1/-1" id="musicPreviewRow" hidden><audio id="musicPreview" controls style="width:100%"></audio></div>
         </div>
       </div>
-      <div class="finalrow">
-        <button class="btn btn-primary" id="spliceBtn"><svg class="ic"><use href="#i-download"/></svg>چسباندن بخش‌ها و ساخت فایل نهایی</button>
-        <span class="gstate">همهٔ بخش‌ها با یک نفسِ کوتاه بینشان، پشت سر هم به یک MP3 می‌چسبند.</span>
-      </div>
+      <div class="finalrow"><span class="gstate">همهٔ بخش‌ها با یک نفسِ کوتاه بینشان، پشت سر هم به یک MP3 می‌چسبند؛ دکمهٔ ساخت فایل نهایی پایین صفحه است.</span></div>
       <div class="result" id="result">
         <audio id="player" controls></audio>
         <button class="btn btn-primary" id="saveBtn"><svg class="ic"><use href="#i-download"/></svg>ذخیرهٔ MP3</button>
@@ -447,7 +457,19 @@
     </div>
   </div>
 
-  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۱۰۱</span>
+  <div class="dock" id="dock">
+    <div class="dock-in">
+      <div class="bar" id="bar"><div id="barFill"></div></div>
+      <div class="dock-row">
+        <div class="status" id="status">آماده‌ام؛ متن را بنویسید و دکمه را بزنید.</div>
+        <button class="btn btn-cancel" id="cancelBtn" type="button" hidden title="کارِ در حال انجام را در هر موتوری که باشد متوقف می‌کند"><svg class="ic"><use href="#i-x"/></svg>لغو</button>
+        <span class="ltr"><button class="chip ico" type="button" id="undoBtn" title="Undo (⌘Z / Ctrl+Z)" disabled><svg class="ic"><use href="#i-undo-2"/></svg></button><button class="chip ico" type="button" id="redoBtn" title="Redo (⇧⌘Z / Ctrl+Y)" disabled><svg class="ic"><use href="#i-redo-2"/></svg></button></span>
+        <button class="btn btn-primary" id="spliceBtn" disabled><svg class="ic"><use href="#i-download"/></svg>ساخت فایل نهایی</button>
+        <button class="btn btn-gold" id="genBtn"><span class="spin" id="spin"></span><svg class="ic"><use href="#i-sparkles"/></svg>تبدیل به گفتار</button>
+      </div>
+    </div>
+  </div>
+  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۱۰۳</span>
     <span class="warn">این برنامه را فقط از خودِ سازنده‌اش بگیرید؛ نسخه‌ای که از جای ناشناس آمده باشد ممکن است بدافزار داشته باشد.</span>
   </footer>
 </div>
@@ -457,7 +479,7 @@
   <div class="dialog gs" role="dialog" aria-modal="true">
     <button class="close" id="gsClose" aria-label="بستن"><svg class="ic"><use href="#i-x"/></svg></button>
     <h3 id="gsTitle">تنظیمات صدای این بخش</h3>
-    <p class="dnote">هر تغییری همان لحظه روی همین بخش می‌نشیند و بازتولید کامل و جراحی واژه‌ای هر دو از همین‌ها استفاده می‌کنند. اگر می‌خواهید چند «برداشت» متفاوت از یک بخش بشنوید، تنوع را بالا ببرید و چند بار «بازتولید» را بزنید. «تنظیمات موقع تولید» یعنی همان مقادیر لغزنده‌های اصلی در لحظه‌ای که آخرین بار «تبدیل به گفتار» را زدید؛ با هر تولید کاملِ تازه، تازه می‌شود.</p>
+    <p class="dnote">هر تغییری همان لحظه روی همین بخش می‌نشیند و بازتولید کامل و جراحی واژه‌ای هر دو از همین‌ها استفاده می‌کنند. اگر می‌خواهید چند «برداشت» متفاوت از یک بخش بشنوید، تنوع را بالا ببرید و چند بار «بازتولید» را بزنید. «تنظیمات موقع تولید» یعنی همان مقادیر اسلایدر‌های اصلی در لحظه‌ای که آخرین بار «تبدیل به گفتار» را زدید؛ با هر تولید کاملِ تازه، تازه می‌شود.</p>
     <div class="gs-g" hidden>
       <label><span>صدا</span><small>گوگل</small></label>
       <select id="gs_gVoice"></select>
@@ -484,7 +506,7 @@
     </div>
     <div class="gs-actions">
       <button class="chip" id="gsResetApp" title="تنظیمات اولیهٔ خود برنامه"><svg class="ic"><use href="#i-undo-2"/></svg>تنظیمات اولیهٔ برنامه</button>
-      <button class="chip" id="gsResetSeed" title="همان مقادیر لغزنده‌های اصلی در لحظهٔ آخرین تولید کامل"><svg class="ic"><use href="#i-undo-2"/></svg>تنظیمات موقع تولید</button>
+      <button class="chip" id="gsResetSeed" title="همان مقادیر اسلایدر‌های اصلی در لحظهٔ آخرین تولید کامل"><svg class="ic"><use href="#i-undo-2"/></svg>تنظیمات موقع تولید</button>
       <button class="btn btn-primary" id="gsAll" title="همین تنظیمات روی همهٔ بخش‌ها می‌نشیند">روی همهٔ بخش‌ها</button>
     </div>
   </div>
@@ -495,7 +517,7 @@
   <div class="dialog gs" role="dialog" aria-modal="true">
     <button class="close" id="gKeysClose" aria-label="بستن"><svg class="ic"><use href="#i-x"/></svg></button>
     <h3>کلیدهای گوگل</h3>
-    <p class="dnote">این کلیدها هم برای گفتار گوگل استفاده می‌شوند، هم برای حرکت‌گذاری. هر وقت سهمیهٔ روزانهٔ یک کلید تمام شود، برنامه خودش می‌رود سراغ کلید بعدی و نیمه‌شبِ بعد (به وقت غرب آمریکا، که سهمیهٔ گوگل تازه می‌شود) دوباره از اولی شروع می‌کند. ترتیبِ فهرست همان ترتیب استفاده است. با بستن این پنجره همه‌چیز ذخیره می‌شود.</p>
+    <p class="dnote">این کلیدها هم برای گفتار گوگل استفاده می‌شوند، هم برای حرکت‌گذاری. هر وقت سهمیهٔ روزانهٔ یک کلید تمام شود، برنامه خودش می‌رود سراغ کلید بعدی و نیمه‌شبِ بعد (به وقت غرب آمریکا، که سهمیهٔ گوگل تازه می‌شود) دوباره از اولی شروع می‌کند. ترتیبِ لیست همان ترتیب استفاده است. با بستن این پنجره همه‌چیز ذخیره می‌شود.</p>
     <div id="gKeyList"></div>
     <div class="row" style="margin-top:10px">
       <button class="chip" type="button" id="gKeyAdd"><svg class="ic"><use href="#i-plus"/></svg>افزودن کلید</button>
@@ -523,7 +545,7 @@
       <tr><td class="mark">ـٍ</td><td>تنوین کسره — واقعاً کم‌کاربرد</td><td><span class="kbd">Shift+E</span></td><td><span class="kbd">Shift+E</span></td><td><button class="ins" data-ch="&#x064D;">درج</button></td></tr>
       <tr><td class="mark">هٔ</td><td>همزهٔ اضافه — خانهٔ ما</td><td>—</td><td>—</td><td><button class="ins" data-ch="&#x0654;">درج</button></td></tr>
     </table>
-    <p class="dnote">این میان‌برها مال چیدمان استاندارد ملی (ISIRI 9147) است که در ویندوز «Persian (Standard)» و در مک «Persian – Standard» نام دارد و در هر دو یکی است. چیدمان قدیمی «Persian» در ویندوز و «Persian – QWERTY» در مک فرق دارند؛ اگر با آن‌ها کار می‌کنید، از دکمهٔ «درج» استفاده کنید که روی هر صفحه‌کلیدی جواب می‌دهد. برای «هٔ» کلید استاندارد یکسانی وجود ندارد؛ «ه» را بنویسید و دکمهٔ درج را بزنید.</p>
+    <p class="dnote">این میان‌برها مال چیدمان استاندارد ملی (ISIRI 9147) است که در ویندوز «Persian (Standard)» و در مک «Persian – Standard» نام دارد و در هر دو یکی است. چیدمان قدیمی «Persian» در ویندوز و «Persian – QWERTY» در مک فرق دارند؛ اگر با آن‌ها کار می‌کنید، از دکمهٔ «درج» استفاده کنید که روی هر کیبوردی جواب می‌دهد. برای «هٔ» کلید استاندارد یکسانی وجود ندارد؛ «ه» را بنویسید و دکمهٔ درج را بزنید.</p>
   </div>
 </div>
 
@@ -699,11 +721,19 @@
   }
   bindEyes(document);
 
+  /* ---------- 102: only one player at a time; scroll helpers; ghost flash ---------- */
+  document.addEventListener("play", e => { document.querySelectorAll("audio").forEach(a => { if(a !== e.target) a.pause(); }); }, true);
+  function scrollToEl(el, block = "start"){ if(el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block }); }
+  function flashParts(names){
+    names.forEach(n => { const el = document.querySelector(`.gulp[data-name="${n}"]`); if(el){ el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); } });
+    const first = document.querySelector(`.gulp[data-name="${names[0]}"]`); if(first) scrollToEl(first, "center");
+  }
   /* ---------- 91: لغو ---------- */
   let cancelled = false;
   const cancelBtn = $("cancelBtn");
   function setBusy(on){
     busy = on; genBtn.disabled = on || genBlocked(); cancelBtn.hidden = !on;
+    spliceBtn.disabled = on || !gulps.length || gulps.some(g => !g.id);
     if(on){ cancelled = false; spin.classList.add("show"); } else spin.classList.remove("show");
   }
   cancelBtn.onclick = async () => {
@@ -742,11 +772,24 @@
   /* ---------- 99: واگرد / ازنو برای فهرست بخش‌ها ---------- */
   const hist = { past: [], future: [] };
   const snap = () => ({ gulps: gulps.map(g => ({...g, settings: g.settings ? {...g.settings} : null})), partSeq, lastGenerated });
-  function remember(){ hist.past.push(snap()); if(hist.past.length > 60) hist.past.shift(); hist.future = []; syncHistBtns(); }
+  function remember(){ hist.past.push(snap()); if(hist.past.length > 60) hist.past.shift(); hist.future = []; syncHistBtns(); gcParts(); }
+  function gcParts(){
+    const keep = new Set(gulps.map(g => g.id));
+    hist.past.concat(hist.future).forEach(s => s.gulps.forEach(g => keep.add(g.id)));
+    try{ window.pywebview.api.gc_gulps([...keep].filter(x => x !== null)); }catch(e){}
+  }
   function restore(s){ gulps = s.gulps.map(g => ({...g})); partSeq = s.partSeq; lastGenerated = s.lastGenerated; renderGulps(); markFinalStale(); syncHistBtns(); }
-  function undo(){ if(busy || !hist.past.length) return; hist.future.push(snap()); restore(hist.past.pop()); say("واگرد شد.", "ok"); }
-  function redo(){ if(busy || !hist.future.length) return; hist.past.push(snap()); restore(hist.future.pop()); say("از نو اعمال شد.", "ok"); }
-  function syncHistBtns(){ const ub = $("undoBtn"), rb = $("redoBtn"); if(ub){ ub.disabled = !hist.past.length; rb.disabled = !hist.future.length; } }
+  function diffNames(a, b){
+    // parts whose identity or position changed between two snapshots
+    const pa = a.map(g => g.name), pb = b.map(g => g.name), out = [];
+    pb.forEach((n, i) => { if(pa[i] !== n) out.push(n); });
+    if(!out.length && pb.length) out.push(pb[Math.min(pb.length - 1, pa.length)] || pb[0]);
+    return out;
+  }
+  function undo(){ if(busy || !hist.past.length) return; const before = gulps; hist.future.push(snap()); restore(hist.past.pop()); say("واگرد شد.", "ok"); flashParts(diffNames(before, gulps)); }
+  function redo(){ if(busy || !hist.future.length) return; const before = gulps; hist.past.push(snap()); restore(hist.future.pop()); say("از نو اعمال شد.", "ok"); flashParts(diffNames(before, gulps)); }
+  function syncHistBtns(){ const ub = $("undoBtn"), rb = $("redoBtn"); if(ub){ ub.disabled = !hist.past.length; rb.disabled = !hist.future.length; }
+    spliceBtn.disabled = busy || !gulps.length || gulps.some(g => !g.id); }
   document.addEventListener("keydown", e => {
     const inText = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || "");
     if(inText) return;                                   // inside a text field the system's own undo works
@@ -823,7 +866,7 @@
     el.oninput = () => val.textContent = (+el.value).toFixed(2) + (k === "cbxSpeed" || k === "speed" ? "×" : "");
   });
   let gsTarget = null, gsLoading = false;
-  let seedSettings = null;   // لغزنده‌های کلی در لحظهٔ آخرین تولید کامل
+  let seedSettings = null;   // اسلایدر‌های کلی در لحظهٔ آخرین تولید کامل
   function snapGlobals(){
     const s = {};
     GS_KEYS.forEach(k => s[k] = +$(k).value);
@@ -925,17 +968,18 @@
     gulpsEl.innerHTML = "";
     gulps.forEach((g, idx) => {
       const div = document.createElement("div");
-      div.className = "gulp";
+      div.className = "gulp"; div.dataset.name = g.name;
       div.innerHTML = `
         <div class="ghead">
-          <span class="gtitle">بخش ${g.name}<small>${faNum(idx+1)} از ${faNum(gulps.length)}</small></span>
-          <button class="chip ico g-up" type="button" title="یک پله بالا" ${idx === 0 ? "disabled" : ""}><svg class="ic"><use href="#i-arrow-up"/></svg></button>
-          <button class="chip ico g-down" type="button" title="یک پله پایین" ${idx === gulps.length - 1 ? "disabled" : ""}><svg class="ic"><use href="#i-arrow-down"/></svg></button>
-          <button class="chip ico g-dup" type="button" title="یک نسخهٔ دیگر از همین بخش، درست زیر همین"><svg class="ic"><use href="#i-copy"/></svg></button>
-          <button class="chip ico g-del" type="button" title="حذف این بخش"><svg class="ic"><use href="#i-trash-2"/></svg></button>
+          <span class="gtitle">بخش ${faNum(idx+1)} از ${faNum(gulps.length)} — فایل ${g.name}</span>
+          <span class="ltr">
+          <button class="chip ico g-up" type="button" title="Move up" ${idx === 0 ? "disabled" : ""}><svg class="ic"><use href="#i-arrow-up"/></svg></button>
+          <button class="chip ico g-down" type="button" title="Move down" ${idx === gulps.length - 1 ? "disabled" : ""}><svg class="ic"><use href="#i-arrow-down"/></svg></button>
+          <button class="chip ico g-dup" type="button" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button>
+          <button class="chip ico g-del" type="button" title="Delete"><svg class="ic"><use href="#i-trash-2"/></svg></button>
+          </span>
         </div>
         <div class="gulp-row">
-          <span class="gnum">${faNum(idx+1)}</span>
           <audio controls ${g.b64 ? `src="data:audio/mpeg;base64,${g.b64}"` : ""}></audio>
           <select class="gvoice" title="صدای همین بخش — با بازتولید اعمال می‌شود">
             <option value="google">گوگل</option>
@@ -1068,7 +1112,7 @@
     setBusy(true);
     result.classList.remove("show");
     finalMsg.className = "finalmsg"; finalMsg.textContent = ""; finalB64 = null;
-    if(!additive){ try{ await window.pywebview.api.reset_gulps(); }catch(e){} partSeq = 0; }
+    if(!additive){ try{ await window.pywebview.api.new_document(); }catch(e){} partSeq = 0; }
     const vid = voiceSel.value;
     seedSettings = snapGlobals();
     // Google keeps its tone inside a call and re-rolls it between calls, so its parts are long
@@ -1079,8 +1123,9 @@
     const start = gulps.length;
     gulps = additive ? gulps.concat(fresh) : fresh;
     lastGenerated = flowed;
-    renderGulps();
-    if(additive) say(faNum(fresh.length) + " بخش تازه به آخر فهرست اضافه شد؛ دارم می‌سازمشان…", "ok");
+    renderGulps(); scrollToEl(gulpBox);
+    if(additive) say(faNum(fresh.length) + " بخش تازه به آخر لیست اضافه شد؛ دارم می‌سازمشان…", "ok");
+    setTimeout(() => flashParts(fresh.map(g => g.name)), 50);
     try{
       for(let i = start; i < gulps.length; i++){
         if(cancelled) throw new Error("لغو شد");
@@ -1102,48 +1147,36 @@
   };
 
   /* ---------- 96: موسیقی پس‌زمینه ---------- */
-  const MUSIC_PRESETS = [["piano","پیانوی آرام"],["ambient","فضای آرام (اَمبینت)"],["strings","سازهای زهی گرم"],["acoustic","گیتار آکوستیک ملایم"],
-    ["lofi","لوفای دنج"],["cinematic","سینمایی کم‌حرف"],["persian","سنتور و تار — حال‌وهوای ایرانی"],["oud","عود و نی"],
-    ["corporate","سبک و خوش‌بین (تبلیغاتی)"],["suspense","پرتعلیق و کم‌نور"],["children","کودکانه و بازیگوش"],["night","شبانه و ساکت"]];
+  const MUSIC_PRESETS = [["ambient","Ambient · ethereal synth, no drums"],["drone","Drone · deep atmosphere, no drums"],["lofi","Lo-fi · soft beat"],
+    ["piano","Piano · solo, calm"],["cinematic","Cinematic · strings, slow"],["guitar","Acoustic guitar · gentle"],["meditation","Meditation · bowls, ney, slow"],
+    ["persian","Persian · santur, tar, setar"],["nature","Nature ambience · rain, wind, forest"],["musicbox","Music box · light, playful"]];
   $("musicPreset").innerHTML = MUSIC_PRESETS.map(([v,l]) => `<option value="${v}">${l}</option>`).join("");
+  $("musicPreset").style.direction = "ltr"; $("musicPreset").style.textAlign = "left";
   let finalMusicB64 = null, musicReady = false, musicCredit = "";
-  const MP_INFO = {
-    openverse: ["رایگان، بدون کلید", "", ""],
-    freesound: ["رایگان، کلیدش داخل برنامه است", "در freesound.org ثبت‌نام کنید، بعد از freesound.org/apiv2/apply کلید بگیرید", "https://freesound.org/apiv2/apply/"],
-    jamendo:   ["رایگان، کلیدش داخل برنامه است", "در devportal.jamendo.com یک اپ بسازید و client_id آن را بردارید", "https://devportal.jamendo.com/"],
-    lyria:     ["فقط کلید پولی گوگل", "", ""],
-    file:      ["از روی دستگاه", "", ""],
-  };
+  const MP_INFO = { openverse: ["رایگان"], freesound: ["رایگان"], jamendo: ["رایگان"], lyria: ["فقط کلید پولی گوگل"], file: ["از روی دستگاه"] };
   const MOOD_Q = { piano: "calm solo piano", ambient: "ambient pad drone", strings: "slow string ensemble", acoustic: "acoustic guitar fingerpicking",
     lofi: "lofi chill beat", cinematic: "cinematic underscore", persian: "santur tar persian", oud: "oud ney meditation",
     corporate: "light corporate background", suspense: "dark tense underscore", children: "music box playful", night: "nocturne quiet piano" };
   function syncMusicProvider(){
     const p = $("musicProvider").value;
     $("musicProvHint").textContent = MP_INFO[p][0];
-    document.querySelectorAll(".mp-key").forEach(e => e.hidden = !(p === "freesound" || p === "jamendo"));
     document.querySelectorAll(".mp-search").forEach(e => e.hidden = !(p === "openverse" || p === "freesound" || p === "jamendo"));
     document.querySelectorAll(".mp-lyria").forEach(e => e.hidden = p !== "lyria");
     document.querySelectorAll(".mp-file").forEach(e => e.hidden = p !== "file");
-    $("musicKeyHint").textContent = MP_INFO[p][1]; $("musicKeyGet").hidden = !MP_INFO[p][2];
-    if(p === "freesound" || p === "jamendo") window.pywebview.api.music_keys().then(r => {
-      if(!r.ok) return;
-      $("musicKey").value = r[p] || "";
-      $("musicKeyHint").textContent = (r.builtin && r.builtin[p]) ? "کلیدِ داخل برنامه در کار است؛ اگر کلید خودتان را بگذارید، جای آن را می‌گیرد" : MP_INFO[p][1];
-    }).catch(() => {});
-    if(!$("musicQuery").value) $("musicQuery").value = MOOD_Q[$("musicPreset").value] || "";
+    $("musicResults").innerHTML = ""; $("musicPager").hidden = true;
   }
   $("musicProvider").addEventListener("change", syncMusicProvider);
-  $("musicKeyGet").onclick = () => window.pywebview.api.open_url(MP_INFO[$("musicProvider").value][2]);
-  bindEyes($("musicPanel"));
-  let musicItems = [];
-  $("musicSearch").onclick = async () => {
+  let musicItems = [], musicPage = 1;
+  async function musicSearch(page){
     if(busy) return;
-    setBusy(true); $("musicResults").innerHTML = "";
+    setBusy(true); if(page === 1) $("musicResults").innerHTML = "";
     try{
       const p = $("musicProvider").value;
-      const r = await window.pywebview.api.music_search(p, $("musicQuery").value.trim(), $("musicKey").value.trim());
+      const r = await window.pywebview.api.music_search(p, $("musicQuery").value.trim(), "", $("musicPreset").value, page);
       if(!r.ok) throw new Error(r.error || "خطای نامشخص");
-      musicItems = r.items;
+      musicItems = r.items; musicPage = r.page;
+      $("musicPager").hidden = false; $("musicPageNo").textContent = faNum(musicPage);
+      $("musicPrev").disabled = musicPage <= 1; $("musicNext").disabled = !r.has_more;
       $("musicResults").innerHTML = r.items.map((it, i) => `<div class="row" style="margin:6px 0;align-items:center">
         <audio controls preload="none" src="${it.preview}" style="flex:1;height:34px"></audio>
         <span style="flex:1;min-width:0;font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${it.title} — ${it.author}">${it.title}<small style="opacity:.7"> · ${it.author || "—"} · ${faNum(it.seconds)} ثانیه · ${it.license}</small></span>
@@ -1163,7 +1196,10 @@
       });
     }catch(e){ say(isCancel(e) ? "لغو شد." : (e.message || String(e)), isCancel(e) ? "ok" : "err"); }
     finally{ setBusy(false); }
-  };
+  }
+  $("musicSearch").onclick = () => musicSearch(1);
+  $("musicPrev").onclick = () => musicSearch(Math.max(1, musicPage - 1));
+  $("musicNext").onclick = () => musicSearch(musicPage + 1);
   $("musicImport").onclick = async () => {
     if(busy) return; setBusy(true);
     try{
@@ -1176,7 +1212,7 @@
     finally{ setBusy(false); }
   };
   $("musicOn").onchange = () => { $("musicPanel").hidden = !$("musicOn").checked; if($("musicOn").checked){ loadMusicLib(); syncMusicProvider(); } };
-  $("musicPreset").addEventListener("change", () => { $("musicQuery").value = MOOD_Q[$("musicPreset").value] || ""; });
+  $("musicPreset").addEventListener("change", () => { $("musicResults").innerHTML = ""; $("musicPager").hidden = true; });
   $("musicLevel").oninput = () => { $("musicLevelVal").textContent = "−" + faNum(Math.abs(+$("musicLevel").value)) + " دسی‌بل"; };
   $("musicFade").oninput = () => { $("musicFadeVal").textContent = faNum(+$("musicFade").value) + " ثانیه"; };
   ["musicPreset","musicCustom"].forEach(id => $(id).addEventListener("change", () => { musicReady = false; $("musicState").textContent = "حال‌وهوا عوض شده؛ موسیقی را دوباره بسازید"; }));
@@ -1225,11 +1261,12 @@
   spliceBtn.onclick = async () => {
     if(busy) return;
     if(gulps.some(g => !g.id)){ say("هنوز همهٔ بخش‌ها ساخته نشده.", "err"); return; }
+    scrollToEl(finalBox, "end");
     setBusy(true); spliceBtn.disabled = true;
     try{
       const cfg = musicCfg();
       if(cfg.on && !musicReady){
-        if($("musicProvider").value !== "lyria"){ throw new Error("اول از منبع انتخابی یک موسیقی انتخاب کنید (جست‌وجو → استفاده) یا از «موسیقی‌های قبلی» یکی را بردارید."); }
+        if($("musicProvider").value !== "lyria"){ scrollToEl($("musicPanel")); throw new Error("اول از منبع انتخابی یک موسیقی انتخاب کنید (جست‌وجو → استفاده) یا از «موسیقی‌های قبلی» یکی را بردارید."); }
         say("موسیقی هنوز ساخته نشده؛ همین‌جا می‌سازمش…", "ok");
       }
       const res = await window.pywebview.api.splice(gulps.map(g => g.id), cfg.on ? cfg : null);
@@ -1237,7 +1274,7 @@
       if(!res.ok) throw new Error(res.error || "خطای ناشناخته");
       finalB64 = res.b64;
       player.src = "data:audio/mpeg;base64," + finalB64;
-      result.classList.add("show");
+      result.classList.add("show"); scrollToEl(finalBox, "end");
       if(res.b64_music){
         finalMusicB64 = res.b64_music; musicReady = true;
         $("playerMusic").src = "data:audio/mpeg;base64," + finalMusicB64;
@@ -1284,9 +1321,8 @@
   $("clearParts").onclick = async () => {
     if(busy || !gulps.length) return;
     remember();
-    try{ await window.pywebview.api.reset_gulps(); }catch(e){}
+    try{ await window.pywebview.api.new_document(); }catch(e){}
     gulps = []; partSeq = 0; lastGenerated = ""; finalB64 = null; finalMusicB64 = null;
-    hist.past = []; hist.future = []; syncHistBtns();
     result.classList.remove("show"); $("resultMusic").classList.remove("show"); $("captionRow").hidden = true;
     renderGulps(); say("همهٔ بخش‌ها پاک شد؛ از نو شروع کنید.", "ok");
   };
