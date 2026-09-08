@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 109
-BUILD_FA = "\u06f1\u06f0\u06f9"
+BUILD = 111
+BUILD_FA = "\u06f1\u06f1\u06f1"
 
 
 def _diag(tag, **kv):
@@ -4072,7 +4072,7 @@ def music_delete(file):
     return lib
 
 
-def _envelope(x, sr, attack=0.2, release=0.9, win=0.03):
+def _envelope(x, sr, attack=0.12, release=0.45, win=0.03):
     """Smoothed loudness envelope (0..1) of a float signal."""
     n = max(1, int(sr * win))
     rms = np.sqrt(np.convolve(x * x, np.ones(n) / n, mode="same"))
@@ -4113,9 +4113,11 @@ def mix_music(voice, vsr, music, msr, level_db=-16.0, duck=True, duck_db=12.0, f
         # at full duck under any real speech (≈0.2 s in) and swells back over
         # ≈1.5 s after the voice stops — audible, never abrupt
         env = _envelope(v / 32768.0, vsr)
-        gate = np.clip(env / 0.5, 0.0, 1.0)
+        gate = np.clip(env / 0.6, 0.0, 1.0)
         g = 1.0 - (1.0 - 10 ** (-duck_db / 20.0)) * gate
         m[:len(v)] *= g
+        _diag("mix_duck", ducked_pct=int(100 * float((gate > 0.5).mean())), swell_pct=int(100 * float((gate < 0.2).mean())),
+              level_db=level_db, duck_db=duck_db)
     fi, fo = int(vsr * fade_in), int(vsr * fade_out)
     if fi:
         m[:fi] *= np.linspace(0, 1, fi)

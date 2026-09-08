@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist (repo: github.com/pirastral/ava-app)
 ======================================================================
-This zip is the COMPLETE application source as of update 109.
+This zip is the COMPLETE application source as of update 111.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -16,7 +16,40 @@ Replace these files in the repo (paths identical):
   builtin_keys.json – NEW (101): Freesound / Jamendo keys shipped with the app
   en_strings.py     – NEW (107): English renderings of engine messages
   voices/           – NOW POPULATED (107): 63 clips + voices.json
+  ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 111 (on top of 110) — visual
+  Light theme: page #e7ecf3 under white panels, firmer lines (#c5cdd9), deeper shadow —
+    sections stand out. Primary (cyan) buttons use dark text in both themes. Dialog titles
+    are padded on both sides so the close button never overlaps them in either direction.
+  Dock: the keys icon sits to the LEFT of undo/redo in English and to the right in Persian.
+
+WHAT CHANGED IN 110 (on top of 109)
+  Palette: new tokens from the owner's mock-ups. Dark: surface #0d111a, panel #161c29,
+    primary #40d2e6, accent (generate) #ebab36, success #7dff95 / warning #ffbc5e /
+    danger #ff8080 / info #87d1ff. Light: surface #f8fafc, panel #fff, primary #0d0d0d,
+    accent #7de9ff, success #41d949 / warning #ffac38 / danger #ff6161 / info #61c2ff.
+    A standalone palette-preview.html (the real UI on a stub API) ships for sign-off.
+  Font: Vazirmatn (Regular/Medium/Bold woff2, OFL) bundled in ui/fonts — ADD THE FOLDER
+    TO THE REPO (build.spec already bundles ui/).
+  One dropdown component for every <select>: chevron-down from the icon set, optgroups as
+    hover sub-menus with a direction-aware chevron (left in RTL, right in LTR), per-option
+    trash icons (Chatterbox user samples, music library entries), opens upward near the
+    bottom. Same height/radius everywhere, including the per-part voice selector.
+  Music library is a dropdown again, one trash icon per saved track.
+  Header: EN/FA toggle styled exactly like the theme button, 12 px apart.
+  Dialogs: sized between the (measured) header and dock; close button at the inline end,
+    titles padded so they never collide.
+  Google settings: keys button first; voice beside reading style on one row; default
+    style = casual podcast. API-key rows use the trash icon. Dock gets an icon-only keys
+    button beside undo/redo.
+  Music: level slider up to +6 dB (above the voice); duck release shortened (0.45 s, gate
+    0.6) so the bed audibly swells back inside ordinary sentence gaps; a mix_duck diag line
+    reports ducked/swell percentages.
+  Chrome blocking the GitHub zip: not caused by app code (109 changed only UI markup);
+    it is Chrome Safe Browsing's reputation check on a brand-new unsigned macOS binary —
+    see chat for the workaround; only Apple code-signing removes it.
 
 WHAT CHANGED IN 109 (on top of 108)
   Music library is a list: every saved track is a row with its own «استفاده» and its own
@@ -313,6 +346,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۰۹»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۱۱»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»
