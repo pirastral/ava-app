@@ -21,7 +21,7 @@
     background:radial-gradient(1200px 500px at 15% -10%, color-mix(in srgb, var(--tile) 14%, transparent), transparent 60%),var(--paper);
     color:var(--ink);min-height:100vh;transition:background .35s,color .35s;
   }
-  .wrap{max-width:960px;margin:0 auto;padding:88px 20px 170px}
+  .wrap{max-width:960px;margin:0 auto;padding:110px 20px 180px}
   header{position:fixed;top:0;left:0;right:0;z-index:60;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 22px;
     background:color-mix(in srgb, var(--panel) 82%, transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
   header > *{max-width:960px}
@@ -192,6 +192,30 @@
   .toggle{display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 14px;border:1px solid var(--line);border-radius:12px;background:var(--paper);font-size:.85rem;cursor:pointer}
   .toggle input{width:16px;height:16px;margin:0}
   .kstate{min-width:120px;font-size:.8rem}
+  header{flex-wrap:wrap;row-gap:4px}
+  .grid>div{padding:2px 0}
+  .grid input[type=range]{max-width:380px}
+  .subcard{padding:16px 18px;margin-bottom:14px}
+  .subcard h4{font-size:.85rem;color:var(--ink);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  .settings-group{border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-top:6px;background:color-mix(in srgb, var(--paper) 45%, transparent)}
+  .settings-group>.gtitle-sm{font-size:.8rem;font-weight:800;color:var(--muted);margin-bottom:10px}
+  .ghead{margin-bottom:12px}
+  .gulp{padding:14px 16px;margin-bottom:14px}
+  .gulp-row{gap:10px}
+  /* 108: volume popover */
+  .vol-pop{position:absolute;z-index:80;top:calc(100% + 8px);inset-inline-end:0;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:12px 14px;width:260px}
+  .vol-pop label{margin-bottom:6px}
+  .vol-pop input[type=range]{max-width:none;width:100%}
+  .ghead{position:relative}
+  .vdd-sub .vdd-row{display:flex;align-items:center;gap:4px}
+  .vdd-sub .vdd-row .vdd-i{flex:1}
+  .vdd-sub .vdd-del{border:none;background:none;color:var(--muted);cursor:pointer;padding:4px;border-radius:6px}
+  .vdd-sub .vdd-del:hover{color:var(--danger);background:var(--paper)}
+  .liblist{display:grid;gap:6px;max-height:260px;overflow-y:auto;padding:2px}
+  .liblist .librow{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--line);border-radius:10px;background:color-mix(in srgb, var(--paper) 55%, transparent)}
+  .liblist .librow.sel{border-color:var(--tile);box-shadow:0 0 0 2px color-mix(in srgb, var(--tile) 25%, transparent)}
+  .liblist .libname{flex:1;min-width:0;font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .liblist .libname small{color:var(--muted)}
   html[dir=ltr] body{font-family:-apple-system,"Segoe UI",Inter,Roboto,sans-serif}
   html[dir=ltr] textarea{direction:rtl;text-align:right}
   html[dir=ltr] .ltr{direction:ltr}
@@ -240,7 +264,12 @@
   <path d="M2 12h2" />
   <path d="M20 12h2" />
   <path d="m6.34 17.66-1.41 1.41" />
-  <path d="m19.07 4.93-1.41 1.41" /></symbol><symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401" /></symbol></svg>
+  <path d="m19.07 4.93-1.41 1.41" /></symbol><symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401" /></symbol><symbol id="i-volume-2" viewBox="0 0 24 24"><path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" />
+  <path d="M16 9a5 5 0 0 1 0 6" />
+  <path d="M19.364 18.364a9 9 0 0 0 0-12.728" /></symbol><symbol id="i-file-audio" viewBox="0 0 24 24"><path d="M11.65 22H18a2 2 0 0 0 2-2V8a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 14 2H6a2 2 0 0 0-2 2v10.35" />
+  <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+  <path d="M8 20v-7l3 1.474" />
+  <circle cx="6" cy="20" r="2" /></symbol></svg>
 <div class="wrap">
   <header>
     <div class="brand">
@@ -248,7 +277,7 @@
       <a class="badge xlink"><img src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCABgAGADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDoZh1qsRyeKty9TioMZauw42rmT4q0Y67apcW8Z/tmCMRROpAN1EOkTH+8v8Df8BPbHDfY2jjS5upBZIAQsMoJk4OPu9eueuK9f0Swn1C+S2to/MkAaQg8DCjJ/lWHp9nZS3+s6V4j8PWV/dWcschubVykkhlwwAZsHdz3bj0NXGVjOVO+p5uIl1aeO3063nu5UGTvlSIEA9cE/pmuj0fR00q/WBSU1V08m6bzN3lb/wDlnGQck4I3Nx1IxgGultNDkv1h03UvCpM0s4WG5VI4pFXd8rsOqsBkHHBI4HNc/wCHorqa4vFtI9s/nN5l5KSwhXLblXPJJJ6/l0puVxKLTH6HpFnrnjSxsZDJJbwxtdXy524ijVmbcffAxjn5vY1i65Nfa1qd1eXzEz3ch+zwNhVRPl+XA+6gBOfYV1/g4af4Z1u/hadsX2nzWaTPklpHHycD1PGT/WruifDq4MFxf6hIZQRvZSSTkj7vpUOajuaKm5bHAzeHNP8AM+0SKJ3HRtmeOxAPAHAAHIA6YqxdILaE8GUtghJQrKB7L06+vpXayaNDENqBg3PJPPp374FZt1aJHC0jgt2+ds1Htk2aqi0eL+IjfvcyskGxCcMUj4znJPHX+VZc19FZyizvRGlzBkrc7iQxxgZ6gjt/nFesanblbCeSCJJCAWIwD264rwzxTasL/wC0JC2ZMsFO7gH1HUVtzXV0YKNpWZ9cycnANCQ7j0pwRnfaoJI54FNOs+H7JT9s1uxWQciCOZXkP1AOF/H8qyNDW0eW706w1q+ssGeLTJVjBOMu5VV57cnJPoDXM6AP7PvLrVLu5u9Y1G/mEzNY28kkMTAfwgcE443dgDj1qvqXio3KyWmmX0MVrJjeg+cuR0JOOfYdPqa5PV9Xv/JK/wBvX7lmw4WV1AAGBwMDuf1px1Bs9C0i5ubrxnYzNb6rGJZiQlxauFVtjAysxxyo+7ngY4HOa1tN8PSQaYttbIkcIUlieGdjyT+dcL8Bpbi58Wanc3NxdXcNpp5SLzHZlV5GVARnvsDgfjXr8sksancmExwFXp+lZ1JWZrTjpc4GPTRb+N9DS7QSK99Gdp5yBz/QV3F9ObbT/JQ8E8A9fesGxifUPGS3MPzLYxtMcjj5vkUe3Un8K1db3xwfu9sf8Khev51lVd7GtKO7OWvGZ5XY4GCTzXM6nIZnJdjsBxgVr6rdwxu0bXMDSEZCCUbj/jXOTTeYDuPAJ71UIiqyI9ZlWHTtsIAyp5I4P/1q8d8Q2pvZpQwMbE8gys2eO3bH45r1W7naWJonwV9xzWFDp8YMqyl2w2UC8muqGxw1L3ujS+Lvh/4g6nMz6Tqc2oaOeum237mRPqo/131yT7V5hpSS2d6be4hkt5ozhopEKOp91OCK+oh70ahbWOp2wg1ews9RiUfKLqIOV/3W+8v4EVmzVHiumTyQwLMQOuBz19xW9Dpd7qWltcQCNot2SN43cd8V6VD4C0KbQ4dOfzIkjd5YY9wL2u8/d3HkhuuGyRxzzXKeG9MOna3rGhS3UUjQFWhJthyhJ+bdkFSB2Gck0JIptmppepxeAfh9ZXVjbpPfarO8ru5yExwoPrgA4+pNYaeLviJ4iMl1psamCA7H8uH5AxGcHnk1v6la2Nv4RZtTHnTzzbbaMj70SAjf7cnA/wB0+lcxZabqxRU8PXeo2DIoZhFIWR2ZsEkD0UdeecVcUrXM23dK5c8LeOtd0jXHg1vT5Y4rqaFbqSJMfu1JzjPcbs8dea574xX3jq11u5s/tNzHZpM8UbRvjOG4IxycgfrXTWXg/VrvxXFbXOuXU+nFjLM0yhXESDe5wPYY/EVT8a3dxr3iC51GQKkZlOEH3VyelSlHnuivecLNnmmiwWN3bzS3FnrBu7bDXEyt5jKT3IHSuo8Pz74FjjvnvImJ2PINrD2rpvs0qw/Zonis5J8l3jiG6cdfv+vXg/hUdjozWqqEttkY+7kck9zk96bmmgVJplK5hbHzKVPpVOPZ5Dl22+W+8erDuPyNbeoMgiJC/MB1rldQDMWKMSfaiGoqisexBSegrd8NWJQHVZ0BSJtsCMMiSXrkjuq9T6nA9ax0O3nHbNdV4g1bTtD01PtV5Hb21rbRL5jY2ncoYkepJY0mr6DukZ+rWS3REkm7JJLvk5Ynkk+9c3Fpd3LrsljYgRpMN7ScfKoGWLMewHNXdM8VaBqSr9hu7m7mnkKbDGV7dcEcCtLTby3j0XW7pm2TpDHF0z8hk+fH5L+daezkkQpqTOT8R7tU1XzVT90gWKGPH3Y0G1R+QyffNdP4IijFjLtCh4X5YDnoOD7Vy9/4nsoHaKONz2O1OOPer3gM6i+s3Or+XJb6ZJb7SJP+WpH3SB+fNOeGlya6FxmubQ6OwhaW18RTlApWFIN2Om9ixH1IQV5VJbXD3FwqIFhXkselepSXkdlZ6tYS71W8aOeFwu4F0BG0+gIYc9iPevPbuz1jVL4WFlLaW09xnYHBIcgE7QfXAOPU8UqdF3bKnOyS6kOhXiX9qy78zW0gGcY2nqDTr95ZZsmV3f1LVNoulQ6VZuN7yXEzh5ZGGNxxgYHQCnXQQHzPQ8jFTKlaWhcZvlVzmdckdIigzg9qxJ1cQkjhhXSa0nmxs69VPNYV2AY8EY471pGJz1HqetpICcZ5qUaJpniVms9VjeTy7aU27CQgxuqkqfoOTjms5nG7OafDeTQSB45GR1PyspwRUR8iZ76nU2y6ZpWiNbW5iiW1iG9d43bQO5J7/rmqtlHBP5k4TdFMoYZ6YI5H/wBauV8T6B4Jn0621lba4thHIsFyjO77ZGBKYYknyztbA7Hj0NafhmaGzs3t45mnjT/VsWzx6c1vG3LcyUnzWZqW2m6PeaqsWqRRLbRxySru+VQ6KWXPr0Ix3p+oeMvDsUqQpdxPFnaxGTj9Ky7zVrW3liuGCSJbyB2Q4O5QeRzweM1oJZ6X9pFtYQ+dGsaPFKItmUYblO0D0P8AOlJreVzanN2tEZqsinT4JAwcDMauOjr1U/ka5TUHliuIr23keOeBxJHIvVWU5B/Sut11Cui+VKgWQSeYuOgB4wa5QrNh/OBAxzV0pqwqrbZd1rT9VMjz6i0VnFLEJFmjRQrSMN3yr/dIPUdP0rEjKgyQzXgn+XCyGPbk+hFaXhSGfXoNU06WQhNOiSa2cgFo1ZyrICe2eQOxzjrWfqOjSaXbCe5uFzKxKKOpH96pc0nysu7kuZIwIb4teT2TqfMUEpn0rGuRi4kRuM5OOuKlur6CHXTcDlVUg471S1SVnV58Y3jCj61p1OZyvuepysAe1Qu/OM02d/eqjyZJrlTN5I7fTrW0k8Ao67ZDPeuLxjz5bKB5Q9sgsQe5J9K4zxbfWfh+z/0Ro492SdzYGBUVnq93p7ym2kGyVdksTqGjlX0ZTwf6dq4vxD4a0nVbxrmSa8tnbJ/dyGRAe2Fc9PbNOF0yJq60Of1vxvfXSywqUUNlRs54r6F+D+uafJ8MvD99eXnmyrAbSeQnDLJGzfI30TYR6jmvlXxPa3vh6URXPlzWzyfu54xtD4A/h6g+xrJtfGOp2Jmt9Mvri1in2iUK3yybem4dOOx606r5lYmkpQdz6h8ZePLCa8e1tmiGG4brk+ufSuN1LxHczo37wEZ5PTPvmvBrrxJq9xJue7csvAKqq4/IVPpN7qd9dBTdTmJSC7F8j6fX+XWlFxWw588tWe0eHvGg0LVZrif9/Z3MPkXMKOFfGQwZT/eDAHng8jvVfWPGUeuX+2O6uwXbYryQFgo7DCk/kK4620t/Ihuru4gFvJEJVKSAtgkgbv7pyOh5PGAc102mWMKyu1tdQ29lAqrPdSwttV3TKxAAZYksp2Llmwc8chvlvzdSU58vL0I/7Pt5ld01WO7dX2usMbnBwSSSQAAApJJOB36ipY4/tTWk/wA8ltOGe3lA+STHGQe9dLpVrpUvgm4jSwl+ySwO3kTlPOmJJCM4JX5zwyoDtVSOrfNSfC3SAfGOmaLFd3V2dbuDDeI8IXYF3htsYJERixn6Y5wal1XZlRp6o//Z" alt="@kamangir31">@kamangir31</a>
       <span class="tagline">متن فارسی را به گفتار تبدیل می‌کند</span>
     </div>
-    <select id="langSel" class="ctl" style="height:36px;padding:0 10px;border-radius:10px;margin-inline-end:8px" title="Language"><option value="fa">فارسی</option><option value="en">English</option></select><button id="themeBtn" title="روشن / تاریک"><svg class="ic"><use href="#i-moon"/></svg></button>
+    <button id="langBtn" class="ctl" style="height:36px;min-width:44px;padding:0 10px;border-radius:10px;margin-inline-end:8px;font-weight:800;letter-spacing:.04em" title="Language">EN</button><button id="themeBtn" title="روشن / تاریک"><svg class="ic"><use href="#i-moon"/></svg></button>
   </header>
 
   <div class="card">
@@ -401,11 +430,28 @@
       <div class="boxhead" style="display:flex;align-items:center;gap:10px">بخش‌های گفتار <span class="boxhint" style="flex:1">— هر بخش را گوش کنید؛ اگر چیزی باید عوض شود، متنش را با «ویرایش» باز کنید، تغییر بدهید و «بازتولید» را بزنید. متنِ تازه در کادر بالا با «تبدیل به گفتار» به آخر همین لیست اضافه می‌شود</span><button class="chip" type="button" id="clearParts" title="همهٔ بخش‌ها را دور می‌ریزد تا از نو شروع کنید"><svg class="ic"><use href="#i-trash-2"/></svg>پاک‌کردن همهٔ بخش‌ها</button></div>
       <div class="gulps" id="gulps"></div>
     </div>
-    <div class="finalbox" id="finalBox" hidden>
-      <div class="boxhead">فایل نهایی</div>
-      <!-- 96: موسیقی پس‌زمینه (لیریا) -->
-      <div class="row" style="margin:6px 0 10px">
-        <label class="toggle"><input type="checkbox" id="musicOn"> موسیقی پس‌زمینه <small style="opacity:.7">— دو فایل تحویل می‌گیرید: یکی بدون موسیقی، یکی با موسیقی</small></label>
+
+  </div>
+
+  <div class="dock" id="dock">
+    <div class="dock-in">
+      <div class="bar" id="bar"><div id="barFill"></div></div>
+      <div class="dock-row" style="justify-content:space-between">
+        <span class="row" style="gap:10px">
+          <button class="btn btn-gold" id="genBtn"><span class="spin" id="spin"></span><svg class="ic"><use href="#i-sparkles"/></svg>تبدیل به گفتار</button>
+          <button class="btn btn-primary" id="spliceBtn" disabled><svg class="ic"><use href="#i-download"/></svg>ساخت فایل نهایی</button>
+          <button class="btn btn-cancel" id="cancelBtn" type="button" hidden title="کارِ در حال انجام را در هر موتوری که باشد متوقف می‌کند"><svg class="ic"><use href="#i-x"/></svg>لغو</button>
+        </span>
+        <span class="ltr"><button class="chip ico" type="button" id="undoBtn" title="Undo (⌘Z / Ctrl+Z)" disabled><svg class="ic"><use href="#i-undo-2"/></svg></button><button class="chip ico" type="button" id="redoBtn" title="Redo (⇧⌘Z / Ctrl+Y)" disabled><svg class="ic"><use href="#i-redo-2"/></svg></button></span>
+      </div>
+      <div class="status" id="status" style="padding:8px 4px 2px;white-space:normal;line-height:1.6">آماده‌ام؛ متن را بنویسید و دکمه را بزنید.</div>
+    </div>
+  </div>
+  <div class="card" id="musicCard">
+    <h2>موسیقی پس‌زمینه</h2>
+    <p class="sub">اختیاری. یک قطعهٔ بی‌کلام زیر صدا می‌نشیند و موقع حرف‌زدن نرم پایین می‌رود؛ دو فایل تحویل می‌گیرید: یکی بدون موسیقی، یکی با موسیقی.</p>
+      <div class="row" style="margin:6px 0 14px">
+        <label class="toggle"><input type="checkbox" id="musicOn"> موسیقی پس‌زمینه روشن باشد</label>
       </div>
       <div id="musicPanel" hidden style="display:grid;gap:12px;margin-bottom:12px">
         <div class="subcard">
@@ -441,7 +487,8 @@
             </div>
             <div style="grid-column:1/-1">
               <label for="musicLib"><span>موسیقی‌های قبلی</span><small>هر چه انتخاب یا ساخته‌اید روی دستگاه مانده و رایگان دوباره استفاده می‌شود</small></label>
-              <div class="row"><select id="musicLib"><option value="">— موسیقی تازه (از منبع بالا) —</option></select><button class="chip ico" type="button" id="musicLibDel" title="Delete from library"><svg class="ic"><use href="#i-trash-2"/></svg></button></div>
+              <select id="musicLib" hidden><option value="">— موسیقی تازه (از منبع بالا) —</option></select>
+              <div id="musicLibList" class="liblist"><div class="gstate">هنوز چیزی در کتابخانه نیست</div></div>
             </div>
           </div>
         </div>
@@ -464,6 +511,9 @@
           </div>
         </div>
       </div>
+  </div>
+    <div class="card finalbox" id="finalBox" hidden style="margin-top:0">
+      <div class="boxhead">فایل نهایی</div>
       <div class="finalrow"><span class="gstate">همهٔ بخش‌ها با یک نفسِ کوتاه بینشان، پشت سر هم به یک MP3 می‌چسبند؛ دکمهٔ ساخت فایل نهایی پایین صفحه است.</span></div>
       <div class="result" id="result">
         <audio id="player" controls></audio>
@@ -480,23 +530,7 @@
       </div>
       <div class="finalmsg" id="finalMsg"></div>
     </div>
-  </div>
-
-  <div class="dock" id="dock">
-    <div class="dock-in">
-      <div class="bar" id="bar"><div id="barFill"></div></div>
-      <div class="dock-row" style="justify-content:space-between">
-        <span class="row" style="gap:10px">
-          <button class="btn btn-gold" id="genBtn"><span class="spin" id="spin"></span><svg class="ic"><use href="#i-sparkles"/></svg>تبدیل به گفتار</button>
-          <button class="btn btn-primary" id="spliceBtn" disabled><svg class="ic"><use href="#i-download"/></svg>ساخت فایل نهایی</button>
-          <button class="btn btn-cancel" id="cancelBtn" type="button" hidden title="کارِ در حال انجام را در هر موتوری که باشد متوقف می‌کند"><svg class="ic"><use href="#i-x"/></svg>لغو</button>
-        </span>
-        <span class="ltr"><button class="chip ico" type="button" id="undoBtn" title="Undo (⌘Z / Ctrl+Z)" disabled><svg class="ic"><use href="#i-undo-2"/></svg></button><button class="chip ico" type="button" id="redoBtn" title="Redo (⇧⌘Z / Ctrl+Y)" disabled><svg class="ic"><use href="#i-redo-2"/></svg></button></span>
-      </div>
-      <div class="status" id="status" style="padding:8px 4px 2px;white-space:normal;line-height:1.6">آماده‌ام؛ متن را بنویسید و دکمه را بزنید.</div>
-    </div>
-  </div>
-  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۱۰۷</span>
+  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۱۰۹</span>
     <span class="warn">این برنامه را فقط از خودِ سازنده‌اش بگیرید؛ نسخه‌ای که از جای ناشناس آمده باشد ممکن است بدافزار داشته باشد.</span>
   </footer>
 </div>
@@ -579,7 +613,7 @@
 <script>
   const $ = id => document.getElementById(id);
   /* ---------- 107: language ---------- */
-  const I18N_EN = {"آوای جاوید شاه": "Avaye Javid Shah", "متن فارسی را به گفتار تبدیل می‌کند": "Persian text to speech", "روشن / تاریک": "Light / dark", "موتور گفتار": "Speech engine", "— اول این را انتخاب کنید؛ ابزارهای متن و تنظیمات پایین با همین عوض می‌شوند": "— choose this first; the text tools and settings below follow it", "گوگل (Gemini TTS) — آنلاین، ۳۰ صدا، فارسی و انگلیسی، با سهمیهٔ رایگان": "Google (Gemini TTS) — online, 30 voices, Persian and English, free quota", "چترباکس فارسی — طبیعی‌ترین لحن (کندتر است و حدود ۲ گیگابایت جا می‌گیرد)": "Persian Chatterbox — the most natural tone (slower, about 2 GB on disk)", "مانا — سبک و سریع (ManaTTS)": "Mana — light and fast (ManaTTS)", "ژیرو — صدای مرد، سبک و سریع": "Gyro — male voice, light and fast", "امیر — صدای مرد، سبک و سریع": "Amir — male voice, light and fast", "متن فارسی‌تان را اینجا بنویسید یا بچسبانید…": "Write or paste your Persian text here…", "یک متن نمونه بگذار": "Insert a sample text", "پاک‌کردن همهٔ حرکت‌ها": "Clear all diacritics", "راهنمای حرکت‌گذاری": "Diacritics guide", "[مکث]": "[مکث]", "[مکث بلند]": "[مکث بلند]", "نیم ثانیه سکوت، همین‌جا": "Half a second of silence, right here", "سکوت بلندتر (۱٫۲ ثانیه) — برای آخر پاراگراف خوب است": "A longer silence (1.2 s) — good at the end of a paragraph", "سکوت بلندتر (۱٫۲ ثانیه)": "A longer silence (1.2 s)", "برچسب‌های صوتی": "Audio tags", "برچسب‌ها": "Tags", "برچسب‌های صوتی گوگل: حالت، سرعت، مکث و واکنش‌ها": "Google audio tags: mood, pace, pauses and reactions", "برچسب‌ها فقط با مدل 3.1 Flash کار می‌کنند": "Tags only work with the 3.1 Flash model", "مکث و سرعت": "Pauses and pace", "حالت و احساس": "Mood and emotion", "بلندی و جنس صدا": "Volume and voice quality", "واکنش‌های غیرکلامی": "Non-verbal reactions", "هر برچسب روی متنِ": "Each tag affects the text", "بعد از خودش": "after it", "نویسه": "characters", "ابزار حرکت‌گذاری": "Diacritization tool", "Google Gemini — دقیق، با کلید رایگان": "Google Gemini — accurate, with a free key", "Google Gemini Pro — دقیق‌ترین، سهمیهٔ رایگانش کم است": "Google Gemini Pro — most accurate, small free quota", "OpenAI GPT — دقیق، کلید می‌خواهد": "OpenAI GPT — accurate, needs a key", "Anthropic Claude — دقیق، کلید می‌خواهد": "Anthropic Claude — accurate, needs a key", "مدل محلی — آفلاین، فقط کسرهٔ اضافه را می‌گذارد": "Local model — offline, only adds the ezafe", "کلید API — یک بار وارد کنید، روی همین دستگاه می‌ماند": "API key — enter once, stays on this device", "نمایش / پنهان‌کردن": "Show / hide", "کلیدهای گوگل": "Google keys", "کلیدهای گوگل — همان کلیدهایی که موتور گوگل استفاده می‌کند": "Google keys — the same keys the Google engine uses", "حرکت‌گذاری خودکار": "Auto diacritics", "صدا و تنظیمات": "Voice and settings", "همهٔ این صداها متن‌باز و رایگان‌اند و کاملاً روی همین دستگاه اجرا می‌شوند. مدل هر صدا فقط بار اول دانلود می‌شود و بعد برای همیشه روی دستگاه می‌ماند.": "All of these voices are open source and free, and run entirely on this device. Each voice's model is downloaded once and then stays on the device.", "گوگل صدا را روی سرورهای خودش می‌سازد؛ نه دانلودی لازم دارد نه رم، ولی اینترنت و کلید می‌خواهد. هر کلید یک سهمیهٔ رایگانِ روزانه دارد و با کلید پولی محدودیت خیلی کمتر است.": "Google generates the voice on its own servers: no download, no RAM, but it needs the internet and a key. Each key has a free daily quota; a paid key is far less limited.", "طول هر بخش": "Part length", "— هر بخش یک درخواست به گوگل است؛ بخشِ بلندتر یعنی درخواست کمتر، ولی ویرایشِ هر بخش گران‌تر": "— each part is one request to Google; longer parts mean fewer requests but costlier edits", "— برای صداهای محلی، از ۲۸۰ نویسه بیشتر کیفیت را پایین می‌آورد": "— for the local voices, more than 280 characters lowers quality", "کوتاه — ۳۰۰ نویسه (حدود ۲۵ ثانیه) — ویرایش ارزان‌تر": "Short — 300 characters (~25 s) — cheaper edits", "متوسط — ۶۰۰ نویسه (حدود ۵۰ ثانیه)": "Medium — 600 characters (~50 s)", "بلند — ۹۰۰ نویسه (حدود ۷۵ ثانیه)": "Long — 900 characters (~75 s)", "خیلی بلند — ۱۲۰۰ نویسه (حدود ۱۰۰ ثانیه) — ممکن است کیفیت بیفتد": "Very long — 1200 characters (~100 s) — quality may drop", "کوتاه — ۱۸۰ نویسه": "Short — 180 characters", "متوسط — ۲۸۰ نویسه": "Medium — 280 characters", "بلند — ۴۰۰ نویسه": "Long — 400 characters", "خیلی بلند — ۵۰۰ نویسه — ممکن است کیفیت بیفتد": "Very long — 500 characters — quality may drop", "صدای چترباکس": "Chatterbox voice", "— از نمونه‌های آماده یا نمونهٔ خودتان (۸ تا ۱۵ ثانیه، فقط یک نفر، بدون موسیقی)": "— a built-in sample or your own (8–15 s, one speaker, no music)", "پیش‌فرض": "Default", "نمونهٔ خودم": "My sample", "نمونه‌های من": "My samples", "مدل": "Model", "رایگان یا پولی؟": "free or paid?", "3.1 Flash — رایگان، با برچسب‌های صوتی": "3.1 Flash — free, with audio tags", "2.5 Flash — رایگان، بدون برچسب": "2.5 Flash — free, no tags", "2.5 Pro — فقط با کلید پولی": "2.5 Pro — paid key only", "زبان": "Language", "خودش هم تشخیص می‌دهد": "auto-detects too", "فارسی": "Persian", "تشخیص خودکار": "Auto-detect", "سبک خواندن": "Reading style", "— گوگل لغزنده ندارد؛ از همین توضیح می‌فهمد چطور بخواند": "— Google has no sliders; it reads from this description", "— گوگل اسلایدر ندارد؛ از همین توضیح می‌فهمد چطور بخواند": "— Google has no sliders; it reads from this description", "سبک دلخواه‌تان، فارسی یا انگلیسی؛ مثلاً «آرام و شمرده، مثل گویندهٔ مستند»": "Your own style, in any language; e.g. “calm and measured, like a documentary narrator”", "پیوستگی لحن بین بخش‌ها": "Tone continuity between parts", "— جملهٔ آخرِ بخش قبل اول خوانده و بعد بریده می‌شود تا لحن قطع نشود (حدود ۱۰٪ صدای بیشتر)": "— the previous part's last sentence is read first and trimmed, so the tone carries over (~10% more audio)", "گفت‌وگوی دونفره": "Two-speaker dialogue", "— هر خط را با اسم گوینده و دونقطه شروع کنید: «کیان: سلام»": "— start every line with the speaker's name and a colon: “Kian: hello”", "صدا": "Voice", "۳۰ صدای آماده": "30 built-in voices", "گویندهٔ اول": "First speaker", "گویندهٔ دوم": "Second speaker", "اسمش در متن و صدایش": "name in the text and its voice", "کیان": "Kian", "دریا": "Darya", "برگشت به تنظیمات اولیه": "Back to defaults", "سرعت گفتار": "Speaking rate", "شدت بیان و احساس": "Expressiveness", "آهنگ و حالت گفتار": "Intonation", "تنوع و خلاقیت": "Variation", "ریتم واژه‌ها": "Word rhythm", "هرچه بیشتر، دقیق‌تر و آرام‌تر": "higher = more precise and calmer", "هرچه بیشتر، پرشورتر": "higher = more expressive", "صفر یعنی پایدارترین": "zero = most stable", "صفر یعنی پایدارترین؛ هرچه بالاتر، هر بازتولید یک برداشت تازه": "zero = most stable; the higher it is, the more each regeneration is a new take", "بخش‌های گفتار": "Speech parts", "— هر بخش را گوش کنید؛ اگر چیزی باید عوض شود، متنش را با «ویرایش» باز کنید، تغییر بدهید و «بازتولید» را بزنید. متنِ تازه در کادر بالا با «تبدیل به گفتار» به آخر همین لیست اضافه می‌شود": "— listen to each part; to change something, open its text with “Edit”, change it and press “Regenerate”. New text in the box above is appended to this list with “Generate speech”", "همهٔ بخش‌ها را دور می‌ریزد تا از نو شروع کنید": "Discards all parts so you can start over", "پاک‌کردن همهٔ بخش‌ها": "Clear all parts", "سکوت": "Silence", "این بخش را به یک سکوتِ خالص با طول دلخواه تبدیل می‌کند": "Turns this part into pure silence of a chosen length", "طول سکوت": "Silence length", "ثانیه": "s", "ویرایش": "Edit", "بازتولید": "Regenerate", "ویرایشگرِ متنِ همین بخش را باز و بسته می‌کند": "Opens and closes this part's text editor", "همین بخش را با متن، صدا و تنظیمات خودش دوباره می‌سازد؛ اگر توی ویرایشگر چیزی انتخاب کرده باشید، فقط همان قسمت (چند واژه انتخاب کنید تا طبیعی‌تر جا بیفتد)": "Regenerates this part with its own text, voice and settings; if something is selected in the editor, only that (select a few words so it blends naturally)", "تنظیمات صدای همین بخش؛ بازتولید و جراحی واژه‌ای همین‌ها را به کار می‌گیرند": "This part's voice settings; regeneration and word surgery use them", "صدای همین بخش — با بازتولید اعمال می‌شود": "This part's voice — applied on regeneration", "گوگل": "Google", "چترباکس": "Chatterbox", "مانا": "Mana", "ژیرو": "Gyro", "امیر": "Amir", "در نوبت…": "Queued…", "فایل نهایی": "Final file", "موسیقی پس‌زمینه": "Background music", "— دو فایل تحویل می‌گیرید: یکی بدون موسیقی، یکی با موسیقی": "— you get two files: one without music, one with", "انتخاب موسیقی": "Choose music", "منبع": "Source", "رایگان": "free", "Freesound — رایگان (بهترین برای فضا و بستر)": "Freesound — free (best for ambience and beds)", "Openverse — رایگان (CC0 / عمومی)": "Openverse — free (CC0 / public domain)", "Jamendo — رایگان (قطعه‌های بی‌کلام؛ نام هنرمند ذکر می‌شود)": "Jamendo — free (instrumental tracks; the artist is credited)", "Lyria ۳٫۵ — ساخت با هوش مصنوعی، فقط کلید پولی": "Lyria 3.5 — AI-generated, paid key only", "فایل خودم": "My own file", "سبک": "Style", "هر منبع با واژه‌های خودش جست‌وجو می‌شود": "each source is searched in its own vocabulary", "عبارت دلخواه (اختیاری، انگلیسی بهتر است) — خالی بگذارید تا از سبک بالا جست‌وجو شود": "Custom search (optional, English works best) — leave empty to search by the style above", "جست‌وجو": "Search", "توصیف به زبان خودتان": "Describe it in your own words", "اختیاری؛ اگر بنویسید، جای سبک را می‌گیرد": "optional; if written, it replaces the style", "مثلاً: پیانوی آرام با ویولن‌های دور، بدون ضرب": "e.g. calm piano with distant violins, no drums", "ساخت موسیقی": "Generate music", "انتخاب فایل صوتی از دستگاه": "Choose an audio file from this device", "موسیقی‌های قبلی": "Previous music", "هر چه انتخاب یا ساخته‌اید روی دستگاه مانده و رایگان دوباره استفاده می‌شود": "everything you picked or generated stays on this device and is reused for free", "— موسیقی تازه (از منبع بالا) —": "— new music (from the source above) —", "موسیقی انتخاب‌شده و تنظیم آمیختن": "Selected music and mixing", "هنوز موسیقی‌ای انتخاب نشده": "No music chosen yet", "هنوز موسیقی‌ای ساخته نشده": "No music generated yet", "بلندی موسیقی نسبت به صدا": "Music level relative to the voice", "دسی‌بل": "dB", "محو شدنِ آخر کار": "Fade-out at the end", "وقتی گوینده حرف می‌زند موسیقی نرم پایین برود": "Duck the music softly while the speaker talks", "— دوازده دسی‌بل، با شیب آرام": "— 12 dB, with a gentle slope", "همهٔ بخش‌ها با یک نفسِ کوتاه بینشان، پشت سر هم به یک MP3 می‌چسبند؛ دکمهٔ ساخت فایل نهایی پایین صفحه است.": "All parts are joined into one MP3 with a short breath between them; the final-file button is at the bottom of the screen.", "ذخیرهٔ MP3": "Save MP3", "ذخیرهٔ نسخهٔ با موسیقی": "Save the version with music", "زیرنویس SRT": "SRT subtitles", "زیرنویس VTT": "VTT subtitles", "زمان‌بندی از روی خودِ صدا درمی‌آید و متن، متنِ خودِ شماست.": "Timing comes from the audio itself; the text is your own.", "لغو": "Cancel", "کارِ در حال انجام را در هر موتوری که باشد متوقف می‌کند": "Stops the current job in whichever engine it runs", "ساخت فایل نهایی": "Build final file", "تبدیل به گفتار": "Generate speech", "آماده‌ام؛ متن را بنویسید و دکمه را بزنید.": "Ready — write your text and press the button.", "تنظیمات صدای بخش ": "Voice settings of part ", "تنظیمات صدای این بخش": "This part's voice settings", "هر تغییری همان لحظه روی همین بخش می‌نشیند و بازتولید کامل و جراحی واژه‌ای هر دو از همین‌ها استفاده می‌کنند. اگر می‌خواهید چند «برداشت» متفاوت از یک بخش بشنوید، تنوع را بالا ببرید و چند بار «بازتولید» را بزنید. «تنظیمات موقع تولید» یعنی همان مقادیر اسلایدر‌های اصلی در لحظه‌ای که آخرین بار «تبدیل به گفتار» را زدید؛ با هر تولید کاملِ تازه، تازه می‌شود.": "Every change applies to this part immediately, and both full regeneration and word surgery use it. For several different “takes” of a part, raise Variation and press Regenerate a few times. “Settings at generation” are the main sliders' values at the moment you last pressed Generate; they refresh with every new full generation.", "تنظیمات موقع تولید": "Settings at generation", "همان مقادیر اسلایدر‌های اصلی در لحظهٔ آخرین تولید کامل": "the main sliders' values at the last full generation", "تنظیمات اولیهٔ برنامه": "App defaults", "تنظیمات اولیهٔ خود برنامه": "the app's own defaults", "روی همهٔ بخش‌ها": "Apply to all parts", "همین تنظیمات روی همهٔ بخش‌ها می‌نشیند": "these settings are applied to every part", "فقط قسمتی که انتخاب کرده‌اید دوباره ساخته می‌شود": "only the selected portion is regenerated", "بستن": "Close", "افزودن کلید": "Add key", "دریافت کلید رایگان ↗": "Get a free key ↗", "آزمایش اتصال": "Test connection", "یک جملهٔ کوتاه با همین مدل می‌فرستد و دقیقاً می‌گوید چه شد": "Sends a short sentence with this model and reports exactly what happened", "کلید تازه را اینجا بچسبانید": "Paste the new key here", "این کلیدها هم برای گفتار گوگل استفاده می‌شوند، هم برای حرکت‌گذاری. هر وقت سهمیهٔ روزانهٔ یک کلید تمام شود، برنامه خودش می‌رود سراغ کلید بعدی و نیمه‌شبِ بعد (به وقت غرب آمریکا، که سهمیهٔ گوگل تازه می‌شود) دوباره از اولی شروع می‌کند. ترتیبِ لیست همان ترتیب استفاده است. با بستن این پنجره همه‌چیز ذخیره می‌شود.": "These keys serve both Google speech and diacritization. When a key's daily quota runs out, the app moves to the next key and starts over after midnight Pacific time, when Google's quota resets. List order is the order of use. Closing this window saves everything.", "فعال": "active", "سهمیهٔ امروزش تمام شده": "today's quota used up", "نامعتبر": "invalid", "تازه": "new", "راهنمای حرکت‌گذاری فارسی": "Persian diacritics guide", "حرکت‌ها تکلیف واژه‌های هم‌شکل را روشن می‌کنند (گُل یا گِل؟) و آهنگ جمله را طبیعی‌تر می‌کنند. دکمهٔ «درج» علامت را درست همان‌جا که مکان‌نما است می‌گذارد؛ حرکت را بعد از حرفِ موردنظر بگذارید.": "Diacritics settle look-alike words (gol or gel?) and make the sentence's melody more natural. “Insert” puts the mark exactly at the cursor; place a mark after the letter it belongs to.", "علامت": "Mark", "نام و نمونه": "Name and example", "مک": "Mac", "درج": "Insert", "فتحه — بَد": "fathe — بَد", "کسره — کِتاب، کتابِ من": "kasre — کِتاب، کتابِ من", "ضمه — گُل": "zamme — گُل", "تشدید — بنّا": "tashdid — بنّا", "سکون — مکث بی‌صدا": "sokun — silent stop", "تنوین فتحه — لطفاً": "tanvin-e fathe — لطفاً", "تنوین کسره — واقعاً کم‌کاربرد": "tanvin-e kasre — rarely used", "همزهٔ اضافه — خانهٔ ما": "ezafe hamze — خانهٔ ما", "این میان‌برها مال چیدمان استاندارد ملی (ISIRI 9147) است که در ویندوز «Persian (Standard)» و در مک «Persian – Standard» نام دارد و در هر دو یکی است. چیدمان قدیمی «Persian» در ویندوز و «Persian – QWERTY» در مک فرق دارند؛ اگر با آن‌ها کار می‌کنید، از دکمهٔ «درج» استفاده کنید که روی هر کیبوردی جواب می‌دهد. برای «هٔ» کلید استاندارد یکسانی وجود ندارد؛ «ه» را بنویسید و دکمهٔ درج را بزنید.": "These shortcuts are for the national standard layout (ISIRI 9147), called “Persian (Standard)” on Windows and “Persian – Standard” on Mac, identical on both. The older “Persian” layout on Windows and “Persian – QWERTY” on Mac differ; with those, use the Insert button, which works on any keyboard. There is no standard key for “هٔ”: type “ه” and press Insert.", "این برنامه را فقط از خودِ سازنده‌اش بگیرید؛ نسخه‌ای که از جای ناشناس آمده باشد ممکن است بدافزار داشته باشد.": "Get this app only from its maker; a copy from an unknown source may carry malware.", "طبیعی و خنثی": "Natural and neutral", "راوی کتاب صوتی — آرام و شمرده": "Audiobook narrator — calm and measured", "گویندهٔ خبر — رسمی و روشن": "News anchor — formal and clear", "خبر فوری — جدی و پرشتاب": "Breaking news — serious and brisk", "گویندهٔ مستند — گرم و باوقار": "Documentary narrator — warm and dignified", "قصه‌گوی کودکان — مهربان و بازیگوش": "Children's storyteller — kind and playful", "شعر کلاسیک — با وزن و درنگ": "Classical poetry — with meter and rests", "سخنرانی پرشور": "Passionate speech", "تبلیغ رادیویی — پرانرژی": "Radio ad — energetic", "پادکست خودمانی": "Casual podcast", "معلم شکیبا — آموزش گام‌به‌گام": "Patient teacher — step by step", "راهنمای تلفنی — رسمی و واضح": "Phone guide — formal and clear", "تعلیق و رازآلود": "Suspense and mystery", "شاد و سرزنده": "Joyful and lively", "غمگین و آرام": "Sad and quiet", "نجواگونه": "Whispered", "طنز خشک": "Dry humor", "گزارش ورزشی — هیجانی": "Sports commentary — excited", "حماسی و باشکوه": "Epic and grand", "معنوی و آرام": "Spiritual and serene", "سفارشی…": "Custom…", "روشن": "bright", "پرانرژی": "upbeat", "گزارشی": "informative", "محکم": "firm", "پرشور": "excitable", "جوان": "youthful", "سبک‌بال": "breezy", "راحت": "easy-going", "نفس‌دار": "breathy", "واضح": "clear", "نرم": "smooth", "خش‌دار": "gravelly", "ملایم": "soft", "یکدست": "even", "پخته": "mature", "رو‌به‌جلو": "forward", "دوستانه": "friendly", "خودمانی": "casual", "مهربان": "gentle", "سرزنده": "lively", "دانا": "knowledgeable", "گرم": "warm", "— هنوز کلیدی ثبت نکرده‌اید": "— no key yet", "واگرد شد.": "Undone.", "از نو اعمال شد.": "Redone.", "دارم لغو می‌کنم…": "Cancelling…", "لغو شد.": "Cancelled.", "لغو شد": "Cancelled", "لغو شد. بخش‌هایی که ساخته شده بودند سر جایشان هستند؛ می‌توانید ادامه بدهید یا از نو شروع کنید.": "Cancelled. The parts already built are kept; continue or start over.", "اول یک متن فارسی بنویسید یا بچسبانید.": "Write or paste a text first.", "این متن همین الان ساخته شده. متن تازه‌ای بگذارید تا به آخر بخش‌ها اضافه شود، یا بخش‌ها را جداگانه بازتولید کنید.": "This text was just generated. Put in new text to append it to the parts, or regenerate parts individually.", "همهٔ بخش‌ها آماده شد. گوش کنید، اگر لازم بود اصلاحشان کنید و آخر سر به هم بچسبانیدشان.": "All parts are ready. Listen, fix what needs fixing, and join them at the end.", "هنوز همهٔ بخش‌ها ساخته نشده.": "Not all parts have been generated yet.", "همهٔ بخش‌ها پاک شد؛ از نو شروع کنید.": "All parts cleared; start over.", "همهٔ حرکت‌ها از متن پاک شد.": "All diacritics were removed from the text.", "دارم حرکت‌ها را می‌گذارم…": "Adding diacritics…", "حرکت‌های پیشنهادی توی متن گذاشته شد؛ قبل از ساختن گفتار می‌توانید دستکاری‌شان کنید.": "Suggested diacritics were placed in the text; you can adjust them before generating.", "بخش‌ها عوض شده‌اند و این فایل نهایی دیگر به‌روز نیست؛ دوباره «چسباندن بخش‌ها» را بزنید.": "The parts changed and this final file is out of date; build it again.", "برای موتور گوگل اول باید از «کلیدهای گوگل» یک کلید فعال ثبت کنید": "For the Google engine, first add an active key under “Google keys”", "دارم می‌سازم…": "Generating…", "دارم موسیقی می‌سازم…": "Generating music…", "دارم آزمایش می‌کنم… (تا ۹۰ ثانیه صبر کنید)": "Testing… (up to 90 s)", "موسیقی هنوز ساخته نشده؛ همین‌جا می‌سازمش…": "The music is not generated yet; generating it now…", "اول از منبع انتخابی یک موسیقی انتخاب کنید (جست‌وجو → استفاده) یا از «موسیقی‌های قبلی» یکی را بردارید.": "First pick a track from the chosen source (Search → Use) or take one from “Previous music”.", "موسیقی آماده و روی دستگاه ذخیره شد.": "Music is ready and saved on this device.", "موسیقی ساخته شد و روی دستگاه ذخیره شد؛ حالا فایل نهایی را بسازید.": "Music generated and saved; now build the final file.", "حال‌وهوا عوض شده؛ موسیقی را دوباره بسازید": "The mood changed; generate the music again", "استفاده": "Use", "این قطعه ذکر منبع می‌خواهد: ": "This track needs a credit: ", "پاک شد.": "Deleted.", "موتور": "Engine"};
+  const I18N_EN = {"آوای جاوید شاه": "Avaye Javid Shah", "متن فارسی را به گفتار تبدیل می‌کند": "Persian text to speech", "روشن / تاریک": "Light / dark", "موتور گفتار": "Speech engine", "— اول این را انتخاب کنید؛ ابزارهای متن و تنظیمات پایین با همین عوض می‌شوند": "— choose this first; the text tools and settings below follow it", "گوگل (Gemini TTS) — آنلاین، ۳۰ صدا، فارسی و انگلیسی، با سهمیهٔ رایگان": "Google (Gemini TTS) — online, 30 voices, Persian and English, free quota", "چترباکس فارسی — طبیعی‌ترین لحن (کندتر است و حدود ۲ گیگابایت جا می‌گیرد)": "Persian Chatterbox — the most natural tone (slower, about 2 GB on disk)", "مانا — سبک و سریع (ManaTTS)": "Mana — light and fast (ManaTTS)", "ژیرو — صدای مرد، سبک و سریع": "Gyro — male voice, light and fast", "امیر — صدای مرد، سبک و سریع": "Amir — male voice, light and fast", "متن فارسی‌تان را اینجا بنویسید یا بچسبانید…": "Write or paste your Persian text here…", "یک متن نمونه بگذار": "Insert a sample text", "پاک‌کردن همهٔ حرکت‌ها": "Clear all diacritics", "راهنمای حرکت‌گذاری": "Diacritics guide", "[مکث]": "[مکث]", "[مکث بلند]": "[مکث بلند]", "نیم ثانیه سکوت، همین‌جا": "Half a second of silence, right here", "سکوت بلندتر (۱٫۲ ثانیه) — برای آخر پاراگراف خوب است": "A longer silence (1.2 s) — good at the end of a paragraph", "سکوت بلندتر (۱٫۲ ثانیه)": "A longer silence (1.2 s)", "برچسب‌های صوتی": "Audio tags", "برچسب‌ها": "Tags", "برچسب‌های صوتی گوگل: حالت، سرعت، مکث و واکنش‌ها": "Google audio tags: mood, pace, pauses and reactions", "برچسب‌ها فقط با مدل 3.1 Flash کار می‌کنند": "Tags only work with the 3.1 Flash model", "مکث و سرعت": "Pauses and pace", "حالت و احساس": "Mood and emotion", "بلندی و جنس صدا": "Volume and voice quality", "واکنش‌های غیرکلامی": "Non-verbal reactions", "هر برچسب روی متنِ": "Each tag affects the text", "بعد از خودش": "after it", "نویسه": "characters", "ابزار حرکت‌گذاری": "Diacritization tool", "Google Gemini — دقیق، با کلید رایگان": "Google Gemini — accurate, with a free key", "Google Gemini Pro — دقیق‌ترین، سهمیهٔ رایگانش کم است": "Google Gemini Pro — most accurate, small free quota", "OpenAI GPT — دقیق، کلید می‌خواهد": "OpenAI GPT — accurate, needs a key", "Anthropic Claude — دقیق، کلید می‌خواهد": "Anthropic Claude — accurate, needs a key", "مدل محلی — آفلاین، فقط کسرهٔ اضافه را می‌گذارد": "Local model — offline, only adds the ezafe", "کلید API — یک بار وارد کنید، روی همین دستگاه می‌ماند": "API key — enter once, stays on this device", "نمایش / پنهان‌کردن": "Show / hide", "کلیدهای گوگل": "Google keys", "کلیدهای گوگل — همان کلیدهایی که موتور گوگل استفاده می‌کند": "Google keys — the same keys the Google engine uses", "حرکت‌گذاری خودکار": "Auto diacritics", "صدا و تنظیمات": "Voice and settings", "همهٔ این صداها متن‌باز و رایگان‌اند و کاملاً روی همین دستگاه اجرا می‌شوند. مدل هر صدا فقط بار اول دانلود می‌شود و بعد برای همیشه روی دستگاه می‌ماند.": "All of these voices are open source and free, and run entirely on this device. Each voice's model is downloaded once and then stays on the device.", "گوگل صدا را روی سرورهای خودش می‌سازد؛ نه دانلودی لازم دارد نه رم، ولی اینترنت و کلید می‌خواهد. هر کلید یک سهمیهٔ رایگانِ روزانه دارد و با کلید پولی محدودیت خیلی کمتر است.": "Google generates the voice on its own servers: no download, no RAM, but it needs the internet and a key. Each key has a free daily quota; a paid key is far less limited.", "طول هر بخش": "Part length", "— هر بخش یک درخواست به گوگل است؛ بخشِ بلندتر یعنی درخواست کمتر، ولی ویرایشِ هر بخش گران‌تر": "— each part is one request to Google; longer parts mean fewer requests but costlier edits", "— برای صداهای محلی، از ۲۸۰ نویسه بیشتر کیفیت را پایین می‌آورد": "— for the local voices, more than 280 characters lowers quality", "کوتاه — ۳۰۰ نویسه (حدود ۲۵ ثانیه) — ویرایش ارزان‌تر": "Short — 300 characters (~25 s) — cheaper edits", "متوسط — ۶۰۰ نویسه (حدود ۵۰ ثانیه)": "Medium — 600 characters (~50 s)", "بلند — ۹۰۰ نویسه (حدود ۷۵ ثانیه)": "Long — 900 characters (~75 s)", "خیلی بلند — ۱۲۰۰ نویسه (حدود ۱۰۰ ثانیه) — ممکن است کیفیت بیفتد": "Very long — 1200 characters (~100 s) — quality may drop", "کوتاه — ۱۸۰ نویسه": "Short — 180 characters", "متوسط — ۲۸۰ نویسه": "Medium — 280 characters", "بلند — ۴۰۰ نویسه": "Long — 400 characters", "خیلی بلند — ۵۰۰ نویسه — ممکن است کیفیت بیفتد": "Very long — 500 characters — quality may drop", "صدای چترباکس": "Chatterbox voice", "— از نمونه‌های آماده یا نمونهٔ خودتان (۸ تا ۱۵ ثانیه، فقط یک نفر، بدون موسیقی)": "— a built-in sample or your own (8–15 s, one speaker, no music)", "پیش‌فرض": "Default", "نمونهٔ خودم": "My sample", "نمونه‌های من": "My samples", "مدل": "Model", "رایگان یا پولی؟": "free or paid?", "3.1 Flash — رایگان، با برچسب‌های صوتی": "3.1 Flash — free, with audio tags", "2.5 Flash — رایگان، بدون برچسب": "2.5 Flash — free, no tags", "2.5 Pro — فقط با کلید پولی": "2.5 Pro — paid key only", "زبان": "Language", "خودش هم تشخیص می‌دهد": "auto-detects too", "فارسی": "Persian", "تشخیص خودکار": "Auto-detect", "سبک خواندن": "Reading style", "— گوگل لغزنده ندارد؛ از همین توضیح می‌فهمد چطور بخواند": "— Google has no sliders; it reads from this description", "— گوگل اسلایدر ندارد؛ از همین توضیح می‌فهمد چطور بخواند": "— Google has no sliders; it reads from this description", "سبک دلخواه‌تان، فارسی یا انگلیسی؛ مثلاً «آرام و شمرده، مثل گویندهٔ مستند»": "Your own style, in any language; e.g. “calm and measured, like a documentary narrator”", "پیوستگی لحن بین بخش‌ها": "Tone continuity between parts", "— جملهٔ آخرِ بخش قبل اول خوانده و بعد بریده می‌شود تا لحن قطع نشود (حدود ۱۰٪ صدای بیشتر)": "— the previous part's last sentence is read first and trimmed, so the tone carries over (~10% more audio)", "گفت‌وگوی دونفره": "Two-speaker dialogue", "— هر خط را با اسم گوینده و دونقطه شروع کنید: «کیان: سلام»": "— start every line with the speaker's name and a colon: “Kian: hello”", "صدا": "Voice", "۳۰ صدای آماده": "30 built-in voices", "گویندهٔ اول": "First speaker", "گویندهٔ دوم": "Second speaker", "اسمش در متن و صدایش": "name in the text and its voice", "کیان": "Kian", "دریا": "Darya", "برگشت به تنظیمات اولیه": "Back to defaults", "سرعت گفتار": "Speaking rate", "شدت بیان و احساس": "Expressiveness", "آهنگ و حالت گفتار": "Intonation", "تنوع و خلاقیت": "Variation", "ریتم واژه‌ها": "Word rhythm", "هرچه بیشتر، دقیق‌تر و آرام‌تر": "higher = more precise and calmer", "هرچه بیشتر، پرشورتر": "higher = more expressive", "صفر یعنی پایدارترین": "zero = most stable", "صفر یعنی پایدارترین؛ هرچه بالاتر، هر بازتولید یک برداشت تازه": "zero = most stable; the higher it is, the more each regeneration is a new take", "بخش‌های گفتار": "Speech parts", "— هر بخش را گوش کنید؛ اگر چیزی باید عوض شود، متنش را با «ویرایش» باز کنید، تغییر بدهید و «بازتولید» را بزنید. متنِ تازه در کادر بالا با «تبدیل به گفتار» به آخر همین لیست اضافه می‌شود": "— listen to each part; to change something, open its text with “Edit”, change it and press “Regenerate”. New text in the box above is appended to this list with “Generate speech”", "همهٔ بخش‌ها را دور می‌ریزد تا از نو شروع کنید": "Discards all parts so you can start over", "پاک‌کردن همهٔ بخش‌ها": "Clear all parts", "سکوت": "Silence", "این بخش را به یک سکوتِ خالص با طول دلخواه تبدیل می‌کند": "Turns this part into pure silence of a chosen length", "طول سکوت": "Silence length", "ثانیه": "s", "ویرایش": "Edit", "بازتولید": "Regenerate", "ویرایشگرِ متنِ همین بخش را باز و بسته می‌کند": "Opens and closes this part's text editor", "همین بخش را با متن، صدا و تنظیمات خودش دوباره می‌سازد؛ اگر توی ویرایشگر چیزی انتخاب کرده باشید، فقط همان قسمت (چند واژه انتخاب کنید تا طبیعی‌تر جا بیفتد)": "Regenerates this part with its own text, voice and settings; if something is selected in the editor, only that (select a few words so it blends naturally)", "تنظیمات صدای همین بخش؛ بازتولید و جراحی واژه‌ای همین‌ها را به کار می‌گیرند": "This part's voice settings; regeneration and word surgery use them", "صدای همین بخش — با بازتولید اعمال می‌شود": "This part's voice — applied on regeneration", "گوگل": "Google", "چترباکس": "Chatterbox", "مانا": "Mana", "ژیرو": "Gyro", "امیر": "Amir", "در نوبت…": "Queued…", "فایل نهایی": "Final file", "موسیقی پس‌زمینه": "Background music", "— دو فایل تحویل می‌گیرید: یکی بدون موسیقی، یکی با موسیقی": "— you get two files: one without music, one with", "انتخاب موسیقی": "Choose music", "منبع": "Source", "رایگان": "free", "Freesound — رایگان (بهترین برای فضا و بستر)": "Freesound — free (best for ambience and beds)", "Openverse — رایگان (CC0 / عمومی)": "Openverse — free (CC0 / public domain)", "Jamendo — رایگان (قطعه‌های بی‌کلام؛ نام هنرمند ذکر می‌شود)": "Jamendo — free (instrumental tracks; the artist is credited)", "Lyria ۳٫۵ — ساخت با هوش مصنوعی، فقط کلید پولی": "Lyria 3.5 — AI-generated, paid key only", "فایل خودم": "My own file", "سبک": "Style", "هر منبع با واژه‌های خودش جست‌وجو می‌شود": "each source is searched in its own vocabulary", "عبارت دلخواه (اختیاری، انگلیسی بهتر است) — خالی بگذارید تا از سبک بالا جست‌وجو شود": "Custom search (optional, English works best) — leave empty to search by the style above", "جست‌وجو": "Search", "توصیف به زبان خودتان": "Describe it in your own words", "اختیاری؛ اگر بنویسید، جای سبک را می‌گیرد": "optional; if written, it replaces the style", "مثلاً: پیانوی آرام با ویولن‌های دور، بدون ضرب": "e.g. calm piano with distant violins, no drums", "ساخت موسیقی": "Generate music", "انتخاب فایل صوتی از دستگاه": "Choose an audio file from this device", "موسیقی‌های قبلی": "Previous music", "هر چه انتخاب یا ساخته‌اید روی دستگاه مانده و رایگان دوباره استفاده می‌شود": "everything you picked or generated stays on this device and is reused for free", "— موسیقی تازه (از منبع بالا) —": "— new music (from the source above) —", "موسیقی انتخاب‌شده و تنظیم آمیختن": "Selected music and mixing", "هنوز موسیقی‌ای انتخاب نشده": "No music chosen yet", "هنوز موسیقی‌ای ساخته نشده": "No music generated yet", "بلندی موسیقی نسبت به صدا": "Music level relative to the voice", "دسی‌بل": "dB", "محو شدنِ آخر کار": "Fade-out at the end", "وقتی گوینده حرف می‌زند موسیقی نرم پایین برود": "Duck the music softly while the speaker talks", "— دوازده دسی‌بل، با شیب آرام": "— 12 dB, with a gentle slope", "همهٔ بخش‌ها با یک نفسِ کوتاه بینشان، پشت سر هم به یک MP3 می‌چسبند؛ دکمهٔ ساخت فایل نهایی پایین صفحه است.": "All parts are joined into one MP3 with a short breath between them; the final-file button is at the bottom of the screen.", "ذخیرهٔ MP3": "Save MP3", "ذخیرهٔ نسخهٔ با موسیقی": "Save the version with music", "زیرنویس SRT": "SRT subtitles", "زیرنویس VTT": "VTT subtitles", "زمان‌بندی از روی خودِ صدا درمی‌آید و متن، متنِ خودِ شماست.": "Timing comes from the audio itself; the text is your own.", "لغو": "Cancel", "کارِ در حال انجام را در هر موتوری که باشد متوقف می‌کند": "Stops the current job in whichever engine it runs", "ساخت فایل نهایی": "Build final file", "تبدیل به گفتار": "Generate speech", "آماده‌ام؛ متن را بنویسید و دکمه را بزنید.": "Ready — write your text and press the button.", "تنظیمات صدای بخش ": "Voice settings of part ", "تنظیمات صدای این بخش": "This part's voice settings", "هر تغییری همان لحظه روی همین بخش می‌نشیند و بازتولید کامل و جراحی واژه‌ای هر دو از همین‌ها استفاده می‌کنند. اگر می‌خواهید چند «برداشت» متفاوت از یک بخش بشنوید، تنوع را بالا ببرید و چند بار «بازتولید» را بزنید. «تنظیمات موقع تولید» یعنی همان مقادیر اسلایدر‌های اصلی در لحظه‌ای که آخرین بار «تبدیل به گفتار» را زدید؛ با هر تولید کاملِ تازه، تازه می‌شود.": "Every change applies to this part immediately, and both full regeneration and word surgery use it. For several different “takes” of a part, raise Variation and press Regenerate a few times. “Settings at generation” are the main sliders' values at the moment you last pressed Generate; they refresh with every new full generation.", "تنظیمات موقع تولید": "Settings at generation", "همان مقادیر اسلایدر‌های اصلی در لحظهٔ آخرین تولید کامل": "the main sliders' values at the last full generation", "تنظیمات اولیهٔ برنامه": "App defaults", "تنظیمات اولیهٔ خود برنامه": "the app's own defaults", "روی همهٔ بخش‌ها": "Apply to all parts", "همین تنظیمات روی همهٔ بخش‌ها می‌نشیند": "these settings are applied to every part", "فقط قسمتی که انتخاب کرده‌اید دوباره ساخته می‌شود": "only the selected portion is regenerated", "بستن": "Close", "افزودن کلید": "Add key", "دریافت کلید رایگان ↗": "Get a free key ↗", "آزمایش اتصال": "Test connection", "یک جملهٔ کوتاه با همین مدل می‌فرستد و دقیقاً می‌گوید چه شد": "Sends a short sentence with this model and reports exactly what happened", "کلید تازه را اینجا بچسبانید": "Paste the new key here", "این کلیدها هم برای گفتار گوگل استفاده می‌شوند، هم برای حرکت‌گذاری. هر وقت سهمیهٔ روزانهٔ یک کلید تمام شود، برنامه خودش می‌رود سراغ کلید بعدی و نیمه‌شبِ بعد (به وقت غرب آمریکا، که سهمیهٔ گوگل تازه می‌شود) دوباره از اولی شروع می‌کند. ترتیبِ لیست همان ترتیب استفاده است. با بستن این پنجره همه‌چیز ذخیره می‌شود.": "These keys serve both Google speech and diacritization. When a key's daily quota runs out, the app moves to the next key and starts over after midnight Pacific time, when Google's quota resets. List order is the order of use. Closing this window saves everything.", "فعال": "active", "سهمیهٔ امروزش تمام شده": "today's quota used up", "نامعتبر": "invalid", "تازه": "new", "راهنمای حرکت‌گذاری فارسی": "Persian diacritics guide", "حرکت‌ها تکلیف واژه‌های هم‌شکل را روشن می‌کنند (گُل یا گِل؟) و آهنگ جمله را طبیعی‌تر می‌کنند. دکمهٔ «درج» علامت را درست همان‌جا که مکان‌نما است می‌گذارد؛ حرکت را بعد از حرفِ موردنظر بگذارید.": "Diacritics settle look-alike words (gol or gel?) and make the sentence's melody more natural. “Insert” puts the mark exactly at the cursor; place a mark after the letter it belongs to.", "علامت": "Mark", "نام و نمونه": "Name and example", "مک": "Mac", "درج": "Insert", "فتحه — بَد": "fathe — بَد", "کسره — کِتاب، کتابِ من": "kasre — کِتاب، کتابِ من", "ضمه — گُل": "zamme — گُل", "تشدید — بنّا": "tashdid — بنّا", "سکون — مکث بی‌صدا": "sokun — silent stop", "تنوین فتحه — لطفاً": "tanvin-e fathe — لطفاً", "تنوین کسره — واقعاً کم‌کاربرد": "tanvin-e kasre — rarely used", "همزهٔ اضافه — خانهٔ ما": "ezafe hamze — خانهٔ ما", "این میان‌برها مال چیدمان استاندارد ملی (ISIRI 9147) است که در ویندوز «Persian (Standard)» و در مک «Persian – Standard» نام دارد و در هر دو یکی است. چیدمان قدیمی «Persian» در ویندوز و «Persian – QWERTY» در مک فرق دارند؛ اگر با آن‌ها کار می‌کنید، از دکمهٔ «درج» استفاده کنید که روی هر کیبوردی جواب می‌دهد. برای «هٔ» کلید استاندارد یکسانی وجود ندارد؛ «ه» را بنویسید و دکمهٔ درج را بزنید.": "These shortcuts are for the national standard layout (ISIRI 9147), called “Persian (Standard)” on Windows and “Persian – Standard” on Mac, identical on both. The older “Persian” layout on Windows and “Persian – QWERTY” on Mac differ; with those, use the Insert button, which works on any keyboard. There is no standard key for “هٔ”: type “ه” and press Insert.", "این برنامه را فقط از خودِ سازنده‌اش بگیرید؛ نسخه‌ای که از جای ناشناس آمده باشد ممکن است بدافزار داشته باشد.": "Get this app only from its maker; a copy from an unknown source may carry malware.", "طبیعی و خنثی": "Natural and neutral", "راوی کتاب صوتی — آرام و شمرده": "Audiobook narrator — calm and measured", "گویندهٔ خبر — رسمی و روشن": "News anchor — formal and clear", "خبر فوری — جدی و پرشتاب": "Breaking news — serious and brisk", "گویندهٔ مستند — گرم و باوقار": "Documentary narrator — warm and dignified", "قصه‌گوی کودکان — مهربان و بازیگوش": "Children's storyteller — kind and playful", "شعر کلاسیک — با وزن و درنگ": "Classical poetry — with meter and rests", "سخنرانی پرشور": "Passionate speech", "تبلیغ رادیویی — پرانرژی": "Radio ad — energetic", "پادکست خودمانی": "Casual podcast", "معلم شکیبا — آموزش گام‌به‌گام": "Patient teacher — step by step", "راهنمای تلفنی — رسمی و واضح": "Phone guide — formal and clear", "تعلیق و رازآلود": "Suspense and mystery", "شاد و سرزنده": "Joyful and lively", "غمگین و آرام": "Sad and quiet", "نجواگونه": "Whispered", "طنز خشک": "Dry humor", "گزارش ورزشی — هیجانی": "Sports commentary — excited", "حماسی و باشکوه": "Epic and grand", "معنوی و آرام": "Spiritual and serene", "سفارشی…": "Custom…", "روشن": "bright", "پرانرژی": "upbeat", "گزارشی": "informative", "محکم": "firm", "پرشور": "excitable", "جوان": "youthful", "سبک‌بال": "breezy", "راحت": "easy-going", "نفس‌دار": "breathy", "واضح": "clear", "نرم": "smooth", "خش‌دار": "gravelly", "ملایم": "soft", "یکدست": "even", "پخته": "mature", "رو‌به‌جلو": "forward", "دوستانه": "friendly", "خودمانی": "casual", "مهربان": "gentle", "سرزنده": "lively", "دانا": "knowledgeable", "گرم": "warm", "— هنوز کلیدی ثبت نکرده‌اید": "— no key yet", "واگرد شد.": "Undone.", "از نو اعمال شد.": "Redone.", "دارم لغو می‌کنم…": "Cancelling…", "لغو شد.": "Cancelled.", "لغو شد": "Cancelled", "لغو شد. بخش‌هایی که ساخته شده بودند سر جایشان هستند؛ می‌توانید ادامه بدهید یا از نو شروع کنید.": "Cancelled. The parts already built are kept; continue or start over.", "اول یک متن فارسی بنویسید یا بچسبانید.": "Write or paste a text first.", "این متن همین الان ساخته شده. متن تازه‌ای بگذارید تا به آخر بخش‌ها اضافه شود، یا بخش‌ها را جداگانه بازتولید کنید.": "This text was just generated. Put in new text to append it to the parts, or regenerate parts individually.", "همهٔ بخش‌ها آماده شد. گوش کنید، اگر لازم بود اصلاحشان کنید و آخر سر به هم بچسبانیدشان.": "All parts are ready. Listen, fix what needs fixing, and join them at the end.", "هنوز همهٔ بخش‌ها ساخته نشده.": "Not all parts have been generated yet.", "همهٔ بخش‌ها پاک شد؛ از نو شروع کنید.": "All parts cleared; start over.", "همهٔ حرکت‌ها از متن پاک شد.": "All diacritics were removed from the text.", "دارم حرکت‌ها را می‌گذارم…": "Adding diacritics…", "حرکت‌های پیشنهادی توی متن گذاشته شد؛ قبل از ساختن گفتار می‌توانید دستکاری‌شان کنید.": "Suggested diacritics were placed in the text; you can adjust them before generating.", "بخش‌ها عوض شده‌اند و این فایل نهایی دیگر به‌روز نیست؛ دوباره «چسباندن بخش‌ها» را بزنید.": "The parts changed and this final file is out of date; build it again.", "برای موتور گوگل اول باید از «کلیدهای گوگل» یک کلید فعال ثبت کنید": "For the Google engine, first add an active key under “Google keys”", "دارم می‌سازم…": "Generating…", "دارم موسیقی می‌سازم…": "Generating music…", "دارم آزمایش می‌کنم… (تا ۹۰ ثانیه صبر کنید)": "Testing… (up to 90 s)", "موسیقی هنوز ساخته نشده؛ همین‌جا می‌سازمش…": "The music is not generated yet; generating it now…", "اول از منبع انتخابی یک موسیقی انتخاب کنید (جست‌وجو → استفاده) یا از «موسیقی‌های قبلی» یکی را بردارید.": "First pick a track from the chosen source (Search → Use) or take one from “Previous music”.", "موسیقی آماده و روی دستگاه ذخیره شد.": "Music is ready and saved on this device.", "موسیقی ساخته شد و روی دستگاه ذخیره شد؛ حالا فایل نهایی را بسازید.": "Music generated and saved; now build the final file.", "حال‌وهوا عوض شده؛ موسیقی را دوباره بسازید": "The mood changed; generate the music again", "استفاده": "Use", "این قطعه ذکر منبع می‌خواهد: ": "This track needs a credit: ", "پاک شد.": "Deleted.", "موتور": "Engine", "هنوز چیزی در کتابخانه نیست": "Nothing in the library yet", "از کتابخانه حذف شد.": "Removed from the library.", "افزودن فایل": "Add file", "به جای متن، یک فایل صوتی از دستگاه در این بخش می‌نشیند": "An audio file from this device takes the place of text in this part", "انتخاب فایل صوتی…": "Choose an audio file…", "هنوز فایلی انتخاب نشده": "No file chosen yet", "بلندی این بخش": "This part's volume", "یکی از بخش‌های «افزودن فایل» هنوز فایلی ندارد.": "One of the “Add file” parts has no file yet.", "نمونه حذف شد.": "Sample deleted.", "موسیقی پس‌زمینه روشن باشد": "Background music on", "اختیاری. یک قطعهٔ بی‌کلام زیر صدا می‌نشیند و موقع حرف‌زدن نرم پایین می‌رود؛ دو فایل تحویل می‌گیرید: یکی بدون موسیقی، یکی با موسیقی.": "Optional. An instrumental bed sits under the voice and ducks softly while the speaker talks; you get two files: one without music, one with.", "موسیقی‌ای انتخاب نشده؛ از منبع بالا یکی را انتخاب کنید یا از «موسیقی‌های قبلی» بردارید.": "No music chosen; pick one from the source above or from “Previous music”."};
   let LANG = "fa";
   try{ LANG = localStorage.getItem("ava-lang") || "fa"; }catch(e){}
   const t = s => (LANG === "en" && I18N_EN[s] !== undefined) ? I18N_EN[s] : s;
@@ -612,11 +646,14 @@
       }
     }
   }
+  function fitHeader(){ const h = document.querySelector("header"); if(h) document.querySelector(".wrap").style.paddingTop = (h.offsetHeight + 18) + "px"; }
+  window.addEventListener("resize", fitHeader); setTimeout(fitHeader, 0);
   function applyLang(){
     document.documentElement.setAttribute("dir", LANG === "en" ? "ltr" : "rtl");
     document.documentElement.setAttribute("lang", LANG);
     translateNode(document.body);
     document.title = LANG === "en" ? "Avaye Javid Shah" : "آوای جاوید شاه";
+    setTimeout(fitHeader, 0);
   }
   new MutationObserver(muts => { muts.forEach(m => m.addedNodes.forEach(nd => { if(nd.nodeType === 1) translateNode(nd); else if(nd.nodeType === 3 && nd.parentElement) translateNode(nd.parentElement); })); })
     .observe(document.documentElement, { childList: true, subtree: true });
@@ -630,9 +667,9 @@
   function setTheme(t){ root.setAttribute("data-theme", t); themeBtn.innerHTML = `<svg class="ic"><use href="#i-${t === "dark" ? "sun" : "moon"}"/></svg>`; }
   setTheme(matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
   themeBtn.onclick = () => setTheme(root.getAttribute("data-theme") === "dark" ? "light" : "dark");
-  $("langSel").value = LANG;
-  $("langSel").onchange = () => {
-    LANG = $("langSel").value;
+  const langBtn = $("langBtn"); langBtn.textContent = LANG === "en" ? "FA" : "EN";
+  langBtn.onclick = () => {
+    LANG = LANG === "en" ? "fa" : "en"; langBtn.textContent = LANG === "en" ? "FA" : "EN";
     try{ localStorage.setItem("ava-lang", LANG); }catch(e){}
     try{ window.pywebview.api.set_lang(LANG); }catch(e){}
     applyLang(); renderGulps(); fillPartSizes(); syncEngine();
@@ -924,6 +961,7 @@
   }
   function gulpPayload(g){
     if(g.silence) return { engine: "silence", text: "", seconds: g.silence };
+    if(g.file) return { engine: "file", text: "" };
     const s = g.settings;
     return { engine: g.voice, text: g.text,
       cbx_voice: s && s.cbxVoice ? s.cbxVoice : $("cbxVoice").value,
@@ -1017,7 +1055,7 @@
       for(let i = 0; i < gulps.length; i++){
         if(cancelled) throw new Error("لغو شد");
         const g = gulps[i], row = rows[i];
-        if(g.silence) continue;
+        if(g.silence || g.file) continue;
         const rta = row && row.querySelector(".gedit textarea");
         if(rta && rta.value.trim()) g.text = rta.value.trim();
         say("همهٔ بخش‌ها با تنظیمات تازه ساخته می‌شوند… بخش " + faNum(i+1) + " از " + faNum(gulps.length), "ok");
@@ -1053,18 +1091,29 @@
         <div class="ghead">
           <span class="gtitle">بخش ${faNum(idx+1)} از ${faNum(gulps.length)} — فایل ${g.name}</span>
           <label class="toggle" title="این بخش را به یک سکوتِ خالص با طول دلخواه تبدیل می‌کند"><input type="checkbox" class="g-silence" ${g.silence ? "checked" : ""}> سکوت</label>
+          <label class="toggle" title="به جای متن، یک فایل صوتی از دستگاه در این بخش می‌نشیند"><input type="checkbox" class="g-file" ${g.file ? "checked" : ""}> افزودن فایل</label>
           <span class="ltr">
           <button class="chip ico g-up" type="button" title="Move up" ${idx === 0 ? "disabled" : ""}><svg class="ic"><use href="#i-arrow-up"/></svg></button>
           <button class="chip ico g-down" type="button" title="Move down" ${idx === gulps.length - 1 ? "disabled" : ""}><svg class="ic"><use href="#i-arrow-down"/></svg></button>
           <button class="chip ico g-dup" type="button" title="Duplicate"><svg class="ic"><use href="#i-copy"/></svg></button>
+          <button class="chip ico g-vol" type="button" title="Volume${g.gain && g.gain !== 100 ? " (" + g.gain + "%)" : ""}"><svg class="ic"><use href="#i-volume-2"/></svg></button>
           <button class="chip ico g-del" type="button" title="Delete"><svg class="ic"><use href="#i-trash-2"/></svg></button>
           </span>
+          <div class="vol-pop" hidden>
+            <label><span>بلندی این بخش</span><small class="vol-val"></small></label>
+            <input type="range" class="vol-len" min="0" max="200" step="1" value="${g.gain || 100}">
+          </div>
         </div>
         <div class="g-silence-row" ${g.silence ? "" : "hidden"}>
           <label><span>طول سکوت</span><small class="g-silence-val">${faNum(g.silence || 3)} ثانیه</small></label>
           <input type="range" class="g-silence-len" min="1" max="50" step="1" value="${g.silence || 3}">
         </div>
-        <div class="gulp-row g-audio-row" ${g.silence ? "hidden" : ""}>
+        <div class="row g-file-row" ${g.file ? "" : "hidden"} style="padding:6px 6px 10px">
+          <button class="chip g-file-pick" type="button"><svg class="ic"><use href="#i-file-audio"/></svg>انتخاب فایل صوتی…</button>
+          <span class="gstate g-file-name">${g.file && g.file !== true ? g.file + (g.fileSeconds ? " · " + faNum(Math.round(g.fileSeconds)) + " ثانیه" : "") : "هنوز فایلی انتخاب نشده"}</span>
+          <audio controls ${g.file && g.b64 ? `src="data:audio/mpeg;base64,${g.b64}"` : ""} style="flex:1;height:34px"></audio>
+        </div>
+        <div class="gulp-row g-audio-row" ${(g.silence || g.file) ? "hidden" : ""}>
           <audio controls ${g.b64 ? `src="data:audio/mpeg;base64,${g.b64}"` : ""}></audio>
           <select class="gvoice" title="صدای همین بخش — با بازتولید اعمال می‌شود">
             <option value="google">گوگل</option>
@@ -1099,9 +1148,39 @@
       }
       sil.onchange = async () => {
         if(busy) return; remember();
-        if(sil.checked){ await makeSilence(+silLen.value); }
+        if(sil.checked){ g.file = 0; await makeSilence(+silLen.value); }
         else { g.silence = 0; g.id = null; g.b64 = null; }
         renderGulps();
+      };
+      const fil = div.querySelector(".g-file");
+      fil.onchange = () => {
+        if(busy) return; remember();
+        if(fil.checked){ g.silence = 0; g.file = true; g.id = null; g.b64 = null; }
+        else { g.file = 0; g.id = null; g.b64 = null; }
+        renderGulps(); syncHistBtns(); markFinalStale();
+      };
+      div.querySelector(".g-file-pick").onclick = async () => {
+        if(busy) return; setBusy(true);
+        try{
+          const r = await window.pywebview.api.file_gulp();
+          if(!r.ok){ if(r.error !== "cancelled") say(r.error, "err"); return; }
+          remember(); g.file = r.name; g.fileSeconds = r.seconds; g.id = r.gulp; g.b64 = r.b64; g.gain = g.gain || 100;
+          renderGulps(); markFinalStale(); say("فایل «" + r.name + "» در این بخش نشست.", "ok");
+        }catch(e){ say(String(e.message || e), "err"); }
+        finally{ setBusy(false); }
+      };
+      // volume popover
+      const volBtn = div.querySelector(".g-vol"), volPop = div.querySelector(".vol-pop"), volLen = div.querySelector(".vol-len"), volVal = div.querySelector(".vol-val");
+      const volText = p => { const db = p <= 0 ? "−∞" : ((p >= 100 ? "+" : "−") + Math.abs(20 * Math.log10(p / 100)).toFixed(1)); return faNum(p) + "٪ · " + db + " dB"; };
+      volVal.textContent = volText(+volLen.value);
+      volBtn.onclick = e => { e.stopPropagation(); document.querySelectorAll(".vol-pop").forEach(p => { if(p !== volPop) p.hidden = true; }); volPop.hidden = !volPop.hidden; };
+      volPop.addEventListener("click", e => e.stopPropagation());
+      volLen.oninput = () => { volVal.textContent = volText(+volLen.value); };
+      volLen.onchange = async () => {
+        if(!g.id){ g.gain = +volLen.value; return; }
+        remember(); g.gain = +volLen.value;
+        try{ const r = await window.pywebview.api.set_gain(g.id, g.gain); if(r.ok){ g.b64 = r.b64; const au = div.querySelector(".g-audio-row audio, .g-file-row audio"); if(au) au.src = "data:audio/mpeg;base64," + r.b64; } }catch(e){}
+        volBtn.title = "Volume (" + g.gain + "%)"; markFinalStale();
       };
       silLen.oninput = () => { silVal.textContent = faNum(+silLen.value) + " ثانیه"; };
       silLen.onchange = async () => { if(busy) return; remember(); await makeSilence(+silLen.value); };
@@ -1118,7 +1197,7 @@
       div.querySelector(".g-dup").onclick = async () => {
         if(busy) return;
         remember();
-        const copy = { text: g.text, voice: g.voice, b64: null, id: null, settings: g.settings ? {...g.settings} : null, name: nextPartName(), silence: g.silence || 0 };
+        const copy = { text: g.text, voice: g.voice, b64: null, id: null, settings: g.settings ? {...g.settings} : null, name: nextPartName(), silence: g.silence || 0, file: g.file || 0, fileSeconds: g.fileSeconds, gain: g.gain || 100 };
         if(g.id){
           try{ const r = await window.pywebview.api.clone_gulp(g.id); if(r.ok){ copy.id = r.gulp; copy.b64 = r.b64; } }catch(e){}
         }
@@ -1228,6 +1307,7 @@
       for(let i = start; i < gulps.length; i++){
         if(cancelled) throw new Error("لغو شد");
         if(gulps[i].silence){ if(!gulps[i].id){ const r = await window.pywebview.api.silence_gulp(gulps[i].silence); if(r.ok){ gulps[i].id = r.gulp; gulps[i].b64 = r.b64; } } continue; }
+        if(gulps[i].file) continue;
         say(`دارم گفتار را می‌سازم… بخش ${faNum(i+1)} از ${faNum(gulps.length)}`, "ok");
         const res = await window.pywebview.api.generate_gulp(gulpPayload(gulps[i]));
         if(!res.ok) throw new Error(res.error || "خطای ناشناخته");
@@ -1319,9 +1399,21 @@
     try{
       const r = await window.pywebview.api.music_list(); if(!r.ok) return;
       const sel = $("musicLib");
-      sel.innerHTML = '<option value="">— موسیقی تازه (از منبع بالا) —</option>' + r.items.map(it =>
-        `<option value="${it.file}">${MUSIC_PRESETS.find(p => p[0] === it.preset)?.[1] || it.preset}${it.custom ? " — " + it.custom.slice(0, 30) : ""} · ${faNum(Math.round(it.seconds))} ثانیه${it.license ? " · " + it.license : ""} · ${it.created.slice(0, 10)}</option>`).join("");
-      if(pick) sel.value = pick;
+      sel.innerHTML = '<option value="">— موسیقی تازه (از منبع بالا) —</option>' + r.items.map(it => `<option value="${it.file}"></option>`).join("");
+      if(pick !== undefined) sel.value = pick || "";
+      const list = $("musicLibList");
+      list.innerHTML = r.items.length ? r.items.map(it => {
+        const src = { freesound: "Freesound", openverse: "Openverse", jamendo: "Jamendo", lyria: "Lyria", file: "فایل خودم" }[it.preset] || it.preset;
+        return `<div class="librow${it.file === sel.value ? " sel" : ""}" data-file="${it.file}">
+          <span class="libname" title="${it.custom || it.file}">${it.custom || it.file}<small> · ${src} · ${faNum(Math.round(it.seconds))} ثانیه${it.license ? " · " + it.license : ""}${it.author ? " · " + it.author : ""} · ${it.created.slice(0, 10)}</small></span>
+          <button class="chip" type="button" data-use="${it.file}">استفاده</button>
+          <button class="chip ico" type="button" data-libdel="${it.file}" title="Delete this track"><svg class="ic"><use href="#i-trash-2"/></svg></button></div>`; }).join("")
+        : '<div class="gstate">هنوز چیزی در کتابخانه نیست</div>';
+      list.querySelectorAll("[data-use]").forEach(b => b.onclick = () => { sel.value = b.dataset.use; sel.dispatchEvent(new Event("change")); list.querySelectorAll(".librow").forEach(r2 => r2.classList.toggle("sel", r2.dataset.file === sel.value)); });
+      list.querySelectorAll("[data-libdel]").forEach(b => b.onclick = async () => {
+        if(busy) return;
+        try{ const d = await window.pywebview.api.music_delete(b.dataset.libdel); if(d.ok){ const wasSel = sel.value === b.dataset.libdel; await loadMusicLib(wasSel ? "" : sel.value); if(wasSel){ musicReady = false; $("musicState").textContent = "هنوز موسیقی‌ای انتخاب نشده"; } say("از کتابخانه حذف شد.", "ok"); } }catch(e){}
+      });
     }catch(e){}
   }
   $("musicLib").addEventListener("change", async () => {
@@ -1334,12 +1426,10 @@
       musicReady = true; $("musicState").textContent = "موسیقی از دستگاه بارگذاری شد — " + faNum(Math.round(r.seconds)) + " ثانیه (بدون هزینه)";
     }catch(e){ say(String(e.message || e), "err"); }
   });
-  $("musicLibDel").onclick = async () => {
-    const f = $("musicLib").value; if(!f) return;
-    try{ const r = await window.pywebview.api.music_delete(f); if(r.ok){ await loadMusicLib(""); musicReady = false; $("musicState").textContent = "پاک شد."; } }catch(e){}
-  };
+
   function musicCfg(){
     return { on: $("musicOn").checked, preset: $("musicPreset").value, custom: $("musicCustom").value.trim(),
+             provider: $("musicProvider").value, file: $("musicLib").value || "",
              level_db: +$("musicLevel").value, duck: $("musicDuck").checked, fade: +$("musicFade").value };
   }
   $("musicMake").onclick = async () => {
@@ -1359,7 +1449,7 @@
 
   spliceBtn.onclick = async () => {
     if(busy) return;
-    if(gulps.some(g => !g.id)){ say("هنوز همهٔ بخش‌ها ساخته نشده.", "err"); return; }
+    if(gulps.some(g => !g.id)){ say(gulps.some(g => g.file === true) ? "یکی از بخش‌های «افزودن فایل» هنوز فایلی ندارد." : "هنوز همهٔ بخش‌ها ساخته نشده.", "err"); return; }
     scrollToEl(finalBox, "end");
     setBusy(true); spliceBtn.disabled = true;
     try{
@@ -1443,7 +1533,11 @@
     const menu = document.getElementById("cbxPickMenu");
     menu.innerHTML = `<div class="vdd-group"><button type="button" class="vdd-i" data-id="default">پیش‌فرض</button></div>` +
       [...groups.entries()].map(([g, vs]) => `<div class="vdd-group"><button type="button" class="vdd-i" data-group="${g}"><span>${g}</span><span style="opacity:.6">${faNum(vs.length)} ▸</span></button>
-        <div class="vdd-sub">${vs.map(v => `<button type="button" class="vdd-i${v.id === sel.value ? " sel" : ""}" data-id="${v.id}">${v.builtin ? (v.style || v.name) : v.name}</button>`).join("")}</div></div>`).join("");
+        <div class="vdd-sub">${vs.map(v => `<div class="vdd-row"><button type="button" class="vdd-i${v.id === sel.value ? " sel" : ""}" data-id="${v.id}">${v.builtin ? (v.style || v.name) : v.name}</button>${v.builtin ? "" : `<button type="button" class="vdd-del" data-del="${v.id}" title="Delete this sample"><svg class="ic"><use href="#i-trash-2"/></svg></button>`}</div>`).join("")}</div></div>`).join("");
+    menu.querySelectorAll("[data-del]").forEach(b => b.onclick = async e => {
+      e.stopPropagation();
+      try{ const r = await window.pywebview.api.cbx_voice_delete(b.dataset.del); if(r.ok){ renderCbxVoices(r.voices, sel.value === b.dataset.del ? "default" : sel.value); say("نمونه حذف شد.", "ok"); } else say(r.error, "err"); }catch(e){}
+    });
     const setLabel = () => { const v = list.find(x => x.id === sel.value); document.getElementById("cbxPickLabel").textContent = v ? (v.builtin ? `${v.voice} · ${v.style}` : v.name) : "پیش‌فرض"; };
     setLabel();
     menu.querySelectorAll("[data-id]").forEach(b => b.onclick = e => { e.stopPropagation(); sel.value = b.dataset.id; sel.dispatchEvent(new Event("change")); setLabel(); document.getElementById("cbxPick").classList.remove("open"); menu.querySelectorAll(".sel").forEach(x => x.classList.remove("sel")); b.classList.add("sel"); });
@@ -1451,7 +1545,7 @@
     applyLang();
   }
   document.getElementById("cbxPickBtn").onclick = e => { e.stopPropagation(); document.getElementById("cbxPick").classList.toggle("open"); };
-  document.addEventListener("click", () => { const p = document.getElementById("cbxPick"); p.classList.remove("open"); p.querySelectorAll(".vdd-group.open").forEach(x => x.classList.remove("open")); });
+  document.addEventListener("click", () => { const p = document.getElementById("cbxPick"); p.classList.remove("open"); p.querySelectorAll(".vdd-group.open").forEach(x => x.classList.remove("open")); document.querySelectorAll(".vol-pop").forEach(x => x.hidden = true); });
   async function loadCbxVoices(){
     try{ const r = await window.pywebview.api.cbx_voices(); if(r.ok) renderCbxVoices(r.voices); }catch(e){}
   }

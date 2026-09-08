@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist (repo: github.com/pirastral/ava-app)
 ======================================================================
-This zip is the COMPLETE application source as of update 107.
+This zip is the COMPLETE application source as of update 109.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -17,6 +17,32 @@ Replace these files in the repo (paths identical):
   en_strings.py     – NEW (107): English renderings of engine messages
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 109 (on top of 108)
+  Music library is a list: every saved track is a row with its own «استفاده» and its own
+  trash icon (one track at a time, never everything). Chatterbox user samples already had
+  per-sample trash icons in the picker.
+
+WHAT CHANGED IN 108 (on top of 107) — from the 107 field log + UI batch
+  BUG FIXED — Lyria error after clearing parts: new_document() had dropped the music bed
+    while the UI still showed the Freesound track; the final step then fell through to
+    generate with Lyria. Now the bed survives clearing; the final step reloads the
+    library track the UI shows as chosen and never generates unless provider == lyria.
+  Cancellations are no longer logged as tracebacks. The completeness audit is confirmed
+    working in the log (two skipped-clause takes regenerated, third complete).
+  Language: a compact EN/FA toggle next to the theme button. Header height is measured
+    into the page padding so nothing sits under it.
+  Add-file parts: «افزودن فایل» tick beside «سکوت»; a button opens the file dialog
+    (wav/mp3/ogg/flac/m4a/aac); the file becomes the part (decoded mono, own rate; the
+    splice resamples). Duplicable, movable, undoable; captions skip it.
+  Per-part volume: a speaker icon between Duplicate and Delete opens a floating slider,
+    0–200 %, 100 = as generated, shown with its dB (20·log10). Applied at assembly time;
+    the stored audio is never altered; the preview re-renders.
+  Trash icons: on the user's own Chatterbox samples inside the picker sub-menu (built-ins
+    protected); the library trash next to «موسیقی‌های قبلی» stays.
+  Layout: music is its own card («موسیقی پس‌زمینه») between the parts and the final
+    card; the final file is its own card. Sliders capped at 380 px, more vertical air,
+    sub-card headings ruled.
 
 WHAT CHANGED IN 107 (on top of 106)
   Built-in Chatterbox voice library: 63 reference clips (Charon, Laomedeia, Leda,
@@ -287,6 +313,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۰۷»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۰۹»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

@@ -112,7 +112,8 @@ class Api:
             b64 = base64.b64encode(mp3).decode("ascii")
             return {"ok": True, "b64": b64, "kb": len(mp3) // 1024}
         except Exception as e:
-            traceback.print_exc()
+            if type(e).__name__ != "Cancelled":
+                traceback.print_exc()
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
     def generate_gulp(self, payload):
@@ -122,7 +123,8 @@ class Api:
             b64 = base64.b64encode(mp3).decode("ascii")
             return {"ok": True, "b64": b64, "gulp": gid}
         except Exception as e:
-            traceback.print_exc()
+            if type(e).__name__ != "Cancelled":
+                traceback.print_exc()
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
     def reset_gulps(self):
@@ -142,7 +144,8 @@ class Api:
             b64 = base64.b64encode(mp3).decode("ascii")
             return {"ok": True, "b64": b64, "gulp": req["gulp"], "changed": n, "mode": mode}
         except Exception as e:
-            traceback.print_exc()
+            if type(e).__name__ != "Cancelled":
+                traceback.print_exc()
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
     def splice(self, ids, music=None):
@@ -158,7 +161,8 @@ class Api:
                 out["kb_music"] = len(files["music"]) // 1024
             return out
         except Exception as e:
-            traceback.print_exc()
+            if type(e).__name__ != "Cancelled":
+                traceback.print_exc()
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
     # ---- 96: background music (Lyria 3.5) -----------------------------------
@@ -170,7 +174,8 @@ class Api:
             mp3 = engines.pcm_to_mp3(pcm, sr)
             return {"ok": True, "b64": base64.b64encode(mp3).decode("ascii"), "seconds": round(len(pcm) / sr, 1)}
         except Exception as e:
-            traceback.print_exc()
+            if type(e).__name__ != "Cancelled":
+                traceback.print_exc()
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
     def new_document(self):
@@ -191,6 +196,34 @@ class Api:
     def music_styles(self):
         import engines
         return {"ok": True, "styles": [[k, label] for k, label, _ in engines.MUSIC_STYLES]}
+
+    def file_gulp(self):
+        try:
+            import engines
+            result = self._window.create_file_dialog(
+                webview.OPEN_DIALOG, directory=_downloads_dir(), allow_multiple=False,
+                file_types=("Audio (*.wav;*.mp3;*.ogg;*.flac;*.m4a;*.aac)",))
+            if not result:
+                return {"ok": False, "error": "cancelled"}
+            path = result if isinstance(result, str) else result[0]
+            gid, mp3, name, seconds = engines.file_gulp(path)
+            return {"ok": True, "gulp": gid, "b64": base64.b64encode(mp3).decode("ascii"), "name": name, "seconds": seconds}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def set_gain(self, gid, percent):
+        try:
+            import engines
+            return {"ok": True, "b64": base64.b64encode(engines.set_gain(gid, float(percent))).decode("ascii")}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def cbx_voice_delete(self, voice_id):
+        try:
+            import engines
+            return {"ok": True, "voices": engines.cbx_voice_delete(voice_id)}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
     def silence_gulp(self, seconds):
         try:
@@ -294,7 +327,8 @@ class Api:
             engines._job_start()
             return {"ok": True, **engines.captions_for(ids, self._status)}
         except Exception as e:
-            traceback.print_exc()
+            if type(e).__name__ != "Cancelled":
+                traceback.print_exc()
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
     def save_text(self, text, ext="srt"):
@@ -317,7 +351,8 @@ class Api:
             marked = engines.ezafe_apply(text, self._status, tool=tool, key=key)
             return {"ok": True, "text": marked}
         except Exception as e:
-            traceback.print_exc()
+            if type(e).__name__ != "Cancelled":
+                traceback.print_exc()
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
     def build(self):
@@ -354,7 +389,8 @@ class Api:
             v = engines.cbx_voice_add(path)
             return {"ok": True, "voice": v, "voices": engines.cbx_voices()}
         except Exception as e:
-            traceback.print_exc()
+            if type(e).__name__ != "Cancelled":
+                traceback.print_exc()
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
     # ---- 90: Google keys (shared by the Google voice and the diacritizer) --

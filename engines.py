@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 107
-BUILD_FA = "\u06f1\u06f0\u06f7"
+BUILD = 109
+BUILD_FA = "\u06f1\u06f0\u06f9"
 
 
 def _diag(tag, **kv):
@@ -1480,7 +1480,29 @@ def _tail_gate(pcm, sr):
     return _fade_edges(pcm[:keep].copy(), sr, ms=15)
 
 
+def set_gain(gid, percent):
+    """Per-part volume: 100 = as generated; 20·log10(p/100) dB, so 200 ≈ +6 dB,
+    50 ≈ −6 dB, 0 = mute. The stored audio is never altered."""
+    entry = _GULP_PCM.get(int(gid))
+    if entry is None:
+        raise RuntimeError("این بخش دیگر در حافظه نیست؛ یک بار دیگر «تبدیل به گفتار» را بزنید.")
+    entry["gain"] = float(min(300.0, max(0.0, percent)))
+    return pcm_to_mp3(_assemble(entry), entry["sr"])
+
+
+def _apply_gain(pcm, entry):
+    p = float(entry.get("gain", 100.0) or 0.0)
+    if abs(p - 100.0) < 0.5:
+        return pcm
+    return np.clip(pcm.astype(np.float32) * (p / 100.0), -32768, 32767).astype(np.int16)
+
+
 def _assemble(entry):
+    """Concatenate the per-clause audio with budgeted pauses, at the part's gain."""
+    return _apply_gain(_assemble_raw(entry), entry)
+
+
+def _assemble_raw(entry):
     sr = entry["sr"]
     out = []
     for i in entry["items"]:
@@ -1558,9 +1580,10 @@ def reset_gulps():
 
 def new_document():
     """Start a new document without discarding parts — undo may restore them.
-    Only the continuity tail and the current music bed are forgotten."""
+    Only the continuity tail is forgotten; the chosen music bed is the user's
+    choice and stays (FIELD 107: clearing parts made the final step reach for
+    Lyria because the bed had been dropped)."""
     _G_LAST["tail"] = ""
-    _MUSIC.update({"pcm": None, "sr": None, "prompt": ""})
 
 
 def gc_gulps(keep_ids):
@@ -1570,6 +1593,21 @@ def gc_gulps(keep_ids):
     for gid in [g for g in list(_GULP_PCM) if g not in keep]:
         _GULP_PCM.pop(gid, None)
     return len(_GULP_PCM)
+
+
+def file_gulp(path):
+    """A part holding an audio file from disk (108): decoded to mono, kept at
+    its own rate (the splice resamples)."""
+    p = Path(path)
+    if not p.is_file():
+        raise RuntimeError("فایل پیدا نشد.")
+    pcm, sr = _decode_audio(p.read_bytes())
+    if len(pcm) < sr // 10:
+        raise RuntimeError("این فایل صوتی تقریباً خالی است.")
+    gid = next(_gulp_ids)
+    _GULP_PCM[gid] = {"sr": sr, "items": [{"kind": "t", "text": "", "span": (0, 0), "pcm": pcm}],
+                      "text": "", "engine": "file", "payload": {"file": p.name}}
+    return gid, pcm_to_mp3(pcm, sr), p.name, round(len(pcm) / sr, 1)
 
 
 def silence_gulp(seconds, sr=24000):
@@ -1715,7 +1753,7 @@ def _cbx_continuous(items, payload, status):
 def _verify_entry(entry, where):
     """Structural invariants: the stored items must exactly mirror what the
     gulp's text implies. A violation raises instead of ever becoming audio."""
-    if entry.get("engine") == "silence":
+    if entry.get("engine") in ("silence", "file"):
         return
     try:
         expected = _clause_split(entry["text"], entry.get("engine") or "chatterbox")
@@ -2807,6 +2845,16 @@ def cbx_voice_path(voice_id):
     return None
 
 
+def cbx_voice_delete(voice_id):
+    """Remove one of the user's own samples (built-ins cannot be removed)."""
+    if not voice_id.startswith("u:"):
+        raise RuntimeError("نمونه‌های داخل برنامه حذف نمی‌شوند؛ فقط نمونه‌های خودتان.")
+    p = _USER_VOICES / os.path.basename(voice_id[2:])
+    if p.exists():
+        p.unlink()
+    return cbx_voices()
+
+
 def cbx_voice_add(src_path):
     """Copy a user's clip into the library. Returns the new voice entry."""
     src = Path(src_path)
@@ -3858,7 +3906,7 @@ def captions_for(ids, status):
             raise RuntimeError("این بخش دیگر در حافظه نیست؛ یک بار دیگر «تبدیل به گفتار» را بزنید.")
         pcm, sr = _assemble(entry), entry["sr"]
         dur = len(pcm) / sr
-        if entry.get("engine") == "silence":
+        if entry.get("engine") in ("silence", "file"):
             t0 += dur + 0.12
             continue
         if entry.get("engine") == "google":
@@ -4087,8 +4135,13 @@ def final_files(ids, music_cfg, status):
     clean_pcm, sr = _splice_pcm(ids, status)
     out = {"clean": pcm_to_mp3(clean_pcm, sr), "seconds": round(len(clean_pcm) / sr, 1)}
     if music_cfg and music_cfg.get("on"):
+        if _MUSIC["pcm"] is None and music_cfg.get("file"):
+            music_load(music_cfg["file"])                       # the library track the UI shows as chosen
         if _MUSIC["pcm"] is None:
-            lyria_music(music_cfg.get("preset"), music_cfg.get("custom"), len(clean_pcm) / sr, status)
+            if music_cfg.get("provider") == "lyria":
+                lyria_music(music_cfg.get("preset"), music_cfg.get("custom"), len(clean_pcm) / sr, status)
+            else:
+                raise RuntimeError("موسیقی‌ای انتخاب نشده؛ از منبع بالا یکی را انتخاب کنید یا از «موسیقی‌های قبلی» بردارید.")
         status("دارم موسیقی را زیر صدا می‌گذارم…")
         mixed = mix_music(clean_pcm, sr, _MUSIC["pcm"], _MUSIC["sr"],
                           level_db=float(music_cfg.get("level_db", -16)), duck=bool(music_cfg.get("duck", True)),
