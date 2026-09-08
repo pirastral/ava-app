@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist (repo: github.com/pirastral/ava-app)
 ======================================================================
-This zip is the COMPLETE application source as of update 114.
+This zip is the COMPLETE application source as of update 115.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -18,6 +18,11 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 115 (on top of 114)
+  Chatterbox voice selector: 50 % of its row in the main card, 70 % in the part-settings
+  dialog; dropdown menus take the button's width. Sub-menus open on the natural side and
+  flip only when that side truly has no room and the other side does; 240 px wide.
 
 WHAT CHANGED IN 114 (on top of 113)
   Sub-menus (Chatterbox voices, main card and dialog): fixed geometry — 260 px wide, up to
@@ -385,6 +390,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۱۴»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۱۵»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

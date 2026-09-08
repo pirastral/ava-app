@@ -227,7 +227,7 @@
   .dd2-group{position:relative}
   .dd2-group>.dd2-i .ic{width:1.1em;height:1.1em;margin:0;color:var(--muted)}
   .dd2-menu.grouped{overflow:visible;max-height:none!important}
-  .dd2-sub{display:none;position:fixed;z-index:131;width:260px;max-width:calc(100vw - 24px);height:auto;max-height:min(320px, calc(100vh - 16px));overflow-y:auto;overflow-x:hidden;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:6px}
+  .dd2-sub{display:none;position:fixed;z-index:131;width:240px;max-width:calc(100vw - 24px);height:auto;max-height:min(320px, calc(100vh - 16px));overflow-y:auto;overflow-x:hidden;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:6px}
   .dd2-sub .dd2-i{white-space:normal;word-break:break-word;padding:5px 10px;font-size:.84rem}
   .dd2-sub .dd2-del{padding:5px}
   .dd2-menu .dd2-i small{font-size:.75rem}
@@ -387,7 +387,7 @@
       <div class="cbx" style="grid-column:1/-1">
         <label for="cbxVoice">صدای چترباکس <small style="opacity:.7">— از نمونه‌های آماده یا نمونهٔ خودتان (۸ تا ۱۵ ثانیه، فقط یک نفر، بدون موسیقی)</small></label>
         <div class="row">
-          <select id="cbxVoice"><option value="default" selected>پیش‌فرض</option></select>
+          <span style="flex:0 0 50%;max-width:50%;display:flex"><select id="cbxVoice"><option value="default" selected>پیش‌فرض</option></select></span>
           <button class="chip" type="button" id="cbxUpload"><svg class="ic"><use href="#i-plus"/></svg>نمونهٔ خودم</button>
         </div>
       </div>
@@ -577,7 +577,7 @@
       </div>
       <div class="finalmsg" id="finalMsg"></div>
     </div>
-  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۱۱۴</span>
+  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۱۱۵</span>
     <span class="warn">این برنامه را فقط از خودِ سازنده‌اش بگیرید؛ نسخه‌ای که از جای ناشناس آمده باشد ممکن است بدافزار داشته باشد.</span>
   </footer>
 </div>
@@ -596,7 +596,7 @@
     </div>
     <div class="gs-cbx">
       <label><span>صدای چترباکس</span><small>نمونهٔ مرجع این بخش</small></label>
-      <select id="gs_cbxVoice"><option value="default">پیش‌فرض</option></select>
+      <span style="display:flex;width:70%"><select id="gs_cbxVoice"><option value="default">پیش‌فرض</option></select></span>
       <label style="margin-top:10px"><span>سرعت گفتار</span><small>۱× طبیعی</small></label>
       <div class="slider-row"><input type="range" id="gs_cbxSpeed" min="0.7" max="1.3" step="0.05" value="1"><span class="slider-val" id="gs_cbxSpeedVal">1.00×</span></div>
       <label><span>شدت بیان و احساس</span><small>۰٫۸ پیش‌فرض</small></label>
@@ -685,12 +685,13 @@
       const placeSub = g => {
         const sub = g.querySelector(".dd2-sub"), r = g.getBoundingClientRect(); if(!sub) return;
         const rtl = document.documentElement.getAttribute("dir") !== "ltr", vh = window.innerHeight, vw = window.innerWidth;
-        const W = Math.min(260, vw - 24), H = Math.min(320, vh - 16);       // fixed geometry, no measuring
+        const W = Math.min(240, vw - 24), H = Math.min(320, vh - 16);       // fixed geometry, no measuring
         sub.style.width = W + "px"; sub.style.maxHeight = H + "px";
         sub.style.top = Math.max(8, Math.min(r.top - 6, vh - H - 8)) + "px";
         // open away from the group (left in RTL, right in LTR); flip when that side has no room
         const roomLeft = r.left - 12, roomRight = vw - r.right - 12;
-        const toLeft = rtl ? roomLeft >= W || roomLeft >= roomRight : !(roomRight >= W || roomRight >= roomLeft);
+        // the natural side (left in RTL, right in LTR) unless it has no room and the other side does
+        const toLeft = rtl ? !(roomLeft < W && roomRight >= W) : (roomRight < W && roomLeft >= W);
         sub.style.left = "auto"; sub.style.right = "auto";
         if(toLeft) sub.style.right = Math.max(8, vw - r.left + 4) + "px"; else sub.style.left = Math.max(8, Math.min(r.right + 4, vw - W - 8)) + "px";
       };
@@ -701,7 +702,7 @@
     function closeAll(){ document.querySelectorAll(".dd2.open").forEach(x => { x.classList.remove("open"); x.querySelectorAll(".dd2-group.open").forEach(g => g.classList.remove("open")); }); }
     function place(){
       const r = btn.getBoundingClientRect(), vh = window.innerHeight, up = vh - r.bottom < 360 && r.top > 360;
-      menu.style.position = "fixed"; menu.style.minWidth = r.width + "px"; menu.style.left = r.left + "px"; menu.style.right = "auto";
+      menu.style.position = "fixed"; menu.style.minWidth = r.width + "px"; menu.style.width = r.width + "px"; menu.style.left = r.left + "px"; menu.style.right = "auto";
       const mh = Math.min(340, up ? r.top - 16 : vh - r.bottom - 16); menu.style.maxHeight = mh + "px";
       if(up){ menu.style.top = "auto"; menu.style.bottom = (vh - r.top + 6) + "px"; } else { menu.style.bottom = "auto"; menu.style.top = (r.bottom + 6) + "px"; }
     }
