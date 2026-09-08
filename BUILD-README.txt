@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist (repo: github.com/pirastral/ava-app)
 ======================================================================
-This zip is the COMPLETE application source as of update 111.
+This zip is the COMPLETE application source as of update 112.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -18,6 +18,23 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 112 (on top of 111)
+  BUG FIXED — "corrupted" parts after add-file / silence: 108 added a second <audio> (the
+    file row) ABOVE the main player, and regeneration wrote its result into "the first
+    audio in the row" — the hidden one. Log confirmed the engine was generating fine. All
+    three write sites now target the visible player. The generated audio of a part is also
+    stashed when it becomes a silence/file and restored when the tick is removed.
+  Dropdowns and drop-ups are positioned fixed from their button (never clipped by the
+    manuscript's or a dialog's overflow); the tags menu aligns to the button's inner edge.
+  Gemini languages: German, Turkish, French, Spanish (prompt notes + transcription codes).
+  Voice on the right / reading style on the left in Persian; mirrored in English.
+  Two-speaker mode: a reading style per speaker, carried into the prompt.
+  Music: fade default 1.5 s; «تنظیمات اولیهٔ آمیختن» resets level/fade/duck.
+  Dock: undo always before redo; the keys icon moves to the far side by language.
+  Part volume: reset button beside the slider; the popover closes on outside click.
+  Per-part settings: Chatterbox voice selector added; menus inside dialogs unclipped.
+  Light mode: nested surfaces tinted consistently; indicator/link colours use --tile.
 
 WHAT CHANGED IN 111 (on top of 110) — visual
   Light theme: page #e7ecf3 under white panels, firmer lines (#c5cdd9), deeper shadow —
@@ -346,6 +363,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۱۱»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۱۲»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

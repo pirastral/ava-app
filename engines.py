@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 111
-BUILD_FA = "\u06f1\u06f1\u06f1"
+BUILD = 112
+BUILD_FA = "\u06f1\u06f1\u06f2"
 
 
 def _diag(tag, **kv):
@@ -3114,13 +3114,18 @@ def google_prompt(text, cfg):
         style = GOOGLE_PRESETS["neutral"]
     lang = cfg.get("g_lang") or "fa"
     lang_note = {"fa": "Persian (Farsi) as spoken in Iran — standard Tehran pronunciation. Diacritics (harakat) in the text mark exact vowels; follow them.",
-                 "en": "English.",
+                 "en": "English.", "de": "German.", "tr": "Turkish.", "fr": "French.", "es": "Spanish.",
                  "auto": "the language of the transcript."}.get(lang, "the language of the transcript.")
     speakers = cfg.get("g_speakers") or []
     duo = ""
     if len(speakers) == 2:
         a, b = speakers[0].get("name", ""), speakers[1].get("name", "")
         duo = f"This is a conversation between {a} and {b}. Every line of the transcript begins with the speaker's name and a colon.\n"
+        # 112: a reading style per speaker
+        for sp in speakers:
+            pst = GOOGLE_PRESETS.get(sp.get("preset") or "", "")
+            if pst and sp.get("name"):
+                duo += f"{sp['name']} speaks in this style: {pst}\n"
     head = (f"Narrator: one consistent voice, same identity in every recording. Style: {style} "
             f"Language: {lang_note} " + duo +
             "Read ONLY the transcript below, exactly as written; do not read these instructions; perform bracketed tags, never say them.\n"
@@ -3132,7 +3137,7 @@ def _google_body(text, cfg):
     model = cfg.get("g_model") or "gemini-3.1-flash-tts-preview"
     speakers = cfg.get("g_speakers") or []
     lang = cfg.get("g_lang") or "fa"
-    lang_code = {"fa": "fa-IR", "en": "en-US"}.get(lang)
+    lang_code = {"fa": "fa-IR", "en": "en-US", "de": "de-DE", "tr": "tr-TR", "fr": "fr-FR", "es": "es-ES"}.get(lang)
     if len(speakers) == 2:
         sc = [{"speaker": s.get("name", ""), "voice": s.get("voice") or "Charon"} for s in speakers]
     else:
@@ -3474,7 +3479,7 @@ def google_pcm(text, cfg, status):
         if lead and ci == 1:
             full, sr = _google_call(lead + " " + chunk, cfg, status)
             cl = [(lead, (0, len(lead)))] + [(c, sp) for c, sp in _g_clauses(chunk)]
-            cuts = _g_bounds(full, sr, cl, status, {"fa": "fa-IR", "en": "en-US"}.get(cfg.get("g_lang"))) if len(cl) > 1 else None
+            cuts = _g_bounds(full, sr, cl, status, {"fa": "fa-IR", "en": "en-US", "de": "de-DE", "tr": "tr-TR", "fr": "fr-FR", "es": "es-ES"}.get(cfg.get("g_lang"))) if len(cl) > 1 else None
             if not cuts:
                 _diag("google_leadin", mode="fail_regen_plain")
                 status("گوگل: مرز جملهٔ راهنما پیدا نشد؛ بدون راهنما می‌سازم…")
@@ -3499,7 +3504,7 @@ def google_pcm(text, cfg, status):
                     _diag("google_leadin", trimmed_ms=int((len(full) - len(pcm)) * 1000 / sr), kept_ms=int(len(pcm) * 1000 / sr))
         if pcm is None:
             pcm, sr = _google_call(chunk, cfg, status)
-        lang = {"fa": "fa-IR", "en": "en-US"}.get(cfg.get("g_lang"))
+        lang = {"fa": "fa-IR", "en": "en-US", "de": "de-DE", "tr": "tr-TR", "fr": "fr-FR", "es": "es-ES"}.get(cfg.get("g_lang"))
         # completeness (104): the model sometimes skips a sentence. The
         # transcript we take for boundaries also tells us — retry the take.
         words = google_words(pcm, sr, status, lang)
@@ -3671,7 +3676,7 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
         return 0                                    # everything changed: nothing to save
     if j1 <= j0:
         # pure deletion: drop the old clauses' audio, keep the neighbours
-        cuts = _g_bounds(pcm, sr, oc, status, {"fa": "fa-IR", "en": "en-US"}.get(cfg.get("g_lang")))
+        cuts = _g_bounds(pcm, sr, oc, status, {"fa": "fa-IR", "en": "en-US", "de": "de-DE", "tr": "tr-TR", "fr": "fr-FR", "es": "es-ES"}.get(cfg.get("g_lang")))
         if cuts is None:
             return 0
         b = [0] + cuts + [len(pcm)]
@@ -3680,7 +3685,7 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
                       "text": new_text.strip()})
         _diag("g_clause_patch", removed=i1 - i0)
         return i1 - i0
-    lang = {"fa": "fa-IR", "en": "en-US"}.get(cfg.get("g_lang"))
+    lang = {"fa": "fa-IR", "en": "en-US", "de": "de-DE", "tr": "tr-TR", "fr": "fr-FR", "es": "es-ES"}.get(cfg.get("g_lang"))
     cuts = _g_bounds(pcm, sr, oc, status, lang)
     if cuts is None:
         return 0
@@ -3911,7 +3916,7 @@ def captions_for(ids, status):
             continue
         if entry.get("engine") == "google":
             cl = _g_clauses(entry["text"])
-            cuts = _g_bounds(pcm, sr, cl, status, {"fa": "fa-IR", "en": "en-US"}.get((entry.get("payload") or {}).get("g_lang")))
+            cuts = _g_bounds(pcm, sr, cl, status, {"fa": "fa-IR", "en": "en-US", "de": "de-DE", "tr": "tr-TR", "fr": "fr-FR", "es": "es-ES"}.get((entry.get("payload") or {}).get("g_lang")))
             if cuts is None:
                 cuts = []
                 cl = [(entry["text"], (0, len(entry["text"])))]
