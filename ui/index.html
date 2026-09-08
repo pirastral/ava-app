@@ -217,7 +217,7 @@
   .dd2-btn .dd2-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .dd2-menu{display:none;position:fixed;z-index:120;min-width:100%;max-height:340px;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:6px;z-index:75}
   .dd2.open .dd2-menu{display:block}
-  .dd2-i{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:start;background:none;border:none;border-radius:8px;padding:8px 10px;font:inherit;font-size:.9rem;color:var(--ink);cursor:pointer;white-space:nowrap}
+  .dd2-i{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:start;background:none;border:none;border-radius:8px;padding:6px 10px;font:inherit;font-size:.86rem;line-height:1.5;color:var(--ink);cursor:pointer;white-space:nowrap}
   .dd2-i:hover,.dd2-i.sel{background:var(--paper)}
   .dd2-i.sel{color:var(--tile);font-weight:700}
   .dd2-row{display:flex;align-items:center;gap:2px}
@@ -227,7 +227,10 @@
   .dd2-group{position:relative}
   .dd2-group>.dd2-i .ic{width:1.1em;height:1.1em;margin:0;color:var(--muted)}
   .dd2-menu.grouped{overflow:visible;max-height:none!important}
-  .dd2-sub{display:none;position:fixed;z-index:131;min-width:240px;max-height:320px;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:6px;z-index:76}
+  .dd2-sub{display:none;position:fixed;z-index:131;width:260px;max-width:calc(100vw - 24px);height:auto;max-height:min(320px, calc(100vh - 16px));overflow-y:auto;overflow-x:hidden;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:6px}
+  .dd2-sub .dd2-i{white-space:normal;word-break:break-word;padding:5px 10px;font-size:.84rem}
+  .dd2-sub .dd2-del{padding:5px}
+  .dd2-menu .dd2-i small{font-size:.75rem}
   .dd2-group:hover>.dd2-sub,.dd2-group.open>.dd2-sub{display:block}
   .dd2.up .dd2-menu{top:auto;bottom:calc(100% + 6px)}
   html[dir=ltr] .dd2-menu{left:0;right:auto}
@@ -574,7 +577,7 @@
       </div>
       <div class="finalmsg" id="finalMsg"></div>
     </div>
-  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۱۱۳</span>
+  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۱۱۴</span>
     <span class="warn">این برنامه را فقط از خودِ سازنده‌اش بگیرید؛ نسخه‌ای که از جای ناشناس آمده باشد ممکن است بدافزار داشته باشد.</span>
   </footer>
 </div>
@@ -681,12 +684,15 @@
       menu.classList.toggle("grouped", menu.querySelector(".dd2-group") !== null);
       const placeSub = g => {
         const sub = g.querySelector(".dd2-sub"), r = g.getBoundingClientRect(); if(!sub) return;
-        const rtl = document.documentElement.getAttribute("dir") !== "ltr", vh = window.innerHeight;
-        sub.style.display = "block";
-        const sh = Math.min(sub.scrollHeight, 320); sub.style.maxHeight = sh + "px";
-        sub.style.top = Math.max(8, Math.min(r.top - 6, vh - sh - 8)) + "px";
-        if(rtl){ sub.style.left = "auto"; sub.style.right = (window.innerWidth - r.left + 4) + "px"; } else { sub.style.right = "auto"; sub.style.left = (r.right + 4) + "px"; }
-        sub.style.display = "";
+        const rtl = document.documentElement.getAttribute("dir") !== "ltr", vh = window.innerHeight, vw = window.innerWidth;
+        const W = Math.min(260, vw - 24), H = Math.min(320, vh - 16);       // fixed geometry, no measuring
+        sub.style.width = W + "px"; sub.style.maxHeight = H + "px";
+        sub.style.top = Math.max(8, Math.min(r.top - 6, vh - H - 8)) + "px";
+        // open away from the group (left in RTL, right in LTR); flip when that side has no room
+        const roomLeft = r.left - 12, roomRight = vw - r.right - 12;
+        const toLeft = rtl ? roomLeft >= W || roomLeft >= roomRight : !(roomRight >= W || roomRight >= roomLeft);
+        sub.style.left = "auto"; sub.style.right = "auto";
+        if(toLeft) sub.style.right = Math.max(8, vw - r.left + 4) + "px"; else sub.style.left = Math.max(8, Math.min(r.right + 4, vw - W - 8)) + "px";
       };
       menu.querySelectorAll(".dd2-group").forEach(g => { g.addEventListener("mouseenter", () => placeSub(g)); });
       menu.querySelectorAll(".dd2-group > .dd2-i").forEach(b => b.onclick = e => { e.stopPropagation(); const g = b.parentElement; menu.querySelectorAll(".dd2-group.open").forEach(x => { if(x !== g) x.classList.remove("open"); }); placeSub(g); g.classList.toggle("open"); });
@@ -1306,16 +1312,17 @@
       silLen.onchange = async () => { if(busy) return; remember(); await makeSilence(+silLen.value); };
       const st = div.querySelector(".g-audio-row .gstate"), ed = div.querySelector(".gedit");
       const ta = div.querySelector(".gedit textarea");
-      div.querySelector(".g-up").onclick = () => { if(busy || idx === 0) return; remember(); [gulps[idx-1], gulps[idx]] = [gulps[idx], gulps[idx-1]]; renderGulps(); markFinalStale(); };
-      div.querySelector(".g-down").onclick = () => { if(busy || idx === gulps.length - 1) return; remember(); [gulps[idx+1], gulps[idx]] = [gulps[idx], gulps[idx+1]]; renderGulps(); markFinalStale(); };
+      const busyNo = () => { say("برنامه مشغول است؛ بعد از پایان کار دوباره بزنید.", "err"); };
+      div.querySelector(".g-up").onclick = () => { if(idx === 0) return; if(busy){ busyNo(); return; } remember(); [gulps[idx-1], gulps[idx]] = [gulps[idx], gulps[idx-1]]; renderGulps(); markFinalStale(); };
+      div.querySelector(".g-down").onclick = () => { if(idx === gulps.length - 1) return; if(busy){ busyNo(); return; } remember(); [gulps[idx+1], gulps[idx]] = [gulps[idx], gulps[idx+1]]; renderGulps(); markFinalStale(); };
       div.querySelector(".g-del").onclick = async () => {
-        if(busy) return;
+        if(busy){ busyNo(); return; }
         remember();                                       // the engine keeps its audio so undo can bring it back
         gulps.splice(idx, 1); renderGulps(); markFinalStale();
         say("بخش " + g.name + " حذف شد.", "ok");
       };
       div.querySelector(".g-dup").onclick = async () => {
-        if(busy) return;
+        if(busy){ busyNo(); return; }
         remember();
         const copy = { text: g.text, voice: g.voice, b64: null, id: null, settings: g.settings ? {...g.settings} : null, name: nextPartName(), silence: g.silence || 0, file: g.file || 0, fileSeconds: g.fileSeconds, gain: g.gain || 100 };
         if(g.id){

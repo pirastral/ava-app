@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist (repo: github.com/pirastral/ava-app)
 ======================================================================
-This zip is the COMPLETE application source as of update 113.
+This zip is the COMPLETE application source as of update 114.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -18,6 +18,15 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 114 (on top of 113)
+  Sub-menus (Chatterbox voices, main card and dialog): fixed geometry — 260 px wide, up to
+    320 px tall (scrolling inside), positioned from the group's rect without measuring the
+    panel; open away from the group and flip to the other side when there is no room
+    (dialog case). Long sample names wrap; trash icons stay in view. Menus are denser.
+  Part toolbar (move/duplicate/delete) says "busy" instead of silently doing nothing while
+    a job runs — the unreproducible "duplicate did nothing" case (log shows no engine
+    call, i.e. the click was swallowed by the busy guard).
 
 WHAT CHANGED IN 113 (on top of 112)
   Per-part settings dialog: the two resets now cover the Google voice/style and the
@@ -376,6 +385,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۱۳»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۱۴»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»
