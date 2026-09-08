@@ -112,6 +112,7 @@
   .gedit{overflow:visible}
   .gedit .dd-menu{z-index:120}
   .g-sett.on{border-color:var(--gold);color:var(--gold)}
+  [data-theme="light"] .g-sett.on,[data-theme="light"] .regen-wrap.sel .g-regen{border-color:var(--tile);color:var(--tile)}
   .dialog.gs{max-width:560px}
   .gs-actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;align-items:center}
   .finalrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -204,6 +205,11 @@
   .toggle{display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 14px;border:1px solid var(--line);border-radius:12px;background:var(--paper);font-size:.85rem;cursor:pointer}
   .toggle input{width:16px;height:16px;margin:0}
   .kstate{min-width:120px;font-size:.8rem}
+  .btn,.chip,.hbtn,.dd2-btn,.close,.eye,.reset,.dd2-i,.dd-i,.toggle{transition:transform .08s ease,filter .12s ease,background .15s ease,border-color .15s ease,box-shadow .15s ease}
+  .btn:hover:not(:disabled),.chip:hover:not(:disabled),.hbtn:hover,.dd2-btn:hover{filter:brightness(1.06)}
+  .btn:active:not(:disabled),.chip:active:not(:disabled),.hbtn:active,.dd2-btn:active,.close:active,.eye:active,.reset:active,.toggle:active{transform:translateY(1px) scale(.985);filter:brightness(.9)}
+  .dd2-i:active,.dd-i:active{transform:scale(.98);filter:brightness(.9)}
+  .btn:focus-visible,.chip:focus-visible,.hbtn:focus-visible,.dd2-btn:focus-visible{outline:2px solid var(--tile);outline-offset:2px}
   .dd2{position:relative;flex:1;min-width:0}
   .dd2-btn{width:100%;height:42px;border-radius:12px;border:1px solid var(--line);background:var(--paper);color:var(--ink);padding:0 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;font:inherit;font-size:.95rem;cursor:pointer;text-align:start}
   .dd2-btn:hover,.dd2.open .dd2-btn{border-color:var(--tile)}
@@ -220,7 +226,8 @@
   .dd2-del:hover{color:var(--danger);background:var(--paper)}
   .dd2-group{position:relative}
   .dd2-group>.dd2-i .ic{width:1.1em;height:1.1em;margin:0;color:var(--muted)}
-  .dd2-sub{display:none;position:absolute;top:-6px;inset-inline-start:100%;z-index:121;min-width:240px;max-height:320px;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:6px;z-index:76}
+  .dd2-menu.grouped{overflow:visible;max-height:none!important}
+  .dd2-sub{display:none;position:fixed;z-index:131;min-width:240px;max-height:320px;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:6px;z-index:76}
   .dd2-group:hover>.dd2-sub,.dd2-group.open>.dd2-sub{display:block}
   .dd2.up .dd2-menu{top:auto;bottom:calc(100% + 6px)}
   html[dir=ltr] .dd2-menu{left:0;right:auto}
@@ -567,7 +574,7 @@
       </div>
       <div class="finalmsg" id="finalMsg"></div>
     </div>
-  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۱۱۲</span>
+  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۱۱۳</span>
     <span class="warn">این برنامه را فقط از خودِ سازنده‌اش بگیرید؛ نسخه‌ای که از جای ناشناس آمده باشد ممکن است بدافزار داشته باشد.</span>
   </footer>
 </div>
@@ -671,7 +678,18 @@
         : optHtml(c)).join("");
       menu.querySelectorAll("[data-v]").forEach(b => b.onclick = e => { e.stopPropagation(); if(b.disabled) return; sel.value = b.dataset.v; sel.dispatchEvent(new Event("change", { bubbles: true })); closeAll(); rebuild(); });
       menu.querySelectorAll("[data-del]").forEach(b => b.onclick = e => { e.stopPropagation(); if(sel.__onDelete) sel.__onDelete(b.dataset.del); });
-      menu.querySelectorAll(".dd2-group > .dd2-i").forEach(b => b.onclick = e => { e.stopPropagation(); const g = b.parentElement; menu.querySelectorAll(".dd2-group.open").forEach(x => { if(x !== g) x.classList.remove("open"); }); g.classList.toggle("open"); });
+      menu.classList.toggle("grouped", menu.querySelector(".dd2-group") !== null);
+      const placeSub = g => {
+        const sub = g.querySelector(".dd2-sub"), r = g.getBoundingClientRect(); if(!sub) return;
+        const rtl = document.documentElement.getAttribute("dir") !== "ltr", vh = window.innerHeight;
+        sub.style.display = "block";
+        const sh = Math.min(sub.scrollHeight, 320); sub.style.maxHeight = sh + "px";
+        sub.style.top = Math.max(8, Math.min(r.top - 6, vh - sh - 8)) + "px";
+        if(rtl){ sub.style.left = "auto"; sub.style.right = (window.innerWidth - r.left + 4) + "px"; } else { sub.style.right = "auto"; sub.style.left = (r.right + 4) + "px"; }
+        sub.style.display = "";
+      };
+      menu.querySelectorAll(".dd2-group").forEach(g => { g.addEventListener("mouseenter", () => placeSub(g)); });
+      menu.querySelectorAll(".dd2-group > .dd2-i").forEach(b => b.onclick = e => { e.stopPropagation(); const g = b.parentElement; menu.querySelectorAll(".dd2-group.open").forEach(x => { if(x !== g) x.classList.remove("open"); }); placeSub(g); g.classList.toggle("open"); });
       wrap.hidden = sel.getAttribute("data-hidden") === "1";
     }
     function closeAll(){ document.querySelectorAll(".dd2.open").forEach(x => { x.classList.remove("open"); x.querySelectorAll(".dd2-group.open").forEach(g => g.classList.remove("open")); }); }
@@ -853,7 +871,10 @@
     const r = b.getBoundingClientRect(), vh = window.innerHeight, rtl = document.documentElement.getAttribute("dir") !== "ltr";
     m.style.position = "fixed"; m.style.zIndex = 120; m.style.maxHeight = Math.min(340, r.top - 16) + "px";
     m.style.top = "auto"; m.style.bottom = (vh - r.top + 6) + "px";
-    if(rtl){ m.style.left = "auto"; m.style.right = (window.innerWidth - r.right) + "px"; } else { m.style.right = "auto"; m.style.left = r.left + "px"; }
+    const w = Math.min(320, window.innerWidth - 24);
+    m.style.width = w + "px";
+    if(rtl){ m.style.right = "auto"; m.style.left = Math.max(12, Math.min(r.left, window.innerWidth - w - 12)) + "px"; }
+    else { m.style.left = "auto"; m.style.right = Math.max(12, Math.min(window.innerWidth - r.right, window.innerWidth - w - 12)) + "px"; }
   }
   gTagsBtn.onclick = e => { e.stopPropagation(); if(gTagsBtn.disabled) return; if(!gTagsDD.classList.contains("open")) placeDD(gTagsDD); gTagsDD.classList.toggle("open"); };
   document.addEventListener("click", () => gTagsDD.classList.remove("open"));
@@ -904,7 +925,7 @@
   pairs.forEach(([a,b,suf]) => { const el = $(a); const out = $(b);
     const f = () => out.textContent = Number(el.value).toFixed(2) + suf; el.oninput = f; f(); });
 
-  const DEFAULTS = {cbxSpeed:1, exag:0.8, cfg:1, temp:0, speed:1, noise:0.667, noisew:0.8};
+  const DEFAULTS = {cbxSpeed:1, exag:0.8, cfg:1, temp:0, speed:1, noise:0.667, noisew:0.8, gVoice:"Charon", gPreset:"podcast", cbxVoice:"default"};
   $("resetBtn").onclick = () => {
     for(const [id,val] of Object.entries(DEFAULTS)){ const el = $(id); el.value = val; el.dispatchEvent(new Event("input")); }
     $("cbxVoice").value = "default";
@@ -1078,6 +1099,7 @@
   function snapGlobals(){
     const s = {};
     GS_KEYS.forEach(k => s[k] = +$(k).value);
+    s.gVoice = $("gVoice").value; s.gPreset = $("gPreset").value; s.cbxVoice = $("cbxVoice").value;
     return s;
   }
   function collectGS(){
@@ -1101,6 +1123,7 @@
     $("gs_gVoice").value = vals.gVoice || $("gVoice").value;
     $("gs_cbxVoice").innerHTML = $("cbxVoice").innerHTML; $("gs_cbxVoice").value = vals.cbxVoice || $("cbxVoice").value; enhanceSelect($("gs_cbxVoice"));
     $("gs_gPreset").value = vals.gPreset || $("gPreset").value;
+    ["gs_gVoice","gs_gPreset","gs_cbxVoice"].forEach(id => { const s = $(id); if(s.__enh) s.__enh.rebuild(); });
     gsLoading = false;
   }
   // هر تغییر، همان لحظه روی بخش هدف اعمال می‌شود
@@ -1136,7 +1159,8 @@
     say("این بخش به تنظیماتِ موقعِ تولید برگشت.", "ok");
   };
   $("gsAll").onclick = async () => {
-    if(!gsTarget || busy) return;
+    if(!gsTarget) return;
+    if(busy){ gsOverlay.classList.remove("show"); say("برنامه مشغول است؛ بعد از پایان کار دوباره «روی همهٔ بخش‌ها» را بزنید.", "err"); return; }
     const s = collectGS();
     gulps.forEach(g => g.settings = { ...s });
     gulpsEl.querySelectorAll(".g-sett").forEach(c => c.classList.add("on"));
@@ -1233,7 +1257,7 @@
             </div>
           </div>
         </div>`;
-      const sil = div.querySelector(".g-silence"), silLen = div.querySelector(".g-silence-len"), silVal = div.querySelector(".g-silence-val");
+      const sil = div.querySelector(".g-silence"), silLen = div.querySelector(".g-silence-len"), silVal = div.querySelector(".g-silence-val"), fil = div.querySelector(".g-file");
       async function makeSilence(secs){
         try{ const r = await window.pywebview.api.silence_gulp(secs); if(r.ok){ g.id = r.gulp; g.b64 = r.b64; g.silence = secs; } }catch(e){}
         markFinalStale(); syncHistBtns();
@@ -1241,15 +1265,16 @@
       const stash = () => { if(!g._saved && g.id && !g.silence && !g.file) g._saved = { id: g.id, b64: g.b64 }; };
       const unstash = () => { if(g._saved){ g.id = g._saved.id; g.b64 = g._saved.b64; g._saved = null; } else { g.id = null; g.b64 = null; } };
       sil.onchange = async () => {
-        if(busy) return; remember();
-        if(sil.checked){ stash(); g.file = 0; await makeSilence(+silLen.value); }
+        if(busy){ sil.checked = !!g.silence; say("برنامه مشغول است؛ بعد از پایان کار دوباره بزنید.", "err"); return; }
+        remember();
+        if(sil.checked){ stash(); g.file = 0; fil.checked = false; await makeSilence(+silLen.value); }
         else { g.silence = 0; unstash(); }
         renderGulps(); syncHistBtns(); markFinalStale();
       };
-      const fil = div.querySelector(".g-file");
       fil.onchange = () => {
-        if(busy) return; remember();
-        if(fil.checked){ stash(); g.silence = 0; g.file = true; g.id = null; g.b64 = null; }
+        if(busy){ fil.checked = !!g.file; say("برنامه مشغول است؛ بعد از پایان کار دوباره بزنید.", "err"); return; }
+        remember();
+        if(fil.checked){ stash(); g.silence = 0; sil.checked = false; g.file = true; g.id = null; g.b64 = null; }
         else { g.file = 0; unstash(); }
         renderGulps(); syncHistBtns(); markFinalStale();
       };

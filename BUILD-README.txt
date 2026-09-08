@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist (repo: github.com/pirastral/ava-app)
 ======================================================================
-This zip is the COMPLETE application source as of update 112.
+This zip is the COMPLETE application source as of update 113.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -18,6 +18,19 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 113 (on top of 112)
+  Per-part settings dialog: the two resets now cover the Google voice/style and the
+    Chatterbox voice (DEFAULTS/seed carry them) and the pickers refresh their labels;
+    «روی همهٔ بخش‌ها» always closes the dialog (and says so if the app is busy).
+  Micro-interactions: hover brighten, pressed (translate + darken) and focus ring on every
+    button, chip, header button, dropdown button, menu item and close button.
+  Silence / add-file ticks are exclusive (ticking one clears the other) and, while the app
+    is busy, revert with a message instead of silently diverging from state.
+  Tags drop-up aligns to the selector's inner edge (left in RTL, right in LTR), clamped.
+  Grouped menus (Chatterbox voices, in the main card and in the dialog) no longer scroll or
+    pan; sub-menus are fixed-positioned beside their group, never clipped.
+  Light mode: settings/regenerate indicator colour uses the primary, not the pale accent.
 
 WHAT CHANGED IN 112 (on top of 111)
   BUG FIXED — "corrupted" parts after add-file / silence: 108 added a second <audio> (the
@@ -363,6 +376,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۱۲»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۱۳»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»
