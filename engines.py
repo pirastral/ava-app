@@ -1,5 +1,5 @@
 """Ava — Persian TTS engines (Chatterbox-Persian + Piper voices + auto-ezafe)."""
-import os, json, re, shutil, subprocess, sys, tempfile, threading, wave
+import os, json, re, shutil, subprocess, sys, tempfile, threading, time, wave
 from pathlib import Path
 
 MODELS_DIR = Path.home() / "AvaModels"
@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 119
-BUILD_FA = "\u06f1\u06f1\u06f9"
+BUILD = 120
+BUILD_FA = "\u06f1\u06f2\u06f0"
 
 
 def _diag(tag, **kv):
@@ -450,7 +450,11 @@ def _ezafe_pick_model(key):
 
 def _ezafe_gemini(text, key, status, models=None, label="Gemini", level="light"):
     if models is None:
-        models = [_ezafe_pick_model(key), "gemini-2.5-flash", "gemini-flash-latest"]
+        # FIELD (119): the newest Flash is constantly "in high demand" and the 2.5
+        # names are gone. 3.5 Flash is the workhorse; the discovered newest and the
+        # rolling alias are fallbacks.
+        picked = _ezafe_pick_model(key)
+        models = ["gemini-3.5-flash"] + ([picked] if picked and picked != "gemini-3.5-flash" else []) + ["gemini-flash-latest"]
     prompt = _LLM_PROMPTS.get(level) or _LLM_PROMPT
 
     def call(ch):
@@ -469,7 +473,12 @@ def _ezafe_gemini(text, key, status, models=None, label="Gemini", level="light")
             except Exception:
                 last_err = f"HTTP {r.status_code}"
             if r.status_code in (503, 500) or "high demand" in last_err.lower() or "overloaded" in last_err.lower():
-                _diag("ezafe_overloaded", model=m); continue          # try the next model
+                _diag("ezafe_overloaded", model=m)
+                time.sleep(3.0)                                          # spikes are short: one retry on the same model
+                r2 = requests.post("https://generativelanguage.googleapis.com/v1beta/models/" + m + ":generateContent?key=" + key, json=body, timeout=120)
+                if r2.status_code == 200:
+                    return r2.json()["candidates"][0]["content"]["parts"][0]["text"]
+                continue                                                 # then the next model
             if not any(k in last_err.lower() for k in ("not found", "not available", "no longer", "deprecated")):
                 # quota / bad key errors are the key-rotation's business
                 raise _GoogleHTTP(r.status_code, last_err)
@@ -1659,9 +1668,12 @@ def new_document():
 
 def gc_gulps(keep_ids):
     """Drop every part the UI can no longer reach (not current, not in undo
-    history)."""
+    history). FIELD (119): a file part was created by the engine and then
+    collected before the UI had stored its id (KeyError at splice) — entries
+    younger than 15 s are never collected."""
     keep = {int(i) for i in keep_ids if i is not None}
-    for gid in [g for g in list(_GULP_PCM) if g not in keep]:
+    now = time.time()
+    for gid in [g for g in list(_GULP_PCM) if g not in keep and now - _GULP_PCM[g].get("born", 0) > 15]:
         _GULP_PCM.pop(gid, None)
     return len(_GULP_PCM)
 
@@ -1677,7 +1689,7 @@ def file_gulp(path):
         raise RuntimeError("این فایل صوتی تقریباً خالی است.")
     gid = next(_gulp_ids)
     _GULP_PCM[gid] = {"sr": sr, "items": [{"kind": "t", "text": "", "span": (0, 0), "pcm": pcm}],
-                      "text": "", "engine": "file", "payload": {"file": p.name}}
+                      "text": "", "engine": "file", "payload": {"file": p.name}, "born": time.time()}
     return gid, pcm_to_mp3(pcm, sr), p.name, round(len(pcm) / sr, 1)
 
 
@@ -1687,7 +1699,7 @@ def silence_gulp(seconds, sr=24000):
     pcm = np.zeros(int(sr * seconds), dtype=np.int16)
     gid = next(_gulp_ids)
     _GULP_PCM[gid] = {"sr": sr, "items": [{"kind": "t", "text": "", "span": (0, 0), "pcm": pcm}],
-                      "text": "", "engine": "silence", "payload": {"seconds": seconds}}
+                      "text": "", "engine": "silence", "payload": {"seconds": seconds}, "born": time.time()}
     return gid, pcm_to_mp3(pcm, sr)
 
 
@@ -1902,7 +1914,7 @@ def generate_gulp(payload, status):
         items = _clause_split(text, eng)
         items[0]["pcm"] = pcm
         gid = next(_gulp_ids)
-        entry = {"sr": sr, "items": items, "text": text, "engine": eng, "lead_in": lead_in,
+        entry = {"sr": sr, "items": items, "text": text, "engine": eng, "lead_in": lead_in, "born": time.time(),
                  "payload": {k: payload[k] for k in payload if k.startswith("g_") or k.startswith("f_")}}
         _ensure_valid(entry, "تولید", status)
         _GULP_PCM[gid] = entry

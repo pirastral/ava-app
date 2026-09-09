@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist (repo: github.com/pirastral/ava-app)
 ======================================================================
-This zip is the COMPLETE application source as of update 119.
+This zip is the COMPLETE application source as of update 120.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,20 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 120 (on top of 119) — from the 119 log
+  BUG FIXED — a file part blocked the final file (KeyError at splice): the UI ran the undo
+    snapshot (which triggers engine gc) AFTER the engine had created the file part but
+    BEFORE it stored the id, so gc collected the brand-new part. Snapshot now precedes the
+    creation, and the engine never collects an entry younger than 15 s.
+  Diacritics: log showed every model in the list answering "high demand" (3.8-flash, and
+    flash-latest which aliases it) and the 2.5 names retired. Order is now gemini-3.5-flash
+    FIRST, the discovered newest second, flash-latest last; an overloaded model is retried
+    once after 3 s before moving on. Medium/heavy had not "failed to apply" — no model
+    answered at all.
+  Parts' engine dropdown: Fish third, no make-default pins there (main selector only).
+  Section headers are a band: cyan strip across the top of every card (engine, text,
+    settings, music, final) with dark text and the card's top radius.
 
 WHAT CHANGED IN 119 (on top of 118)
   Heavy diacritics prompt says harakat-gozari (the Iranian term), not tashkil.
@@ -478,6 +492,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۱۹»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۲۰»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»
