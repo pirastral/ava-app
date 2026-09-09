@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 116
-BUILD_FA = "\u06f1\u06f1\u06f6"
+BUILD = 117
+BUILD_FA = "\u06f1\u06f1\u06f7"
 
 
 def _diag(tag, **kv):
@@ -383,18 +383,49 @@ def _ezafe_openai(text, key, status):
     return _llm_map(text, status, "OpenAI", call)
 
 
+_EZAFE_MODEL = {"name": None}
+
+
+def _ezafe_pick_model(key):
+    """The newest plain Flash text model this key can see (not lite/tts/image/
+    live/embedding). Discovered once per session; falls back to a known list.
+    FIELD (116): trying dead model names first cost a failed round-trip per
+    chunk, and thinking models spent most of the time thinking."""
+    if _EZAFE_MODEL["name"]:
+        return _EZAFE_MODEL["name"]
+    best, best_v = None, -1.0
+    try:
+        r = requests.get("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=" + key, timeout=20)
+        for m in (r.json().get("models") or []) if r.status_code == 200 else []:
+            name = m.get("name", "").split("/")[-1]
+            if "generateContent" not in (m.get("supportedGenerationMethods") or []):
+                continue
+            mm = re.match(r"^gemini-(\d+(?:\.\d+)?)-flash(?:-preview)?$", name)
+            if not mm:
+                continue
+            v = float(mm.group(1)) + (0 if name.endswith("-preview") else 0.01)
+            if v > best_v:
+                best, best_v = name, v
+    except Exception:
+        pass
+    _EZAFE_MODEL["name"] = best or "gemini-2.5-flash"
+    _diag("ezafe_model", model=_EZAFE_MODEL["name"], discovered=bool(best))
+    return _EZAFE_MODEL["name"]
+
+
 def _ezafe_gemini(text, key, status, models=None, label="Gemini"):
     if models is None:
-        models = ["gemini-3.6-flash", "gemini-3-flash-preview", "gemini-2.5-flash", "gemini-flash-latest"]
+        models = [_ezafe_pick_model(key), "gemini-2.5-flash", "gemini-flash-latest"]
 
     def call(ch):
         last_err = None
         for m in models:
-            r = requests.post(
-                "https://generativelanguage.googleapis.com/v1beta/models/" + m + ":generateContent?key=" + key,
-                json={"contents": [{"parts": [{"text": _LLM_PROMPT + "\n\nTEXT TO DIACRITIZE:\n" + ch}]}],
-                      "generationConfig": {"temperature": 0.1}},
-                timeout=120)
+            body = {"contents": [{"parts": [{"text": _LLM_PROMPT + "\n\nTEXT TO DIACRITIZE:\n" + ch}]}],
+                    "generationConfig": {"temperature": 0.1, "thinkingConfig": {"thinkingBudget": 0}}}
+            r = requests.post("https://generativelanguage.googleapis.com/v1beta/models/" + m + ":generateContent?key=" + key, json=body, timeout=120)
+            if r.status_code == 400 and "thinking" in r.text.lower():
+                body["generationConfig"].pop("thinkingConfig", None)
+                r = requests.post("https://generativelanguage.googleapis.com/v1beta/models/" + m + ":generateContent?key=" + key, json=body, timeout=120)
             if r.status_code == 200:
                 return r.json()["candidates"][0]["content"]["parts"][0]["text"]
             try:
@@ -2882,27 +2913,26 @@ GOOGLE_VOICES = ["Zephyr", "Puck", "Charon", "Kore", "Fenrir", "Leda", "Orus", "
 GOOGLE_MODELS = {"gemini-3.1-flash-tts-preview": {"tags": True},
                  "gemini-2.5-flash-preview-tts": {"tags": False},
                  "gemini-2.5-pro-preview-tts": {"tags": False}}
+# 117: reading styles describe the FORMAT — register, pacing, articulation,
+# phrasing. Emotion and age are NOT here any more (they live in the director
+# lists), so a children's story can be read scared, and a news bulletin drunk.
 GOOGLE_PRESETS = {
-    "neutral":     "Natural and neutral. Clear, warm, unhurried — like a trusted friend reading aloud.",
-    "audiobook":   "Audiobook narrator. Calm, measured, intimate; lets sentences land; never rushes.",
-    "news":        "Broadcast news anchor. Formal, crisp, authoritative, evenly paced, no drama.",
-    "breaking":    "Breaking-news reader. Serious, urgent, slightly faster, tight and controlled.",
-    "documentary": "Nature-documentary narrator. Warm, dignified, gently wondering, slow and spacious.",
-    "kids":        "Children's storyteller. Kind, playful, expressive, gently animated, patient.",
-    "poem":        "Classical poetry recital. Meter-aware, deliberate, with meaningful rests at line ends.",
-    "speech":      "Passionate public speaker. Confident projection, rising energy, purposeful pauses.",
-    "radio":       "Radio advertisement host. Bright, upbeat, energetic, smiling voice.",
-    "podcast":     "Casual podcast host. Conversational, relaxed, friendly, natural rhythm.",
-    "teacher":     "Patient teacher explaining step by step. Clear, encouraging, slow on key points.",
-    "ivr":         "Phone-system guide. Polite, formal, very clear articulation, even pace.",
-    "suspense":    "Suspenseful, mysterious narration. Low, quiet intensity, careful pacing.",
-    "joy":         "Joyful and lively. Warm smile in the voice, buoyant, energetic but clear.",
-    "sad":         "Sad and quiet. Soft, slow, tender, restrained emotion.",
-    "whisper":     "Whispered, hushed delivery throughout — intimate and close.",
-    "dryhumor":    "Dry humor. Deadpan, understated, slightly amused, perfectly timed.",
-    "sports":      "Sports commentator. Excited, fast, vivid, rising with the action.",
-    "epic":        "Epic and grand. Deep, resonant, heroic, slow and monumental.",
-    "spiritual":   "Spiritual and serene. Reverent, gentle, contemplative, very calm.",
+    "neutral":     "Plain reading. Clear, even, unhurried; natural sentence melody; no performance.",
+    "audiobook":   "Audiobook narration. Measured pace, intimate close-mic register, sentences allowed to land, consistent chapter-long rhythm.",
+    "news":        "Broadcast news bulletin. Formal register, crisp diction, even pace, level tone, short pauses between items.",
+    "breaking":    "Breaking-news bulletin. Formal register, slightly faster pace, tight controlled phrasing, clipped pauses.",
+    "documentary": "Documentary narration. Spacious pacing, deliberate emphasis on key nouns, long pauses over scenes, dignified register.",
+    "kids":        "Children's storytelling. Simple clear phrasing, slower pace, animated sentence melody, character lines slightly differentiated, patient pauses.",
+    "poem":        "Classical poetry recital. Meter-aware phrasing, deliberate pace, meaningful rests at line ends, no colloquial reduction.",
+    "speech":      "Public speech. Projected delivery, purposeful pauses before key points, rhetorical build within paragraphs.",
+    "radio":       "Radio advertisement. Quick, punchy phrasing, product names articulated clearly, short sentences with lift at the end.",
+    "podcast":     "Podcast host. Conversational register, natural rhythm, contractions and colloquial flow, occasional thinking pauses.",
+    "teacher":     "Teaching. Step-by-step phrasing, slow on key terms, small pauses after each point, checks-for-understanding intonation.",
+    "ivr":         "Phone-system announcement. Formal register, very clear articulation, even pace, no filler.",
+    "dryhumor":    "Deadpan comedic timing. Flat delivery of punchlines, precise beats, no laughter in the voice.",
+    "sports":      "Sports commentary. Fast pace, short phrases, rising with the action, play-by-play rhythm.",
+    "epic":        "Epic narration. Slow, monumental pacing, resonant chest register, long pauses between sentences.",
+    "spiritual":   "Recitation. Reverent even pace, gentle emphasis, contemplative pauses, no dramatics.",
 }
 _GKEYS_FILE = MODELS_DIR / "google_keys.json"
 _GOOGLE_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
@@ -3133,8 +3163,9 @@ def google_prompt(text, cfg):
         note = _director_note(sp.get("age"), sp.get("age_custom"), sp.get("state"), sp.get("state_custom"))
         if note and sp.get("name"):
             duo += f"{sp['name']}: {note}\n"
-    head = (f"Narrator: one consistent voice, same identity in every recording. Style: {style} "
+    head = ("Narrator: one consistent voice, same identity in every recording. "
             + (f"{persona} " if persona else "")
+            + f"Reading format: {style} "
             + f"Language: {lang_note} " + duo +
             "Read ONLY the transcript below, exactly as written; do not read these instructions; perform bracketed tags, never say them.\n"
             "TRANSCRIPT:\n")
@@ -4351,17 +4382,14 @@ def music_credit(entry):
 # ===========================================================================
 DIRECTOR_AGES = [
     ("", "— بدون تغییر —", "— unchanged —", "", ""),
-    ("toddler", "نوپا (۲–۳ ساله)", "Toddler (2–3)", "Voice of a toddler, two or three years old: tiny, very high, babbling cadence, simple words stretched, giggly and unsteady.", "[voice of a toddler, tiny and very high-pitched, babbling]"),
-    ("small_child", "کودک خردسال (۴–۶ ساله)", "Small child (4–6)", "Voice of a small child, four to six: high, bright, breathy, eager, with the sing-song rhythm of a kindergartner.", "[voice of a small child, high and bright, sing-song]"),
-    ("child", "بچه (۷–۱۰ ساله)", "Child (7–10)", "Voice of a child of eight or nine: light, clear, quick, curious; a schoolchild reading aloud.", "[voice of a child around eight, light and clear]"),
-    ("preteen", "نوجوانِ کم‌سن (۱۱–۱۲ ساله)", "Preteen (11–12)", "Voice of a preteen, eleven or twelve: light but steadier, a little self-conscious.", "[voice of a preteen, light and slightly self-conscious]"),
-    ("teen", "نوجوان (۱۳–۱۷ ساله)", "Teenager (13–17)", "Voice of a teenager: youthful, a touch of attitude, energy that comes and goes mid-sentence.", "[teenage voice, youthful with a touch of attitude]"),
-    ("young", "جوان (۱۸–۲۵ ساله)", "Young adult (18–25)", "Voice of a young adult in their early twenties: fresh, energetic, quick.", "[young adult voice, fresh and energetic]"),
-    ("adult", "میان‌سالِ جوان (۳۰–۴۰ ساله)", "Adult (30–40)", "Voice of an adult in their thirties: settled, warm, confident.", "[adult voice in their thirties, settled and warm]"),
-    ("middle", "میان‌سال (۴۵–۵۵ ساله)", "Middle-aged (45–55)", "Voice of a middle-aged person around fifty: fuller, slower, a little gravel, unhurried authority.", "[middle-aged voice around fifty, fuller and unhurried]"),
-    ("elderly", "سالخورده (۶۵–۷۵ ساله)", "Elderly (65–75)", "Voice of an elderly person around seventy: slower, softer, slightly rough, with small pauses for breath.", "[elderly voice around seventy, slower and slightly rough]"),
-    ("very_old", "خیلی پیر (۸۰–۹۰ ساله)", "Very old (80–90)", "Voice of a very old person, eighty-five or more: thin, quavering, frail, breathy, words landing slowly.", "[very old and frail voice, thin and quavering]"),
-    ("ancient", "کهنسال و ناتوان (۹۵ به بالا)", "Ancient, frail (95+)", "Voice of an ancient, frail person near a hundred: barely more than a whisper, trembling, long pauses, effort in every word.", "[ancient frail voice, trembling, barely above a whisper, long pauses]"),
+    ("toddler", "نوپا (۲–۴ ساله)", "Toddler (2–4)", "Voice: a toddler of about three — tiny, very high-pitched, babbling cadence, simple words stretched out, giggly and unsteady.", "[voice of a toddler, tiny, very high-pitched, babbling]"),
+    ("child", "بچه (۵–۹ ساله)", "Child (5–9)", "Voice: a child of about seven — high, bright, breathy, eager, sing-song schoolroom rhythm.", "[voice of a young child around seven, high and bright, sing-song]"),
+    ("teen", "نوجوان (۱۳–۱۷ ساله)", "Teenager (13–17)", "Voice: a teenager — youthful, light, a touch of attitude, energy that comes and goes mid-sentence.", "[teenage voice, youthful with a touch of attitude]"),
+    ("young", "جوان (۲۰ تا ۳۰ ساله)", "Young adult (20s)", "Voice: a young adult in their twenties — fresh, quick, energetic.", "[young adult voice, fresh and energetic]"),
+    ("adult", "بزرگسال (۳۰ تا ۴۵ ساله)", "Adult (30s–40s)", "Voice: an adult in their thirties or forties — settled, full, confident.", "[adult voice, settled and confident]"),
+    ("middle", "میان‌سال (۵۰ تا ۶۰ ساله)", "Middle-aged (50s)", "Voice: a middle-aged person in their fifties — fuller, slower, a little gravel, unhurried authority.", "[middle-aged voice, fuller, unhurried, a little gravel]"),
+    ("elderly", "سالخورده (۷۰ ساله)", "Elderly (70s)", "Voice: an elderly person around seventy — slower, softer, slightly hoarse, small pauses for breath, words landing gently.", "[elderly voice around seventy, slower, softer, slightly hoarse]"),
+    ("very_old", "خیلی پیر (۹۰ به بالا)", "Very old (90+)", "Voice: a very old person past ninety — NOT young, NOT smooth. Thin, cracked and wobbly; hoarse, gravelly and breathy; wheezing between phrases; slow, halting, with long pauses; pitch unsteady; every word an effort. Keep this frailty on every sentence.", "[voice of a ninety-year-old, hoarse, cracked, trembling and breathy, slow and halting, wheezing between phrases]"),
     ("custom", "سفارشی…", "Custom…", "", ""),
 ]
 DIRECTOR_STATES = [
@@ -4504,13 +4532,12 @@ FISH_MODELS = {
 }
 # reading-style presets rendered as Fish cues (free-form natural language works on S2)
 FISH_STYLE_CUES = {
-    "neutral": "", "audiobook": "[calm, measured audiobook narration]", "news": "[formal, clear news anchor delivery]",
-    "breaking": "[serious, brisk breaking-news urgency]", "documentary": "[warm, dignified documentary narration]",
-    "kids": "[kind, playful children's storyteller]", "poem": "[classical poetry, metered, with rests]",
-    "speech": "[passionate, rousing speech]", "radio": "[energetic radio advert]", "podcast": "[casual, friendly podcast host]",
-    "teacher": "[patient teacher, explaining step by step]", "ivr": "[formal, very clear phone announcement]",
-    "suspense": "[suspenseful, mysterious]", "joy": "[cheerful, lively]", "sad": "[sad, quiet]", "whisper": "[whispering]",
-    "dryhumor": "[dry, deadpan humor]", "sports": "[excited sports commentary]", "epic": "[epic, grand, majestic]", "spiritual": "[serene, spiritual]",
+    "neutral": "", "audiobook": "[audiobook narration, measured pace]", "news": "[news bulletin, formal, crisp, even pace]",
+    "breaking": "[breaking-news bulletin, brisk and tight]", "documentary": "[documentary narration, spacious, deliberate]",
+    "kids": "[children's storytelling, simple animated phrasing, slow]", "poem": "[poetry recital, metered, rests at line ends]",
+    "speech": "[public speech, projected, purposeful pauses]", "radio": "[radio advert, quick punchy phrasing]", "podcast": "[podcast host, conversational]",
+    "teacher": "[teaching, step by step, slow on key terms]", "ivr": "[phone announcement, very clear, even]",
+    "dryhumor": "[deadpan comedic timing]", "sports": "[sports commentary, fast play-by-play]", "epic": "[epic narration, slow and monumental]", "spiritual": "[recitation, reverent, even]",
 }
 FISH_TAGS = [
     ["مکث", ["[break]", "[long-break]"]],
@@ -4680,7 +4707,7 @@ def fish_delete_voice(model_id):
     return True
 
 
-def fish_library(query="", tag=None, language=None, licensed=False, sort="score", page=1, page_size=20):
+def fish_library(query="", tag=None, language=None, licensed=False, sort="score", page=1, page_size=8):
     """Search the public voice library."""
     params = {"page_size": page_size, "page_number": page, "sort_by": sort}
     if query: params["title"] = query
@@ -4691,6 +4718,10 @@ def fish_library(query="", tag=None, language=None, licensed=False, sort="score"
     items = []
     for it in j.get("items", []):
         if it.get("type") != "tts":
+            continue
+        # FIELD (116): the server's language filter is loose (Arabic voices for "fa");
+        # keep only voices that list the requested language themselves
+        if language and it.get("languages") and language not in [x.lower()[:2] for x in it.get("languages")]:
             continue
         items.append({"id": "m:" + it["_id"], "title": it.get("title", ""), "author": (it.get("author") or {}).get("nickname", ""),
                       "tags": it.get("tags") or [], "languages": it.get("languages") or [], "likes": it.get("like_count", 0),

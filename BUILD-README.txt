@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist (repo: github.com/pirastral/ava-app)
 ======================================================================
-This zip is the COMPLETE application source as of update 116.
+This zip is the COMPLETE application source as of update 117.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,27 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 117 (on top of 116)
+  Diacritics: Gemini Pro option removed (it burnt 22 keys' quota on one small job). The
+    Gemini tool now discovers the newest plain Flash text model the key can see (one
+    models-list call per session) instead of trying dead names first, and disables
+    thinking (thinkingBudget 0) — that was where the time went.
+  Reading styles are FORMAT only (register, pacing, articulation, phrasing); every
+    emotion/age word was stripped so they no longer compete with the director lists.
+    joy / sad / whisper / suspense presets removed (they exist as states). Same for the
+    Fish style cues. The Google prompt now leads with the persona, then the format.
+  Ages: eight ranges (toddler 2–4, child 5–9, teen, 20s, 30s–40s, 50s, 70s, 90+); the 90+
+    note is forceful ("NOT young, NOT smooth… hoarse, cracked, wobbly, wheezing").
+  Fish: third in the engine list (after Chatterbox). Key row styled like the others;
+    model/latency hints short and aligned. Library: padded sub-card, two-row form, a
+    Source dropdown (whole library / licensed by Fish — the closest thing their API has
+    to "official"; there is no author filter for Fish's own account), strict language
+    match (Arabic voices no longer appear for Persian), 8 per page, left/right pager with
+    a centred page number (music pager too). Previously used and designed voices are
+    remembered on disk and appear as groups in both the main and the dialog picker.
+    Voice design is its own toggled section.
+  Director labels translate to English with the rest of the UI.
 
 WHAT CHANGED IN 116 (on top of 115) — Fish Audio, director lists, make-default
   NEW DEPENDENCY: msgpack (requirements.txt) — used for Fish's inline-reference path.
@@ -431,6 +452,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۱۶»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۱۷»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»
