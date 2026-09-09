@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 120
-BUILD_FA = "\u06f1\u06f2\u06f0"
+BUILD = 123
+BUILD_FA = "\u06f1\u06f2\u06f3"
 
 
 def _diag(tag, **kv):
@@ -3529,7 +3529,9 @@ def _g_apply_pauses(pcm, sr, text, cuts, plan):
 
 
 def _g_completeness(text, words):
-    """The index of the first clause the recording clearly skipped, or None."""
+    """The index of the first clause the recording clearly skipped, or None.
+    A transcript that covers less than 40 % of the expected words is not
+    credible (wrong language hint, noisy take) — then the audit abstains."""
     import difflib
     cl = _g_clauses(text)
     ours, owner = [], []
@@ -3537,6 +3539,9 @@ def _g_completeness(text, words):
         ws = _text_words(c); ours += ws; owner += [k] * len(ws)
     tw = [_norm_word(w) for w, _, _ in words]
     if not ours or not tw:
+        return None
+    if len(tw) < 0.4 * len(ours):
+        _diag("g_completeness", mode="abstain", transcript=len(tw), expected=len(ours))
         return None
     sm = difflib.SequenceMatcher(None, ours, tw, autojunk=False)
     matched = set()
@@ -4773,6 +4778,8 @@ def fish_library(query="", tag=None, language=None, licensed=False, sort="score"
     if language: params["language"] = language
     if licensed: params["licensed"] = "true"
     j = _fish_get("/model", params)
+    _diag("fish_library", q=query[:30], tags=params.get("tag"), lang=language, licensed=licensed, sort=sort, page=page,
+          total=j.get("total"), got=len(j.get("items", [])))
     items = []
     for it in j.get("items", []):
         if it.get("type") != "tts":
@@ -4783,8 +4790,6 @@ def fish_library(query="", tag=None, language=None, licensed=False, sort="score"
         official = author.lower().replace(" ", "") in ("fishaudio", "fishaudioofficial", "fish", "official")
         likes, uses = int(it.get("like_count") or 0), int(it.get("task_count") or 0)
         curated = bool(it.get("licensed")) or official or likes >= 50 or uses >= 5000
-        if quality == "curated" and not curated:
-            continue
         # FIELD (116): the server's language filter is loose (Arabic voices for "fa");
         # keep only voices that list the requested language themselves
         if language and it.get("languages") and language not in [x.lower()[:2] for x in it.get("languages")]:
@@ -4793,7 +4798,10 @@ def fish_library(query="", tag=None, language=None, licensed=False, sort="score"
                       "tags": it.get("tags") or [], "languages": it.get("languages") or [], "likes": likes, "uses": uses,
                       "licensed": bool(it.get("licensed")), "official": official, "curated": curated,
                       "sample": ((it.get("samples") or [{}])[0].get("audio") if it.get("samples") else None)})
-    return {"items": items, "total": j.get("total", 0), "page": page, "has_more": bool(j.get("has_more")) or len(items) >= page_size}
+    if quality == "curated":
+        good = [i for i in items if i["curated"]]; rest = [i for i in items if not i["curated"]]
+        return {"items": good, "ugc": rest, "total": j.get("total", 0), "page": page, "has_more": bool(j.get("has_more")) or len(items) >= page_size}
+    return {"items": items, "ugc": [], "total": j.get("total", 0), "page": page, "has_more": bool(j.get("has_more")) or len(items) >= page_size}
 
 
 def fish_voice_design(instruction, reference_text="", language=None, n=2, speed=1.0, seed=None, status=None):
@@ -4894,6 +4902,14 @@ def _fish_call(text, cfg, status):
     return pcm, sr
 
 
+def _text_lang(text):
+    """fa-IR for Arabic-script text, en-US for Latin text, None when unclear."""
+    ar = len(re.findall(r"[\u0600-\u06FF]", text)); la = len(re.findall(r"[A-Za-z]", text))
+    if ar >= 3 * la and ar > 5: return "fa-IR"
+    if la >= 3 * ar and la > 5: return "en-US"
+    return None
+
+
 def fish_pcm(text, cfg, status):
     """Whole-part synthesis on Fish, with the same continuity lead-in and
     completeness audit as Google (both work on the recording, not the engine)."""
@@ -4901,7 +4917,9 @@ def fish_pcm(text, cfg, status):
     if not text:
         raise RuntimeError("در این بخش چیزی برای خواندن نیست.")
     lead = _g_lead_in(text, cfg) if cfg.get("f_continuity", True) else ""
-    lang = {"fa": "fa-IR", "en": "en-US"}.get(cfg.get("g_lang") or "fa")
+    # FIELD (120): an English take was transcribed with a Persian hint → 1 word of 33 →
+    # the completeness audit "found" a skipped sentence and forced a retake.
+    lang = _text_lang(text) or {"fa": "fa-IR", "en": "en-US"}.get(cfg.get("g_lang") or "fa")
     pcm = None
     for attempt in range(3):
         try:

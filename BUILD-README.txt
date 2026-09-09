@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist (repo: github.com/pirastral/ava-app)
 ======================================================================
-This zip is the COMPLETE application source as of update 120.
+This zip is the COMPLETE application source as of update 123.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,26 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 123 (on top of 122) — from the 120 log
+  Fish: the transcription used for boundaries and the completeness audit now takes its
+    language from the TEXT (Latin → en-US, Arabic script → fa-IR); the log showed an
+    English take transcribed with a Persian hint (1 word of 33), which made the audit
+    "detect" a skipped sentence and force a needless retake.
+  The completeness audit abstains when the transcript covers < 40 % of the expected words
+    (both engines) — a failed transcription is not evidence of a failed take.
+  The library search now logs its request and the reply size (fish_library diag).
+
+WHAT CHANGED IN 122 (on top of 121)
+  Fish library: the curated filter no longer swallows whole pages. Curated voices are
+  listed first; the page's user uploads are returned separately — hidden behind a
+  «نمایش آن‌ها» button when curated voices exist, shown (dimmed, badged «کاربران») when a
+  page has none. Field: Turkish / newest and "erdogan" pages were entirely UGC and came
+  back empty with a total of 1000 / 7.
+
+WHAT CHANGED IN 121 (on top of 120) — visual
+  Header band colour #65abba (both themes); the engine card and the text card have no
+  band (as before) — bands on settings, music and final file.
 
 WHAT CHANGED IN 120 (on top of 119) — from the 119 log
   BUG FIXED — a file part blocked the final file (KeyError at splice): the UI ran the undo
@@ -492,6 +512,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۲۰»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۲۳»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»
