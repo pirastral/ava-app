@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist (repo: github.com/pirastral/ava-app)
 ======================================================================
-This zip is the COMPLETE application source as of update 117.
+This zip is the COMPLETE application source as of update 119.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,32 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 119 (on top of 118)
+  Heavy diacritics prompt says harakat-gozari (the Iranian term), not tashkil.
+  Fish library: a Quality filter, default CURATED — keeps voices that are licensed, from
+    Fish's own account, or heavily used/liked (≥ 50 likes or ≥ 5,000 uses); 'Everything'
+    shows the raw UGC. Category defaults to Professional. Results show official /
+    licensed badges and use counts.
+
+WHAT CHANGED IN 118 (on top of 117) — from the 117 log + UI batch
+  Diacritics: THREE levels as tool options — Gemini light (value "gemini": the existing
+    prompt, byte-for-byte untouched), Gemini medium (verbs, multi-syllable words, names),
+    Gemini heavy (full harakat-gozari, almost every letter). Log showed the newest discovered
+    model (gemini-3.8-flash) answering 503 "high demand"; an overloaded model now falls
+    to the next one in the list instead of failing the run.
+  Fish: pause chips removed (native [break]/[long-break] tags); سرنخ → تگ everywhere;
+    part editors get the tags drop-up of THEIR engine (Google or Fish list + custom tag);
+    library gets a Category dropdown (Fish's own library sections: professional,
+    narration, audiobook, storytelling, podcast, announcer, news, education,
+    advertising, entertainment, gaming, character — sent as a tag) plus a "licensed
+    only" toggle; Enter searches in the library, music and design boxes; used /
+    designed / own-sample entries carry a trash icon in both pickers; dialog gains the
+    volume and top-p sliders.
+  Sub-menus: centred on the parent using the real item count (34 px per row, capped at
+    320) — short lists no longer float up as if they were 320 px tall.
+  Music: independent fade-in and fade-out, 0–8 s in 0.5 s steps (0 = none).
+  Section headers use the primary colour.
 
 WHAT CHANGED IN 117 (on top of 116)
   Diacritics: Gemini Pro option removed (it burnt 22 keys' quota on one small job). The
@@ -452,6 +478,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۱۷»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۱۹»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

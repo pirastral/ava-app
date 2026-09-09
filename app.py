@@ -337,10 +337,10 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
-    def fish_library(self, query="", tag="", language="", licensed=False, sort="score", page=1):
+    def fish_library(self, query="", tag="", language="", licensed=False, sort="score", page=1, category="", quality="curated"):
         try:
             import engines
-            return {"ok": True, **engines.fish_library(query, tag or None, language or None, bool(licensed), sort or "score", int(page or 1))}
+            return {"ok": True, **engines.fish_library(query, tag or None, language or None, bool(licensed), sort or "score", int(page or 1), category=category or None, quality=quality or "curated")}
         except Exception as e:
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 

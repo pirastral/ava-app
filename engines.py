@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 117
-BUILD_FA = "\u06f1\u06f1\u06f7"
+BUILD = 119
+BUILD_FA = "\u06f1\u06f1\u06f9"
 
 
 def _diag(tag, **kv):
@@ -352,6 +352,41 @@ def _skeleton(s: str) -> str:
     return re.sub(r"\s+", " ", _MARKS_RE.sub("", s)).strip()
 
 
+# 118: two heavier levels. The LIGHT level is _LLM_PROMPT above, untouched.
+_LLM_PROMPT_MEDIUM = (
+    "You are a Persian (Farsi) diacritization engine for Iranian text-to-speech, working at a MEDIUM density. "
+    "First read and fully comprehend the ENTIRE text - meaning, grammar, context - before deciding anything. "
+    "WHAT TO MARK - mark generously, but keep the most familiar function words bare: "
+    "(1) kasre-ye ezafe (\u0650) wherever a word links to the next (\u0647\u0654 after final \u0647, \u06cc after final \u0627/\u0648) - never skipped; "
+    "(2) EVERY homograph, resolved from context; "
+    "(3) EVERY verb form - prefixes (\u0645\u06cc\u200c, \u0628\u0650, \u0646\u064e), stem vowels and personal endings; "
+    "(4) every noun, adjective and adverb of two or more syllables, including common ones; "
+    "(5) every rare, literary, foreign, fused or morphologically unusual word; "
+    "(6) proper names. "
+    "LEAVE BARE only the short, extremely familiar function words in their default reading: \u0628\u0647 (preposition), \u0627\u0632, \u062f\u0631, \u0648, \u06a9\u0647, \u0631\u0627, \u0627\u0633\u062a, \u0645\u0646, \u062a\u0648, \u0627\u0648, \u0645\u0627, \u0634\u0645\u0627, \u0622\u0646, \u0627\u06cc\u0646, \u0647\u0645, \u062a\u0627, \u0628\u0627, \u0628\u06cc, \u0627\u06af\u0631, \u0648\u0644\u06cc, \u06cc\u06a9. "
+    "HOW TO MARK - two absolute laws: "
+    "COMPLETENESS LAW: when you vocalize a word, vocalize it COMPLETELY and syllable-accurately. Work out its syllables first; every consonant not followed by a vowel takes sukun (\u0652), including word-medial clusters. A half-marked word misleads the TTS more than a bare one. "
+    "ENDINGS LAW: decide every marked word's final sound explicitly. Final sukun only where the TTS would otherwise invent a trailing vowel; NEVER before punctuation or a pause; word-final \u0647 reads as e; a word linking forward gets the ezafe of rule (1). "
+    "Long vowels written with \u0627 \u0648 \u06cc take NO mark themselves; the consonant before them takes the matching short mark only when the reading is ambiguous. "
+    "Classical verse MUST follow its established recitation and meter. Dialect: formal Iranian standard Persian (Tehran), never Dari/Afghan or Tajik. "
+    "NEVER change, add, delete or reorder any letter, word, number, punctuation, tag in [brackets], or line break - output the SAME text with marks added, nothing else, no explanations."
+)
+_LLM_PROMPT_HEAVY = (
+    "You are a Persian (Farsi) diacritization engine for Iranian text-to-speech, working at FULL density — complete harakat-gozari (حرکت‌گذاری کامل), the Iranian practice, not Arabic tashkil. "
+    "First read and fully comprehend the ENTIRE text - meaning, grammar, context - before deciding anything. "
+    "MARK EVERY WORD, including the most familiar function words and proper names: every consonant carries its vowel mark "
+    "(\u064e fathe, \u0650 kasre, \u064f zamme) or sukun (\u0652) when no vowel follows; tashdid (\u0651) on every doubled consonant; "
+    "kasre-ye ezafe (\u0650) wherever a word links to the next (\u0647\u0654 after final \u0647, \u06cc after final \u0627/\u0648). "
+    "The ONLY unmarked positions: letters that ARE long vowels (\u0627 \u0648 \u06cc when they read as long a, u, i - their preceding consonant takes the matching short mark), "
+    "word-initial \u0627 that carries a hamza-vowel, and the final consonant of a word standing before punctuation or a pause (no final sukun there; the voice closes the word). "
+    "Resolve EVERY homograph from context; \u0628\u0647 the preposition is \u0628\u0650\u0647; word-final \u0647 reads as e. "
+    "Work out the syllables of every word first and mark it COMPLETELY - a half-marked word is a defect. "
+    "Classical verse MUST follow its established recitation and meter. Dialect: formal Iranian standard Persian (Tehran), never Dari/Afghan or Tajik. "
+    "NEVER change, add, delete or reorder any letter, word, number, punctuation, tag in [brackets], or line break - output the SAME text with marks added, nothing else, no explanations."
+)
+_LLM_PROMPTS = {"light": None, "medium": _LLM_PROMPT_MEDIUM, "heavy": _LLM_PROMPT_HEAVY}
+
+
 def _llm_map(text, status, label, call_one):
     """Run chunks through the LLM with a hard letter-integrity guard:
     if the model altered any letter, retry once; if it alters again,
@@ -413,14 +448,15 @@ def _ezafe_pick_model(key):
     return _EZAFE_MODEL["name"]
 
 
-def _ezafe_gemini(text, key, status, models=None, label="Gemini"):
+def _ezafe_gemini(text, key, status, models=None, label="Gemini", level="light"):
     if models is None:
         models = [_ezafe_pick_model(key), "gemini-2.5-flash", "gemini-flash-latest"]
+    prompt = _LLM_PROMPTS.get(level) or _LLM_PROMPT
 
     def call(ch):
         last_err = None
         for m in models:
-            body = {"contents": [{"parts": [{"text": _LLM_PROMPT + "\n\nTEXT TO DIACRITIZE:\n" + ch}]}],
+            body = {"contents": [{"parts": [{"text": prompt + "\n\nTEXT TO DIACRITIZE:\n" + ch}]}],
                     "generationConfig": {"temperature": 0.1, "thinkingConfig": {"thinkingBudget": 0}}}
             r = requests.post("https://generativelanguage.googleapis.com/v1beta/models/" + m + ":generateContent?key=" + key, json=body, timeout=120)
             if r.status_code == 400 and "thinking" in r.text.lower():
@@ -432,8 +468,10 @@ def _ezafe_gemini(text, key, status, models=None, label="Gemini"):
                 last_err = r.json().get("error", {}).get("message", f"HTTP {r.status_code}")
             except Exception:
                 last_err = f"HTTP {r.status_code}"
+            if r.status_code in (503, 500) or "high demand" in last_err.lower() or "overloaded" in last_err.lower():
+                _diag("ezafe_overloaded", model=m); continue          # try the next model
             if not any(k in last_err.lower() for k in ("not found", "not available", "no longer", "deprecated")):
-                # quota / bad key / server errors are the key-rotation's business
+                # quota / bad key errors are the key-rotation's business
                 raise _GoogleHTTP(r.status_code, last_err)
         raise RuntimeError(label + ": " + (last_err or "?"))
     return _llm_map(text, status, label, call)
@@ -468,8 +506,10 @@ def ezafe_apply(text: str, status, tool: str = "local", key: str = "") -> str:
         key = (key or "").strip()
         if key and key not in [k["key"] for k in google_keys()]:
             google_keys_set([k["key"] for k in google_keys()] + [key])
-        fn = _ezafe_gemini_pro if tool == "gemini_pro" else _ezafe_gemini
-        return google_rotate(lambda k: fn(text, k, status), status, "حرکت‌گذاری")
+        if tool == "gemini_pro":
+            return google_rotate(lambda k: _ezafe_gemini_pro(text, k, status), status, "حرکت‌گذاری")
+        level = {"gemini": "light", "gemini_light": "light", "gemini_medium": "medium", "gemini_heavy": "heavy"}.get(tool, "light")
+        return google_rotate(lambda k: _ezafe_gemini(text, k, status, level=level), status, "حرکت‌گذاری")
     if tool != "local":
         key = (key or "").strip() or load_key(tool)
         if not key:
@@ -4191,7 +4231,7 @@ def final_files(ids, music_cfg, status):
         status("دارم موسیقی را زیر صدا می‌گذارم…")
         mixed = mix_music(clean_pcm, sr, _MUSIC["pcm"], _MUSIC["sr"],
                           level_db=float(music_cfg.get("level_db", -16)), duck=bool(music_cfg.get("duck", True)),
-                          fade_out=float(music_cfg.get("fade", 3.0)))
+                          fade_out=float(music_cfg.get("fade_out", music_cfg.get("fade", 1.5))), fade_in=float(music_cfg.get("fade_in", 1.5)))
         out["music"] = pcm_to_mp3(mixed, sr)
     return out
 
@@ -4707,11 +4747,17 @@ def fish_delete_voice(model_id):
     return True
 
 
-def fish_library(query="", tag=None, language=None, licensed=False, sort="score", page=1, page_size=8):
-    """Search the public voice library."""
+FISH_CATEGORIES = ["professional", "narration", "audiobook", "storytelling", "podcast", "announcer", "entertainment", "gaming", "character", "news", "education", "advertising"]
+
+
+def fish_library(query="", tag=None, language=None, licensed=False, sort="score", page=1, page_size=8, category=None, quality="curated"):
+    """Search the public voice library. `category` is one of Fish's use-case
+    tags (their web library's sections: professional, narration, …), sent as a
+    tag alongside the descriptive tag."""
     params = {"page_size": page_size, "page_number": page, "sort_by": sort}
     if query: params["title"] = query
-    if tag: params["tag"] = tag
+    tags = [t for t in (category, tag) if t]
+    if tags: params["tag"] = tags if len(tags) > 1 else tags[0]
     if language: params["language"] = language
     if licensed: params["licensed"] = "true"
     j = _fish_get("/model", params)
@@ -4719,13 +4765,22 @@ def fish_library(query="", tag=None, language=None, licensed=False, sort="score"
     for it in j.get("items", []):
         if it.get("type") != "tts":
             continue
+        # quality signals (their API has no "official" flag): rights-secured
+        # voices, Fish's own account, and heavily used / liked voices
+        author = ((it.get("author") or {}).get("nickname") or "").strip()
+        official = author.lower().replace(" ", "") in ("fishaudio", "fishaudioofficial", "fish", "official")
+        likes, uses = int(it.get("like_count") or 0), int(it.get("task_count") or 0)
+        curated = bool(it.get("licensed")) or official or likes >= 50 or uses >= 5000
+        if quality == "curated" and not curated:
+            continue
         # FIELD (116): the server's language filter is loose (Arabic voices for "fa");
         # keep only voices that list the requested language themselves
         if language and it.get("languages") and language not in [x.lower()[:2] for x in it.get("languages")]:
             continue
-        items.append({"id": "m:" + it["_id"], "title": it.get("title", ""), "author": (it.get("author") or {}).get("nickname", ""),
-                      "tags": it.get("tags") or [], "languages": it.get("languages") or [], "likes": it.get("like_count", 0),
-                      "licensed": bool(it.get("licensed")), "sample": ((it.get("samples") or [{}])[0].get("audio") if it.get("samples") else None)})
+        items.append({"id": "m:" + it["_id"], "title": it.get("title", ""), "author": author,
+                      "tags": it.get("tags") or [], "languages": it.get("languages") or [], "likes": likes, "uses": uses,
+                      "licensed": bool(it.get("licensed")), "official": official, "curated": curated,
+                      "sample": ((it.get("samples") or [{}])[0].get("audio") if it.get("samples") else None)})
     return {"items": items, "total": j.get("total", 0), "page": page, "has_more": bool(j.get("has_more")) or len(items) >= page_size}
 
 
