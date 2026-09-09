@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 115
-BUILD_FA = "\u06f1\u06f1\u06f5"
+BUILD = 116
+BUILD_FA = "\u06f1\u06f1\u06f6"
 
 
 def _diag(tag, **kv):
@@ -973,7 +973,7 @@ def _clause_split(text, engine):
     spans, so a later patch can regenerate only the touched pieces.
     Light voices break at commas too; chatterbox only at sentence ends
     (its cross-comma prosody is worth keeping)."""
-    if engine == "google":
+    if engine in ("google", "fish"):
         # Google reads the whole gulp in ONE call (consistency lives inside a
         # call, drift lives between calls) and handles pauses itself, so a
         # gulp is a single clause spanning the entire text.
@@ -1824,14 +1824,15 @@ def generate_gulp(payload, status):
     """One gulp → clause-wise synthesis, stored per clause for surgical patching."""
     _job_start()
     text = payload["text"].strip()
-    if payload["engine"] == "google":
+    if payload["engine"] in ("google", "fish"):
+        eng = payload["engine"]
         lead_in = _g_lead_in(text, payload)
-        pcm, sr = google_pcm(text, payload, status)
-        items = _clause_split(text, "google")
+        pcm, sr = cloud_pcm(text, payload, status)
+        items = _clause_split(text, eng)
         items[0]["pcm"] = pcm
         gid = next(_gulp_ids)
-        entry = {"sr": sr, "items": items, "text": text, "engine": "google", "lead_in": lead_in,
-                 "payload": {k: payload[k] for k in payload if k.startswith("g_")}}
+        entry = {"sr": sr, "items": items, "text": text, "engine": eng, "lead_in": lead_in,
+                 "payload": {k: payload[k] for k in payload if k.startswith("g_") or k.startswith("f_")}}
         _ensure_valid(entry, "تولید", status)
         _GULP_PCM[gid] = entry
         return pcm_to_mp3(_assemble(entry), sr), gid
@@ -2625,8 +2626,9 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
         raise RuntimeError("این بخش دیگر در حافظه نیست؛ یک بار دیگر «تبدیل به گفتار» را بزنید.")
     _ensure_valid(entry, "پایهٔ ویرایش", status)
     new_text = new_text.strip()
-    if payload["engine"] == "google" or entry.get("engine") == "google":
-        cfg = payload if payload["engine"] == "google" else {**entry["payload"], **payload, "engine": "google"}
+    if payload["engine"] in ("google", "fish") or entry.get("engine") in ("google", "fish"):
+        eng = payload["engine"] if payload["engine"] in ("google", "fish") else entry.get("engine")
+        cfg = payload if payload["engine"] == eng else {**entry["payload"], **payload, "engine": eng}
         # Surgery gets NO lead-in: its neighbouring clauses already carry the
         # prosody, and a lead-in here was trimmed at the wrong silence and
         # returned the previous part's sentence as the "regenerated" one.
@@ -2636,18 +2638,18 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
         # touched (with their neighbours as prosodic context), cut the new
         # clause out at its pause boundaries and splice it into the original
         # at the same kind of boundary. Falls back to a whole-part take.
-        if entry.get("engine") == "google" and len(entry["items"]) == 1 and entry["items"][0].get("pcm") is not None:
+        if entry.get("engine") == eng and len(entry["items"]) == 1 and entry["items"][0].get("pcm") is not None:
             done = _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status)
             if done:
-                entry["payload"] = {k: cfg[k] for k in cfg if k.startswith("g_")}
+                entry["payload"] = {k: cfg[k] for k in cfg if k.startswith("g_") or k.startswith("f_")}
                 _ensure_valid(entry, "ویرایش", status)
                 return pcm_to_mp3(_assemble(entry), entry["sr"]), done, "clauses"
         cfg = {**cfg, "g_lead_in": entry.get("lead_in", "")}   # pinned at generation time
-        pcm, sr = google_pcm(new_text, cfg, status)
-        items = _clause_split(new_text, "google")
+        pcm, sr = cloud_pcm(new_text, cfg, status)
+        items = _clause_split(new_text, eng)
         items[0]["pcm"] = pcm
-        entry.update({"sr": sr, "items": items, "text": new_text, "engine": "google",
-                      "payload": {k: cfg[k] for k in cfg if k.startswith("g_")}})
+        entry.update({"sr": sr, "items": items, "text": new_text, "engine": eng,
+                      "payload": {k: cfg[k] for k in cfg if k.startswith("g_") or k.startswith("f_")}})
         _ensure_valid(entry, "ویرایش", status)
         return pcm_to_mp3(_assemble(entry), sr), 1, "full"
     has_sel = sel_start is not None and sel_end is not None and sel_end > sel_start
@@ -3126,8 +3128,14 @@ def google_prompt(text, cfg):
             pst = GOOGLE_PRESETS.get(sp.get("preset") or "", "")
             if pst and sp.get("name"):
                 duo += f"{sp['name']} speaks in this style: {pst}\n"
+    persona = _director_note(cfg.get("g_age"), cfg.get("g_age_custom"), cfg.get("g_state"), cfg.get("g_state_custom"))
+    for sp in speakers:
+        note = _director_note(sp.get("age"), sp.get("age_custom"), sp.get("state"), sp.get("state_custom"))
+        if note and sp.get("name"):
+            duo += f"{sp['name']}: {note}\n"
     head = (f"Narrator: one consistent voice, same identity in every recording. Style: {style} "
-            f"Language: {lang_note} " + duo +
+            + (f"{persona} " if persona else "")
+            + f"Language: {lang_note} " + duo +
             "Read ONLY the transcript below, exactly as written; do not read these instructions; perform bracketed tags, never say them.\n"
             "TRANSCRIPT:\n")
     return head + google_text(text, model)
@@ -3384,7 +3392,7 @@ _G_LAST = {"tail": ""}   # last clause of the previous Google part in this docum
 def _g_lead_in(text, cfg):
     """The lead-in for a part: the previous part's last clause, unless the
     caller pinned one (regeneration) or continuity is off."""
-    if cfg.get("g_continuity", True) is False:
+    if cfg.get("g_continuity", True) is False or cfg.get("f_continuity", True) is False:
         return ""
     if "g_lead_in" in cfg:
         return (cfg.get("g_lead_in") or "").strip()
@@ -3697,7 +3705,7 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
     middle = " ".join(c[0].strip() for c in nc[j0:j1])
     gen_text = " ".join(x for x in (before, middle, after) if x)
     status(f"گوگل: {faDigits(j1 - j0)} جمله را همراه جمله‌های کناری‌اش دوباره می‌سازد…")
-    new_pcm, nsr = google_pcm(gen_text, cfg, status)
+    new_pcm, nsr = cloud_pcm(gen_text, cfg, status)
     gcl = _g_clauses(gen_text)
     k0 = 1 if before else 0
     k1 = k0 + (j1 - j0)
@@ -3914,7 +3922,7 @@ def captions_for(ids, status):
         if entry.get("engine") in ("silence", "file"):
             t0 += dur + 0.12
             continue
-        if entry.get("engine") == "google":
+        if entry.get("engine") in ("google", "fish"):
             cl = _g_clauses(entry["text"])
             cuts = _g_bounds(pcm, sr, cl, status, {"fa": "fa-IR", "en": "en-US", "de": "de-DE", "tr": "tr-TR", "fr": "fr-FR", "es": "es-ES"}.get((entry.get("payload") or {}).get("g_lang")))
             if cuts is None:
@@ -4335,3 +4343,526 @@ def music_credit(entry):
     if not entry or lic in ("", "CC0", "PDM", "PUBLIC DOMAIN") or entry.get("preset") in ("lyria", "file"):
         return ""
     return f"موسیقی: «{entry.get('custom') or entry.get('file')}» از {entry.get('author', '')} — {lic} — {entry.get('page', '')}"
+
+
+# ===========================================================================
+# 116 · Director lists — ages and states, shared by Google (prompt notes) and
+# Fish (bracket cues). Each entry: id, fa label, en label, Google note, Fish cue.
+# ===========================================================================
+DIRECTOR_AGES = [
+    ("", "— بدون تغییر —", "— unchanged —", "", ""),
+    ("toddler", "نوپا (۲–۳ ساله)", "Toddler (2–3)", "Voice of a toddler, two or three years old: tiny, very high, babbling cadence, simple words stretched, giggly and unsteady.", "[voice of a toddler, tiny and very high-pitched, babbling]"),
+    ("small_child", "کودک خردسال (۴–۶ ساله)", "Small child (4–6)", "Voice of a small child, four to six: high, bright, breathy, eager, with the sing-song rhythm of a kindergartner.", "[voice of a small child, high and bright, sing-song]"),
+    ("child", "بچه (۷–۱۰ ساله)", "Child (7–10)", "Voice of a child of eight or nine: light, clear, quick, curious; a schoolchild reading aloud.", "[voice of a child around eight, light and clear]"),
+    ("preteen", "نوجوانِ کم‌سن (۱۱–۱۲ ساله)", "Preteen (11–12)", "Voice of a preteen, eleven or twelve: light but steadier, a little self-conscious.", "[voice of a preteen, light and slightly self-conscious]"),
+    ("teen", "نوجوان (۱۳–۱۷ ساله)", "Teenager (13–17)", "Voice of a teenager: youthful, a touch of attitude, energy that comes and goes mid-sentence.", "[teenage voice, youthful with a touch of attitude]"),
+    ("young", "جوان (۱۸–۲۵ ساله)", "Young adult (18–25)", "Voice of a young adult in their early twenties: fresh, energetic, quick.", "[young adult voice, fresh and energetic]"),
+    ("adult", "میان‌سالِ جوان (۳۰–۴۰ ساله)", "Adult (30–40)", "Voice of an adult in their thirties: settled, warm, confident.", "[adult voice in their thirties, settled and warm]"),
+    ("middle", "میان‌سال (۴۵–۵۵ ساله)", "Middle-aged (45–55)", "Voice of a middle-aged person around fifty: fuller, slower, a little gravel, unhurried authority.", "[middle-aged voice around fifty, fuller and unhurried]"),
+    ("elderly", "سالخورده (۶۵–۷۵ ساله)", "Elderly (65–75)", "Voice of an elderly person around seventy: slower, softer, slightly rough, with small pauses for breath.", "[elderly voice around seventy, slower and slightly rough]"),
+    ("very_old", "خیلی پیر (۸۰–۹۰ ساله)", "Very old (80–90)", "Voice of a very old person, eighty-five or more: thin, quavering, frail, breathy, words landing slowly.", "[very old and frail voice, thin and quavering]"),
+    ("ancient", "کهنسال و ناتوان (۹۵ به بالا)", "Ancient, frail (95+)", "Voice of an ancient, frail person near a hundred: barely more than a whisper, trembling, long pauses, effort in every word.", "[ancient frail voice, trembling, barely above a whisper, long pauses]"),
+    ("custom", "سفارشی…", "Custom…", "", ""),
+]
+DIRECTOR_STATES = [
+    ("", "— بدون تغییر —", "— unchanged —", "", ""),
+    # joy & energy
+    ("happy", "شاد", "Happy", "Emotional state: happy, warm and bright.", "[happy]"),
+    ("joyful", "سرخوش", "Joyful", "Emotional state: joyful, lit up, smiling through the words.", "[joyful]"),
+    ("ecstatic", "از خوشحالی منفجر", "Explosively excited", "Emotional state: explosively excited, bursting, breathless with joy, rushing the words.", "[extremely excited, bursting with joy]"),
+    ("playful", "شیطون و بازیگوش", "Playful", "Emotional state: playful, teasing, light.", "[playful, teasing]"),
+    ("flirty", "لوند و دلبر", "Flirty", "Emotional state: flirty — warm, teasing, lingering on words, a smile in the voice.", "[flirty, teasing, a smile in the voice]"),
+    ("sexy", "اغواگر", "Seductive", "Emotional state: seductive — low, slow, intimate and breathy.", "[seductive, low and breathy]"),
+    ("daydreamy", "توی رؤیا", "Daydreamy", "Emotional state: daydreamy — drifting, soft, faraway, unhurried.", "[dreamy, faraway, drifting]"),
+    ("dreamy", "خواب‌آلود", "Sleepy", "Emotional state: sleepy, drowsy, slow, words softening at the end.", "[sleepy, drowsy]"),
+    ("proud", "مغرور و سربلند", "Proud", "Emotional state: proud, chest out, savoring the words.", "[proud]"),
+    ("confident", "مطمئن", "Confident", "Emotional state: confident, assured, unhurried.", "[confident]"),
+    ("arrogant", "متکبر", "Arrogant", "Emotional state: arrogant, condescending, looking down on the listener.", "[arrogant, condescending]"),
+    ("heroic", "حماسی و قهرمانانه", "Heroic", "Emotional state: heroic, resolute, rising, chest-voice.", "[heroic, resolute]"),
+    ("hopeful", "امیدوار", "Hopeful", "Emotional state: hopeful, lifting.", "[hopeful]"),
+    ("grateful", "قدردان", "Grateful", "Emotional state: grateful, moved, sincere.", "[grateful, moved]"),
+    ("loving", "عاشقانه و مهربان", "Loving", "Emotional state: loving, tender, affectionate.", "[loving, tender]"),
+    ("motherly", "مادرانه", "Motherly", "Emotional state: motherly — soothing, protective, gentle.", "[motherly, soothing, gentle]"),
+    ("comforting", "دلداری‌دهنده", "Comforting", "Emotional state: comforting, calm, reassuring.", "[comforting, reassuring]"),
+    ("calm", "آرام", "Calm", "Emotional state: calm, serene, even.", "[calm]"),
+    ("meditative", "مراقبه‌وار", "Meditative", "Emotional state: meditative, slow, hushed, spacious.", "[meditative, slow, hushed]"),
+    ("thoughtful", "متفکر", "Thoughtful", "Emotional state: thoughtful, pausing to think, measured.", "[thoughtful, pensive]"),
+    ("curious", "کنجکاو", "Curious", "Emotional state: curious, leaning in, rising intonation.", "[curious]"),
+    ("surprised", "متعجب", "Surprised", "Emotional state: surprised, caught off guard.", "[surprised]"),
+    ("astonished", "بهت‌زده", "Astonished", "Emotional state: astonished, jaw-dropped, disbelieving.", "[astonished, disbelieving]"),
+    ("confused", "گیج", "Confused", "Emotional state: confused, halting, unsure of the words.", "[confused, halting]"),
+    ("doubtful", "مردد", "Doubtful", "Emotional state: doubtful, skeptical.", "[doubtful, skeptical]"),
+    ("determined", "مصمم", "Determined", "Emotional state: determined, gritted, firm.", "[determined, firm]"),
+    # sorrow & weakness
+    ("sad", "غمگین", "Sad", "Emotional state: sad, heavy, subdued.", "[sad]"),
+    ("grieving", "سوگوار", "Grieving", "Emotional state: grieving, hollow, voice thick with loss.", "[grieving, voice thick with loss]"),
+    ("crying", "در حال گریه", "Crying while speaking", "Emotional state: crying while speaking — voice breaking, catching on breaths, wet and unsteady.", "[crying while speaking, voice breaking][sobbing]"),
+    ("sobbing", "هق‌هق‌کنان", "Sobbing", "Emotional state: sobbing hard between words, gasping.", "[sobbing hard][gasping]"),
+    ("depressed", "افسرده", "Depressed", "Emotional state: depressed — flat, slow, drained, no lift at all.", "[depressed, flat and drained]"),
+    ("lonely", "تنها", "Lonely", "Emotional state: lonely, quiet, distant.", "[lonely, quiet]"),
+    ("nostalgic", "دلتنگِ گذشته", "Nostalgic", "Emotional state: nostalgic, wistful, half-smiling at a memory.", "[nostalgic, wistful]"),
+    ("tired", "خسته و بی‌رمق", "Exhausted", "Emotional state: exhausted — heavy, dragging, sighing, low energy.", "[exhausted, dragging][sighing]"),
+    ("sick", "بیمار", "Sick", "Emotional state: sick — weak, congested, effortful.", "[sick, weak and congested]"),
+    ("in_pain", "دردمند", "In pain", "Emotional state: in physical pain — strained, clipped, wincing between words.", "[in pain, strained][groaning]"),
+    ("dying", "در حال مرگ", "Dying", "Emotional state: dying — faint, breathless, fading, long gaps, barely holding the words.", "[dying, faint and breathless, fading][panting]"),
+    ("drunk", "مست", "Drunk", "Emotional state: drunk — slurred, loose, wandering pitch, sudden laughs.", "[drunk, slurring, wandering]"),
+    ("bored", "حوصله‌سررفته", "Bored", "Emotional state: bored, flat, sighing, dragging.", "[bored, flat]"),
+    ("resigned", "تسلیم", "Resigned", "Emotional state: resigned, giving up, quiet acceptance.", "[resigned]"),
+    # fear & nerves
+    ("nervous", "مضطرب", "Nervous", "Emotional state: nervous, anxious, quick shallow breaths, tremor.", "[nervous, anxious]"),
+    ("scared", "ترسیده", "Scared", "Emotional state: scared, tight, hushed, alert.", "[scared]"),
+    ("terrified", "وحشت‌زده", "Terrified", "Emotional state: terrified — shaking, breath catching, on the edge of a scream.", "[terrified, shaking][gasping]"),
+    ("panicked", "دستپاچه", "Panicked", "Emotional state: panicked, rushing, words tumbling.", "[panicked, rushing]"),
+    ("paranoid", "بدگمان", "Paranoid", "Emotional state: paranoid, whispering, glancing around, suspicious of everything.", "[paranoid, suspicious, hushed]"),
+    ("suspicious", "مشکوک", "Suspicious", "Emotional state: suspicious, narrowing, probing.", "[suspicious]"),
+    ("embarrassed", "خجالت‌زده", "Embarrassed", "Emotional state: embarrassed, awkward, small.", "[embarrassed]"),
+    ("ashamed", "شرمنده", "Ashamed", "Emotional state: ashamed, head down, quiet.", "[ashamed]"),
+    ("guilty", "گناهکار", "Guilty", "Emotional state: guilty, hesitant, confessing.", "[guilty, hesitant]"),
+    ("caught", "مچ‌گرفته‌شده", "Caught red-handed", "Emotional state: caught red-handed — stammering, backpedaling, nervous laugh, excuses piling up.", "[caught red-handed, stammering, nervous laugh]"),
+    ("lying", "در حال دروغ‌گفتن", "Lying", "Emotional state: lying — over-smooth, a little too quick, small hesitations, forced sincerity.", "[lying, overly smooth, forced sincerity]"),
+    ("pleading", "التماس‌کنان", "Pleading", "Emotional state: pleading, begging, desperate.", "[pleading, begging]"),
+    ("apologetic", "پشیمان و عذرخواه", "Apologetic", "Emotional state: apologetic, regretful, soft.", "[apologetic, regretful]"),
+    # cunning & cold
+    ("cunning", "مکار", "Cunning", "Emotional state: cunning — sly, silky, calculating, savoring each word.", "[cunning, sly, calculating]"),
+    ("plotting", "توطئه‌گر", "Plotting", "Emotional state: plotting — low, conspiratorial, gleeful scheming.", "[plotting, conspiratorial, gleeful]"),
+    ("mischievous", "شیطنت‌آمیز", "Mischievous", "Emotional state: mischievous, impish, barely holding a grin.", "[mischievous, impish]"),
+    ("villain", "شرور", "Villainous", "Emotional state: villainous — cold relish, theatrical menace.", "[villainous, cold relish, menacing]"),
+    ("envious", "حسود", "Envious", "Emotional state: envious, bitter, wanting.", "[envious, bitter]"),
+    ("jealous", "غیرتی و حسود", "Jealous", "Emotional state: jealous, possessive, tight.", "[jealous, possessive]"),
+    ("sarcastic", "کنایه‌آمیز", "Sarcastic", "Emotional state: sarcastic, dry, mocking.", "[sarcastic, dry]"),
+    ("mocking", "تمسخرآمیز", "Mocking", "Emotional state: mocking, sneering, imitating.", "[mocking, sneering]"),
+    ("disgusted", "منزجر", "Disgusted", "Emotional state: disgusted, recoiling.", "[disgusted]"),
+    ("contemptuous", "تحقیرآمیز", "Contemptuous", "Emotional state: contemptuous, scornful.", "[contemptuous, scornful]"),
+    ("cold", "سرد و بی‌تفاوت", "Cold, indifferent", "Emotional state: cold, indifferent, flat, uninterested.", "[cold, indifferent]"),
+    ("threatening", "تهدیدآمیز", "Threatening", "Emotional state: threatening — low, slow, menacing.", "[threatening, low and menacing]"),
+    # anger & force
+    ("irritated", "کلافه", "Irritated", "Emotional state: irritated, short, clipped.", "[irritated, clipped]"),
+    ("angry", "عصبانی", "Angry", "Emotional state: angry, hard-edged, pressing.", "[angry]"),
+    ("furious", "خشمگین", "Furious", "Emotional state: furious — raised, ragged, barely controlled.", "[furious, raised and ragged]"),
+    ("mad", "دیوانه‌وار عصبانی", "Mad, raging", "Emotional state: raging mad — shouting, hysterical, out of control.", "[enraged, hysterical][shouting]"),
+    ("ordering", "دستوردهنده", "Commanding", "Emotional state: commanding, giving orders — clipped, authoritative, no room for argument.", "[commanding, authoritative, giving orders]"),
+    ("protesting", "معترض", "Protesting", "Emotional state: protesting, defiant, indignant, rising.", "[protesting, indignant, defiant]"),
+    ("accusing", "متهم‌کننده", "Accusing", "Emotional state: accusing, pointed, sharp, pressing the charge.", "[accusing, sharp and pointed]"),
+    ("defiant", "سرکش", "Defiant", "Emotional state: defiant, unyielding.", "[defiant]"),
+    ("preaching", "موعظه‌گر", "Preaching", "Emotional state: preaching — elevated, rhythmic, exhorting.", "[preaching, elevated and rhythmic]"),
+    # delivery / sound
+    ("whisper", "نجوا", "Whispering", "Delivery: whispering throughout, hushed and close.", "[whispering]"),
+    ("secretive", "رازآلود و آهسته", "Secretive", "Delivery: secretive — low, hushed, glancing over the shoulder.", "[secretive, hushed]"),
+    ("shouting", "فریادزنان", "Shouting", "Delivery: shouting, loud, projecting.", "[shouting]"),
+    ("screaming", "جیغ‌کشان", "Screaming", "Delivery: screaming, at the top of the voice.", "[screaming]"),
+    ("breathless", "نفس‌نفس‌زنان", "Out of breath", "Delivery: out of breath, panting between phrases.", "[out of breath][panting]"),
+    ("laughing", "خنده‌کنان", "Laughing while speaking", "Delivery: laughing while speaking, words breaking into laughter.", "[laughing while speaking][laughing]"),
+    ("giggling", "ریزخند", "Giggling", "Delivery: giggling, barely suppressing laughter.", "[giggling]"),
+    ("eerie", "شبح‌وار", "Ghostly, eerie", "Delivery: ghostly, eerie, hollow, slow and drawn out.", "[ghostly, eerie, hollow]"),
+    ("robotic", "ماشینی و یکنواخت", "Robotic, monotone", "Delivery: robotic, monotone, evenly spaced.", "[robotic, monotone]"),
+    ("solemn", "رسمی و باوقار", "Solemn", "Delivery: solemn, grave, ceremonial.", "[solemn, grave]"),
+    ("storyteller", "قصه‌گو", "Storytelling", "Delivery: a storyteller by the fire — warm, paced, suspense in the pauses.", "[storytelling, warm, suspenseful pauses]"),
+    ("custom", "سفارشی…", "Custom…", "", ""),
+]
+_AGE_BY_ID = {a[0]: a for a in DIRECTOR_AGES}
+_STATE_BY_ID = {a[0]: a for a in DIRECTOR_STATES}
+
+
+def _director_note(age, age_custom, state, state_custom):
+    """The Google prompt sentence(s) for an age and a state (or custom text)."""
+    out = []
+    if age == "custom" and (age_custom or "").strip():
+        out.append("Voice: " + age_custom.strip().rstrip(".") + ".")
+    elif age and age in _AGE_BY_ID and _AGE_BY_ID[age][3]:
+        out.append(_AGE_BY_ID[age][3])
+    if state == "custom" and (state_custom or "").strip():
+        out.append("Emotional state / delivery: " + state_custom.strip().rstrip(".") + ".")
+    elif state and state in _STATE_BY_ID and _STATE_BY_ID[state][3]:
+        out.append(_STATE_BY_ID[state][3])
+    return " ".join(out)
+
+
+def _director_cues(age, age_custom, state, state_custom):
+    """The Fish bracket cue(s) for an age and a state."""
+    cues = ""
+    if age == "custom" and (age_custom or "").strip():
+        cues += "[" + age_custom.strip().strip("[]") + "]"
+    elif age and age in _AGE_BY_ID and _AGE_BY_ID[age][4]:
+        cues += _AGE_BY_ID[age][4]
+    if state == "custom" and (state_custom or "").strip():
+        cues += "[" + state_custom.strip().strip("[]") + "]"
+    elif state and state in _STATE_BY_ID and _STATE_BY_ID[state][4]:
+        cues += _STATE_BY_ID[state][4]
+    return cues
+
+
+# ===========================================================================
+# 116 · Fish Audio engine — S2.1 Pro (free / paid), library, cloning,
+# voice design, dialogue, prosody, cues, ASR, wallet.
+# ===========================================================================
+FISH_API = "https://api.fish.audio"
+FISH_MODELS = {
+    "s2.1-pro-free": {"paid": False, "label": "S2.1 Pro — رایگان"},
+    "s2.1-pro": {"paid": True, "label": "S2.1 Pro — پولی ($15 / M بایت)"},
+    "s2-pro": {"paid": True, "label": "S2 Pro — نسل قبل (پولی)"},
+    "s1": {"paid": True, "label": "S1 — قدیمی (پولی، بدون چندگوینده)"},
+}
+# reading-style presets rendered as Fish cues (free-form natural language works on S2)
+FISH_STYLE_CUES = {
+    "neutral": "", "audiobook": "[calm, measured audiobook narration]", "news": "[formal, clear news anchor delivery]",
+    "breaking": "[serious, brisk breaking-news urgency]", "documentary": "[warm, dignified documentary narration]",
+    "kids": "[kind, playful children's storyteller]", "poem": "[classical poetry, metered, with rests]",
+    "speech": "[passionate, rousing speech]", "radio": "[energetic radio advert]", "podcast": "[casual, friendly podcast host]",
+    "teacher": "[patient teacher, explaining step by step]", "ivr": "[formal, very clear phone announcement]",
+    "suspense": "[suspenseful, mysterious]", "joy": "[cheerful, lively]", "sad": "[sad, quiet]", "whisper": "[whispering]",
+    "dryhumor": "[dry, deadpan humor]", "sports": "[excited sports commentary]", "epic": "[epic, grand, majestic]", "spiritual": "[serene, spiritual]",
+}
+FISH_TAGS = [
+    ["مکث", ["[break]", "[long-break]"]],
+    ["احساس‌ها", ["[happy]", "[sad]", "[angry]", "[excited]", "[calm]", "[nervous]", "[confident]", "[surprised]", "[scared]", "[worried]", "[frustrated]", "[depressed]", "[curious]", "[sarcastic]", "[hopeful]", "[nostalgic]", "[disgusted]", "[jealous]", "[determined]", "[bored]"]],
+    ["شدت و لحن", ["[whispering]", "[shouting]", "[screaming]", "[soft tone]", "[in a hurry tone]", "[emphasis]", "[slightly sad]", "[very excited]", "[extremely angry]"]],
+    ["صداها و واکنش‌ها", ["[laughing]", "[chuckling]", "[giggling]", "[sobbing]", "[crying loudly]", "[sighing]", "[groaning]", "[panting]", "[gasping]", "[yawning]", "[snoring]", "[clear throat]", "[coughing]", "[inhale]", "[exhale]"]],
+    ["جمع", ["[audience laughing]", "[background laughter]", "[crowd laughing]"]],
+]
+FISH_LIBRARY_TAGS = ["child", "kid", "boy", "girl", "young", "old", "elderly", "grandpa", "grandma", "male", "female", "deep", "soft", "narrator", "audiobook", "storytelling", "anime", "cartoon", "villain", "robot", "persian", "farsi", "arabic", "turkish"]
+_FISH_CACHE = {"models": {}}            # clip path -> Fish model id (private clones of the bundled clips)
+_FISH_MODELS_FILE = MODELS_DIR / "fish_models.json"
+
+
+def fish_key():
+    return (load_key("fish") or "").strip()
+
+
+def _fish_headers(model=None, content="application/json"):
+    k = fish_key()
+    if not k:
+        raise RuntimeError("کلید Fish Audio ثبت نشده؛ از fish.audio/app/api-keys یک کلید رایگان بگیرید و در «کلید Fish» وارد کنید.")
+    h = {"Authorization": "Bearer " + k, "Content-Type": content}
+    if model:
+        h["model"] = model
+    return h
+
+
+def _fish_err(r):
+    try:
+        j = r.json()
+        if isinstance(j, list) and j:
+            return "; ".join(str(x.get("msg", x)) for x in j[:3])
+        if isinstance(j, dict):
+            return j.get("message") or j.get("detail") or r.text[:200]
+    except Exception:
+        pass
+    return r.text[:200]
+
+
+def _fish_post(path, body, model=None, msgpack_body=False, timeout=300):
+    """POST with cancel support (daemon thread polled every 250 ms)."""
+    import threading
+    box = {}
+    def run():
+        try:
+            if msgpack_body:
+                import msgpack
+                box["r"] = requests.post(FISH_API + path, data=msgpack.packb(body, use_bin_type=True),
+                                         headers=_fish_headers(model, "application/msgpack"), timeout=timeout)
+            else:
+                box["r"] = requests.post(FISH_API + path, json=body, headers=_fish_headers(model), timeout=timeout)
+        except Exception as e:
+            box["e"] = e
+    t = threading.Thread(target=run, daemon=True); t.start()
+    while t.is_alive():
+        _check_cancel(); t.join(0.25)
+    if "e" in box:
+        raise RuntimeError("Fish Audio: اتصال برقرار نشد (" + type(box["e"]).__name__ + ").")
+    r = box["r"]
+    _diag("fish_http", path=path, code=r.status_code, ms=int(r.elapsed.total_seconds() * 1000), bytes=len(r.content))
+    if r.status_code == 401:
+        raise RuntimeError("Fish Audio: کلید پذیرفته نشد (401). کلید را دوباره بررسی کنید.")
+    if r.status_code == 402:
+        raise RuntimeError("Fish Audio: اعتبار حساب تمام شده (402). برای مدل پولی باید شارژ کنید؛ مدل رایگان s2.1-pro-free را انتخاب کنید.")
+    if r.status_code == 429 or r.status_code == 503:
+        raise _GoogleHTTP(r.status_code, "Fish Audio: سرور شلوغ است یا به سقف درخواست‌های هم‌زمان رسیدید (" + str(r.status_code) + ").")
+    if r.status_code != 200 and r.status_code != 201:
+        raise RuntimeError(f"Fish Audio ({r.status_code}): " + _fish_err(r))
+    return r
+
+
+def _fish_get(path, params=None, timeout=60):
+    r = requests.get(FISH_API + path, params=params or {}, headers=_fish_headers(), timeout=timeout)
+    if r.status_code != 200:
+        raise RuntimeError(f"Fish Audio ({r.status_code}): " + _fish_err(r))
+    return r.json()
+
+
+def fish_wallet():
+    """Credit balance and package — the key dialog's probe."""
+    out = {}
+    try:
+        out["credit"] = _fish_get("/wallet/self/api-credit", {"check_free_credit": "true"}).get("credit")
+    except Exception as e:
+        out["error"] = str(e)[:160]
+    try:
+        p = _fish_get("/wallet/self/package")
+        out["package"] = {"type": p.get("type"), "balance": p.get("balance"), "total": p.get("total")}
+    except Exception:
+        pass
+    return out
+
+
+def fish_text(text, cfg):
+    """The text as Fish should see it: the app's pause markers become Fish's,
+    reading style / age / state become cues at each sentence start (one
+    primary cue block per sentence is what the model handles best)."""
+    t = text.strip()
+    t = _G_PAUSE_LONG.sub(" [long-break] ", t)
+    t = _G_PAUSE.sub(" [break] ", t)
+    t = re.sub(r"[ \t]{2,}", " ", t).strip()
+    preset = cfg.get("f_preset") or "neutral"
+    style = ("[" + (cfg.get("f_style") or "").strip().strip("[]") + "]") if preset == "custom" and (cfg.get("f_style") or "").strip() else FISH_STYLE_CUES.get(preset, "")
+    cues = style + _director_cues(cfg.get("f_age"), cfg.get("f_age_custom"), cfg.get("f_state"), cfg.get("f_state_custom"))
+    if not cues:
+        return t
+    # cue every sentence start — the documented placement
+    out, first = [], True
+    for line in t.split("\n"):
+        parts = re.split(r"(?<=[.!?؟…])\s+", line)
+        out.append(" ".join((cues + " " + p) if p.strip() and not p.lstrip().startswith("<|speaker") else p for p in parts))
+    return "\n".join(out)
+
+
+def _fish_ref_for(voice_id, status):
+    """Resolve a picker value to a Fish reference: library/custom model id
+    ('m:<id>') as reference_id; a local clip ('b:'/'u:') is cloned once into a
+    private Fish voice and cached by path."""
+    if not voice_id or voice_id == "default":
+        return None
+    if voice_id.startswith("m:"):
+        return voice_id[2:]
+    path = cbx_voice_path(voice_id)
+    if not path:
+        raise RuntimeError("نمونهٔ صدایی که انتخاب کرده‌اید پیدا نشد: " + voice_id)
+    try:
+        cache = json.loads(_FISH_MODELS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        cache = {}
+    if cache.get(path):
+        return cache[path]
+    status("Fish Audio: ساختِ صدای کلون از نمونه (فقط بار اول برای هر نمونه)…")
+    mid = fish_clone_create(path, Path(path).stem, status)
+    cache[path] = mid
+    _FISH_MODELS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _FISH_MODELS_FILE.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+    return mid
+
+
+def fish_clone_create(path, title, status, transcript=None, enhance=False, visibility="private"):
+    """POST /model — a persistent private voice from a clip (Fish runs its own
+    ASR on the clip when no transcript is given). Returns the model id."""
+    files = [("voices", (Path(path).name, open(path, "rb").read()))]
+    data = [("type", "tts"), ("train_mode", "fast"), ("title", title[:80]), ("visibility", visibility),
+            ("enhance_audio_quality", "true" if enhance else "false")]
+    if transcript:
+        data.append(("texts", transcript))
+    r = requests.post(FISH_API + "/model", files=files, data=data, headers={"Authorization": "Bearer " + fish_key()}, timeout=180)
+    if r.status_code not in (200, 201):
+        raise RuntimeError(f"Fish Audio ({r.status_code}): " + _fish_err(r))
+    j = r.json()
+    _diag("fish_clone", id=j.get("_id"), state=j.get("state"))
+    return j["_id"]
+
+
+def fish_my_voices():
+    """The user's own Fish voices (clones, designs)."""
+    j = _fish_get("/model", {"self": "true", "page_size": 100, "sort_by": "created_at"})
+    return [{"id": "m:" + it["_id"], "title": it.get("title", ""), "state": it.get("state"), "languages": it.get("languages") or [],
+             "sample": ((it.get("samples") or [{}])[0].get("audio") if it.get("samples") else None)} for it in j.get("items", [])]
+
+
+def fish_delete_voice(model_id):
+    r = requests.delete(FISH_API + "/model/" + model_id, headers={"Authorization": "Bearer " + fish_key()}, timeout=60)
+    if r.status_code not in (200, 204):
+        raise RuntimeError(f"Fish Audio ({r.status_code}): " + _fish_err(r))
+    return True
+
+
+def fish_library(query="", tag=None, language=None, licensed=False, sort="score", page=1, page_size=20):
+    """Search the public voice library."""
+    params = {"page_size": page_size, "page_number": page, "sort_by": sort}
+    if query: params["title"] = query
+    if tag: params["tag"] = tag
+    if language: params["language"] = language
+    if licensed: params["licensed"] = "true"
+    j = _fish_get("/model", params)
+    items = []
+    for it in j.get("items", []):
+        if it.get("type") != "tts":
+            continue
+        items.append({"id": "m:" + it["_id"], "title": it.get("title", ""), "author": (it.get("author") or {}).get("nickname", ""),
+                      "tags": it.get("tags") or [], "languages": it.get("languages") or [], "likes": it.get("like_count", 0),
+                      "licensed": bool(it.get("licensed")), "sample": ((it.get("samples") or [{}])[0].get("audio") if it.get("samples") else None)})
+    return {"items": items, "total": j.get("total", 0), "page": page, "has_more": bool(j.get("has_more")) or len(items) >= page_size}
+
+
+def fish_voice_design(instruction, reference_text="", language=None, n=2, speed=1.0, seed=None, status=None):
+    """POST /v1/voice-design ($0.01 per successful request, paid credit)."""
+    body = {"instruction": instruction[:2000], "n": int(min(4, max(1, n))), "speed": float(speed)}
+    if reference_text: body["reference_text"] = reference_text[:150]
+    if language: body["language"] = language
+    if seed is not None: body["seed"] = int(seed)
+    if status: status("Fish Audio: طراحی صدا…")
+    r = _fish_post("/v1/voice-design", body, model="voice-design-1", timeout=180)
+    cands = r.json().get("candidates", [])
+    out = []
+    for i, c in enumerate(cands):
+        b64 = c.get("audio_base64") or ""
+        out.append({"index": i, "b64": b64})
+    return out
+
+
+def fish_design_keep(b64_wav, title, status):
+    """Turn a design candidate into a persistent private Fish voice."""
+    import base64, tempfile
+    raw = base64.b64decode(b64_wav)
+    tmp = Path(tempfile.mkdtemp()) / (re.sub(r"[^\w\-]+", "_", title)[:40] + ".wav")
+    tmp.write_bytes(raw)
+    return "m:" + fish_clone_create(str(tmp), title, status)
+
+
+def fish_asr(pcm, sr, language=None):
+    """POST /v1/asr (transcribe-1, paid $0.36/h) — segment timestamps; a
+    fallback caption source when no Google key is available."""
+    import io
+    p = _resample(pcm, sr, 16000) if sr != 16000 else pcm
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(16000); wf.writeframes(p.tobytes())
+    data = {"ignore_timestamps": "false"}
+    if language: data["language"] = language
+    r = requests.post(FISH_API + "/v1/asr", files={"audio": ("a.wav", buf.getvalue(), "audio/wav")}, data=data,
+                      headers={"Authorization": "Bearer " + fish_key()}, timeout=180)
+    if r.status_code != 200:
+        raise RuntimeError(f"Fish Audio ASR ({r.status_code}): " + _fish_err(r))
+    return r.json()
+
+
+def _fish_speakers_text(text, cfg, status):
+    """Dialogue: lines 'Name: …' → <|speaker:n|> markers and a reference_id
+    list, unlimited speakers (S2 family)."""
+    speakers = cfg.get("f_speakers") or []
+    names = [s.get("name", "").strip() for s in speakers]
+    refs, out = [], []
+    for s in speakers:
+        refs.append(_fish_ref_for(s.get("voice") or "default", status) or "")
+    for line in text.split("\n"):
+        m = re.match(r"^\s*([^:：]{1,40})\s*[:：]\s*(.+)$", line)
+        idx = names.index(m.group(1).strip()) if m and m.group(1).strip() in names else None
+        if idx is None:
+            out.append(line); continue
+        sp = speakers[idx]
+        cue = (FISH_STYLE_CUES.get(sp.get("preset") or "", "") if (sp.get("preset") or "") != "custom" else ("[" + (sp.get("style") or "").strip("[]") + "]" if sp.get("style") else ""))
+        cue += _director_cues(sp.get("age"), sp.get("age_custom"), sp.get("state"), sp.get("state_custom"))
+        out.append(f"<|speaker:{idx}|>{cue} {m.group(2).strip()}")
+    return "\n".join(out), refs
+
+
+def _fish_call(text, cfg, status):
+    """One take from Fish: returns (pcm int16 mono, sr)."""
+    model = cfg.get("f_model") or "s2.1-pro-free"
+    duo = bool(cfg.get("f_speakers"))
+    if duo and model == "s1":
+        raise RuntimeError("مدل S1 چندگوینده را پشتیبانی نمی‌کند؛ یکی از مدل‌های S2 را انتخاب کنید.")
+    if duo:
+        ftext, refs = _fish_speakers_text(text, cfg, status)
+        body = {"text": ftext, "reference_id": refs}
+    else:
+        ftext = fish_text(text, cfg)
+        body = {"text": ftext}
+        ref = _fish_ref_for(cfg.get("f_voice") or "default", status)
+        if ref: body["reference_id"] = ref
+    body.update({
+        "format": "wav", "sample_rate": 44100,
+        "temperature": float(min(1, max(0, cfg.get("f_temp", 0.7)))), "top_p": float(min(1, max(0, cfg.get("f_top_p", 0.7)))),
+        "prosody": {"speed": float(min(2.0, max(0.5, cfg.get("f_speed", 1.0)))), "volume": float(cfg.get("f_volume", 0)), "normalize_loudness": bool(cfg.get("f_norm_loud", True))},
+        "chunk_length": int(cfg.get("f_chunk", 300)), "normalize": bool(cfg.get("f_normalize", False)),
+        "latency": cfg.get("f_latency") or "normal", "repetition_penalty": float(cfg.get("f_rep", 1.2)),
+        "condition_on_previous_chunks": bool(cfg.get("f_cond_prev", True)),
+    })
+    if cfg.get("f_quality_guard"):
+        body["features"] = ["quality-guard"]
+    status("Fish Audio دارد گفتار را می‌سازد…")
+    r = _fish_post("/v1/tts", body, model=model, timeout=600)
+    raw = r.content
+    if raw[:4] != b"RIFF":
+        raise RuntimeError("Fish Audio صدا برنگرداند (پاسخ WAV نبود): " + raw[:80].decode("utf-8", "replace"))
+    pcm, sr = _decode_audio(raw)
+    _diag("fish_take", audio_s=round(len(pcm) / sr, 1), chars=len(text), model=model)
+    if len(pcm) < sr // 5:
+        raise _GoogleHTTP(500, "empty take")
+    return pcm, sr
+
+
+def fish_pcm(text, cfg, status):
+    """Whole-part synthesis on Fish, with the same continuity lead-in and
+    completeness audit as Google (both work on the recording, not the engine)."""
+    text = text.strip()
+    if not text:
+        raise RuntimeError("در این بخش چیزی برای خواندن نیست.")
+    lead = _g_lead_in(text, cfg) if cfg.get("f_continuity", True) else ""
+    lang = {"fa": "fa-IR", "en": "en-US"}.get(cfg.get("g_lang") or "fa")
+    pcm = None
+    for attempt in range(3):
+        try:
+            if lead:
+                full, sr = _fish_call(lead + "\n" + text, cfg, status)
+                cl = [(lead, (0, len(lead)))] + [(c, sp) for c, sp in _g_clauses(text)]
+                cuts = _g_bounds(full, sr, cl, status, lang) if len(cl) > 1 else None
+                if cuts:
+                    cand = full[cuts[0]:]
+                    spoken = _g_speech_len(text) / 11.0 * sr
+                    if 0.5 * spoken <= len(cand) <= 2.2 * spoken + sr * 3:
+                        x = np.abs(cand.astype(np.int32)); thr = max(80, int(0.02 * (x.max() or 1))); nz = np.flatnonzero(x > thr)
+                        if len(nz): cand = cand[max(0, int(nz[0]) - int(sr * 0.06)):]
+                        pcm = cand
+                if pcm is None:
+                    status("Fish Audio: برشِ جملهٔ راهنما قابل اعتماد نبود؛ بدون راهنما می‌سازم…")
+            if pcm is None:
+                pcm, sr = _fish_call(text, cfg, status)
+            break
+        except _GoogleHTTP as e:
+            _diag("fish_retry", attempt=attempt, msg=e.msg[:80])
+            if attempt == 2:
+                raise RuntimeError(e.msg)
+            time.sleep(2.0 * (attempt + 1))
+    words = google_words(pcm, sr, status, lang)
+    for attempt in range(2):
+        miss = _g_completeness(text, words) if words else None
+        if miss is None:
+            break
+        status(f"Fish Audio جمله‌ای را جا انداخت — برداشت دوباره ({attempt + 2}/3)…")
+        pcm, sr = _fish_call(text, cfg, status)
+        words = google_words(pcm, sr, status, lang)
+    cl = _g_clauses(text)
+    tail = cl[-1][0].strip() if cl else ""
+    tail = re.sub(r"\s+", " ", re.sub(r"\[[^\]]+\]", " ", tail)).strip()
+    if _g_speech_len(tail) > 160:
+        tail = " ".join(tail.split()[-18:])
+    _G_LAST["tail"] = tail
+    return pcm, sr
+
+
+def cloud_pcm(text, cfg, status):
+    """Engine dispatch for the cloud engines (both produce one recording per part)."""
+    return fish_pcm(text, cfg, status) if cfg.get("engine") == "fish" else google_pcm(text, cfg, status)
+
+
+# ---- default engine (116)
+_SETTINGS_FILE = MODELS_DIR / "settings.json"
+
+
+def settings_get():
+    try:
+        return json.loads(_SETTINGS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def settings_set(**kv):
+    d = settings_get(); d.update({k: v for k, v in kv.items() if v is not None})
+    _SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _SETTINGS_FILE.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+    return d

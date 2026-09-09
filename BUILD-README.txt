@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist (repo: github.com/pirastral/ava-app)
 ======================================================================
-This zip is the COMPLETE application source as of update 115.
+This zip is the COMPLETE application source as of update 116.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -14,10 +14,51 @@ Replace these files in the repo (paths identical):
                       THE FOLDER MUST EXIST IN THE REPO or PyInstaller fails.
   icon.png / icon.ico – unchanged
   builtin_keys.json – NEW (101): Freesound / Jamendo keys shipped with the app
-  en_strings.py     – NEW (107): English renderings of engine messages
+  en_strings.py     – NEW (107): English renderings of engine messages (116: Fish added)
+  requirements.txt  – 116: + msgpack
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 116 (on top of 115) — Fish Audio, director lists, make-default
+  NEW DEPENDENCY: msgpack (requirements.txt) — used for Fish's inline-reference path.
+  FISH AUDIO ENGINE (second in the engine list). Everything their public API offers:
+    - Models: s2.1-pro-free (DEFAULT, $0, fair use, no SLA, requests may be used for
+      model improvement — hinted in the UI), s2.1-pro ($15/M UTF-8 bytes), s2-pro, s1.
+      No automatic switch to paid, ever; the user picks.
+    - Key: fish.audio/app/api-keys (free); stored like the other keys; «آزمایش اتصال»
+      reads the wallet (credit + package).
+    - Voices: the public library (search by title, tag incl. a custom tag, language,
+      licensed-only, sort by popularity/usage/newest, paged 20, with sample playback),
+      the user's own Fish voices (deletable), and the 63 bundled clips + own samples —
+      a local clip is cloned ONCE into a private Fish voice (POST /model, Fish runs its
+      own ASR for the transcript) and cached in AvaModels/fish_models.json.
+    - Clone from file (permanent private voice, optional transcript/enhance).
+    - Voice design (voice-design-1, paid ≈1¢/request): instruction (custom prompt),
+      preview text, language, 1–4 candidates, speed, seed; candidates play inline;
+      «نگه‌دار» turns one into a permanent voice and selects it.
+    - Prosody: speed 0.5–2, volume dB, loudness normalisation; sampling: temperature,
+      top-p; latency mode; text normalisation (off for Persian); quality-guard flag;
+      condition_on_previous_chunks; the app's own lead-in continuity between parts.
+    - Cues: reading style → Fish cue (custom cue allowed), age and state cues (below),
+      placed at every sentence start; [مکث]/[مکث بلند] → [break]/[long-break]; the tags
+      drop-up switches to Fish's cue list (emotions, tones, sounds, crowd) with a
+      free-form custom cue row.
+    - Dialogue: unlimited speakers ('Name: line' → <|speaker:n|>, reference list), each
+      with voice, style, age, state; S1 refused for dialogue.
+    - Output WAV 44.1 kHz; completeness audit, surgery, captions, music, silence/file
+      parts all work on Fish parts through the shared cloud path (cloud_pcm dispatch).
+    - ASR (transcribe-1, paid) wired as fish_asr() for future caption fallback.
+  DIRECTOR LISTS (engine-aware): Age/persona (toddler → ancient, 11 + custom) and
+    State/emotion (85 entries incl. sexy, flirty, daydreamy, cunning, plotting, envious,
+    lying, caught red-handed, scared, ordering, protesting, accusing, drunk, dying,
+    exhausted, explosively excited, depressed, crying… + custom). On Google they compile
+    into the persona frame of the prompt; on Fish into bracket cues. Per speaker too.
+  MAKE DEFAULT: a pin icon on every engine in the selector; saved to AvaModels/
+    settings.json; the app opens on that engine.
+  UI: sub-menus vertically centred on their parent row and clamped between header and
+    dock; 280 ms hover grace so a diagonal move to the sub-menu does not close it;
+    grouped pickers read "Group › item" everywhere (e.g. Charon › mysterious).
 
 WHAT CHANGED IN 115 (on top of 114)
   Chatterbox voice selector: 50 % of its row in the main card, 70 % in the part-settings
@@ -390,6 +431,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۱۵»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۱۶»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

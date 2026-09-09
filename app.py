@@ -316,6 +316,97 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
+    # ---- 116: Fish Audio ----------------------------------------------------
+    def fish_key_get(self):
+        import engines
+        return {"ok": True, "key": engines.fish_key()}
+
+    def fish_key_set(self, key):
+        try:
+            import engines
+            engines.save_key("fish", (key or "").strip())
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def fish_probe(self):
+        try:
+            import engines
+            w = engines.fish_wallet()
+            return {"ok": "error" not in w, **w}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def fish_library(self, query="", tag="", language="", licensed=False, sort="score", page=1):
+        try:
+            import engines
+            return {"ok": True, **engines.fish_library(query, tag or None, language or None, bool(licensed), sort or "score", int(page or 1))}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def fish_my_voices(self):
+        try:
+            import engines
+            return {"ok": True, "items": engines.fish_my_voices()}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def fish_delete_voice(self, model_id):
+        try:
+            import engines
+            engines.fish_delete_voice(model_id[2:] if model_id.startswith("m:") else model_id)
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def fish_clone(self, title="", transcript="", enhance=False):
+        """Pick a clip from disk and make it a persistent private Fish voice."""
+        try:
+            import engines
+            result = self._window.create_file_dialog(
+                webview.OPEN_DIALOG, directory=_downloads_dir(), allow_multiple=False,
+                file_types=("Audio (*.wav;*.mp3;*.m4a;*.flac)",))
+            if not result:
+                return {"ok": False, "error": "cancelled"}
+            path = result if isinstance(result, str) else result[0]
+            mid = engines.fish_clone_create(path, title or Path(path).stem, self._status, transcript or None, bool(enhance))
+            return {"ok": True, "id": "m:" + mid}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def fish_voice_design(self, instruction, reference_text="", language="", n=2, speed=1.0, seed=None):
+        try:
+            import engines
+            engines._job_start()
+            return {"ok": True, "candidates": engines.fish_voice_design(instruction, reference_text, language or None, int(n), float(speed), seed, self._status)}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def fish_design_keep(self, b64_wav, title):
+        try:
+            import engines
+            return {"ok": True, "id": engines.fish_design_keep(b64_wav, title or "Designed voice", self._status)}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def director_lists(self):
+        import engines
+        return {"ok": True, "ages": [[a[0], a[1], a[2]] for a in engines.DIRECTOR_AGES],
+                "states": [[a[0], a[1], a[2]] for a in engines.DIRECTOR_STATES],
+                "fish_tags": engines.FISH_TAGS, "fish_models": [[k, v["label"], v["paid"]] for k, v in engines.FISH_MODELS.items()],
+                "fish_library_tags": engines.FISH_LIBRARY_TAGS}
+
+    def settings_get(self):
+        import engines
+        return {"ok": True, **engines.settings_get()}
+
+    def settings_set(self, kv):
+        try:
+            import engines
+            return {"ok": True, **engines.settings_set(**(kv or {}))}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     def music_presets(self):
         import engines
         return {"ok": True, "presets": list(engines.MUSIC_PRESETS.keys())}

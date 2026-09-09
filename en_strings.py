@@ -79,6 +79,14 @@ EXACT = {
  "چترباکس روی این دستگاه اجرا نمی‌شود؛ دست‌کم ۸ گیگابایت رم می‌خواهد ": "Chatterbox cannot run on this device; it needs at least 8 GB of RAM ",
  "حافظهٔ این دستگاه برای هم‌ترازیِ واژه‌به‌واژه کافی نیست": "This device does not have enough memory for word-level alignment",
  "نمونهٔ صدایی که انتخاب کرده‌اید پیدا نشد: ": "The selected voice sample was not found: ",
+ "کلید Fish Audio ثبت نشده؛ از fish.audio/app/api-keys یک کلید رایگان بگیرید و در «کلید Fish» وارد کنید.": "No Fish Audio key; get a free one at fish.audio/app/api-keys and paste it in the Fish key field.",
+ "Fish Audio دارد گفتار را می‌سازد…": "Fish Audio is generating the speech…",
+ "Fish Audio: ساختِ صدای کلون از نمونه (فقط بار اول برای هر نمونه)…": "Fish Audio: cloning the clip into a voice (first time only per clip)…",
+ "Fish Audio: طراحی صدا…": "Fish Audio: designing the voice…",
+ "Fish Audio: کلید پذیرفته نشد (401). کلید را دوباره بررسی کنید.": "Fish Audio: key rejected (401). Check the key.",
+ "Fish Audio: اعتبار حساب تمام شده (402). برای مدل پولی باید شارژ کنید؛ مدل رایگان s2.1-pro-free را انتخاب کنید.": "Fish Audio: out of credit (402). Top up for the paid model, or pick the free s2.1-pro-free.",
+ "Fish Audio: برشِ جملهٔ راهنما قابل اعتماد نبود؛ بدون راهنما می‌سازم…": "Fish Audio: the lead-in cut was unreliable; generating without it…",
+ "مدل S1 چندگوینده را پشتیبانی نمی‌کند؛ یکی از مدل‌های S2 را انتخاب کنید.": "S1 has no multi-speaker mode; pick an S2 model.",
 }
 PATTERNS = [
  (r"^دارم گفتار را می‌سازم… بخش (\S+) از (\S+)$", "Generating speech… part {0} of {1}"),
@@ -118,4 +126,7 @@ PATTERNS = [
  (r"^چترباکس روی این دستگاه اجرا نمی‌شود؛ دست‌کم ۸ گیگابایت رم می‌خواهد (.*)$", "Chatterbox cannot run on this device; it needs at least 8 GB of RAM {0}"),
  (r"^نمونهٔ صدایی که انتخاب کرده‌اید پیدا نشد: (.*)$", "The selected voice sample was not found: {0}"),
  (r"^موسیقی: «(.+?)» از (.*?) — (.+?) — (.*)$", "Music: “{0}” by {1} — {2} — {3}"),
+ (r"^Fish Audio جمله‌ای را جا انداخت — برداشت دوباره \((\S+)\)…$", "Fish Audio skipped a sentence — retake ({0})…"),
+ (r"^Fish Audio \((\d+)\): (.*)$", "Fish Audio ({0}): {1}"),
+ (r"^Fish Audio ASR \((\d+)\): (.*)$", "Fish Audio ASR ({0}): {1}"),
 ]
