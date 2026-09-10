@@ -79,7 +79,7 @@ EXACT = {
  "چترباکس روی این دستگاه اجرا نمی‌شود؛ دست‌کم ۸ گیگابایت رم می‌خواهد ": "Chatterbox cannot run on this device; it needs at least 8 GB of RAM ",
  "حافظهٔ این دستگاه برای هم‌ترازیِ واژه‌به‌واژه کافی نیست": "This device does not have enough memory for word-level alignment",
  "نمونهٔ صدایی که انتخاب کرده‌اید پیدا نشد: ": "The selected voice sample was not found: ",
- "کلید Fish Audio ثبت نشده؛ از fish.audio/app/api-keys یک کلید رایگان بگیرید و در «کلید Fish» وارد کنید.": "No Fish Audio key; get a free one at fish.audio/app/api-keys and paste it in the Fish key field.",
+ "کلید Fish Audio ثبت نشده؛ از fish.audio/app/api-keys یک کلید رایگان بگیرید و در «کلید Fish Audio» وارد کنید.": "No Fish Audio key; get a free one at fish.audio/app/api-keys and paste it in the Fish Audio key field.",
  "Fish Audio دارد گفتار را می‌سازد…": "Fish Audio is generating the speech…",
  "Fish Audio: ساختِ صدای کلون از نمونه (فقط بار اول برای هر نمونه)…": "Fish Audio: cloning the clip into a voice (first time only per clip)…",
  "Fish Audio: طراحی صدا…": "Fish Audio: designing the voice…",

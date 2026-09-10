@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist (repo: github.com/pirastral/ava-app)
 ======================================================================
-This zip is the COMPLETE application source as of update 124.
+This zip is the COMPLETE application source as of update 125.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,14 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 125 (on top of 124) — manual + naming principles
+  Help: a round header button (question-mark icon) between EN/FA and the theme switch
+    opens the manual in a dialog sized to the frame between header and dock; Persian
+    manual in Persian mode, English manual in English mode, themed with the app.
+    NEW FILES ui/help_fa.html and ui/help_en.html — ADD THEM TO THE REPO (ui/ is bundled).
+  Naming, applied everywhere in the app's strings: "Fish Audio" in full (never "Fish"),
+    Undo/Redo instead of واگرد/ازنو, the Fish Audio key field named so in engine messages.
 
 WHAT CHANGED IN 124 (on top of 123) — the ~10 s freeze on every click
   Cause (UI, not engine or RAM): the parts list was rebuilt with innerHTML on almost every
@@ -522,6 +530,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۲۴»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۲۵»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

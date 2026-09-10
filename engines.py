@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 124
-BUILD_FA = "\u06f1\u06f2\u06f4"
+BUILD = 125
+BUILD_FA = "\u06f1\u06f2\u06f5"
 
 
 def _diag(tag, **kv):
@@ -4615,7 +4615,7 @@ def fish_key():
 def _fish_headers(model=None, content="application/json"):
     k = fish_key()
     if not k:
-        raise RuntimeError("کلید Fish Audio ثبت نشده؛ از fish.audio/app/api-keys یک کلید رایگان بگیرید و در «کلید Fish» وارد کنید.")
+        raise RuntimeError("کلید Fish Audio ثبت نشده؛ از fish.audio/app/api-keys یک کلید رایگان بگیرید و در «کلید Fish Audio» وارد کنید.")
     h = {"Authorization": "Bearer " + k, "Content-Type": content}
     if model:
         h["model"] = model

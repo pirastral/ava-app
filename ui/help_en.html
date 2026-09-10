@@ -1,0 +1,201 @@
+<!doctype html><html lang="en" dir="ltr"><head><meta charset="utf-8"><title>Avaye Javid Shah — Manual</title>
+<style>
+body{font-family:Inter,-apple-system,"Segoe UI",Roboto,sans-serif;max-width:900px;margin:0 auto;padding:20px 22px 40px;line-height:1.75;color:#1c2230;background:#ffffff}
+h1{font-size:1.6rem;margin:0 0 6px}.sub{color:#5b6372;margin-bottom:28px}
+h2{font-size:1.15rem;margin:38px 0 10px;padding:10px 14px;background:#65abba;color:#0d111a;border-radius:10px}
+h3{font-size:1rem;margin:22px 0 6px;color:#0b6f78}
+p,li{font-size:.98rem}ul,ol{padding-inline-start:22px}li{margin:5px 0}
+code{background:#eef2f6;padding:1px 6px;border-radius:5px;font-size:.9em;display:inline-block}
+a{color:#0b6f78}nav{background:#fff;border:1px solid #d9dee7;border-radius:12px;padding:14px 18px;margin:18px 0 8px}nav a{display:block;margin:4px 0}
+html[data-theme=dark] body{background:#161c29;color:#eef2f8}html[data-theme=dark] h3,html[data-theme=dark] a{color:#40d2e6}html[data-theme=dark] code{background:#0d111a}html[data-theme=dark] nav{background:#0d111a;border-color:#2a3447}
+@font-face{font-family:'Vazirmatn';src:url('fonts/Vazirmatn-Regular.woff2') format('woff2');font-weight:400}@font-face{font-family:'Vazirmatn';src:url('fonts/Vazirmatn-Bold.woff2') format('woff2');font-weight:700}
+</style></head><body><script>try{var t=new URLSearchParams(location.search).get('theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+<h1>Avaye Javid Shah — the complete manual</h1>
+<div class="sub">Build 125 — from getting keys to building the final file</div>
+<nav><a href="#s0">1) What this app does and why it is different</a><a href="#s1">2) Installation, first run and operating-system security warnings</a><a href="#s2">3) Keys: up to thirty free Google keys with three accounts, and the free Fish Audio key</a><a href="#s3">4) Text, diacritization and tags</a><a href="#s4">5) The engines: settings and workflow for each</a><a href="#s5">6) Parts: the heart of the app</a><a href="#s6">7) Reading style, speaker age and mood</a><a href="#s7">8) Dialogue and several speakers</a><a href="#s8">9) Background music and mixing</a><a href="#s9">10) The final file and captions</a><a href="#s10">11) Complete workflows with examples</a><a href="#s11">12) Tips and troubleshooting</a></nav>
+<h2 id="s0">1) What this app does and why it is different</h2>
+<p><b>Avaye Javid Shah</b> turns text into speech, but its job is not "press one button, get one file". It splits a long text into <b>short, editable parts</b> and lets you listen to each one separately, correct it, rebuild it with a different engine, duplicate it, turn it into silence or into an audio file, raise or lower its volume, and move it around in the list. At the end, all the parts are joined into one file together with a background music bed.</p>
+<p>Four engines are available and <b>they all work side by side inside one app</b>: you can build part one with Google, part two with Chatterbox in your own voice, part three with Fish Audio with a sentence read in tears, leave part four as silence, and fill part five from a music file on your computer. You never have to leave the app or rebuild the project.</p>
+<ul>
+<li><b>Google (Gemini TTS)</b> — <b>the Persian benchmark</b> in this app: the most natural and dependable Persian, thirty voices, mood and pace tags, two-speaker dialogue, and a free daily quota per key. Needs the internet.</li>
+<li><b>Persian Chatterbox</b> — <b>the best local Persian model</b>: it runs on your own machine, needs no internet and no key, and can clone your voice from an eight-to-fifteen-second sample. It is slower than Google, takes about two gigabytes on disk and needs RAM.</li>
+<li><b>Fish Audio</b> — online, currently free, and excellent for English; its Persian is weaker than Google's, though it does better with cloned voices. Its strengths are what Google lacks: sound tags such as laughing, crying, coughing, sighing, whispering and shouting; a library of real voices (children, elderly people, characters); voice cloning and voice design; and dialogue with any number of speakers.</li>
+<li><b>Mana, Gyro and Amir</b> — light local voices: fast, low on resources and offline. Good for drafts and for weak machines.</li>
+</ul>
+
+<h2 id="s1">2) Installation, first run and operating-system security warnings</h2>
+<p>Get the app only from its maker. A copy from an unknown source may have been tampered with.</p>
+<h3>The security warning on macOS</h3>
+<p>The app is not signed by Apple, so the first time you open it macOS will probably say something like "cannot be opened because the developer cannot be verified" or "Apple could not verify…". This does not mean the app is dangerous; it means Apple has not reviewed it. To open it:</p>
+<ol>
+<li>Close the message. Go to <b>System Settings → Privacy &amp; Security</b>, scroll down until you see the line about this app, and click <b>Open Anyway</b>.</li>
+<li>Alternatively, right-click (or Control-click) the app in Finder and choose <b>Open</b>; this time the window has an extra Open button.</li>
+<li>If the app was downloaded from the internet and still refuses to open, run this in Terminal (use the app's real path): <code>xattr -d com.apple.quarantine /Applications/Ava.app</code></li>
+</ol>
+<p>If none of that helps, search Google for <code>macOS open app from unidentified developer</code> or <code>macOS Open Anyway Privacy Security</code>.</p>
+<h3>The security warning on Windows</h3>
+<p>Windows shows the blue "Windows protected your PC" window (SmartScreen). Click <b>More info</b> so the <b>Run anyway</b> button appears, then click it. If Windows Defender or another antivirus quarantines the file, add the app's folder to that antivirus's exclusions. Useful searches: <code>Windows SmartScreen run anyway</code> and <code>Windows Defender add exclusion folder</code>.</p>
+<h3>The browser warning while downloading</h3>
+<p>Chrome sometimes calls the app's zip file "dangerous" because it has no digital signature and stops the download. Open <code>chrome://downloads</code> in the address bar and click <b>Keep</b> (or Download anyway), or download the file with another browser such as Firefox.</p>
+<h3>First run</h3>
+<p>Nothing is downloaded on the first run. The local engines (Chatterbox and the light voices) download their models the first time you use them and keep them on the machine for good. Google and Fish Audio download nothing but need the internet and a key.</p>
+<p><b>App language:</b> at the top of the window, next to the light/dark button, the <b>EN/FA</b> button switches the app's own language. In English the layout becomes left-to-right and every title, message and menu is in English; the text boxes always stay right-to-left, because the text you work on is Persian. Your choice is remembered.</p>
+<p><b>Default engine:</b> in the "Speech engine" menu there is a pin button next to every engine. Click the pin of an engine and the app opens on that engine next time.</p>
+<p><b>The bottom bar:</b> the main buttons are always in the bar at the bottom: the "Generate speech" button, the "Build final file" button, the "Cancel" button (only while a job is running), the Undo and Redo buttons, and the Google keys button. The status line sits under these buttons and every important message appears there. Pressing any of these buttons scrolls the page to the relevant place.</p>
+
+<h2 id="s2">3) Keys: up to thirty free Google keys with three accounts, and the free Fish Audio key</h2>
+<h3>Why does Google need several keys?</h3>
+<p>Every free Google key has a daily quota: it accepts a limited number of requests per day, and the quota refills at midnight Pacific time. For an audiobook that quota runs out quickly. The solution is to have several keys. The app uses the keys in the order you list them; whenever one key's quota runs out it <b>moves to the next key on its own</b>, sets invalid keys aside and marks them, and the next day starts again from the first key. You never have to switch keys by hand for Google.</p>
+<h3>How to get up to thirty keys</h3>
+<ol>
+<li>With your Google account, go to <a href="https://aistudio.google.com/app/apikey">Google AI Studio → API keys</a>.</li>
+<li>Every key belongs to a "Google Cloud project", and <b>the quota is counted per project, not per account</b>. Each account can create about ten projects. On the same page click the <b>Create API key</b> button and create a new project for every key (the <b>Create API key in new project</b> option). If you prefer, create the projects first at <a href="https://console.cloud.google.com/projectcreate">Google Cloud Console → New Project</a> and then get a key for each one in AI Studio.</li>
+<li>Ten projects per account, times three Google (or Gmail) accounts, means <b>thirty keys with thirty separate quotas</b>. Copy each key, press the "Google keys" button in the app, press the "Add key" button and paste the key into the box. The keys are stored on this machine.</li>
+<li>The "Test connection" button sends a short sentence with the model you selected and tells you exactly what happened. Next to each key you can see its state: active, quota used up for today, or invalid. Remove an invalid key with the trash button beside it.</li>
+</ol>
+<p>The same keys are used for <b>automatic diacritization</b>. A paid Google key (a key from a project with billing enabled) has far fewer limits and also unlocks the Pro model and Lyria music.</p>
+<h3>The free Fish Audio key</h3>
+<p>Fish Audio offers its S2.1 Pro model under the id <code>s2.1-pro-free</code> <b>free of charge for now</b>: no character cap, under a "fair use" condition, with no guaranteed speed, and with the note that requests may be used to improve their own model. These terms <b>may change in the future</b>; check their pricing page from time to time: <a href="https://docs.fish.audio/developer-guide/models-pricing/pricing-and-rate-limits">Fish Audio → Pricing and rate limits</a>. To get a key, create an account at <a href="https://fish.audio/app/api-keys">fish.audio → API keys</a>, create a new key, and paste it into the "Fish Audio key" box in the app's Fish Audio settings. The "Test connection" button shows your account credit. The paid model is in the same menu, but the app never switches to the paid model by itself.</p>
+
+<h2 id="s3">4) Text, diacritization and tags</h2>
+<p>Write your text in the large box or paste it from somewhere else. When you press the "Generate speech" button, the app first tidies the text so that every sentence sits on its own line, and then divides it into parts.</p>
+<h3>Automatic diacritization</h3>
+<p>The engines read look-alike words from their diacritics; for example «گُل» versus «گِل», and «کتابِ من». The "Auto diacritics" button diacritizes the text with the tool you selected in the menu beside it. The result lands in the same box and you can correct it by hand before generating. The tools:</p>
+<ul>
+<li><b>Google Gemini — light:</b> only where it is essential: the ezafe, look-alike words and rare words. For Google and Chatterbox this is usually enough.</li>
+<li><b>Google Gemini — medium:</b> in addition, verbs, multi-syllable words and names receive marks.</li>
+<li><b>Google Gemini — heavy:</b> almost every letter is marked. It helps most with engines whose Persian is weaker, that is, Fish Audio.</li>
+<li><b>OpenAI GPT and Anthropic Claude:</b> accurate, but they need their own keys: the <a href="https://platform.openai.com/api-keys">OpenAI keys page</a> and the <a href="https://console.anthropic.com/settings/keys">Anthropic keys page</a>. Enter the key in the box next to the menu; once is enough.</li>
+<li><b>Local model:</b> works offline but only adds the ezafe.</li>
+</ul>
+<p>The "Diacritics guide" button opens a table of the marks with their keyboard shortcuts and an "Insert" button for each. The "Clear all diacritics" button removes every mark from the text.</p>
+<h3>Tags: every engine has its own</h3>
+<p>Tags are written inside the text in square brackets and affect <b>the text after them</b>. The "Tags" menu changes with the engine and always ends with a "Custom tag" box and an "Insert" button, so you can write any tag that is not in the list.</p>
+<ul>
+<li><b>Google (3.1 model only):</b> mood and pace tags such as <code>[serious]</code>, <code>[excited]</code>, <code>[slow]</code> and <code>[fast]</code>; the pause tags <code>[short pause]</code> and <code>[long pause]</code>; volume tags such as <code>[whispers]</code> and <code>[shouting]</code>; and a few reactions such as <code>[laughs]</code> and <code>[sighs]</code>. Mood tags last until the next tag of the same kind or until the end of the part. Note that reactions and pauses are <b>not dependable</b> on Google: sometimes they happen, sometimes they do not. The 2.5 models read tags out loud, which is why the app removes tags when those models are used.</li>
+<li><b>Fish Audio:</b> emotion tags; intensity and tone tags such as <code>[whispering]</code>, <code>[shouting]</code> and <code>[screaming]</code>; and <b>sound and reaction tags</b> that Google does not have: <code>[laughing]</code>, <code>[giggling]</code>, <code>[sobbing]</code>, <code>[crying loudly]</code>, <code>[coughing]</code>, <code>[sighing]</code>, <code>[gasping]</code>, <code>[yawning]</code> and <code>[clear throat]</code>. Pauses are made with <code>[break]</code> and <code>[long-break]</code>. Each tag shapes the sentence after it; you can stack several tags and even write any description you like in English inside brackets, such as <code>[whispers sweetly]</code> or <code>[laughing nervously]</code>. Fish Audio's tags are far more dependable than Google's.</li>
+<li><b>The local engines (Chatterbox, Mana, Gyro, Amir):</b> understand only the two markers <code>[مکث]</code> (half a second) and <code>[مکث بلند]</code> (1.2 seconds), and the app itself places silence at exactly that spot.</li>
+</ul>
+<p>If you want a silence that is guaranteed to be exactly as long as you choose (ten seconds, say), use a <b>silence part</b> (section 6), not a tag.</p>
+
+<h2 id="s4">5) The engines: settings and workflow for each</h2>
+<h3>Google (Gemini TTS) — the Persian benchmark</h3>
+<p><b>Settings:</b> the keys (section 3); the <b>Part length</b> menu (300 to 1,200 characters; each part is one request to Google, so longer parts mean fewer requests but each edit costs more; 600 is a good choice); the <b>Model</b> menu (3.1 Flash is free and supports tags; 2.5 Flash is free but without tags; 2.5 Pro needs a paid key); the <b>Language</b> menu (Persian, English, German, Turkish, French, Spanish, or auto-detect); the <b>Voice</b> menu with thirty voices; the <b>Reading style</b> menu; the <b>Speaker age</b> and <b>Mood</b> menus (section 7); the <b>Tone continuity between parts</b> tick (the last sentence of the previous part is read first and then trimmed away, so the tone does not break between parts; it uses about ten percent more audio); and the <b>Two-speaker dialogue</b> tick (section 8).</p>
+<p>Google has no sliders; it takes its tone from the description. Behind the scenes, the app checks every take with a timed transcription: if the model skipped a sentence, the app takes it again on its own; if a take is cut short or runs away, it discards it and takes it again. That is why a part sometimes takes a little longer.</p>
+<p><b>Suggested workflow with Google:</b> paste the text into the box and press the "Auto diacritics" button with the "light" tool. Then choose the Google engine, set the model to 3.1 Flash, pick the voice and the reading style, and press the "Generate speech" button. Listen to the parts as they are built and, wherever necessary, fix them with a point edit (section 6). If you want music, choose it in the music card (section 9), and finally press the "Build final file" button.</p>
+<h3>Persian Chatterbox — the best local model</h3>
+<p>Chatterbox runs on your own machine. The first time, it downloads about two gigabytes of model, and depending on your processor and RAM it is slower than Google.</p>
+<p><b>The Voice menu:</b> "Default", or one of the sixty-three samples bundled with the app (six voices named Charon, Laomedeia, Leda, Sadaltager, Schedar and Zephyr, each recorded in several styles; in the menu you see the voice first, and hovering over a voice opens its styles in a sub-menu), or <b>your own sample</b>. To add your own sample, press the "My sample" button and choose an eight-to-fifteen-second file in which only one person speaks, without music, in a quiet room, in a normal voice. The first time you use any sample, Chatterbox spends a few seconds preparing it; after that it is fast. Next to each of your own samples in the menu there is a trash button that removes that sample.</p>
+<p><b>Sliders:</b> "Speaking rate"; "Expressiveness"; "Adherence to the text" (higher is more precise and calmer); and "Variation" (zero is the most stable; the higher it goes, the more each regeneration is a new take). The <b>Part length</b> menu goes from 180 to 500 characters, and quality drops above 280. You place pauses with the <code>[مکث]</code> and <code>[مکث بلند]</code> markers and the app puts silence at exactly that spot using word-level alignment.</p>
+<p><b>Suggested workflow with your own voice:</b> if the whole piece should be in your voice, choose Chatterbox with your own sample and press the "Generate speech" button. If you want Google's Persian quality but one or two parts must be in your voice, build everything with Google, then in those one or two parts choose Chatterbox from the engine menu of that part (or Fish Audio with your cloned voice; Fish Audio also makes acceptable clones at times) and press the "Regenerate" button.</p>
+<h3>Fish Audio</h3>
+<p><b>The Model menu:</b> the free S2.1 Pro (default) or the paid models. <b>The Quality / response speed menu:</b> "normal" gives the best quality, "balanced" is in between, and "low" is the fastest.</p>
+<p><b>The Voice menu</b> has several groups: "Previously used" (voices you have already generated with), "Search results", "Designed", "My Fish Audio voices" (the clones you have made), and the bundled samples and your own samples. The first time you use one of the bundled samples or your own samples with Fish Audio, the app clones that sample into your Fish Audio account automatically and from then on simply refers to that clone. In the "Previously used", "Designed", "My voices" and own-samples groups, every entry has a trash button that removes it.</p>
+<p><b>The "Clone from file" button</b> takes a ten-to-thirty-second audio file from your machine and turns it into a permanent voice in your Fish Audio account.</p>
+<p><b>Voice design from text:</b> this opens with the "Voice design from text" tick and <b>works only with a paid Fish Audio account</b> (each request takes about one cent of credit; with a free account you get error 402). In the "Describe the voice" box you describe the voice you want in English, for example "warm elderly Persian grandmother, slow and kind". You can also give a preview sentence, a language, the number of candidates (one to four), a speed and a seed number. The "Generate candidates" button produces a few suggested voices that you can listen to right there. For any candidate you like, write a name and press the "Keep" button; it becomes a permanent voice in your account and is selected in the voice menu.</p>
+<p><b>Searching the voice library:</b> write a name or a description in English in the title box and press the "Search" button (pressing Enter in the box also searches). The <b>Category</b> menu holds the same sections as the Fish Audio website: Professional, Narration, Audiobook, Storytelling, Podcast, Announcer, News, Education, Advertising, Entertainment, Gaming and Character. The <b>Tag</b> menu describes the voice (for example child, old, female, deep) and has a "Custom tag" option. The <b>Language</b> menu shows only voices that declare that language themselves. The <b>Order</b> menu sorts results by popularity, usage or recency. The <b>Quality</b> menu is "Curated" by default: in that mode only voices that are licensed (Fish Audio has secured their rights), come from Fish Audio's official account, or are widely used and liked are shown; the page's user uploads are hidden and appear below the list when you press the "Show them" button, dimmed and marked "user upload". If a page has no curated voice at all, the user uploads are shown automatically. The "Licensed only" tick limits the list to licensed voices. Each page holds eight results and the paging buttons take you to the next pages. Every result has a sample player and a "Use" button that selects that voice.</p>
+<p><b>Sliders and ticks:</b> "Speaking rate" (half to double), "Volume" (in dB), "Expressiveness" (temperature), "Diversity" (top-p), the "Tone continuity between parts" tick, the "Continuity inside a part" tick, the "Loudness normalisation" tick, the "Text normalisation" tick (it only means something for English and Chinese and must stay off for Persian), and the "Quality guard" tick. The <b>Reading style</b>, <b>Speaker age</b> and <b>Mood</b> menus become tags at the start of every sentence on this engine and behave far more dependably than on Google.</p>
+<p><b>Persian on Fish Audio:</b> its Persian quality is below Google's, but a few things really help: diacritize the text with the "heavy" tool, set the speed a little lower, keep the "Text normalisation" tick off, and instead of the library's English voices use the <b>bundled samples</b> (which are Persian speech) or <b>your own cloned voice</b>; Fish Audio reads Persian comparatively better with cloned voices. The library's Arabic and Turkish voices are also closer to Persian.</p>
+<p><b>Suggested workflow with Fish Audio:</b> for English text, build everything with Fish Audio. For Persian text, use it for special parts: a sentence that must be read in tears, a nervous laugh, a cough in the middle of a line, a real child's voice from the library, or a cloned voice. Change that part's engine to Fish Audio from the part's own engine menu and press the "Regenerate" button.</p>
+<h3>Mana, Gyro and Amir</h3>
+<p>These three voices are light and fast, work offline and download their small model the first time. Their sliders are "Speaking rate", "Intonation" and "Word rhythm". They suit quick drafts and weak machines.</p>
+
+<h2 id="s5">6) Parts: the heart of the app</h2>
+<p>After you press the "Generate speech" button, the text is divided into several parts and each part is a row in the list, with a title such as "Part 1 of 5 — file A". The <b>number</b> is the part's current position in the list and the <b>letter</b> is its permanent identity; when you move parts the numbers are renumbered, but the letters stay, so you always know which part each one originally was. The app builds the parts one by one and you can listen to each as soon as it is ready.</p>
+<p><b>Adding new text to a project:</b> put new text in the box at the top and press the "Generate speech" button again. The new parts are appended to the end of the list and the existing parts are untouched. The "Clear all parts" button discards everything so you can start over (this can be undone).</p>
+<h3>What every part has</h3>
+<ul>
+<li><b>Player:</b> plays that part's audio. Only one player in the whole app plays at a time; starting any player stops the others.</li>
+<li><b>Engine menu:</b> sets the engine of this part, and every part can have its own engine. A change of engine takes effect when you press the "Regenerate" button.</li>
+<li><b>Settings button (gear):</b> opens the voice settings of this part, independent of the global settings: voice, reading style, age, mood and the sliders of that engine. Three buttons sit at the bottom of the window: "App defaults" returns everything to the default values; "Settings at generation" restores the values the main sliders had when you last pressed the "Generate speech" button; and "Apply to all parts" applies these settings to every part and closes the window. When a part has its own settings, its gear button is coloured.</li>
+<li><b>"Edit" button:</b> opens the part's text editor, together with the tags of that engine (the tags menu for Google and Fish Audio, and the pause buttons for the local engines).</li>
+<li><b>"Regenerate" button:</b> rebuilds the part with its own text, voice and settings. <b>Sentence surgery:</b> if you select only one sentence (or a few words) in the editor and then press the "Regenerate" button, only that piece is rebuilt and the rest of the part's audio stays bit-for-bit untouched. On Google and Fish Audio the selected sentence is read together with its neighbouring sentences and cut exactly at its boundaries using word timing; on Chatterbox and the light voices this is done with word alignment. For a natural result, select <b>a whole sentence or at least a few words</b>, not a single word.</li>
+<li><b>Up and Down buttons:</b> move the part one step.</li>
+<li><b>Duplicate button:</b> makes another copy of the part, with the same audio, right below it, without rebuilding anything. Editing the copy does not touch the original.</li>
+<li><b>Volume button (speaker):</b> opens a floating slider from zero to two hundred percent and shows the equivalent in dB: one hundred is as generated, two hundred is six dB louder and fifty is six dB quieter. This affects that part's player and the final file; the original audio is untouched. The button next to the slider returns it to one hundred. Note that a change of ten or twenty percent is under two dB and hard to hear; to hear a clear difference, try 150 or 50.</li>
+<li><b>Delete button:</b> removes the part (it can be undone, and the part comes back with its audio).</li>
+<li><b>"Silence" tick:</b> turns the part into pure silence and shows, instead of text, a slider from one to fifty seconds. The part's previous audio is kept and comes back when you untick.</li>
+<li><b>"Add file" tick:</b> shows a button that opens the file chooser. Any audio file (WAV, MP3, OGG, FLAC, M4A or AAC) takes the place of the part's text: a piece of music, a sound effect, a sentence you recorded yourself, anything. The part's previous audio is kept.</li>
+</ul>
+<p><b>Undo and Redo:</b> every change to the list of parts (moving, duplicating, deleting, regenerating, appending, silence, adding a file, changing volume and clearing all) can be undone. Use the shortcuts ⌘Z or Ctrl+Z for Undo and ⇧⌘Z or Ctrl+Y for Redo, or the two buttons in the bottom bar. A deleted part comes back with its audio; the app keeps in memory every part that Undo could bring back.</p>
+<h3>Common patterns</h3>
+<ul>
+<li><b>One sentence was read wrongly:</b> press the "Edit" button, select that sentence and press the "Regenerate" button. Only that sentence changes and the rest of the part stays.</li>
+<li><b>One sentence must be read in tears, but the text is Persian and everything was built with Google:</b> press that part's duplicate button. In the copy, press the "Edit" button and keep only that sentence. Set the copy's engine menu to Fish Audio, choose "Crying while speaking" in the "Mood" menu (or put the tag <code>[crying while speaking][sobbing]</code> before the sentence) and press the "Regenerate" button. Then remove that sentence from the original and press its "Regenerate" button too. If you want it simpler, switch the whole part to Fish Audio and regenerate.</li>
+<li><b>A cough or a laugh in the middle of a line:</b> with Fish Audio and the tag <code>[coughing]</code> or <code>[laughing]</code> before the sentence. This is not dependable on Google.</li>
+<li><b>One part in your own voice:</b> set that part's engine menu to Chatterbox with your own sample, or to Fish Audio with your cloned voice, and press the "Regenerate" button.</li>
+<li><b>A gap between chapters:</b> duplicate a part, tick "Silence" on the copy, set the length to four seconds, say, and place it between the two chapters with the up and down buttons. The background music rises in that silence.</li>
+<li><b>A particular sound effect or piece of music in the middle:</b> duplicate a part, tick "Add file", choose your file and put it in place with the up and down buttons.</li>
+<li><b>Hearing several takes of one part:</b> press that part's settings button, raise "Variation" and press the "Regenerate" button a few times; or duplicate the part and give each copy a different voice or engine and compare.</li>
+</ul>
+
+<h2 id="s6">7) Reading style, speaker age and mood</h2>
+<p>On Google and Fish Audio there are three independent menus that combine:</p>
+<ul>
+<li><b>Reading style</b> is only the <i>format</i> of the reading: formal or casual, pace, articulation and phrasing. The options: neutral, audiobook, news, breaking news, documentary, children's storyteller, classical poetry, speech, radio advert, podcast (default), teacher, phone guide, dry humour, sports commentary, epic, recitation, and "Custom…", which opens a text box. None of the styles carries an emotional or age adjective; that is why you can read "children's storyteller" in a "scared" mood.</li>
+<li><b>Speaker age:</b> toddler (two to four), child (five to nine), teenager, young adult, adult, middle-aged, elderly (around seventy), very old (ninety and up), and "Custom…". Google gets as close as it can with its thirty adult voices: a child comes out reasonably, a truly old voice is hard for it. On Fish Audio the choice becomes a tag, and if you want a real child or a real elderly voice, the Fish Audio library has actual voices of that age.</li>
+<li><b>Mood:</b> more than eighty states, from happy, joyful, playful, flirty, seductive and daydreamy to sad, grieving, crying, depressed, exhausted, dying and drunk; from nervous, scared, terrified, caught red-handed and lying to cunning, plotting, envious, sarcastic and threatening; from angry, furious, commanding, protesting and accusing to whispering, shouting, screaming, laughing, ghostly and storytelling; and "Custom…". On Google the choice becomes a director's note in the prompt; on Fish Audio it becomes a tag before every sentence.</li>
+</ul>
+<p>All three menus are also in every part's settings window, so one part can be "scared" and the next "calm". In dialogue, every speaker has an age and a mood of their own.</p>
+
+<h2 id="s7">8) Dialogue and several speakers</h2>
+<p>For dialogue, start every line with the speaker's name and a colon; for example "Kian: hello" and on the next line "Darya: hello, how are you?".</p>
+<ul>
+<li><b>Google, two speakers:</b> Google accepts at most two speakers per request. Ticking "Two-speaker dialogue" opens two rows in which you set each speaker's name, voice, reading style, age and mood. The names must be exactly the names written in the text.</li>
+<li><b>Fish Audio, many speakers:</b> the number of speakers is unlimited. Tick "Multi-speaker dialogue" and add as many speakers as you like with the "Add speaker" button; set each one's voice (from the library, a clone or the samples), reading style, age and mood. The trash button beside each row removes that speaker.</li>
+<li><b>More than two speakers with Google:</b> divide the text so that every part has at most two speakers (for example by duplicating parts and shortening each) and, in each part's settings window, change the pair of speakers.</li>
+</ul>
+
+<h2 id="s8">9) Background music and mixing</h2>
+<p>The "Background music" card is enabled with the "Background music on" tick. When music is on, the "Build final file" button makes <b>two files</b>: one without music and one with.</p>
+<h3>Choosing music</h3>
+<p>In the <b>Source</b> menu you pick one of these:</p>
+<ul>
+<li><b>Freesound</b> (default): the best source for ambience and quiet beds. The app brings only CC0 tracks, which need no credit. <a href="https://freesound.org/">freesound.org</a></li>
+<li><b>Openverse</b>: an aggregator of free music under CC0 or public-domain licences. <a href="https://openverse.org/">openverse.org</a></li>
+<li><b>Jamendo</b>: real instrumental tracks, usually under CC BY; the app gives you the credit line (artist and licence) that you must publish alongside the final file. <a href="https://www.jamendo.com/">jamendo.com</a></li>
+<li><b>Lyria</b>: AI-generated music from Google, exactly as long as your piece; it <b>works only with a paid Google key</b>, has no free tier and costs about eight cents per track. <a href="https://ai.google.dev/gemini-api/docs/pricing">Gemini API pricing page</a></li>
+<li><b>My own file</b>: any audio file on your machine.</li>
+</ul>
+<p>In the <b>Style</b> menu you pick the kind of music: Ambient (no drums; default), Drone, Lo-fi, Piano, Cinematic, Acoustic guitar, Meditation, Persian, Nature ambience and Music box. Every source is searched with its own vocabulary. If you like, you can type your own search phrase (in English) in the search box. The "Search" button (or pressing Enter) brings eight results per page, each with a sample player and a "Use" button. Every track you "Use" is downloaded, stored on your machine and kept in the <b>"Previous music"</b> menu with its name, source, length, licence and date; choosing from there costs nothing and needs no internet, and every entry has a trash button.</p>
+<h3>Mixing music with the voice</h3>
+<ul>
+<li><b>The "Music level relative to the voice" slider:</b> from minus twenty-eight to plus six dB. Zero means level with the speaker's voice; for a bed under narration, minus sixteen is a good value.</li>
+<li><b>The "Duck the music softly while the speaker talks" tick:</b> this is ducking. Whenever the speaker talks, the music drops by twelve dB (in about a fifth of a second) and rises back in pauses and silences over about a second and a half; the rise and fall is audible even between sentences. <b>Silence parts</b> are the natural place for the music to rise: put a four-to-six-second silence before every new chapter so the music can breathe.</li>
+<li><b>The "Fade in at the start" and "Fade out at the end" sliders:</b> two separate sliders, each from zero to eight seconds in half-second steps. Zero means no fade, for music that already begins or ends with a fade.</li>
+<li><b>The "Reset mix settings" button:</b> returns all of these to their defaults.</li>
+</ul>
+<p>The music loops to fill the whole length of the piece, continues for two seconds after the last word and then fades out.</p>
+
+<h2 id="s9">10) The final file and captions</h2>
+<p>The "Build final file" button joins all parts one after another with a short breath between them (silence and file parts sit in their places too), applies each part's volume setting and produces an MP3. If music is on, the version with music is built as well. Any change to the parts makes the final file "stale" and you have to press the button again.</p>
+<p>The "Save MP3" and "Save the version with music" buttons save the files. The "SRT subtitles" and "VTT subtitles" buttons build captions from the real timing of the audio (word-level timing for Google and Fish Audio parts; silence and file parts are skipped) for YouTube, podcasts or audiobooks with text.</p>
+
+<h2 id="s10">11) Complete workflows with examples</h2>
+<h3>A Persian audiobook at the best quality</h3>
+<ol>
+<li>Enter several Google keys into the app (section 3).</li>
+<li>Paste one chapter into the box. Press the "Auto diacritics" button with the "Google Gemini — light" tool; for literary text choose the "medium" tool. Look at the result and fix anything wrong by hand.</li>
+<li>Choose the Google engine. Set the model to 3.1 Flash, pick your voice, set the reading style to "audiobook" and, if the narrator has a particular character, choose the age and mood from the next two menus. Set the part length to 600 characters and leave the "Tone continuity between parts" tick on.</li>
+<li>Press the "Generate speech" button. Listen to each part as it is built.</li>
+<li>Fix any sentence read wrongly with the "Edit" button, selecting that sentence and pressing the "Regenerate" button. Build the special emotional sentences (tears, a nervous laugh, a cough) by duplicating the part and switching the copy's engine to Fish Audio.</li>
+<li>Put a four-second silence part between chapters. In the music card, turn on the tick, find an Ambient track on Freesound and press "Use"; set the level to minus sixteen and leave ducking on.</li>
+<li>Press the "Build final file" button, listen to the result, save both versions and, if you need them, get the SRT captions too.</li>
+</ol>
+<h3>A radio drama with several characters</h3>
+<p>If the drama has two main characters, work with Google and the "Two-speaker dialogue" tick, and give each character their own voice and mood. If there are more characters, you have two routes: either divide the text into parts with at most two speakers each and change the pair of speakers in each part's settings, or build the whole drama with Fish Audio and the "Multi-speaker dialogue" tick, where the number of speakers is unlimited and you can give each one a real voice from the library (a child, an old person, a character) and use sound tags such as laughing, coughing and screaming. Put sound effects between scenes with the "Add file" tick in duplicated parts.</p>
+<h3>A bilingual podcast</h3>
+<p>Build the Persian parts with Google and the English parts with Fish Audio (or with Google and the language set to English or auto-detect). Everything sits side by side in one project and becomes one final file; you only need to choose the right engine for each part from that part's engine menu.</p>
+<h3>Everything in your own voice</h3>
+<p>Record a clean ten-to-fifteen-second sample of your voice. For Persian, Chatterbox with that sample sounds more natural and works offline; for English, Fish Audio with the "Clone from file" button gives an excellent result, and for Persian it sometimes makes an acceptable clone too. You can try both on one part and keep the better one.</p>
+
+<h2 id="s11">12) Tips and troubleshooting</h2>
+<ul>
+<li><b>The message "Every Google key is out of quota for today":</b> add a new key (section 3) or wait until tomorrow. Remove invalid keys.</li>
+<li><b>Google is "in high demand":</b> the app waits a few seconds and tries another model on its own; if it persists, press the button again a few minutes later.</li>
+<li><b>Fish Audio gives error 402:</b> either the paid model is selected and your account has no credit, or you used voice design, which is paid. Select the free model.</li>
+<li><b>A Google tag did not happen:</b> this is normal. For guaranteed reactions and pauses use Fish Audio or a silence part. Put the tag at the start of the sentence, one tag per sentence.</li>
+<li><b>The app has slowed down:</b> the "Cancel" button stops the running job on any engine. For the local engines, closing other apps helps.</li>
+</ul>
+
+</body></html>
