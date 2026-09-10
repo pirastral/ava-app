@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist (repo: github.com/pirastral/ava-app)
 ======================================================================
-This zip is the COMPLETE application source as of update 123.
+This zip is the COMPLETE application source as of update 124.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,16 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 124 (on top of 123) — the ~10 s freeze on every click
+  Cause (UI, not engine or RAM): the parts list was rebuilt with innerHTML on almost every
+    interaction (14 call sites), and every part's MP3 sat INLINE in that HTML as a base64
+    data: URL. With many parts that is megabytes of HTML to parse and N players to
+    re-decode per click. Log for that session shows every engine call completing
+    normally — the stall was in the page.
+  Fix: each part's audio becomes ONE Blob URL, created when the audio changes and cached
+    on the part (undo snapshots inherit it); rows reference the URL; players preload
+    metadata only. A re-render is now a few KB of HTML.
 
 WHAT CHANGED IN 123 (on top of 122) — from the 120 log
   Fish: the transcription used for boundaries and the completeness audit now takes its
@@ -512,6 +522,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۲۳»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۲۴»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

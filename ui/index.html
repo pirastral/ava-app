@@ -709,7 +709,7 @@
       </div>
       <div class="finalmsg" id="finalMsg"></div>
     </div>
-  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۱۲۳</span>
+  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۱۲۴</span>
     <span class="warn">این برنامه را فقط از خودِ سازنده‌اش بگیرید؛ نسخه‌ای که از جای ناشناس آمده باشد ممکن است بدافزار داشته باشد.</span>
   </footer>
 </div>
@@ -1205,7 +1205,7 @@
     hist.past.concat(hist.future).forEach(s => s.gulps.forEach(g => keep.add(g.id)));
     try{ window.pywebview.api.gc_gulps([...keep].filter(x => x !== null)); }catch(e){}
   }
-  function restore(s){ gulps = s.gulps.map(g => ({...g})); partSeq = s.partSeq; lastGenerated = s.lastGenerated; renderGulps(); markFinalStale(); syncHistBtns(); }
+  function restore(s){ gulps = s.gulps.map(g => { const c = {...g}; const cc = _urlCache.get(g); if(cc) _urlCache.set(c, cc); return c; }); partSeq = s.partSeq; lastGenerated = s.lastGenerated; renderGulps(); markFinalStale(); syncHistBtns(); }
   function diffNames(a, b){
     // parts whose identity or position changed between two snapshots
     const pa = a.map(g => g.name), pb = b.map(g => g.name), out = [];
@@ -1533,7 +1533,7 @@
         const res = await window.pywebview.api.generate_gulp(gulpPayload(g));
         if(!res.ok) throw new Error(res.error || "خطای ناشناخته");
         g.b64 = res.b64; g.id = res.gulp;
-        if(row) row.querySelector(".g-audio-row audio").src = "data:audio/mpeg;base64," + g.b64;
+        if(row) row.querySelector(".g-audio-row audio").src = audioURL(g);
       }
       bar.classList.remove("show");
       say("همهٔ " + faNum(gulps.length) + " بخش با تنظیمات تازه از نو ساخته شد.", "ok");
@@ -1553,6 +1553,25 @@
     saveBtn.disabled = true;   // فایل کهنه ذخیره نشود
   }
 
+  /* ---------- 124: audio as Blob URLs, never inline base64 in the DOM ----------
+     FIELD: a long edit with many parts froze the UI ~10 s on every click. renderGulps
+     rebuilt the whole list with every part's MP3 inlined as a data: URL, so each click
+     re-parsed megabytes of HTML and re-decoded every player. */
+  const _urlCache = new WeakMap();
+  function audioURL(g){
+    if(!g || !g.b64) return "";
+    const c = _urlCache.get(g);
+    if(c && c.b64 === g.b64) return c.url;
+    if(c && c.url && window.URL && URL.revokeObjectURL) try{ URL.revokeObjectURL(c.url); }catch(e){}
+    let url;
+    try{
+      const bin = atob(g.b64), buf = new Uint8Array(bin.length);
+      for(let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+      url = URL.createObjectURL(new Blob([buf], { type: "audio/mpeg" }));
+    }catch(e){ url = "data:audio/mpeg;base64," + g.b64; }
+    _urlCache.set(g, { b64: g.b64, url });
+    return url;
+  }
   function renderGulps(){
     gulpsEl.innerHTML = "";
     gulps.forEach((g, idx) => {
@@ -1582,10 +1601,10 @@
         <div class="row g-file-row" ${g.file ? "" : "hidden"} style="padding:6px 6px 10px">
           <button class="chip g-file-pick" type="button"><svg class="ic"><use href="#i-file-audio"/></svg>انتخاب فایل صوتی…</button>
           <span class="gstate g-file-name">${g.file && g.file !== true ? g.file + (g.fileSeconds ? " · " + faNum(Math.round(g.fileSeconds)) + " ثانیه" : "") : "هنوز فایلی انتخاب نشده"}</span>
-          <audio controls ${g.file && g.b64 ? `src="data:audio/mpeg;base64,${g.b64}"` : ""} style="flex:1;height:34px"></audio>
+          <audio controls preload="metadata" ${g.file && g.b64 ? `src="${audioURL(g)}"` : ""} style="flex:1;height:34px"></audio>
         </div>
         <div class="gulp-row g-audio-row" ${(g.silence || g.file) ? "hidden" : ""}>
-          <audio controls ${g.b64 ? `src="data:audio/mpeg;base64,${g.b64}"` : ""}></audio>
+          <audio controls preload="metadata" ${g.b64 ? `src="${audioURL(g)}"` : ""}></audio>
           <select class="gvoice" title="صدای همین بخش — با بازتولید اعمال می‌شود">
             <option value="google">گوگل</option>
             <option value="chatterbox">چترباکس</option>
@@ -1656,7 +1675,7 @@
       volLen.onchange = async () => {
         if(!g.id){ g.gain = +volLen.value; return; }
         remember(); g.gain = +volLen.value;
-        try{ const r = await window.pywebview.api.set_gain(g.id, g.gain); if(r.ok){ g.b64 = r.b64; const au = div.querySelector(".g-audio-row audio, .g-file-row audio"); if(au) au.src = "data:audio/mpeg;base64," + r.b64; } }catch(e){}
+        try{ const r = await window.pywebview.api.set_gain(g.id, g.gain); if(r.ok){ g.b64 = r.b64; const au = div.querySelector(".g-audio-row audio, .g-file-row audio"); if(au) au.src = audioURL(g); } }catch(e){}
         volBtn.title = "Volume (" + g.gain + "%)"; markFinalStale();
       };
       silLen.oninput = () => { silVal.textContent = faNum(+silLen.value) + " ثانیه"; };
@@ -1738,7 +1757,7 @@
             bar.classList.remove("show");
             if(!res.ok) throw new Error(res.error || "خطای ناشناخته");
             g.b64 = res.b64;
-            div.querySelector(".g-audio-row audio").src = "data:audio/mpeg;base64," + g.b64;
+            div.querySelector(".g-audio-row audio").src = audioURL(g);
             say(res.mode === "words"
               ? "بخش " + faNum(idx+1) + ": جراحی واژه‌ای؛ فقط " + faNum(res.changed) + " واژه دوباره ساخته و سر جای خودش نشانده شد."
               : res.mode === "clauses"
@@ -1752,7 +1771,7 @@
             bar.classList.remove("show");
             if(!res.ok) throw new Error(res.error || "خطای ناشناخته");
             g.b64 = res.b64; g.id = res.gulp;
-            div.querySelector(".g-audio-row audio").src = "data:audio/mpeg;base64," + g.b64;
+            div.querySelector(".g-audio-row audio").src = audioURL(g);
             say("بخش " + faNum(idx+1) + " بازتولید شد.", "ok");
           }
           st.textContent = "";

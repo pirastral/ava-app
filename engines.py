@@ -28,8 +28,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 123
-BUILD_FA = "\u06f1\u06f2\u06f3"
+BUILD = 124
+BUILD_FA = "\u06f1\u06f2\u06f4"
 
 
 def _diag(tag, **kv):
