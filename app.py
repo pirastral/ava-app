@@ -407,6 +407,32 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # ---- 126: activation ----------------------------------------------------
+    def license_state(self):
+        import engines
+        return engines.license_status()
+
+    def license_activate(self, activation):
+        import engines
+        return engines.license_activate(activation or "")
+
+    def license_enter_app(self):
+        """Called by the gate after a successful activation: swap the window to
+        the app itself. One window, no reload flash, nothing behind the gate."""
+        try:
+            self._window.load_url(str(_res_path("ui") / "index.html"))
+            self._window.resize(980, 880)
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def license_quit(self):
+        try:
+            self._window.destroy()
+        except Exception:
+            pass
+        return {"ok": True}
+
     def music_presets(self):
         import engines
         return {"ok": True, "presets": list(engines.MUSIC_PRESETS.keys())}
@@ -531,10 +557,15 @@ class Api:
 
 def main():
     api = Api()
+    # 126: the gate is the WHOLE window until the licence verifies — the app's UI
+    # is never loaded behind it, so there is nothing to reveal by closing a dialog.
+    import engines
+    licensed = engines.license_status()["ok"]
     window = webview.create_window(
         "آوای جاوید شاه — تبدیل متن فارسی به گفتار",
-        url=str(_res_path("ui") / "index.html"),
-        js_api=api, width=980, height=880, min_size=(420, 640))
+        url=str(_res_path("ui") / ("index.html" if licensed else "gate.html")),
+        js_api=api, width=980 if licensed else 720, height=880 if licensed else 760,
+        min_size=(420, 640))
     api._window = window
     webview.start()
 

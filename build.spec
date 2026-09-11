@@ -4,7 +4,7 @@ import sys
 from PyInstaller.utils.hooks import collect_all, copy_metadata
 
 datas, binaries, hiddenimports = [("ui", "ui"), ("token.txt", "."), ("icon.png", "."), ("voices", "voices"), ("builtin_keys.json", ".")], [], []
-for pkg in ["torch", "torchaudio", "chatterbox", "transformers", "tokenizers",
+for pkg in ["nacl", "torch", "torchaudio", "chatterbox", "transformers", "tokenizers",
             "piper", "onnxruntime", "lameenc", "perth", "s3tokenizer",
             "librosa", "safetensors", "huggingface_hub", "numpy", "requests",
             "espeakng_loader", "pysbd", "diffusers", "conformer", "webview", "audiotsm", "psutil",
@@ -35,6 +35,9 @@ for meta in ["requests", "tqdm", "regex", "packaging", "filelock", "pyyaml",
         datas += copy_metadata(meta)
     except Exception:
         pass
+
+# 126: the activation module ships; the ISSUER (issue_license.py) never does.
+hiddenimports += ["licensing", "nacl.signing", "nacl.exceptions"]
 
 a = Analysis(["app.py"], datas=datas, binaries=binaries, hiddenimports=hiddenimports,
              excludes=["tkinter", "matplotlib", "IPython", "pytest"])

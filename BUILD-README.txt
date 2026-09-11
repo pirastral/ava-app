@@ -1,6 +1,6 @@
-AVA FULL BUILD — deploy checklist (repo: github.com/pirastral/ava-app)
+AVA FULL BUILD — deploy checklist
 ======================================================================
-This zip is the COMPLETE application source as of update 125.
+This zip is the COMPLETE application source as of update 126.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,27 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 126 (on top of 125) — activation gate
+  NEW FILES to add to the repo: licensing.py (root) and ui/gate.html.
+  NEW DEPENDENCY: pynacl (requirements.txt; also collected in build.spec).
+  The app now requires a per-machine activation. On an unactivated machine the
+    window loads ui/gate.html and NOTHING ELSE — the app's own UI is never
+    loaded behind it. On success the same window swaps to index.html.
+  The WORK is gated too (generate / patch / splice call _require_license), so
+    removing the gate screen does not unlock generation.
+  Offline and non-destructive: no network, no phone-home, nothing is ever
+    deleted. A machine without a licence simply refuses to generate.
+  Nothing identifying is stored: the activation carries an OPAQUE copy id
+    (L-01, L-02 …), never a name; the gate greets nobody; the request code has
+    no product prefix.
+  Stored at ~/AvaModels/license.json — survives app updates; delete it to force
+    re-activation.
+  ISSUING (founder only, offline): keep app-licensing/scripts/issue_license.py
+    OFF this repo, with the private key in your password manager.
+      python issue_license.py issue --code "<the code the user reads you>" --id L-07
+    Keep the ledger line it prints (id -> person) OFFLINE. NEVER ship the
+    private key, and never put a person's name in --id.
 
 WHAT CHANGED IN 125 (on top of 124) — manual + naming principles
   Help: a round header button (question-mark icon) between EN/FA and the theme switch
@@ -530,6 +551,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۲۵»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۲۶»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

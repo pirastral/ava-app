@@ -4,6 +4,49 @@ from pathlib import Path
 
 MODELS_DIR = Path.home() / "AvaModels"
 MODELS_DIR.mkdir(exist_ok=True)
+
+# ===========================================================================
+# 126 · Activation. Offline, machine-bound, signature-verified. The public key
+# only VERIFIES; the private key never exists in this app. See the
+# app-licensing skill. No name, no network, nothing identifying on the device.
+# ===========================================================================
+LICENSE_PUBLIC_KEY = "JQ4J6Onrxcr-z5yNISynPUNTNaIhGJpPwnY-VztumcE"
+
+
+def license_status():
+    """Is this machine activated? Re-verified on every launch and before work."""
+    try:
+        import licensing
+        rec = licensing.load_stored(MODELS_DIR, LICENSE_PUBLIC_KEY)
+        if rec:
+            return {"ok": True, "id": rec.get("licensee", ""), "expires": rec.get("expires")}
+        return {"ok": False, "code": licensing.request_code()}
+    except Exception as e:
+        return {"ok": False, "code": "", "error": str(e)}
+
+
+def license_activate(activation):
+    try:
+        import licensing
+        rec = licensing.store_activation(MODELS_DIR, activation, LICENSE_PUBLIC_KEY)
+        _diag("license_activated", id=rec.get("licensee", ""))
+        return {"ok": True}
+    except ValueError as e:
+        msg = str(e)
+        return {"ok": False, "error": {
+            "licence is for a different machine": "این کد فعال‌سازی برای دستگاه دیگری ساخته شده است.",
+            "licence signature is invalid": "این کد فعال‌سازی معتبر نیست.",
+            "licence has expired": "مهلت این کد فعال‌سازی تمام شده است.",
+        }.get(msg, "کد فعال‌سازی پذیرفته نشد.")}
+    except Exception:
+        return {"ok": False, "error": "کد فعال‌سازی خوانده نشد؛ همهٔ کد را کپی کنید."}
+
+
+def _require_license():
+    """Gate the WORK, not just the window — removing the gate screen does not
+    unlock generation."""
+    if not license_status()["ok"]:
+        raise RuntimeError("این دستگاه فعال نشده است.")
 # All Hugging Face downloads live permanently in AvaModels/hf — no re-downloads.
 os.environ.setdefault("HF_HOME", str(MODELS_DIR / "hf"))
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
@@ -28,8 +71,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 125
-BUILD_FA = "\u06f1\u06f2\u06f5"
+BUILD = 126
+BUILD_FA = "\u06f1\u06f2\u06f6"
 
 
 def _diag(tag, **kv):
@@ -1904,6 +1947,7 @@ def _slices_sane(cuts, total):
 
 
 def generate_gulp(payload, status):
+    _require_license()
     """One gulp → clause-wise synthesis, stored per clause for surgical patching."""
     _job_start()
     text = payload["text"].strip()
@@ -2701,6 +2745,7 @@ def _cbx_patch_middle(entry, new_items, pre, suf, payload, status):
 
 
 def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
+    _require_license()
     """Regenerate only the clauses that the edit/selection touched; every
     other clause's audio is reused bit-identical."""
     _job_start()
@@ -2873,6 +2918,7 @@ def _splice_pcm(ids, status):
 
 
 def splice_gulps(ids, status) -> bytes:
+    _require_license()
     pcm, sr = _splice_pcm(ids, status)
     return pcm_to_mp3(pcm, sr)
 
@@ -4233,6 +4279,7 @@ def mix_music(voice, vsr, music, msr, level_db=-16.0, duck=True, duck_db=12.0, f
 
 
 def final_files(ids, music_cfg, status):
+    _require_license()
     """The clean final file, and — when music is requested — a second file
     with the music bed mixed under it. Both returned as MP3 bytes."""
     clean_pcm, sr = _splice_pcm(ids, status)

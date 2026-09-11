@@ -1,0 +1,157 @@
+<!doctype html><html lang="fa" dir="rtl" data-theme="dark"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>@kamangir31 - آوای جاوید شاه</title>
+<style>
+@font-face{font-family:'Vazirmatn';src:url('fonts/Vazirmatn-Regular.woff2') format('woff2');font-weight:400;font-display:swap}
+@font-face{font-family:'Vazirmatn';src:url('fonts/Vazirmatn-Bold.woff2') format('woff2');font-weight:700;font-display:swap}
+
+:root{--page:#0d111a;--panel:#161c29;--ink:#eef2f8;--muted:#9aa6bb;--line:#2a3447;--tile:#40d2e6;--tile-ink:#0d111a;--band:#65abba;--band-ink:#0d111a;--danger:#ff6b6b;--ok:#4ade80;--radius:16px;--shadow:0 18px 50px rgba(0,0,0,.45)}
+[data-theme="light"]{--page:#e7ecf3;--panel:#fff;--ink:#12161f;--muted:#5b6372;--line:#c5cdd9;--tile:#0d0d0d;--tile-ink:#fff;--shadow:0 18px 50px rgba(20,30,50,.12)}
+*{box-sizing:border-box}
+body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:var(--page);color:var(--ink);font-family:Vazirmatn,Tahoma,system-ui,sans-serif;padding:24px}
+.gate{width:100%;max-width:620px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+.band{background:var(--band);color:var(--band-ink);padding:14px 24px;font-weight:800;font-size:1.05rem;display:flex;align-items:center;justify-content:space-between}
+.band small{font-weight:600;opacity:.75;font-size:.8rem}
+.body{padding:22px 24px 24px}
+h2{margin:0 0 6px;font-size:1.1rem}
+p{margin:0 0 14px;line-height:1.95;color:var(--muted);font-size:.93rem}
+label{display:flex;justify-content:space-between;align-items:baseline;font-weight:700;font-size:.86rem;margin:16px 0 6px}
+label small{font-weight:500;color:var(--muted)}
+.code{direction:ltr;text-align:center;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:1.18rem;letter-spacing:.06em;background:var(--page);border:1px dashed var(--line);border-radius:12px;padding:14px 12px;user-select:all;word-break:break-all}
+textarea{width:100%;direction:ltr;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.82rem;line-height:1.6;background:var(--page);color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:12px;min-height:88px;resize:vertical}
+textarea:focus{outline:none;border-color:var(--tile)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.btn{height:42px;padding:0 18px;border-radius:12px;border:1px solid var(--line);background:transparent;color:var(--ink);font:inherit;font-weight:700;font-size:.88rem;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:transform .08s,filter .12s}
+.btn:hover{filter:brightness(1.08)}.btn:active{transform:translateY(1px);filter:brightness(.9)}
+.btn.primary{background:var(--tile);border-color:var(--tile);color:var(--tile-ink)}
+.ic{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.msg{margin-top:14px;padding:10px 14px;border-radius:10px;font-size:.87rem;display:none}
+.msg.err{display:block;background:color-mix(in srgb,var(--danger) 14%,transparent);border:1px solid color-mix(in srgb,var(--danger) 45%,transparent);color:var(--danger)}
+.msg.ok{display:block;background:color-mix(in srgb,var(--ok) 14%,transparent);border:1px solid color-mix(in srgb,var(--ok) 45%,transparent);color:var(--ok)}
+.foot{margin-top:18px;padding-top:14px;border-top:1px solid var(--line);color:var(--muted);font-size:.8rem;line-height:1.9}
+.tools{position:fixed;top:14px;inset-inline-end:14px;display:flex;gap:8px}
+.tools button{width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer;font-size:.72rem;font-weight:700}
+
+.tools{position:fixed;top:14px;inset-inline-end:14px;display:flex;gap:8px}
+.tools button{width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer;font-size:.72rem;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
+.tools button:active{transform:translateY(1px)}
+.spin{display:none;width:15px;height:15px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:sp .7s linear infinite}
+.spin.show{display:inline-block}@keyframes sp{to{transform:rotate(360deg)}}
+html[dir=ltr] .code,html[dir=ltr] textarea{text-align:left}
+</style></head><body>
+<div class="tools"><button id="themeBtn" title="روشن / تاریک">◑</button><button id="langBtn" title="Language">EN</button></div>
+<div class="gate">
+  <div class="band"><span>فعال‌سازی برنامه</span><small id="ver">نسخهٔ ۱۲۶</small></div>
+  <div class="body">
+    <h2>این دستگاه هنوز فعال نشده است</h2>
+    <p>این برنامه شخصی است و روی هر دستگاه جداگانه فعال می‌شود. کدِ درخواست زیر را از راهی که خودتان امن می‌دانید بفرستید تا کدِ فعال‌سازیِ مخصوصِ همین دستگاه برایتان ساخته شود. آن کد روی هیچ دستگاه دیگری کار نمی‌کند. هیچ نام و مشخصه‌ای از شما در برنامه ذخیره نمی‌شود و برنامه به هیچ سروری وصل نمی‌شود.</p>
+    <label for="req"><span>کد درخواستِ این دستگاه</span><small>فقط شمارهٔ همین دستگاه</small></label>
+    <div class="code" id="req">…</div>
+    <div class="row" style="margin-top:10px"><button class="btn" id="copyBtn"><svg class="ic" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>کپی کد</button>
+    </div>
+    <label for="act"><span>کد فعال‌سازی</span><small>کدی که دریافت می‌کنید</small></label>
+    <textarea id="act" placeholder="کد فعال‌سازی را اینجا بچسبانید" spellcheck="false"></textarea>
+    <div class="row" style="margin-top:12px"><button class="btn primary" id="goBtn"><svg class="ic" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>فعال‌سازی و ورود به برنامه<span class="spin" id="goSpin"></span></button>
+    <button class="btn" id="quitBtn">بستن برنامه</button></div>
+    <div class="msg" id="msg"></div>
+    <div class="foot">فعال‌سازی روی همین دستگاه ذخیره می‌شود و با به‌روزرسانی‌های بعدی از بین نمی‌رود. اگر سیستم‌عامل را از نو نصب کنید یا سخت‌افزار عوض شود، یک کد تازه لازم است.</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const $ = i => document.getElementById(i);
+  const root = document.documentElement;
+  let LANG = "fa";
+  try{ LANG = localStorage.getItem("ava_lang") || "fa"; }catch(e){}
+  try{ root.setAttribute("data-theme", localStorage.getItem("ava_theme") || "dark"); }catch(e){}
+  document.body.setAttribute("data-theme", root.getAttribute("data-theme"));
+
+  const EN = {
+    "فعال‌سازی برنامه": "Activate this app",
+    "این دستگاه هنوز فعال نشده است": "This machine is not activated yet",
+    "این برنامه شخصی است و روی هر دستگاه جداگانه فعال می‌شود. کدِ درخواست زیر را از راهی که خودتان امن می‌دانید بفرستید تا کدِ فعال‌سازیِ مخصوصِ همین دستگاه برایتان ساخته شود. آن کد روی هیچ دستگاه دیگری کار نمی‌کند. هیچ نام و مشخصه‌ای از شما در برنامه ذخیره نمی‌شود و برنامه به هیچ سروری وصل نمی‌شود.":
+      "This is a personal app and is activated separately on each machine. Send the request code below through whatever channel you consider safe, and you will receive an activation code made for this machine only. It works on no other machine. No name or identifier of yours is stored, and the app connects to no server.",
+    "کد درخواستِ این دستگاه": "This machine's request code",
+    "فقط شمارهٔ همین دستگاه": "identifies the machine only",
+    "کپی کد": "Copy code",
+    "کد فعال‌سازی": "Activation code",
+    "کدی که دریافت می‌کنید": "the code you receive",
+    "کد فعال‌سازی را اینجا بچسبانید": "Paste the activation code here",
+    "فعال‌سازی و ورود به برنامه": "Activate and open the app",
+    "بستن برنامه": "Quit",
+    "فعال‌سازی روی همین دستگاه ذخیره می‌شود و با به‌روزرسانی‌های بعدی از بین نمی‌رود. اگر سیستم‌عامل را از نو نصب کنید یا سخت‌افزار عوض شود، یک کد تازه لازم است.":
+      "The activation is stored on this machine and survives future updates. If you reinstall the operating system or change hardware, a new code is needed.",
+    "کد درخواست کپی شد.": "Request code copied.",
+    "این دستگاه فعال شد. برنامه باز می‌شود…": "This machine is activated. Opening the app…",
+    "این کد فعال‌سازی برای دستگاه دیگری ساخته شده است.": "This activation code was made for a different machine.",
+    "این کد فعال‌سازی معتبر نیست.": "This activation code is not valid.",
+    "مهلت این کد فعال‌سازی تمام شده است.": "This activation code has expired.",
+    "کد فعال‌سازی پذیرفته نشد.": "The activation code was not accepted.",
+    "کد فعال‌سازی خوانده نشد؛ همهٔ کد را کپی کنید.": "The activation code could not be read; copy the whole code.",
+    "اول کد فعال‌سازی را بچسبانید.": "Paste the activation code first."
+  };
+  const t = s => LANG === "en" ? (EN[s] || s) : s;
+  const FA_D = "۰۱۲۳۴۵۶۷۸۹";
+  const faNum = s => LANG === "en" ? String(s) : String(s).replace(/\d/g, d => FA_D[+d]);
+
+  function applyLang(){
+    root.setAttribute("dir", LANG === "en" ? "ltr" : "rtl");
+    root.setAttribute("lang", LANG);
+    $("langBtn").textContent = LANG === "en" ? "FA" : "EN";
+    document.querySelectorAll("[data-fa]").forEach(el => el.textContent = t(el.dataset.fa));
+    const ta = $("act"); ta.placeholder = t(ta.dataset.fa || "کد فعال‌سازی را اینجا بچسبانید");
+    $("ver").textContent = (LANG === "en" ? "version " : "نسخهٔ ") + faNum(126);
+  }
+  // tag every translatable node once
+  document.querySelectorAll(".gate h2, .gate p, .gate label span, .gate label small, .gate .btn, .gate .foot, .band span").forEach(el => {
+    if(!el.dataset.fa && el.childElementCount === 0) el.dataset.fa = el.textContent.trim();
+  });
+  $("act").dataset.fa = "کد فعال‌سازی را اینجا بچسبانید";
+
+  $("themeBtn").onclick = () => {
+    const next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next); document.body.setAttribute("data-theme", next);
+    try{ localStorage.setItem("ava_theme", next); }catch(e){}
+  };
+  $("langBtn").onclick = () => { LANG = LANG === "en" ? "fa" : "en"; try{ localStorage.setItem("ava_lang", LANG); }catch(e){} applyLang(); };
+
+  function msg(kind, text){ const e = $("msg"); e.className = "msg " + kind; e.textContent = text; }
+
+  function ready(){
+    window.pywebview.api.license_state().then(function(s){
+      $("req").textContent = s.code || "—";
+      applyLang();
+    });
+  }
+  if(window.pywebview && window.pywebview.api) ready(); else window.addEventListener("pywebviewready", ready);
+
+  $("copyBtn").onclick = () => {
+    const code = $("req").textContent.trim();
+    try{ navigator.clipboard.writeText(code); }catch(e){
+      const ta = document.createElement("textarea"); ta.value = code; document.body.appendChild(ta); ta.select();
+      try{ document.execCommand("copy"); }catch(e2){} ta.remove();
+    }
+    msg("ok", t("کد درخواست کپی شد."));
+  };
+  $("quitBtn").onclick = () => window.pywebview.api.license_quit();
+  $("goBtn").onclick = async () => {
+    const v = $("act").value.trim();
+    if(!v){ msg("err", t("اول کد فعال‌سازی را بچسبانید.")); return; }
+    $("goBtn").disabled = true; $("goSpin").classList.add("show");
+    try{
+      const r = await window.pywebview.api.license_activate(v);
+      if(r.ok){
+        msg("ok", t("این دستگاه فعال شد. برنامه باز می‌شود…"));
+        setTimeout(() => window.pywebview.api.license_enter_app(), 700);
+      } else {
+        msg("err", t(r.error || "کد فعال‌سازی پذیرفته نشد."));
+        $("goBtn").disabled = false; $("goSpin").classList.remove("show");
+      }
+    }catch(e){
+      msg("err", t("کد فعال‌سازی پذیرفته نشد.")); $("goBtn").disabled = false; $("goSpin").classList.remove("show");
+    }
+  };
+  $("act").addEventListener("keydown", e => { if(e.key === "Enter" && (e.metaKey || e.ctrlKey)) $("goBtn").click(); });
+})();
+</script></body></html>
