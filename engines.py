@@ -71,8 +71,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 127
-BUILD_FA = "\u06f1\u06f2\u06f7"
+BUILD = 129
+BUILD_FA = "\u06f1\u06f2\u06f9"
 
 
 def _diag(tag, **kv):
@@ -3670,9 +3670,12 @@ def google_pcm(text, cfg, status):
         if pcm is None:
             pcm, sr = _google_call(chunk, cfg, status)
         lang = {"fa": "fa-IR", "en": "en-US", "de": "de-DE", "tr": "tr-TR", "fr": "fr-FR", "es": "es-ES"}.get(cfg.get("g_lang"))
-        pcm, sr, words, hole = _complete_take(chunk, pcm, sr, cfg, status, lang, _google_call)
-        if hole:
-            _G_INCOMPLETE.append(hole)
+        if cfg.get("_no_audit"):
+            words = None
+        else:
+            pcm, sr, words, hole = _complete_take(chunk, pcm, sr, cfg, status, lang, _google_call)
+            if hole:
+                _G_INCOMPLETE.append(hole)
         _diag("google_take", audio_s=round(len(pcm) / sr, 1), chars=len(chunk))
         waves.append(pcm)
         if ci < len(chunks):
@@ -3826,7 +3829,23 @@ def _repair_clause(chunk, idx, pcm, sr, cfg, status, lang, call, take_words=None
 # Google clause surgery (94)
 # ---------------------------------------------------------------------------
 _G_PAUSE_TAG = re.compile(r"\[(?:short pause|long pause|مکث بلند|مکث)\]")
-_G_SENT_END = re.compile(r"[.!?؟…]+[\"»)\]]*\s+|\n+")
+# 128: ؟ ! … end a sentence even when the writer forgot the space after them
+# («خوندی !؟حیرت آورن» is two sentences); «.» still needs whitespace so that
+# decimals and abbreviations are not cut; a colon that introduces speech ends
+# its line.
+# 129: a clause ends at a sentence stop, a COLON or SEMICOLON, or a line break.
+#   · ؟ ! … end a sentence even when the space after them was forgotten
+#     («خوندی !؟حیرت آورن» is two sentences);
+#   · «.» still needs whitespace after it, so ۳.۵ and abbreviations stay whole;
+#   · «:» and «؛/;» end a clause — they are full stops in speech — except
+#     between digits (۳:۳۰) ;
+#   · a line break ALWAYS ends a clause: pressing Enter creates one.
+_G_SENT_END = re.compile(
+    r"[.!?؟…]+[\"»)\]]*\s+"          # . ! ؟ … followed by space/newline
+    r"|[!?؟…]+[\"»)\]]*(?=[^\s\d])"  # ! ؟ … with the space forgotten
+    r"|(?<![0-9۰-۹]):(?![0-9۰-۹])\s*"  # colon, but not inside a time like ۳:۳۰
+    r"|[؛;]\s*"                        # semicolon (Persian and Latin)
+    r"|\n+")
 
 
 def _g_clauses(text):
@@ -3984,9 +4003,9 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
     before = nc[j0 - 1][0].strip() if j0 > 0 else ""
     after = nc[j1][0].strip() if j1 < len(nc) else ""
     middle = " ".join(c[0].strip() for c in nc[j0:j1])
-    gen_text = " ".join(x for x in (before, middle, after) if x)
+    gen_text = "\n".join(x for x in (before, middle, after) if x)   # 128: newline, never a space
     status(f"گوگل: {faDigits(j1 - j0)} جمله را همراه جمله‌های کناری‌اش دوباره می‌سازد…")
-    new_pcm, nsr = cloud_pcm(gen_text, cfg, status)
+    new_pcm, nsr = cloud_pcm(gen_text, {**cfg, "_no_audit": True}, status)   # 128: no audit/retry on a surgical piece
     gcl = _g_clauses(gen_text)
     k0 = 1 if before else 0
     k1 = k0 + (j1 - j0)
@@ -5218,9 +5237,12 @@ def fish_pcm(text, cfg, status):
             if attempt == 2:
                 raise RuntimeError(e.msg)
             time.sleep(2.0 * (attempt + 1))
-    pcm, sr, words, hole = _complete_take(text, pcm, sr, cfg, status, lang, _fish_call)
-    if hole:
-        _G_INCOMPLETE.append(hole)
+    if not cfg.get("_no_audit"):
+        pcm, sr, words, hole = _complete_take(text, pcm, sr, cfg, status, lang, _fish_call)
+        if hole:
+            _G_INCOMPLETE.append(hole)
+    else:
+        words = None
     cl = _g_clauses(text)
     tail = cl[-1][0].strip() if cl else ""
     tail = re.sub(r"\s+", " ", re.sub(r"\[[^\]]+\]", " ", tail)).strip()

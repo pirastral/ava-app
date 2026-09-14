@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist
 ======================================================================
-This zip is the COMPLETE application source as of update 127.
+This zip is the COMPLETE application source as of update 129.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,45 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 129 (on top of 128) — clause marks
+  A clause — the unit surgery can replace — now ends at ALL of these:
+    · . ! ؟ … followed by whitespace, as before;
+    · ! ؟ … even when the space after them was forgotten («خوندی !؟حیرت آورن»);
+    · a COLON «:» and a SEMICOLON «؛ ;» — full stops in speech — EXCEPT between
+      digits, so ۳:۳۰ and 3:30 stay whole;
+    · a LINE BREAK, always: pressing Enter creates a clause.
+  «.» still requires whitespace after it, so ۳.۵ and abbreviations are safe.
+  Verified: every clause of every tested shape survives the surgical join, so a
+  selection maps to that clause alone.
+
+  NOTE on 128's line-break report: Enter DID create a clause in 127 — the split
+  was right — but surgery then joined that clause to its neighbour with a SPACE,
+  the colon did not end a sentence, the pieces merged back into one, the count
+  check failed and the whole part was regenerated. The line break was honoured
+  and then undone one step later. 128 fixed the join; 129 widens the marks.
+
+WHAT CHANGED IN 128 (on top of 127) — SURGERY REPAIRED
+  Field report: "surgery is nonexistent — selecting one sentence regenerates
+  everything, and it takes forever". Three bugs, all confirmed on the owner's
+  own text and in the 127 log:
+  1) THE JOIN. Surgery rebuilds "previous + target + next" and checks that the
+     joined text still splits into the expected number of clauses. It joined
+     them with a SPACE — so a clause that does not end in a sentence stop (here
+     a line ending in «:», a speech introduction) merged with its neighbour, the
+     count check failed, and the app fell back to regenerating the WHOLE part.
+     That is the log's `g_clause_patch reason=gen_clauses_2_vs_3`. The join is a
+     NEWLINE now; _g_clauses always splits on a newline, so the pieces stay
+     separate. Verified: zero bail-outs on both field texts, every clause.
+  2) THE AUDIT ON SURGICAL PIECES. 127 routed surgery through the same path as a
+     whole part, so every surgery ran the completeness audit — up to two extra
+     takes, a repair, and several transcriptions. That is the slowness and the
+     quota burn. A surgical piece now carries _no_audit: one call, no retries.
+  3) CLAUSE GRANULARITY. Persian sentences end in ؟ and ! that are often typed
+     without the following space («خوندی !؟حیرت آورن» is two sentences), and a
+     line ending in «:» that introduces speech is its own unit. Both now end a
+     clause, so a selected sentence maps to a small clause instead of half the
+     part. «.» still requires whitespace, so decimals and abbreviations are safe.
 
 WHAT CHANGED IN 127 (on top of 126) — from two field logs
   A) THE PART THAT LOST A SENTENCE (owner's log). A 565-char part had its 5th
@@ -585,6 +624,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۲۷»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۲۹»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»
