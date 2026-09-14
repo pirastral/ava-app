@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist
 ======================================================================
-This zip is the COMPLETE application source as of update 129.
+This zip is the COMPLETE application source as of update 131.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,47 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 131 (on top of 130) — surgery retries instead of giving up
+  A surgical take that splits wrongly, whose boundaries cannot be found, or
+  whose cut produces an implausible fragment is a BAD TAKE, not a reason to
+  rebuild the whole part: the model is stochastic and the next take usually
+  lands. Surgery now RETRIES up to 3 times (status line says so) and only then
+  falls back to a full regeneration, naming the last reason in the log
+  («gave_up_after_3:…»). A recovery is logged too («recovered_on_attempt=2»).
+  Structural cases — a single-clause part, no selection and no edit, everything
+  changed — do not retry: there a full take IS the honest answer.
+  NOTE on the engines: Google and Fish Audio share this path (one continuous
+  recording, boundaries found from the transcript). Chatterbox and the Piper
+  voices have their own, structurally exact surgery — their parts are stored as
+  one clip PER CLAUSE, so replacing a sentence is a list operation with no
+  boundary detection and nothing to fail.
+
+WHAT CHANGED IN 130 (on top of 129) — from the 129 log
+  FINDING: Fish Audio's transcribe-1 is a PAID endpoint. In the field session it
+    answered «402 Insufficient API credit» nine times out of ten; a failed
+    transcript silently downgraded every boundary to the crude silence
+    heuristic, which is what made surgery on Fish parts unreliable and produced
+    a duplicated word at a splice seam.
+  · The transcription dropdown is REMOVED from the main settings and from every
+    part's settings. Transcription is Google, always, for every engine — the
+    transcript is the backbone of surgery, the completeness audit and captions.
+  · SURGERY NOW COVERS A VOICE CHANGE. Changing the voice, reading style, age,
+    mood or a Fish slider and regenerating a selection re-voices ONLY those
+    clauses and keeps the rest of the audio bit-identical; the status line says
+    so. Previously this sometimes spliced (two voices, artifacts) and sometimes
+    silently rebuilt the whole part in the new voice, with no rule.
+  · THE SEAM IS PINNED TO THE WORDS. The head ends before the first word of the
+    replaced clause and the tail starts at the first word of the following
+    clause, taken from the transcript — never at a silence that may sit on the
+    wrong side of a word. That is the «میگه» heard twice, once in each voice. A
+    word-cut that disagrees wildly with the silence cut is rejected.
+  · EVERY bail-out from surgery now names itself in the log (9 paths, 9
+    reasons) and the app says «جراحیِ جمله ممکن نشد؛ کل این بخش دوباره ساخته
+    می‌شود» instead of rebuilding silently.
+  · TONE CONTINUITY: the lead-in walks back through clauses until it holds at
+    least 8 words. 129's finer clause splitting could leave a three-word
+    fragment as the whole lead-in, and continuity between parts suffered.
 
 WHAT CHANGED IN 129 (on top of 128) — clause marks
   A clause — the unit surgery can replace — now ends at ALL of these:
@@ -624,6 +665,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۲۹»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۳۱»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

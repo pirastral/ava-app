@@ -83,9 +83,9 @@ EXACT = {
  "Fish Audio دارد گفتار را می‌سازد…": "Fish Audio is generating the speech…",
  "Fish Audio: ساختِ صدای کلون از نمونه (فقط بار اول برای هر نمونه)…": "Fish Audio: cloning the clip into a voice (first time only per clip)…",
  "Fish Audio: طراحی صدا…": "Fish Audio: designing the voice…",
- "Fish Audio: رونویسی صدا…": "Fish Audio: transcribing the audio…",
- "رونویسی با Fish Audio نشد؛ با گوگل امتحان می‌کنم…": "Fish Audio transcription failed; trying Google…",
  "جملهٔ جاافتاده را جداگانه می‌سازم و سرِ جایش می‌گذارم…": "Generating the missing sentence on its own and splicing it into place…",
+ "صدا/تنظیمات این بخش عوض شده؛ فقط جمله‌های انتخاب‌شده با صدای تازه ساخته می‌شوند.": "The voice/settings of this part changed; only the selected sentences are rebuilt with the new voice.",
+ "جراحیِ جمله ممکن نشد؛ کل این بخش دوباره ساخته می‌شود.": "Sentence surgery was not possible; the whole part is being rebuilt.",
  "Fish Audio: کلید پذیرفته نشد (401). کلید را دوباره بررسی کنید.": "Fish Audio: key rejected (401). Check the key.",
  "Fish Audio: اعتبار حساب تمام شده (402). برای مدل پولی باید شارژ کنید؛ مدل رایگان s2.1-pro-free را انتخاب کنید.": "Fish Audio: out of credit (402). Top up for the paid model, or pick the free s2.1-pro-free.",
  "Fish Audio: برشِ جملهٔ راهنما قابل اعتماد نبود؛ بدون راهنما می‌سازم…": "Fish Audio: the lead-in cut was unreliable; generating without it…",
@@ -131,5 +131,6 @@ PATTERNS = [
  (r"^موسیقی: «(.+?)» از (.*?) — (.+?) — (.*)$", "Music: “{0}” by {1} — {2} — {3}"),
  (r"^Fish Audio جمله‌ای را جا انداخت — برداشت دوباره \((\S+)\)…$", "Fish Audio skipped a sentence — retake ({0})…"),
  (r"^Fish Audio \((\d+)\): (.*)$", "Fish Audio ({0}): {1}"),
+ (r"^برشِ جمله جا نیفتاد؛ برداشت دوباره \((\S+)\)…$", "The cut did not land cleanly; taking it again ({0})…"),
  (r"^Fish Audio ASR \((\d+)\): (.*)$", "Fish Audio ASR ({0}): {1}"),
 ]

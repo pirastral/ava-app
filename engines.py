@@ -71,8 +71,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 129
-BUILD_FA = "\u06f1\u06f2\u06f9"
+BUILD = 131
+BUILD_FA = "\u06f1\u06f3\u06f1"
 
 
 def _diag(tag, **kv):
@@ -2771,12 +2771,23 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
         # clause out at its pause boundaries and splice it into the original
         # at the same kind of boundary. Falls back to a whole-part take.
         if entry.get("engine") == eng and len(entry["items"]) == 1 and entry["items"][0].get("pcm") is not None:
+            # 130: a voice / voice-setting change is a legitimate surgical edit —
+            # only the selected clauses are re-voiced, the rest of the audio is
+            # kept bit-identical. The user is told, because the part will then
+            # hold two voices on purpose.
+            old_p = entry.get("payload") or {}
+            changed = [k for k in ("g_voice", "g_preset", "g_age", "g_state", "f_voice", "f_preset", "f_age", "f_state", "f_speed", "f_temp")
+                       if k in cfg and old_p.get(k) is not None and cfg.get(k) != old_p.get(k)]
+            if changed:
+                _diag("g_clause_patch", voice_change=",".join(changed)[:60])
+                status("صدا/تنظیمات این بخش عوض شده؛ فقط جمله‌های انتخاب‌شده با صدای تازه ساخته می‌شوند.")
             done = _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status)
             if done:
                 entry["payload"] = {k: cfg[k] for k in cfg if k.startswith("g_") or k.startswith("f_")}
                 _ensure_valid(entry, "ویرایش", status)
                 return pcm_to_mp3(_assemble(entry), entry["sr"]), done, "clauses"
         cfg = {**cfg, "g_lead_in": entry.get("lead_in", "")}   # pinned at generation time
+        status("جراحیِ جمله ممکن نشد؛ کل این بخش دوباره ساخته می‌شود.")
         pcm, sr = cloud_pcm(new_text, cfg, status)
         items = _clause_split(new_text, eng)
         items[0]["pcm"] = pcm
@@ -3530,6 +3541,32 @@ def google_probe(model, status):
 _G_LAST = {"tail": ""}   # last clause of the previous Google part in this document
 
 
+LEAD_IN_MIN_WORDS = 8          # 130: enough speech for the model to match a tone
+
+
+def _continuity_tail(text):
+    """The lead-in a NEXT part will hear: the end of this part, taken clause by
+    clause from the back until it holds at least LEAD_IN_MIN_WORDS words.
+    130: finer clause splitting (129) could leave a three-word fragment as the
+    whole lead-in, and tone continuity between parts audibly suffered."""
+    cl = _g_clauses(text)
+    if not cl:
+        return ""
+    picked, n = [], 0
+    for c, _ in reversed(cl):
+        t = re.sub(r"\s+", " ", re.sub(r"\[[^\]]+\]", " ", c)).strip()
+        if not t:
+            continue
+        picked.insert(0, t)
+        n += len(t.split())
+        if n >= LEAD_IN_MIN_WORDS:
+            break
+    tail = " ".join(picked)
+    if _g_speech_len(tail) > 160:                            # a very long tail → keep its end
+        tail = " ".join(tail.split()[-18:])
+    return tail
+
+
 def _g_lead_in(text, cfg):
     """The lead-in for a part: the previous part's last clause, unless the
     caller pinned one (regeneration) or continuity is off."""
@@ -3680,14 +3717,7 @@ def google_pcm(text, cfg, status):
         waves.append(pcm)
         if ci < len(chunks):
             waves.append(np.zeros(int(sr * 0.25), dtype=np.int16))
-    cl = _g_clauses(text)
-    tail = cl[-1][0].strip() if cl else ""
-    tail = re.sub(r"\[[^\]]+\]", " ", tail)                 # no tags of any kind in a lead-in
-    tail = re.sub(r"\s+", " ", tail).strip()
-    if _g_speech_len(tail) > 160:                            # a very long last sentence → keep its end
-        words = tail.split()
-        tail = " ".join(words[-18:])
-    _G_LAST["tail"] = tail
+    _G_LAST["tail"] = _continuity_tail(text)
     return np.concatenate(waves), sr
 
 
@@ -3946,6 +3976,37 @@ def _g_boundaries(pcm, sr, clauses):
     return [_zc_snap(pcm, r[2], sr) for r in chosen]
 
 
+def _word_edge(clauses, words, k, pcm, sr, which, fallback):
+    """Sample offset of the START of clause k, from the transcript: just before
+    that clause's first matched word. `fallback` when the alignment cannot say.
+    (130 — the seam of a splice must never sit inside a word.)"""
+    if not words or k <= 0 or k > len(clauses):
+        return fallback
+    import difflib
+    ours, owner = [], []
+    for i, (c, _) in enumerate(clauses):
+        ws = _text_words(c); ours += ws; owner += [i] * len(ws)
+    tw = [_norm_word(w) for w, _, _ in words]
+    if not ours or not tw:
+        return fallback
+    sm = difflib.SequenceMatcher(None, ours, tw, autojunk=False)
+    m2t = {}
+    for a, b_, n in sm.get_matching_blocks():
+        for i in range(n):
+            m2t[a + i] = b_ + i
+    idx = [i for i in range(len(ours)) if owner[i] == k and i in m2t]
+    if not idx:
+        return fallback
+    at = int(words[m2t[idx[0]]][1] * sr) - int(sr * 0.04)     # a hair before the word
+    at = max(0, min(at, len(pcm)))
+    # do not drift far from the silence-based cut: that would signal a bad match
+    if abs(at - fallback) > sr * 1.2:
+        _diag("g_seam", clause=k, words_ms=int(at * 1000 / sr), silence_ms=int(fallback * 1000 / sr), used="silence")
+        return fallback
+    _diag("g_seam", clause=k, words_ms=int(at * 1000 / sr), silence_ms=int(fallback * 1000 / sr), used="words")
+    return at
+
+
 def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
     """Replace only the changed/selected clauses of a Google part. Returns
     the number of clauses regenerated, or 0 when a whole-part take is the
@@ -3954,6 +4015,7 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
     old_text, pcm, sr = entry["text"], entry["items"][0]["pcm"], entry["sr"]
     oc, nc = _g_clauses(old_text), _g_clauses(new_text)
     if len(oc) < 2 or len(nc) < 1:
+        _diag("g_clause_patch", reason=f"too_few_clauses_{len(oc)}_{len(nc)}")
         return 0
     sm = difflib.SequenceMatcher(None, [c[0].strip() for c in oc], [c[0].strip() for c in nc], autojunk=False)
     ops = [o for o in sm.get_opcodes() if o[0] != "equal"]
@@ -3963,9 +4025,11 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
     else:
         # text unchanged: the selection names the clause(s) to redo
         if sel_start is None or sel_end is None or sel_end <= sel_start:
+            _diag("g_clause_patch", reason="no_change_no_selection")
             return 0
         hit = [k for k, c in enumerate(nc) if c[1][0] < sel_end and c[1][1] > sel_start]
         if not hit:
+            _diag("g_clause_patch", reason="selection_matched_no_clause")
             return 0
         i0 = j0 = hit[0]; i1 = j1 = hit[-1] + 1
     if ops and sel_start is not None and sel_end is not None and sel_end > sel_start:
@@ -3981,11 +4045,13 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
                 i1 = max(i1, nj1 + delta)
             j0, j1 = nj0, nj1
     if i0 <= 0 and i1 >= len(oc):
+        _diag("g_clause_patch", reason="whole_part_changed")
         return 0                                    # everything changed: nothing to save
     if j1 <= j0:
         # pure deletion: drop the old clauses' audio, keep the neighbours
-        cuts = _g_bounds(pcm, sr, oc, status, {"fa": "fa-IR", "en": "en-US", "de": "de-DE", "tr": "tr-TR", "fr": "fr-FR", "es": "es-ES"}.get(cfg.get("g_lang")))
+        cuts = _g_bounds(pcm, sr, oc, status, {"fa": "fa-IR", "en": "en-US", "de": "de-DE", "tr": "tr-TR", "fr": "fr-FR", "es": "es-ES"}.get(cfg.get("g_lang")), cfg, old_text)
         if cuts is None:
+            _diag("g_clause_patch", reason="old_boundaries_unfound_delete")
             return 0
         b = [0] + cuts + [len(pcm)]
         out = _crossfade_join([x for x in (pcm[:b[i0]], pcm[b[i1]:]) if len(x)], sr)
@@ -3994,8 +4060,10 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
         _diag("g_clause_patch", removed=i1 - i0)
         return i1 - i0
     lang = {"fa": "fa-IR", "en": "en-US", "de": "de-DE", "tr": "tr-TR", "fr": "fr-FR", "es": "es-ES"}.get(cfg.get("g_lang"))
-    cuts = _g_bounds(pcm, sr, oc, status, lang)
+    old_words = transcribe_words(pcm, sr, status, lang, old_text, cfg)
+    cuts = _g_bounds(pcm, sr, oc, status, lang, cfg, old_text, old_words)
     if cuts is None:
+        _diag("g_clause_patch", reason="old_boundaries_unfound")
         return 0
     b = [0] + cuts + [len(pcm)]
     # regenerate the changed clauses with one neighbour on each side as
@@ -4004,27 +4072,44 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
     after = nc[j1][0].strip() if j1 < len(nc) else ""
     middle = " ".join(c[0].strip() for c in nc[j0:j1])
     gen_text = "\n".join(x for x in (before, middle, after) if x)   # 128: newline, never a space
-    status(f"گوگل: {faDigits(j1 - j0)} جمله را همراه جمله‌های کناری‌اش دوباره می‌سازد…")
-    new_pcm, nsr = cloud_pcm(gen_text, {**cfg, "_no_audit": True}, status)   # 128: no audit/retry on a surgical piece
     gcl = _g_clauses(gen_text)
     k0 = 1 if before else 0
     k1 = k0 + (j1 - j0)
-    if len(gcl) != k1 + (1 if after else 0):
-        _diag("g_clause_patch", reason=f"gen_clauses_{len(gcl)}_vs_{k1 + (1 if after else 0)}")
-        return 0
-    gcuts = _g_bounds(new_pcm, nsr, gcl, status, lang)
-    if gcuts is None:
-        return 0
-    gb = [0] + gcuts + [len(new_pcm)]
-    seg = new_pcm[gb[k0]:gb[k1]]
-    if nsr != sr:
-        seg = _resample(seg, nsr, sr)
-    # sanity: the new clause must fit the part's speaking rate — a cut at the
-    # wrong silence produces a fragment far too short or long for its words
+    want_pieces = k1 + (1 if after else 0)
     rate = len(pcm) / max(1, _g_speech_len(old_text))            # samples per spoken char
     want = rate * max(1, _g_speech_len(middle))
-    if not (0.45 * want <= len(seg) <= 2.2 * want):
-        _diag("g_clause_patch", reason="segment_duration", got_ms=int(len(seg) * 1000 / sr), want_ms=int(want * 1000 / sr))
+
+    def attempt(n):
+        """One try at generating the replacement and cutting it out. Returns the
+        segment, or a reason string. 131: the model is stochastic — a take that
+        splits or cuts badly is a BAD TAKE, not a reason to rebuild the part."""
+        status(f"گوگل: {faDigits(j1 - j0)} جمله را همراه جمله‌های کناری‌اش دوباره می‌سازد…"
+               if n == 0 else f"برشِ جمله جا نیفتاد؛ برداشت دوباره ({faDigits(n + 1)}/۳)…")
+        np_, nsr_ = cloud_pcm(gen_text, {**cfg, "_no_audit": True}, status)
+        gcl_ = _g_clauses(gen_text)
+        if len(gcl_) != want_pieces:
+            return None, f"gen_clauses_{len(gcl_)}_vs_{want_pieces}"
+        gcuts_ = _g_bounds(np_, nsr_, gcl_, status, lang, cfg, gen_text)
+        if gcuts_ is None:
+            return None, "new_piece_boundaries_unfound"
+        gb_ = [0] + gcuts_ + [len(np_)]
+        seg_ = np_[gb_[k0]:gb_[k1]]
+        if nsr_ != sr:
+            seg_ = _resample(seg_, nsr_, sr)
+        if not (0.45 * want <= len(seg_) <= 2.2 * want):
+            return None, f"segment_duration_{int(len(seg_) * 1000 / sr)}ms_want_{int(want * 1000 / sr)}ms"
+        return seg_, None
+
+    seg, why = None, None
+    for n in range(3):
+        seg, why = attempt(n)
+        if seg is not None:
+            if n:
+                _diag("g_clause_patch", recovered_on_attempt=n + 1)
+            break
+        _diag("g_clause_patch", attempt=n + 1, reason=why)
+    if seg is None:
+        _diag("g_clause_patch", reason=f"gave_up_after_3:{why}")
         return 0
     # loudness: the new clause sits at the part's level
     old_rms = float(np.sqrt(np.mean(pcm.astype(np.float64) ** 2))) or 1.0
@@ -4033,7 +4118,17 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
     if abs(g - 1.0) > 0.05:
         seg = np.clip(seg.astype(np.float32) * g, -32768, 32767).astype(np.int16)
     seg = _sweep_stubs(seg, sr)
-    parts = [x for x in (pcm[:b[i0]], seg, pcm[b[i1]:]) if len(x)]
+    head_end, tail_start = b[i0], b[i1]
+    # 130: pin the seam to the WORDS, not to a silence that may fall on the
+    # wrong side of one. The head must end before the first word of clause i0;
+    # the tail must start at the first word of clause i1. Without this, a cut
+    # placed after that word leaves it in BOTH pieces — heard as a duplicated
+    # word at the join, in two different voices when the voice changed.
+    head_end = _word_edge(oc, old_words, i0, pcm, sr, "start", head_end)
+    tail_start = _word_edge(oc, old_words, i1, pcm, sr, "start", tail_start)
+    if tail_start <= head_end:
+        tail_start = max(head_end + 1, b[i1])
+    parts = [x for x in (pcm[:head_end], seg, pcm[tail_start:]) if len(x)]
     out = _crossfade_join(parts, sr, ms=12)
     entry.update({"items": [{"kind": "t", "text": new_text.strip(), "span": (0, len(new_text.strip())), "pcm": out}],
                   "text": new_text.strip()})
@@ -4159,19 +4254,12 @@ def fish_words(pcm, sr, status, lang=None, text=None):
 
 
 def transcribe_words(pcm, sr, status, lang=None, text=None, cfg=None):
-    """One door for every transcript in the app. Which service is used is the
-    user's setting (f_asr): fish / google / fish then google. Google parts
-    always use Google — transcribing Google audio with Fish is the same waste
-    in reverse. (127)"""
-    cfg = cfg or {}
-    mode = (cfg.get("f_asr") or "fish") if cfg.get("engine") == "fish" else "google"
-    if mode == "fish":
-        return fish_words(pcm, sr, status, lang, text)
-    if mode == "fish_google":
-        w = fish_words(pcm, sr, status, lang, text)
-        if w:
-            return w
-        status("رونویسی با Fish Audio نشد؛ با گوگل امتحان می‌کنم…")
+    """One door for every transcript in the app — ALWAYS Google.
+    130: Fish Audio's transcribe-1 is a PAID endpoint; on the free tier it
+    answers 402 and the app then fell back to the crude silence heuristic for
+    every boundary, which is what made surgery on Fish parts unreliable. The
+    transcript is the backbone of clause surgery, the completeness audit and
+    captions, so it uses the one service that is dependable here."""
     return google_words(pcm, sr, status, lang, text)
 
 
