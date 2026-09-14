@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist
 ======================================================================
-This zip is the COMPLETE application source as of update 126.
+This zip is the COMPLETE application source as of update 127.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,40 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 127 (on top of 126) — from two field logs
+  A) THE PART THAT LOST A SENTENCE (owner's log). A 565-char part had its 5th
+     sentence dropped by Gemini three times; the app retried twice and then
+     shipped the LAST take — the worst of the three (0 of 27 words matched,
+     against 6 and 5) — with a warning that flashed once in the status line.
+     Now:
+       · every take is SCORED (missing clauses, then coverage) and the BEST is
+         kept, never merely the last;
+       · a dropped clause is REPAIRED rather than re-rolled: the clause is
+         regenerated with its neighbours for prosody, cut at its boundaries and
+         spliced into the gap the transcript shows (cheaper than a retake and it
+         converges); verified by re-transcribing;
+       · if the same clause fails twice, re-rolling stops — it is not luck;
+       · a hole that survives is reported DURABLY: a red «ناقص» badge on the
+         part, the sentence quoted in its tooltip, cleared only by a successful
+         regeneration, plus a summary line after generation.
+     Both cloud engines share this logic (_complete_take).
+  B) THE 22 KEYS EATEN BY A 1,500-CHAR JOB (friend's log). 66 Google calls in
+     one session: 11 of speech and 55 of TRANSCRIPTION — including transcribing
+     every Fish Audio take with Google. Now:
+       · transcription is cached on hash(WHOLE audio) + hash(EXACT text) +
+         language + transcriber, so one edit of one diacritic, space or tag is a
+         miss and a stale transcript is impossible — and the same take is never
+         transcribed twice (the trimmed take's words are derived by shifting
+         timestamps);
+       · Fish Audio parts transcribe with FISH's own ASR by default. New
+         dropdown «رونویسی صدا با» beside the Fish model selector AND in each
+         part's settings, each option pinnable as default: Fish Audio / Fish
+         then Google / Google. Google parts always use Google.
+       · when the key rotation runs low, a DISMISSIBLE dialog explains that
+         transcription spends the same quota and offers the keys manager.
+     Transcription itself is never optional — correctness is not a setting.
+  Also fixed: _silence_runs crashed on an empty slice (latent; any short clip).
 
 WHAT CHANGED IN 126 (on top of 125) — activation gate
   NEW FILES to add to the repo: licensing.py (root) and ui/gate.html.
@@ -551,6 +585,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۲۶»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۲۷»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

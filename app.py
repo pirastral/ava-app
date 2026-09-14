@@ -433,6 +433,20 @@ class Api:
             pass
         return {"ok": True}
 
+    # ---- 127 ----------------------------------------------------------------
+    def take_report(self):
+        """Sentences that are still missing from the last generation, if any."""
+        import engines
+        out = engines.take_report()
+        if Api._lang == "en":
+            out = [{**h, "text": h.get("text", "")} for h in out]
+        return {"ok": True, "holes": out}
+
+    def quota_headroom(self):
+        import engines
+        u, t = engines.google_quota_headroom()
+        return {"ok": True, "usable": u, "total": t}
+
     def music_presets(self):
         import engines
         return {"ok": True, "presets": list(engines.MUSIC_PRESETS.keys())}

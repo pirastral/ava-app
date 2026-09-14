@@ -71,8 +71,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 126
-BUILD_FA = "\u06f1\u06f2\u06f6"
+BUILD = 127
+BUILD_FA = "\u06f1\u06f2\u06f7"
 
 
 def _diag(tag, **kv):
@@ -1766,6 +1766,8 @@ def _silence_runs(pcm, sr, min_ms=70):
     """All true-silence runs in the utterance: (start, end, center) of every
     stretch where the 20 ms envelope stays under max(4% body, 60) for at
     least min_ms. With «.» joins these are the model's own sentence stops."""
+    if pcm is None or len(pcm) < max(2, sr // 50):    # 127: an empty or tiny slice is not a crash
+        return []
     body = float(np.sqrt(np.mean(pcm.astype(np.float64) ** 2))) or 1.0
     thr = max(60.0, 0.04 * body)
     w = max(1, sr // 50)
@@ -1948,6 +1950,7 @@ def _slices_sane(cuts, total):
 
 def generate_gulp(payload, status):
     _require_license()
+    _G_INCOMPLETE.clear()
     """One gulp → clause-wise synthesis, stored per clause for surgical patching."""
     _job_start()
     text = payload["text"].strip()
@@ -2746,6 +2749,7 @@ def _cbx_patch_middle(entry, new_items, pre, suf, payload, status):
 
 def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
     _require_license()
+    _G_INCOMPLETE.clear()
     """Regenerate only the clauses that the edit/selection touched; every
     other clause's audio is reused bit-identical."""
     _job_start()
@@ -3073,6 +3077,14 @@ def google_keys_set(key_strings):
     # emptied list stays empty instead of quietly re-seeding from it
     save_key("gemini", keys[0]["key"] if keys else "")
     return google_keys_status()
+
+
+def google_quota_headroom():
+    """(usable, total) Google keys right now — the UI warns when it runs low. (127)"""
+    try:
+        return len(_google_usable_keys()), len(google_keys())
+    except Exception:
+        return (0, 0)
 
 
 def google_keys_status():
@@ -3574,16 +3586,16 @@ def _g_apply_pauses(pcm, sr, text, cuts, plan):
     return out
 
 
-def _g_completeness(text, words):
-    """The index of the first clause the recording clearly skipped, or None.
-    A transcript that covers less than 40 % of the expected words is not
-    credible (wrong language hint, noisy take) — then the audit abstains."""
+def _clause_coverage(text, words):
+    """[(matched, total)] per clause from ONE alignment of the whole text against
+    the transcript — the shared basis of the completeness audit and take scoring
+    (127). Returns None when the transcript is not credible (< 40 % coverage)."""
     import difflib
     cl = _g_clauses(text)
     ours, owner = [], []
     for k, (c, _) in enumerate(cl):
         ws = _text_words(c); ours += ws; owner += [k] * len(ws)
-    tw = [_norm_word(w) for w, _, _ in words]
+    tw = [_norm_word(w) for w, _, _ in (words or [])]
     if not ours or not tw:
         return None
     if len(tw) < 0.4 * len(ours):
@@ -3593,10 +3605,21 @@ def _g_completeness(text, words):
     matched = set()
     for a, b_, n in sm.get_matching_blocks():
         matched.update(range(a, a + n))
+    out = []
     for k in range(len(cl)):
         idx = [i for i in range(len(ours)) if owner[i] == k]
-        if len(idx) >= 3 and sum(1 for i in idx if i in matched) < 0.4 * len(idx):
-            _diag("g_completeness", clause=k, matched=sum(1 for i in idx if i in matched), of=len(idx))
+        out.append((sum(1 for i in idx if i in matched), len(idx)))
+    return out
+
+
+def _g_completeness(text, words):
+    """The index of the first clause the recording clearly skipped, or None."""
+    cov = _clause_coverage(text, words)
+    if cov is None:
+        return None
+    for k, (hit, tot) in enumerate(cov):
+        if tot >= 3 and hit < 0.4 * tot:
+            _diag("g_completeness", clause=k, matched=hit, of=tot)
             return k
     return None
 
@@ -3647,19 +3670,9 @@ def google_pcm(text, cfg, status):
         if pcm is None:
             pcm, sr = _google_call(chunk, cfg, status)
         lang = {"fa": "fa-IR", "en": "en-US", "de": "de-DE", "tr": "tr-TR", "fr": "fr-FR", "es": "es-ES"}.get(cfg.get("g_lang"))
-        # completeness (104): the model sometimes skips a sentence. The
-        # transcript we take for boundaries also tells us — retry the take.
-        words = google_words(pcm, sr, status, lang)
-        for attempt in range(2):
-            miss = _g_completeness(chunk, words) if words else None
-            if miss is None:
-                break
-            status(f"گوگل جمله‌ای را جا انداخت — برداشت دوباره ({attempt + 2}/3)…")
-            pcm, sr = _google_call(chunk, cfg, status)
-            words = google_words(pcm, sr, status, lang)
-        else:
-            if words and _g_completeness(chunk, words) is not None:
-                status("هشدار: یک جمله در این بخش درست خوانده نشد؛ بخش را دوباره بسازید یا متنش را ساده‌تر کنید.")
+        pcm, sr, words, hole = _complete_take(chunk, pcm, sr, cfg, status, lang, _google_call)
+        if hole:
+            _G_INCOMPLETE.append(hole)
         _diag("google_take", audio_s=round(len(pcm) / sr, 1), chars=len(chunk))
         waves.append(pcm)
         if ci < len(chunks):
@@ -3673,6 +3686,140 @@ def google_pcm(text, cfg, status):
         tail = " ".join(words[-18:])
     _G_LAST["tail"] = tail
     return np.concatenate(waves), sr
+
+
+# ---------------------------------------------------------------------------
+# 127 · Completeness: keep the BEST take, repair a dropped clause by surgery,
+# and never ship a hole in silence.
+#
+# FIELD (126): a part whose 5th sentence the model kept dropping was retried
+# twice and then shipped as the LAST take — which happened to be the worst of
+# the three (0 of 27 words, against 6 and 5 for the earlier ones) — with a
+# warning that flashed in the status line and was gone. Three changes:
+#   1. score every take and keep the best;
+#   2. when one clause is missing, regenerate THAT CLAUSE and splice it in,
+#      instead of re-rolling a whole part (cheaper, and it converges);
+#   3. if a hole survives, report it durably with the sentence quoted.
+# ---------------------------------------------------------------------------
+_G_INCOMPLETE = []          # holes found during the current generate call
+
+
+def take_report():
+    """Holes found since the last reset — the UI badges parts from this."""
+    return list(_G_INCOMPLETE)
+
+
+def _take_score(text, words):
+    """(missing clauses, -coverage) — lower is better. Same alignment the audit
+    uses, so a take that the audit calls complete always scores 0 missing."""
+    cov = _clause_coverage(text, words)
+    if cov is None:
+        return (99, 0.0)
+    missing = sum(1 for hit, tot in cov if tot >= 3 and hit < 0.4 * tot)
+    total = sum(tot for _, tot in cov) or 1
+    return (missing, -(sum(hit for hit, _ in cov) / total))
+
+
+def _complete_take(chunk, pcm, sr, cfg, status, lang, call):
+    """Return (pcm, sr, words, hole|None). `call(text, cfg, status)` makes a take."""
+    words = transcribe_words(pcm, sr, status, lang, chunk, cfg)
+    best = (_take_score(chunk, words), pcm, sr, words)
+    last_miss = None
+    for attempt in range(2):
+        miss = _g_completeness(chunk, words) if words else None
+        if miss is None:
+            return best[1], best[2], best[3], None
+        cl = _g_clauses(chunk)
+        # (2) repair: regenerate only the missing clause and splice it in
+        if 0 < miss < len(cl) and len(cl) > 1:
+            fixed = _repair_clause(chunk, miss, best[1], best[2], cfg, status, lang, call, best[3])
+            if fixed is not None:
+                pcm2, sr2 = fixed
+                w2 = transcribe_words(pcm2, sr2, status, lang, chunk, cfg)
+                sc2 = _take_score(chunk, w2)
+                if sc2 <= best[0]:
+                    best = (sc2, pcm2, sr2, w2)
+                if _g_completeness(chunk, w2) is None:
+                    _diag("take_repair", clause=miss, mode="spliced_ok")
+                    return pcm2, sr2, w2, None
+        # (1) otherwise a fresh take, and keep whichever is better
+        if miss == last_miss and attempt > 0:
+            break                                   # the same clause twice: re-rolling will not fix it
+        last_miss = miss
+        status(f"جملهٔ {faDigits(miss + 1)}اُم خوانده نشد — برداشت دوباره ({faDigits(attempt + 2)}/۳)…")
+        pcm2, sr2 = call(chunk, cfg, status)
+        w2 = transcribe_words(pcm2, sr2, status, lang, chunk, cfg)
+        sc2 = _take_score(chunk, w2)
+        if sc2 < best[0]:
+            best = (sc2, pcm2, sr2, w2)
+        words = w2
+    miss = _g_completeness(chunk, best[3]) if best[3] else None
+    hole = None
+    if miss is not None:
+        cl = _g_clauses(chunk)
+        sent = re.sub(r"\s+", " ", re.sub(r"\[[^\]]+\]", " ", cl[miss][0])).strip()
+        hole = {"clause": miss, "text": sent[:160]}
+        _diag("take_incomplete", clause=miss, kept_score=best[0][0])
+        status("هشدار: یک جمله در این بخش خوانده نشد: «" + sent[:60] + "…»")
+    return best[1], best[2], best[3], hole
+
+
+def _gap_point(chunk, idx, pcm, sr, words):
+    """Sample offset where a dropped clause belonged: just after the last word
+    the transcript matched from the clause before it. None when unknowable."""
+    if not words or idx <= 0:
+        return 0 if idx == 0 else None
+    import difflib
+    cl = _g_clauses(chunk)
+    prev = [_norm_word(w) for w in _text_words(cl[idx - 1][0])]
+    tw = [_norm_word(w) for w, _, _ in words]
+    if not prev or not tw:
+        return None
+    sm = difflib.SequenceMatcher(None, prev, tw, autojunk=False)
+    blocks = [b for b in sm.get_matching_blocks() if b.size]
+    if not blocks:
+        return None
+    last = blocks[-1]
+    end_word = min(len(words) - 1, last.b + last.size - 1)
+    at = int(words[end_word][2] * sr) + int(sr * 0.05)
+    return max(0, min(at, len(pcm)))
+
+
+def _repair_clause(chunk, idx, pcm, sr, cfg, status, lang, call, take_words=None):
+    """Generate the missing clause alone (with its neighbours for prosody) and
+    splice it into the gap the transcript shows. Returns (pcm, sr) or None."""
+    try:
+        cl = _g_clauses(chunk)
+        status("جملهٔ جاافتاده را جداگانه می‌سازم و سرِ جایش می‌گذارم…")
+        lo, hi = max(0, idx - 1), min(len(cl), idx + 2)
+        ctx = " ".join(c[0].strip() for c in cl[lo:hi])
+        piece, psr = call(ctx, {**cfg, "g_lead_in": "", "f_continuity": False, "g_continuity": False}, status)
+        pw = transcribe_words(piece, psr, status, lang, ctx, cfg)
+        cuts = (_g_bounds(piece, psr, cl[lo:hi], status, lang, cfg, ctx, pw) if hi - lo > 1 else []) or []
+        k = idx - lo
+        a = cuts[k - 1] if k > 0 and len(cuts) >= k else 0
+        b = cuts[k] if len(cuts) > k else len(piece)
+        clip = piece[a:b]
+        if len(clip) < psr // 4:
+            return None
+        # Where the gap sits in the original: right after the last word of the
+        # clause before it, taken from the take's OWN transcript (never a new
+        # one — the take is missing text, so aligning it afresh is unreliable).
+        at = _gap_point(chunk, idx, pcm, sr, take_words)
+        if at is None:
+            return None
+        if psr != sr:
+            clip = _resample(clip, psr, sr)
+        if clip is None or len(clip) == 0 or len(pcm) == 0:
+            return None
+        gap = np.zeros(int(sr * 0.12), dtype=np.int16)
+        at = max(0, min(int(at), len(pcm)))
+        out = np.concatenate([p for p in (pcm[:at], gap, clip, gap, pcm[at:]) if len(p)])
+        _diag("take_repair", clause=idx, added_ms=int(len(clip) * 1000 / sr), at_ms=int(at * 1000 / sr))
+        return out, sr
+    except Exception as e:
+        _diag("take_repair_err", msg=str(e)[:90])
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -3933,12 +4080,89 @@ def _find_words(obj):
     return None
 
 
-def google_words(pcm, sr, status, lang=None):
-    """[(word, start_s, end_s)] for a recording, or None. Cached per recording."""
+def _words_key(pcm, text, lang, who):
+    """The cache identity of a transcript: the WHOLE recording, the EXACT text
+    it should contain, the language and the transcriber. Any change in any of
+    them — one diacritic, one space, one tag — is a different key, so a cached
+    transcript can never describe audio or text that has moved on. (127)"""
+    import hashlib
+    h = hashlib.sha1()
+    h.update(pcm.tobytes())                      # the whole take, not a prefix
+    h.update(b"\x00" + (text or "").encode("utf-8"))
+    h.update(b"\x00" + (lang or "").encode() + b"\x00" + (who or "").encode())
+    return h.hexdigest()
+
+
+def _words_cache_put(key, words):
+    _G_WORDS_CACHE[key] = words
+    if len(_G_WORDS_CACHE) > 240:                # bounded; oldest out
+        for k in list(_G_WORDS_CACHE)[:40]:
+            _G_WORDS_CACHE.pop(k, None)
+
+
+def shift_words(words, seconds):
+    """Word list of a trimmed take, derived from the full take's transcript —
+    so trimming never costs a second transcription. Words that fall before the
+    cut are dropped. (127)"""
+    if not words:
+        return words
+    out = [(w, s - seconds, e - seconds) for w, s, e in words if e - seconds > 0]
+    return [(w, max(0.0, s), e) for w, s, e in out]
+
+
+def fish_words(pcm, sr, status, lang=None, text=None):
+    """Transcript from Fish Audio's own ASR (transcribe-1), as [(word, s, e)].
+    Fish returns SEGMENTS, not words: each segment's text is spread evenly over
+    its span. Good enough for the completeness audit; boundaries derived from
+    it are marked coarse so callers can fall back. (127)"""
+    key = _words_key(pcm, text, lang, "fish")
+    if key in _G_WORDS_CACHE:
+        return _G_WORDS_CACHE[key]
+    try:
+        status("Fish Audio: رونویسی صدا…")
+        j = fish_asr(pcm, sr, {"fa-IR": "fa", "en-US": "en"}.get(lang or "", None))
+    except Exception as e:
+        _diag("fish_words_err", msg=str(e)[:90])
+        return None
+    out = []
+    for seg in (j.get("segments") or []):
+        txt = (seg.get("text") or "").strip()
+        st, en = float(seg.get("start", 0) or 0), float(seg.get("end", 0) or 0)
+        ws = txt.split()
+        if not ws or en <= st:
+            continue
+        step = (en - st) / len(ws)
+        for i, w in enumerate(ws):
+            out.append((w, st + i * step, st + (i + 1) * step))
+    _diag("fish_words", n=len(out), segments=len(j.get("segments") or []), audio_s=round(len(pcm) / sr, 1))
+    _words_cache_put(key, out or None)
+    return out or None
+
+
+def transcribe_words(pcm, sr, status, lang=None, text=None, cfg=None):
+    """One door for every transcript in the app. Which service is used is the
+    user's setting (f_asr): fish / google / fish then google. Google parts
+    always use Google — transcribing Google audio with Fish is the same waste
+    in reverse. (127)"""
+    cfg = cfg or {}
+    mode = (cfg.get("f_asr") or "fish") if cfg.get("engine") == "fish" else "google"
+    if mode == "fish":
+        return fish_words(pcm, sr, status, lang, text)
+    if mode == "fish_google":
+        w = fish_words(pcm, sr, status, lang, text)
+        if w:
+            return w
+        status("رونویسی با Fish Audio نشد؛ با گوگل امتحان می‌کنم…")
+    return google_words(pcm, sr, status, lang, text)
+
+
+def google_words(pcm, sr, status, lang=None, text=None):
+    """[(word, start_s, end_s)] for a recording, or None. Cached per recording
+    AND per text (127) so an edit can never meet a stale transcript."""
     if not _G_WORDS_ON["on"] or not _google_usable_keys():
         return None
-    import hashlib, base64, io
-    key = hashlib.sha1(pcm.tobytes()[:200000] + str(len(pcm)).encode()).hexdigest()
+    import base64, io
+    key = _words_key(pcm, text, lang, "google")
     if key in _G_WORDS_CACHE:
         return _G_WORDS_CACHE[key]
     p = _resample(pcm, sr, 16000) if sr != 16000 else pcm
@@ -3954,7 +4178,7 @@ def google_words(pcm, sr, status, lang=None):
         data = google_rotate(lambda k: _google_post(url, body, k, timeout=120), status, "رونویسی")
         words = _find_words(data)
         _diag("google_words", n=len(words or []), audio_s=round(len(pcm) / sr, 1))
-        _G_WORDS_CACHE[key] = words
+        _words_cache_put(key, words)
         return words
     except Cancelled:
         raise
@@ -4001,7 +4225,8 @@ def _g_boundaries_words(pcm, sr, clauses, words):
         # silence there do we fall back to the widest transcript gap.
         a, b = int(words[j][2] * sr), int(words[j2][1] * sr)
         if b - a > sr * 0.05:
-            runs = _silence_runs(pcm[a:b], sr, min_ms=70)
+            a, b = max(0, min(int(a), len(pcm))), max(0, min(int(b), len(pcm)))
+            runs = _silence_runs(pcm[a:b], sr, min_ms=70) if b > a else []
             if runs:
                 r = max(runs, key=lambda r: r[1] - r[0])
                 cuts.append(a + r[2]); continue
@@ -4017,12 +4242,14 @@ def _g_boundaries_words(pcm, sr, clauses, words):
     return [_zc_snap(pcm, c, sr) for c in cuts]
 
 
-def _g_bounds(pcm, sr, clauses, status, lang=None):
+def _g_bounds(pcm, sr, clauses, status, lang=None, cfg=None, text=None, words=None):
     """Word timestamps first (exact, language-independent); the silence
-    heuristic when transcription is unavailable or the alignment is thin."""
+    heuristic when transcription is unavailable or the alignment is thin.
+    127: accepts an already-made transcript so a take is never transcribed twice."""
     if len(clauses) <= 1:
         return []
-    words = google_words(pcm, sr, status, lang)
+    if words is None:
+        words = transcribe_words(pcm, sr, status, lang, text, cfg)
     if words:
         cuts = _g_boundaries_words(pcm, sr, clauses, words)
         if cuts is not None:
@@ -4973,7 +5200,7 @@ def fish_pcm(text, cfg, status):
             if lead:
                 full, sr = _fish_call(lead + "\n" + text, cfg, status)
                 cl = [(lead, (0, len(lead)))] + [(c, sp) for c, sp in _g_clauses(text)]
-                cuts = _g_bounds(full, sr, cl, status, lang) if len(cl) > 1 else None
+                cuts = _g_bounds(full, sr, cl, status, lang, cfg, lead + "\n" + text) if len(cl) > 1 else None
                 if cuts:
                     cand = full[cuts[0]:]
                     spoken = _g_speech_len(text) / 11.0 * sr
@@ -4991,14 +5218,9 @@ def fish_pcm(text, cfg, status):
             if attempt == 2:
                 raise RuntimeError(e.msg)
             time.sleep(2.0 * (attempt + 1))
-    words = google_words(pcm, sr, status, lang)
-    for attempt in range(2):
-        miss = _g_completeness(text, words) if words else None
-        if miss is None:
-            break
-        status(f"Fish Audio جمله‌ای را جا انداخت — برداشت دوباره ({attempt + 2}/3)…")
-        pcm, sr = _fish_call(text, cfg, status)
-        words = google_words(pcm, sr, status, lang)
+    pcm, sr, words, hole = _complete_take(text, pcm, sr, cfg, status, lang, _fish_call)
+    if hole:
+        _G_INCOMPLETE.append(hole)
     cl = _g_clauses(text)
     tail = cl[-1][0].strip() if cl else ""
     tail = re.sub(r"\s+", " ", re.sub(r"\[[^\]]+\]", " ", tail)).strip()
