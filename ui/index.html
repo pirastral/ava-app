@@ -1271,7 +1271,7 @@
     const flush = () => { if(buf){ parts.push(buf); buf = ""; } };
     for(let piece of text.trim().split(/\s*\n\s*|(?<=[\.\!\?؟؛…])\s+/)){
       if(!piece) continue;
-      if((buf + " " + piece).trim().length <= maxLen){ buf = (buf + " " + piece).trim(); continue; }
+      if((buf + "\n" + piece).trim().length <= maxLen){ buf = (buf ? buf + "\n" + piece : piece).trim(); continue; }
       flush();
       while(piece.length > maxLen){
         let cut = piece.lastIndexOf("،", maxLen);
@@ -1615,7 +1615,7 @@
       div.className = "gulp"; div.dataset.name = g.name;
       div.innerHTML = `
         <div class="ghead">
-          <span class="gtitle">بخش ${faNum(idx+1)} از ${faNum(gulps.length)} — فایل ${g.name}</span>${g.hole ? `<span class="ghole" title="این جمله در صدای این بخش نیست: «${esc(g.hole)}»"><svg class="ic"><use href="#i-triangle-alert"/></svg>ناقص</span>` : `<span style="margin-inline-end:auto"></span>`}
+          <span class="gtitle">بخش ${faNum(idx+1)} از ${faNum(gulps.length)} — فایل ${g.name}</span>${g.hole ? `<span class="ghole" title="${g.hole.trim() ? "این جمله در صدای این بخش نیست: «" + esc(g.hole) + "»" : "بخشی از متن در صدا نیامد؛ این بخش را دوباره بسازید یا موتورش را عوض کنید."}"><svg class="ic"><use href="#i-triangle-alert"/></svg>ناقص</span>` : `<span style="margin-inline-end:auto"></span>`}
           <label class="toggle" title="این بخش را به یک سکوتِ خالص با طول دلخواه تبدیل می‌کند"><input type="checkbox" class="g-silence" ${g.silence ? "checked" : ""}> سکوت</label>
           <label class="toggle" title="به جای متن، یک فایل صوتی از دستگاه در این بخش می‌نشیند"><input type="checkbox" class="g-file" ${g.file ? "checked" : ""}> افزودن فایل</label>
           <span class="ltr">
@@ -1738,7 +1738,7 @@
         say("بخش " + g.name + " تکثیر شد → بخش " + copy.name + (copy.id ? "" : " (صدایش را باید بسازید)"), "ok");
       };
       const vs = div.querySelector(".gvoice");
-      ta.value = reflowSentences(g.text);
+      ta.value = g.text;   // 136: never reflow what the user typed
       vs.value = g.voice; enhanceSelect(vs);
       const rowDD = div.querySelector(".gp-google");
       const rowTagMenu = () => {

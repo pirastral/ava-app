@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist
 ======================================================================
-This zip is the COMPLETE application source as of update 134.
+This zip is the COMPLETE application source as of update 136.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,62 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 136 (on top of 135) — the rest of the two-hour field report
+  A) THE VOICE BLEED (tests 7, 8, 9, 10, 15). After every surgery the part's
+     stored voice was REPLACED by the voice used for that one sentence. So once
+     a sentence had been made in Zephyr, the part's base voice WAS Zephyr, and
+     every line dragged in for repair afterwards inherited it — compounding with
+     each edit. A surgical take no longer becomes the part's identity; only a
+     full rebuild changes the base voice.
+  B) AN EDIT COULD DELETE AUDIO BEFORE THE EDITED SENTENCE. The anchor had no
+     validation. Every replacement span is now PROVEN first, positionally: the
+     new text is aligned to the transcript, so each recorded word knows which
+     LINE it belongs to; a word inside the span belonging to a line that is NOT
+     being replaced is an intruder, and the span is refused (clause cuts are
+     tried, then surgery gives up rather than destroy audio). Identity-based
+     counting was rejected — it sees phantom intruders in repetitive prose.
+  C) FAR TOO MANY LINES DRAGGED IN. "Uncovered" used a 50 % coverage bar that
+     imperfect Persian ASR trips on healthy lines. Now: a line counts as having
+     no audio only at ≤25 % (and at least 4 words), or when NOTHING matched.
+  D) TONE CONTINUITY BETWEEN PARTS (test 3). A surgical take overwrote the
+     document's continuity tail, so the NEXT part's lead-in became a fragment of
+     a sentence from the middle of an edited part. A surgical piece now neither
+     borrows the document lead-in nor becomes it.
+  E) A FULL REBUILD LOSING ITS LAST WORDS (test: «…از قرن چهاردهم می‌گذارد؟»).
+     The audit looked for a skipped CLAUSE; a take cut short at the very end
+     loses only part of the last one and passed. The tail is now checked on its
+     own terms (≥75 % of the last clause must be there).
+  F) FISH ARTIFACTS AND BLIPPY STARTS (Fish tests 3, 10; test 6). The stub
+     sweeper ran only on the local surgery path — the cloud splice never used
+     it, so a clipped half-word left at a cut edge stayed in. Both edges of every
+     cloud splice are swept now.
+  G) FISH MARKED "INCOMPLETE" ON A FIRST GENERATION. The audit judges Fish audio
+     by a GOOGLE transcript; Fish's Persian is weak enough that the transcript
+     disagrees with good audio. Cross-engine transcripts are now treated as the
+     weaker witness they are (abstain below 65 % coverage instead of 40 %).
+  H) THE PART EDITOR UNDID YOUR LINE BREAKS (Fish editor report). It re-flowed
+     the text on every render, so an Enter was erased as soon as the list
+     redrew. The editor now shows the text exactly as typed.
+
+WHAT CHANGED IN 135 (on top of 134) — from the field report
+  1) YOUR LINE BREAKS ARE KEPT. When sentences were grouped into parts they were
+     glued back together with a SPACE, so any line WITHOUT terminal punctuation —
+     a title, a heading, a line broken on purpose — was swallowed by the next and
+     could never be reached by surgery («پیش‌گفتار» + the next two lines became
+     one). Parts now keep every sentence on its own line. This was upstream of
+     several of the surgery complaints: the units were not what the user saw.
+  2) A CUT MUST PROVE ITSELF. Deleting the LAST line removed «پیش‌گفتار» — the
+     FIRST words — because a word alignment can place an orphan run anywhere when
+     words repeat. A stretch is now cut only when at least 70 % of its words are
+     among the words the edit actually removed; otherwise nothing is cut and the
+     span is regenerated instead. Half-cuts are never made.
+  3) VOICE MAP HYGIENE. A full rebuild now FORGETS every remembered line voice and
+     records the one voice it just used, and stale entries for lines that no
+     longer exist are pruned. Field: after rebuilding a part in Charon, a later
+     surgery dragged a line in and gave it the Zephyr it remembered from before.
+  4) The «ناقص» badge always carries an explanation, even when the missing
+     sentence could not be quoted.
 
 WHAT CHANGED IN 134 (on top of 133) — coverage-driven surgery, per-line voices
   ONE PRIMITIVE. The new text is aligned once against the recording's transcript
@@ -737,6 +793,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۳۴»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۳۶»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

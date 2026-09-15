@@ -71,8 +71,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 134
-BUILD_FA = "\u06f1\u06f3\u06f4"
+BUILD = 136
+BUILD_FA = "\u06f1\u06f3\u06f6"
 
 
 def _diag(tag, **kv):
@@ -2783,12 +2783,21 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
                 status("صدا/تنظیمات این بخش عوض شده؛ فقط جمله‌های انتخاب‌شده با صدای تازه ساخته می‌شوند.")
             done = _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status)
             if done:
-                entry["payload"] = {k: cfg[k] for k in cfg if k.startswith("g_") or k.startswith("f_")}
+                # 136: keep the part's BASE voice. A surgical take must not
+                # become the part's identity, or the next repair inherits it.
+                base = dict(entry.get("payload") or {})
+                fresh = {k: cfg[k] for k in cfg if (k.startswith("g_") or k.startswith("f_"))
+                         and k not in ("g_voice", "g_preset", "g_age", "g_state",
+                                       "f_voice", "f_preset", "f_age", "f_state")}
+                base.update(fresh)
+                entry["payload"] = base
                 _ensure_valid(entry, "ویرایش", status)
                 return pcm_to_mp3(_assemble(entry), entry["sr"]), done, "clauses"
         cfg = {**cfg, "g_lead_in": entry.get("lead_in", "")}   # pinned at generation time
         status("جراحیِ جمله ممکن نشد؛ کل این بخش دوباره ساخته می‌شود.")
         pcm, sr = cloud_pcm(new_text, cfg, status)
+        entry["voices"] = {}                       # 135: one voice now — forget every remembered line
+        _remember_line_voices(entry, new_text, cfg)
         items = _clause_split(new_text, eng)
         items[0]["pcm"] = pcm
         entry.update({"sr": sr, "items": items, "text": new_text, "engine": eng,
@@ -3572,6 +3581,8 @@ def _g_lead_in(text, cfg):
     caller pinned one (regeneration) or continuity is off."""
     if cfg.get("g_continuity", True) is False or cfg.get("f_continuity", True) is False:
         return ""
+    if cfg.get("_no_audit"):              # 136: surgery carries its own context
+        return ""
     if "g_lead_in" in cfg:
         return (cfg.get("g_lead_in") or "").strip()
     return _G_LAST["tail"]
@@ -3623,7 +3634,7 @@ def _g_apply_pauses(pcm, sr, text, cuts, plan):
     return out
 
 
-def _clause_coverage(text, words):
+def _clause_coverage(text, words, strict=True):
     """[(matched, total)] per clause from ONE alignment of the whole text against
     the transcript — the shared basis of the completeness audit and take scoring
     (127). Returns None when the transcript is not credible (< 40 % coverage)."""
@@ -3635,8 +3646,9 @@ def _clause_coverage(text, words):
     tw = [_norm_word(w) for w, _, _ in (words or [])]
     if not ours or not tw:
         return None
-    if len(tw) < 0.4 * len(ours):
-        _diag("g_completeness", mode="abstain", transcript=len(tw), expected=len(ours))
+    floor = 0.4 if strict else 0.65      # 136: a cross-engine transcript is a weaker witness
+    if len(tw) < floor * len(ours):
+        _diag("g_completeness", mode="abstain", transcript=len(tw), expected=len(ours), floor=floor)
         return None
     sm = difflib.SequenceMatcher(None, ours, tw, autojunk=False)
     matched = set()
@@ -3649,15 +3661,22 @@ def _clause_coverage(text, words):
     return out
 
 
-def _g_completeness(text, words):
+def _g_completeness(text, words, strict=True):
     """The index of the first clause the recording clearly skipped, or None."""
-    cov = _clause_coverage(text, words)
+    cov = _clause_coverage(text, words, strict)
     if cov is None:
         return None
     for k, (hit, tot) in enumerate(cov):
         if tot >= 3 and hit < 0.4 * tot:
             _diag("g_completeness", clause=k, matched=hit, of=tot)
             return k
+    # 136: a take cut short at the very END loses only part of the last clause and
+    # passed the per-clause test. The tail is checked on its own terms.
+    if cov:
+        hit, tot = cov[-1]
+        if tot >= 4 and hit < 0.75 * tot:
+            _diag("g_completeness", clause=len(cov) - 1, matched=hit, of=tot, mode="tail")
+            return len(cov) - 1
     return None
 
 
@@ -3717,7 +3736,8 @@ def google_pcm(text, cfg, status):
         waves.append(pcm)
         if ci < len(chunks):
             waves.append(np.zeros(int(sr * 0.25), dtype=np.int16))
-    _G_LAST["tail"] = _continuity_tail(text)
+    if not cfg.get("_no_audit"):          # 136: a surgical piece is not a part
+        _G_LAST["tail"] = _continuity_tail(text)
     return np.concatenate(waves), sr
 
 
@@ -3756,10 +3776,11 @@ def _take_score(text, words):
 def _complete_take(chunk, pcm, sr, cfg, status, lang, call):
     """Return (pcm, sr, words, hole|None). `call(text, cfg, status)` makes a take."""
     words = transcribe_words(pcm, sr, status, lang, chunk, cfg)
+    strict = cfg.get("engine") != "fish"      # 136: Google transcribing Fish audio is a weak witness
     best = (_take_score(chunk, words), pcm, sr, words)
     last_miss = None
     for attempt in range(2):
-        miss = _g_completeness(chunk, words) if words else None
+        miss = _g_completeness(chunk, words, strict) if words else None
         if miss is None:
             return best[1], best[2], best[3], None
         cl = _g_clauses(chunk)
@@ -3772,7 +3793,7 @@ def _complete_take(chunk, pcm, sr, cfg, status, lang, call):
                 sc2 = _take_score(chunk, w2)
                 if sc2 <= best[0]:
                     best = (sc2, pcm2, sr2, w2)
-                if _g_completeness(chunk, w2) is None:
+                if _g_completeness(chunk, w2, strict) is None:
                     _diag("take_repair", clause=miss, mode="spliced_ok")
                     return pcm2, sr2, w2, None
         # (1) otherwise a fresh take, and keep whichever is better
@@ -3786,7 +3807,7 @@ def _complete_take(chunk, pcm, sr, cfg, status, lang, call):
         if sc2 < best[0]:
             best = (sc2, pcm2, sr2, w2)
         words = w2
-    miss = _g_completeness(chunk, best[3]) if best[3] else None
+    miss = _g_completeness(chunk, best[3], strict) if best[3] else None
     hole = None
     if miss is not None:
         cl = _g_clauses(chunk)
@@ -3976,6 +3997,51 @@ def _g_boundaries(pcm, sr, clauses):
     return [_zc_snap(pcm, r[2], sr) for r in chosen]
 
 
+def _replacement_is_provable(words, pcm, sr, head_end, tail_start, old_text, new_text, j0, j1, nc):
+    """Would replacing [head_end, tail_start) destroy audio that must survive?
+
+    Positional, not word-identity based: align the NEW text against the
+    transcript once, so every recorded word knows which LINE of the new text it
+    belongs to. A recorded word inside the span whose line is NOT being replaced
+    is an intruder — the anchor has landed in the wrong place and good audio
+    would be silently deleted (136: editing one sentence deleted two sentences
+    before it). Counting by word identity instead would see phantom intruders in
+    repetitive prose, where every line shares most of its words.
+    """
+    if not words or tail_start < head_end:
+        return False
+    if tail_start == head_end:
+        return True                                   # pure insertion: nothing is replaced
+    import difflib
+    ours, owner = [], []
+    for k, (c, _) in enumerate(nc):
+        ws = _text_words(c); ours += ws; owner += [k] * len(ws)
+    tw = [_norm_word(w) for w, _, _ in words]
+    if not ours or not tw:
+        return True
+    sm = difflib.SequenceMatcher(None, ours, tw, autojunk=False)
+    t_line = {}
+    for a, b, n in sm.get_matching_blocks():
+        for i in range(n):
+            t_line[b + i] = owner[a + i]
+    intruders = judged = 0
+    for idx, (w, st, en) in enumerate(words):
+        if not (st * sr >= head_end - sr * 0.15 and en * sr <= tail_start + sr * 0.15):
+            continue
+        line = t_line.get(idx)
+        if line is None:
+            continue                                  # unmatched: the old wording or ASR noise
+        judged += 1
+        if not (j0 <= line < j1):
+            intruders += 1
+    if judged < 3:
+        return True                                   # not enough evidence to condemn the span
+    bad = intruders > 0.25 * judged
+    if bad:
+        _diag("g_span_check", judged=judged, intruders=intruders)
+    return not bad
+
+
 def _anchor_edges(words, head_text, tail_text, pcm, sr, fb_head, fb_tail):
     """Where to cut the OLD recording, found by matching the text that is NOT
     being replaced (132).
@@ -4018,7 +4084,9 @@ def _anchor_edges(words, head_text, tail_text, pcm, sr, fb_head, fb_tail):
 
     head_end = max(0, min(int(head_end), len(pcm)))
     tail_start = max(0, min(int(tail_start), len(pcm)))
-    if tail_start <= head_end:                                   # nonsense: keep the clause-based cuts
+    if tail_start == head_end:
+        return head_end, tail_start                              # 136: insertion point
+    if tail_start < head_end:                                    # nonsense: keep the clause-based cuts
         _diag("g_anchor", mode="fallback", head_ms=int(head_end * 1000 / sr), tail_ms=int(tail_start * 1000 / sr))
         if fb_tail <= fb_head:                                   # 133: no usable clause map either
             return 0, len(pcm)                                   # → replace the whole recording, honestly
@@ -4028,35 +4096,56 @@ def _anchor_edges(words, head_text, tail_text, pcm, sr, fb_head, fb_tail):
     return head_end, tail_start
 
 
-def _word_edge(clauses, words, k, pcm, sr, which, fallback):
-    """Sample offset of the START of clause k, from the transcript: just before
-    that clause's first matched word. `fallback` when the alignment cannot say.
-    (130 — the seam of a splice must never sit inside a word.)"""
-    if not words or k <= 0 or k > len(clauses):
-        return fallback
-    import difflib
-    ours, owner = [], []
-    for i, (c, _) in enumerate(clauses):
-        ws = _text_words(c); ours += ws; owner += [i] * len(ws)
-    tw = [_norm_word(w) for w, _, _ in words]
-    if not ours or not tw:
-        return fallback
-    sm = difflib.SequenceMatcher(None, ours, tw, autojunk=False)
-    m2t = {}
-    for a, b_, n in sm.get_matching_blocks():
-        for i in range(n):
-            m2t[a + i] = b_ + i
-    idx = [i for i in range(len(ours)) if owner[i] == k and i in m2t]
-    if not idx:
-        return fallback
-    at = int(words[m2t[idx[0]]][1] * sr) - int(sr * 0.04)     # a hair before the word
-    at = max(0, min(at, len(pcm)))
-    # do not drift far from the silence-based cut: that would signal a bad match
-    if abs(at - fallback) > sr * 1.2:
-        _diag("g_seam", clause=k, words_ms=int(at * 1000 / sr), silence_ms=int(fallback * 1000 / sr), used="silence")
-        return fallback
-    _diag("g_seam", clause=k, words_ms=int(at * 1000 / sr), silence_ms=int(fallback * 1000 / sr), used="words")
-    return at
+def _deleted_words(old_text, new_text):
+    """The words the edit removed, as a multiset. (135)"""
+    import difflib, collections
+    a = [_norm_word(w) for w in _text_words(old_text)]
+    b = [_norm_word(w) for w in _text_words(new_text)]
+    sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
+    out = []
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag in ("delete", "replace"):
+            out += a[i1:i2]
+    return collections.Counter(out)
+
+
+def _cut_is_provable(words, run, removed):
+    """Is this stretch of the recording really the deleted text? At least 70 % of
+    its words must be among the words the edit removed. (135)"""
+    got = [_norm_word(w) for w, _, _ in words[run[0]:run[1]]]
+    if not got:
+        return False
+    pool = dict(removed)
+    hit = 0
+    for w in got:
+        if pool.get(w, 0) > 0:
+            pool[w] -= 1; hit += 1
+    ok = hit >= 0.7 * len(got)
+    if not ok:
+        _diag("g_cut_rejected", words=len(got), matched=hit)
+    return ok
+
+
+def _shift_words_past_cuts(words, cuts):
+    """The transcript of the recording AFTER stretches were cut out: the removed
+    words go, and everything later moves earlier by the time removed before it.
+    Saves a second transcription of the same take. (136)"""
+    if not cuts:
+        return words
+    spans = sorted(cuts)
+    removed = set()
+    for i, j in spans:
+        removed |= set(range(i, j))
+    out = []
+    for idx, (w, st, en) in enumerate(words):
+        if idx in removed:
+            continue
+        gone = 0.0
+        for i, j in spans:
+            if j <= idx:
+                gone += max(0.0, words[j - 1][2] - words[i][1])
+        out.append((w, max(0.0, st - gone), max(0.0, en - gone)))
+    return out
 
 
 def _cut_orphans(pcm, sr, words, orphans, status):
@@ -4178,6 +4267,11 @@ def _voice_of_line(entry, text_of_line, cfg):
 def _remember_line_voices(entry, text, cfg):
     """Record the voice each line now holds. (134)"""
     vm = dict(entry.get("voices") or {})
+    # 135: drop entries for lines that no longer exist, so a deleted or rewritten
+    # line can never hand its old voice to a new one that happens to look similar
+    live = {_norm_word(" ".join(_text_words(c)))[:80] for c, _ in _g_clauses(entry.get("text") or text)}
+    live |= {_norm_word(" ".join(_text_words(c)))[:80] for c, _ in _g_clauses(text)}
+    vm = {k: v for k, v in vm.items() if k in live}
     keep = {k: cfg[k] for k in ("g_voice", "g_preset", "g_age", "g_state",
                                 "f_voice", "f_preset", "f_age", "f_state") if k in cfg}
     for c, _ in _g_clauses(text):
@@ -4215,8 +4309,16 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
     cov, orph = _coverage(old_words_hint, new_text, old_text) if old_words_hint else (None, [])
     orphans = [r for r, ins in orph if ins is None]              # between lines → cut
     gutted = sorted({ins for r, ins in orph if ins is not None}) # inside a line → regenerate
-    uncovered = [k for k, (m, t) in enumerate(cov or []) if t >= 1 and m < 0.5 * t]
+    # 136: a line counts as "not in the audio" only on strong evidence — the
+    # transcript is an imperfect witness, especially in Persian. A short line
+    # cannot be judged at all, so it is left alone unless it is brand new
+    # (nothing matched) — which the transcript CAN say reliably.
+    uncovered = [k for k, (m, t) in enumerate(cov or [])
+                 if (t >= 4 and m < 0.25 * t) or (t >= 1 and m == 0)]
     uncovered = sorted(set(uncovered) | set(gutted))
+    if cov:
+        _diag("g_coverage", lines=len(cov), uncovered=len(uncovered), gutted=len(gutted),
+              worst=min((m / max(1, t) for m, t in cov), default=1))
     if hit or uncovered:
         need = sorted(set(hit) | set(uncovered))
         j0, j1 = need[0], need[-1] + 1
@@ -4232,17 +4334,30 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
     else:
         _diag("g_clause_patch", reason="no_change_no_selection" if not has_sel else "selection_matched_no_clause")
         return 0
-    if not hit and not uncovered and orphans and old_words_hint:
-        # pure deletion: cut the orphaned stretches out and keep everything else
-        cut = _cut_orphans(pcm, sr, old_words_hint, orphans, status)
+    if orphans and old_words_hint:
+        # 136: CUT FIRST. Whole-line deletions leave the audio by being removed,
+        # never by being re-spoken — and this happens even when the same edit
+        # also selected a line or added new ones. Every stretch must first PROVE
+        # it is the text the edit removed (135).
+        removed = _deleted_words(old_text, new_text)
+        provable = [r for r in orphans if _cut_is_provable(old_words_hint, r, removed)]
+        if provable and len(provable) != len(orphans):
+            _diag("g_clause_patch", note=f"unprovable_cuts_{len(orphans) - len(provable)}")
+        cut = _cut_orphans(pcm, sr, old_words_hint, provable, status) if provable else None
         if cut is not None:
+            removed_s = (len(pcm) - len(cut)) / sr
+            old_words_hint = _shift_words_past_cuts(old_words_hint, provable)
+            pcm = cut
             entry["items"][0]["pcm"] = cut
-            entry["items"][0]["text"] = new_text
-            entry["items"][0]["span"] = (0, len(new_text))
-            entry["text"] = new_text
-            _diag("g_clause_patch", deleted_runs=len(orphans), kept_ms=int(len(cut) * 1000 / sr))
-            status(f"{faDigits(len(orphans))} بخشِ حذف‌شده از صدا برداشته شد؛ چیزی دوباره ساخته نشد.")
-            return 1
+            _diag("g_clause_patch", deleted_runs=len(provable), removed_ms=int(removed_s * 1000))
+            status(f"{faDigits(len(provable))} بخشِ حذف‌شده از صدا برداشته شد.")
+            if not hit and not uncovered:                # nothing else to do: done, with no api call
+                entry["items"][0]["text"] = new_text
+                entry["items"][0]["span"] = (0, len(new_text))
+                entry["text"] = new_text
+                _remember_line_voices(entry, new_text, {**(entry.get("payload") or {}), **cfg})
+                return 1
+            # otherwise the surviving edit continues below, against the cut audio
     if j0 <= 0 and j1 >= len(nc):
         _diag("g_clause_patch", reason="whole_part_changed")
         return 0                                    # nothing before or after the edit to keep
@@ -4379,7 +4494,22 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
     head_text = new_text[:nc[j0][1][0]] if j0 < len(nc) else new_text
     tail_text = new_text[nc[j1 - 1][1][1]:] if j1 - 1 < len(nc) else ""
     head_end, tail_start = _anchor_edges(old_words, head_text, tail_text, pcm, sr, b[i0], b[i1])
-    parts = [x for x in (pcm[:head_end], seg, pcm[tail_start:]) if len(x)]
+    # 136: prove the stretch being replaced really is the old version of these
+    # clauses. If the words inside it belong to text that is NOT being replaced,
+    # the anchor has landed in the wrong place and would silently delete good
+    # audio — fall back to the clause cuts, and if those are no better, give up.
+    if not _replacement_is_provable(old_words, pcm, sr, head_end, tail_start, old_text, new_text, j0, j1, nc):
+        _diag("g_clause_patch", note="anchor_rejected_using_clause_cuts")
+        head_end, tail_start = b[i0], b[i1]
+        if not _replacement_is_provable(old_words, pcm, sr, head_end, tail_start, old_text, new_text, j0, j1, nc):
+            _diag("g_clause_patch", reason="replacement_span_unprovable")
+            return 0
+    # 136: sweep debris off the edges of BOTH the replacement and the stretch it
+    # joins, not just the replacement. A clipped half-word left at a seam is the
+    # "unscripted sound" and the "blippy abrupt start" heard in the field.
+    head = _sweep_stubs(pcm[:head_end], sr) if head_end else pcm[:head_end]
+    tail = _sweep_stubs(pcm[tail_start:], sr) if tail_start < len(pcm) else pcm[tail_start:]
+    parts = [x for x in (head, seg, tail) if len(x)]
     out = _crossfade_join(parts, sr, ms=12)
     entry.update({"items": [{"kind": "t", "text": new_text.strip(), "span": (0, len(new_text.strip())), "pcm": out}],
                   "text": new_text.strip()})
