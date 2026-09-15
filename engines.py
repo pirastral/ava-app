@@ -71,8 +71,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 132
-BUILD_FA = "\u06f1\u06f3\u06f2"
+BUILD = 134
+BUILD_FA = "\u06f1\u06f3\u06f4"
 
 
 def _diag(tag, **kv):
@@ -4020,6 +4020,8 @@ def _anchor_edges(words, head_text, tail_text, pcm, sr, fb_head, fb_tail):
     tail_start = max(0, min(int(tail_start), len(pcm)))
     if tail_start <= head_end:                                   # nonsense: keep the clause-based cuts
         _diag("g_anchor", mode="fallback", head_ms=int(head_end * 1000 / sr), tail_ms=int(tail_start * 1000 / sr))
+        if fb_tail <= fb_head:                                   # 133: no usable clause map either
+            return 0, len(pcm)                                   # → replace the whole recording, honestly
         return fb_head, max(fb_head + 1, fb_tail)
     _diag("g_anchor", head_ms=int(head_end * 1000 / sr), tail_ms=int(tail_start * 1000 / sr),
           fb_head_ms=int(fb_head * 1000 / sr), fb_tail_ms=int(fb_tail * 1000 / sr))
@@ -4057,6 +4059,132 @@ def _word_edge(clauses, words, k, pcm, sr, which, fallback):
     return at
 
 
+def _cut_orphans(pcm, sr, words, orphans, status):
+    """Remove stretches of the recording whose words are no longer in the text.
+    Only whole runs bounded by real gaps are cut, so the join stays clean; a few
+    words deleted in the middle of a sentence are left to the regeneration path.
+    (134 — deleting a line or a paragraph costs NO api call.)"""
+    keep, at = [], 0
+    for i, j in orphans:
+        if j - i < 2:                                   # a single word: too small to cut cleanly
+            continue
+        a = int(words[i][1] * sr) - int(sr * 0.06)
+        b = int(words[j - 1][2] * sr) + int(sr * 0.06)
+        a, b = max(0, min(a, len(pcm))), max(0, min(b, len(pcm)))
+        if b <= a or b - a < int(sr * 0.15):
+            continue
+        keep.append(pcm[at:a]); at = b
+    if at == 0:
+        return None
+    keep.append(pcm[at:])
+    keep = [k for k in keep if len(k)]
+    return _crossfade_join(keep, sr, ms=12) if keep else None
+
+
+def _coverage(old_words, new_text, old_text=None):
+    """Which lines of new_text have audio in this recording, and which recorded
+    words are orphaned. Returns (covered_per_clause, orphan_runs) where
+    covered_per_clause[k] = (matched, total) and orphan_runs are (i, j) spans of
+    transcript indices no longer present in the text. (134)"""
+    import difflib
+    nc = _g_clauses(new_text)
+    ours, owner = [], []
+    for k, (c, _) in enumerate(nc):
+        ws = _text_words(c); ours += ws; owner += [k] * len(ws)
+    tw = [_norm_word(w) for w, _, _ in (old_words or [])]
+    if not ours or not tw:
+        return None, []
+    sm = difflib.SequenceMatcher(None, ours, tw, autojunk=False)
+    matched_new, matched_old = set(), set()
+    for a, b, n in sm.get_matching_blocks():
+        for i in range(n):
+            matched_new.add(a + i); matched_old.add(b + i)
+    cov = []
+    for k in range(len(nc)):
+        idx = [i for i in range(len(ours)) if owner[i] == k]
+        cov.append((sum(1 for i in idx if i in matched_new), len(idx)))
+    orphans, run = [], None
+    for i in range(len(tw)):
+        if i not in matched_old:
+            run = (run[0], i + 1) if run else (i, i + 1)
+        elif run:
+            orphans.append(run); run = None
+    if run:
+        orphans.append(run)
+    # 134: is an orphan run a WHOLE line that was deleted, or words cut out of
+    # the MIDDLE of a line? Decide against the OLD text's own line structure,
+    # not against neighbouring words (which repeat, and mislead difflib):
+    #   · every old line the run touches is fully inside it  → a whole-line
+    #     deletion → the audio can simply be cut;
+    #   · an old line is only partly inside it → that line was gutted → the line
+    #     that now carries its surviving words must be regenerated, because
+    #     cutting inside a sentence leaves an audible seam.
+    old2new = {}
+    for a, b, n in sm.get_matching_blocks():
+        for i in range(n):
+            old2new[b + i] = a + i
+    t_owner = None
+    if old_text:
+        oc_ = _g_clauses(old_text)
+        o_words, o_owner = [], []
+        for k, (c, _) in enumerate(oc_):
+            ws = _text_words(c); o_words += ws; o_owner += [k] * len(ws)
+        sm2 = difflib.SequenceMatcher(None, o_words, tw, autojunk=False)
+        t_owner = {}
+        for a, b, n in sm2.get_matching_blocks():
+            for i in range(n):
+                t_owner[b + i] = o_owner[a + i]
+    inside = []
+    for (i, j) in orphans:
+        gutted_line = None
+        if t_owner:
+            touched = {t_owner[x] for x in range(i, j) if x in t_owner}
+            for k in touched:
+                idx = [x for x, ow in t_owner.items() if ow == k]
+                if idx and not all(i <= x < j for x in idx):        # only partly removed
+                    nxt = [old2new[x] for x in idx if x in old2new and not (i <= x < j)]
+                    if nxt:
+                        gutted_line = owner[min(nxt)]
+                        break
+            if gutted_line is None and touched:
+                inside.append(None); continue                       # whole old line(s) → cut
+        if gutted_line is None:
+            before = max([o for o in old2new if o < i], default=None)
+            after = min([o for o in old2new if o >= j], default=None)
+            lb = owner[old2new[before]] if before is not None else None
+            la = owner[old2new[after]] if after is not None else None
+            gutted_line = lb if (lb is not None and lb == la) else None
+        inside.append(gutted_line)
+    return cov, list(zip(orphans, inside))
+
+
+def line_voice_map(entry):
+    """Which voice each line of a part was last generated with. (134)"""
+    return entry.get("voices") or {}
+
+
+def _voice_of_line(entry, text_of_line, cfg):
+    """A line's own remembered voice, or the part's, or the current one."""
+    vm = line_voice_map(entry)
+    key = _norm_word(" ".join(_text_words(text_of_line)))[:80]
+    if key in vm:
+        return vm[key]
+    base = entry.get("payload") or {}
+    keep = {k: base[k] for k in ("g_voice", "g_preset", "g_age", "g_state",
+                                 "f_voice", "f_preset", "f_age", "f_state") if k in base}
+    return keep or {k: cfg[k] for k in ("g_voice", "f_voice") if k in cfg}
+
+
+def _remember_line_voices(entry, text, cfg):
+    """Record the voice each line now holds. (134)"""
+    vm = dict(entry.get("voices") or {})
+    keep = {k: cfg[k] for k in ("g_voice", "g_preset", "g_age", "g_state",
+                                "f_voice", "f_preset", "f_age", "f_state") if k in cfg}
+    for c, _ in _g_clauses(text):
+        vm[_norm_word(" ".join(_text_words(c)))[:80]] = keep
+    entry["voices"] = vm
+
+
 def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
     """Replace only the changed/selected clauses of a Google part. Returns
     the number of clauses regenerated, or 0 when a whole-part take is the
@@ -4067,10 +4195,13 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
     if len(nc) < 1 or (len(oc) < 2 and len(nc) < 2):
         _diag("g_clause_patch", reason=f"too_few_clauses_{len(oc)}_{len(nc)}")
         return 0
+    lang = {"fa": "fa-IR", "en": "en-US", "de": "de-DE", "tr": "tr-TR", "fr": "fr-FR", "es": "es-ES"}.get(cfg.get("g_lang"))
+    old_words_hint = transcribe_words(pcm, sr, status, lang, old_text, cfg)
     sm = difflib.SequenceMatcher(None, [c[0].strip() for c in oc], [c[0].strip() for c in nc], autojunk=False)
     ops = [o for o in sm.get_opcodes() if o[0] != "equal"]
     has_sel = sel_start is not None and sel_end is not None and sel_end > sel_start
     hit = [k for k, c in enumerate(nc) if c[1][0] < sel_end and c[1][1] > sel_start] if has_sel else []
+    chosen = set(hit)                                   # the user's conscious choice
     # 132: A SELECTION IS THE AUTHORITY. It names exactly the sentences to redo;
     # the diff no longer widens it. Splitting a sentence with Enter changes the
     # clause list, and a clause-level diff then calls BOTH halves "changed" —
@@ -4078,73 +4209,155 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
     # the regeneration. With the splice anchored to the unchanged TEXT (see
     # _anchor_edges) the old audio can be cut anywhere, so the selection alone
     # decides.
-    if hit:
-        j0, j1 = hit[0], hit[-1] + 1
+    # 134: lines whose words are NOT in the recording must be voiced too — a part
+    # whose audio does not contain its text is broken. Lines that are merely
+    # dragged in this way keep their OWN voice (see the run split below).
+    cov, orph = _coverage(old_words_hint, new_text, old_text) if old_words_hint else (None, [])
+    orphans = [r for r, ins in orph if ins is None]              # between lines → cut
+    gutted = sorted({ins for r, ins in orph if ins is not None}) # inside a line → regenerate
+    uncovered = [k for k, (m, t) in enumerate(cov or []) if t >= 1 and m < 0.5 * t]
+    uncovered = sorted(set(uncovered) | set(gutted))
+    if hit or uncovered:
+        need = sorted(set(hit) | set(uncovered))
+        j0, j1 = need[0], need[-1] + 1
         i0, i1 = min(j0, max(0, len(oc) - 1)), min(max(j1, 1), len(oc))
+        if uncovered and hit:
+            extra = [k for k in uncovered if k not in chosen]
+            if extra:
+                status(f"{faDigits(len(extra))} خط دیگر هم باید ساخته شود (متنش عوض شده یا صدا نداشت)؛ آن‌ها صدای خودشان را نگه می‌دارند.")
+                _diag("g_clause_patch", dragged_in=len(extra), chosen=len(chosen))
     elif ops:
         i0, i1 = min(o[1] for o in ops), max(o[2] for o in ops)
         j0, j1 = min(o[3] for o in ops), max(o[4] for o in ops)
     else:
         _diag("g_clause_patch", reason="no_change_no_selection" if not has_sel else "selection_matched_no_clause")
         return 0
+    if not hit and not uncovered and orphans and old_words_hint:
+        # pure deletion: cut the orphaned stretches out and keep everything else
+        cut = _cut_orphans(pcm, sr, old_words_hint, orphans, status)
+        if cut is not None:
+            entry["items"][0]["pcm"] = cut
+            entry["items"][0]["text"] = new_text
+            entry["items"][0]["span"] = (0, len(new_text))
+            entry["text"] = new_text
+            _diag("g_clause_patch", deleted_runs=len(orphans), kept_ms=int(len(cut) * 1000 / sr))
+            status(f"{faDigits(len(orphans))} بخشِ حذف‌شده از صدا برداشته شد؛ چیزی دوباره ساخته نشد.")
+            return 1
     if j0 <= 0 and j1 >= len(nc):
         _diag("g_clause_patch", reason="whole_part_changed")
         return 0                                    # nothing before or after the edit to keep
     if j1 <= j0:
         # pure deletion: drop the old clauses' audio, keep the neighbours
-        cuts = _g_bounds(pcm, sr, oc, status, {"fa": "fa-IR", "en": "en-US", "de": "de-DE", "tr": "tr-TR", "fr": "fr-FR", "es": "es-ES"}.get(cfg.get("g_lang")), cfg, old_text)
+        lang0 = {"fa": "fa-IR", "en": "en-US", "de": "de-DE", "tr": "tr-TR", "fr": "fr-FR", "es": "es-ES"}.get(cfg.get("g_lang"))
+        w0 = transcribe_words(pcm, sr, status, lang0, old_text, cfg)
+        cuts = _g_bounds(pcm, sr, oc, status, lang0, cfg, old_text, w0)
         if cuts is None:
-            _diag("g_clause_patch", reason="old_boundaries_unfound_delete")
-            return 0
+            # 133: a pure deletion still needs a cut point; take it from the text
+            if not w0:
+                _diag("g_clause_patch", reason="no_transcript_for_old_audio_delete")
+                return 0
+            head_t = new_text[:nc[j0][1][0]] if j0 < len(nc) else new_text
+            tail_t = new_text[nc[j0][1][0]:] if j0 < len(nc) else ""
+            h, t = _anchor_edges(w0, head_t, tail_t, pcm, sr, 0, len(pcm))
+            cuts = [h] + [t] * (len(oc) - 2) if len(oc) > 2 else [h]
+            cuts = sorted(set(max(0, min(c, len(pcm))) for c in cuts))[:max(0, len(oc) - 1)]
+            while len(cuts) < len(oc) - 1:
+                cuts.append(len(pcm))
+            _diag("g_clause_patch", note="delete_cuts_from_anchor")
         b = [0] + cuts + [len(pcm)]
         out = _crossfade_join([x for x in (pcm[:b[i0]], pcm[b[i1]:]) if len(x)], sr)
         entry.update({"items": [{"kind": "t", "text": new_text.strip(), "span": (0, len(new_text.strip())), "pcm": out}],
                       "text": new_text.strip()})
         _diag("g_clause_patch", removed=i1 - i0)
         return i1 - i0
-    lang = {"fa": "fa-IR", "en": "en-US", "de": "de-DE", "tr": "tr-TR", "fr": "fr-FR", "es": "es-ES"}.get(cfg.get("g_lang"))
-    old_words = transcribe_words(pcm, sr, status, lang, old_text, cfg)
+    old_words = old_words_hint
     cuts = _g_bounds(pcm, sr, oc, status, lang, cfg, old_text, old_words)
     if cuts is None:
-        _diag("g_clause_patch", reason="old_boundaries_unfound")
-        return 0
-    b = [0] + cuts + [len(pcm)]
+        # 133: not fatal. The clause map of the OLD recording is only a fallback
+        # for the anchor; without it the anchor still finds the edges from the
+        # unchanged text. Only a missing transcript makes surgery impossible.
+        if not old_words:
+            _diag("g_clause_patch", reason="no_transcript_for_old_audio")
+            return 0
+        _diag("g_clause_patch", note="old_clause_map_unavailable_anchoring_only")
+        cuts = []
+        b = [0] * (len(oc) + 1)
+        b[-1] = len(pcm)
+    else:
+        b = [0] + cuts + [len(pcm)]
     # regenerate the changed clauses with one neighbour on each side as
     # prosodic context, then keep only the middle
     before = nc[j0 - 1][0].strip() if j0 > 0 else ""
     after = nc[j1][0].strip() if j1 < len(nc) else ""
+    # 134: split the span into consecutive runs that share a target voice. A line
+    # you SELECTED takes the current settings; a line merely dragged in keeps the
+    # voice it already had. One request per run — two voices cannot come from one.
+    runs = []
+    for k in range(j0, j1):
+        want = {kk: cfg[kk] for kk in ("g_voice", "g_preset", "g_age", "g_state",
+                                       "f_voice", "f_preset", "f_age", "f_state") if kk in cfg} \
+               if k in chosen else _voice_of_line(entry, nc[k][0], cfg)
+        if runs and runs[-1][2] == want:
+            runs[-1][1] = k + 1
+        else:
+            runs.append([k, k + 1, want])
+    if len(runs) > 1:
+        _diag("g_clause_patch", runs=len(runs))
+        status(f"{faDigits(len(runs))} بخش با صداهای متفاوت ساخته می‌شود؛ خط‌هایی که خودتان انتخاب نکرده‌اید صدای خودشان را نگه می‌دارند.")
     middle = "\n".join(c[0].strip() for c in nc[j0:j1])   # 132: newline, never a space
-    gen_text = "\n".join(x for x in (before, middle, after) if x)   # 128: newline, never a space
-    gcl = _g_clauses(gen_text)
-    k0 = 1 if before else 0
-    k1 = k0 + (j1 - j0)
-    want_pieces = k1 + (1 if after else 0)
     rate = len(pcm) / max(1, _g_speech_len(old_text))            # samples per spoken char
-    want = rate * max(1, _g_speech_len(middle))
 
-    def attempt(n):
-        """One try at generating the replacement and cutting it out. Returns the
-        segment, or a reason string. 131: the model is stochastic — a take that
-        splits or cuts badly is a BAD TAKE, not a reason to rebuild the part."""
-        status(f"گوگل: {faDigits(j1 - j0)} جمله را همراه جمله‌های کناری‌اش دوباره می‌سازد…"
-               if n == 0 else f"برشِ جمله جا نیفتاد؛ برداشت دوباره ({faDigits(n + 1)}/۳)…")
-        np_, nsr_ = cloud_pcm(gen_text, {**cfg, "_no_audit": True}, status)
-        # (the clause count of gen_text is deterministic and was checked before
-        #  the first take — no point re-checking it per attempt)
-        gcuts_ = _g_bounds(np_, nsr_, gcl, status, lang, cfg, gen_text)
+    def make_run(a, b, voice, n):
+        """Generate clauses [a,b) in ONE voice, with their neighbours as spoken
+        context, and cut the target out. (134: a span can hold several runs.)"""
+        ctx_b = nc[a - 1][0].strip() if a > 0 else ""
+        ctx_a = nc[b][0].strip() if b < len(nc) else ""
+        mid = "\n".join(c[0].strip() for c in nc[a:b])
+        gtext = "\n".join(x for x in (ctx_b, mid, ctx_a) if x)
+        gcl_ = _g_clauses(gtext)
+        p0 = 1 if ctx_b else 0
+        p1 = p0 + (b - a)
+        if len(gcl_) != p1 + (1 if ctx_a else 0):
+            return None, f"gen_clauses_{len(gcl_)}_vs_{p1 + (1 if ctx_a else 0)}"
+        rcfg = {**cfg, **(voice or {}), "_no_audit": True}
+        np_, nsr_ = cloud_pcm(gtext, rcfg, status)
+        gcuts_ = _g_bounds(np_, nsr_, gcl_, status, lang, cfg, gtext)
         if gcuts_ is None:
             return None, "new_piece_boundaries_unfound"
         gb_ = [0] + gcuts_ + [len(np_)]
-        seg_ = np_[gb_[k0]:gb_[k1]]
+        seg_ = np_[gb_[p0]:gb_[p1]]
         if nsr_ != sr:
             seg_ = _resample(seg_, nsr_, sr)
-        if not (0.45 * want <= len(seg_) <= 2.2 * want):
-            return None, f"segment_duration_{int(len(seg_) * 1000 / sr)}ms_want_{int(want * 1000 / sr)}ms"
+        n_ch = _g_speech_len(mid)
+        w_ = rate * max(1, n_ch)
+        lo, hi = (0.45, 2.2) if n_ch >= 60 else (0.30, 3.2) if n_ch >= 25 else (0.12, 6.0)
+        if len(seg_) < int(sr * 0.10) or not (lo * w_ <= len(seg_) <= hi * w_):
+            return None, f"segment_duration_{int(len(seg_) * 1000 / sr)}ms_want_{int(w_ * 1000 / sr)}ms_band_{lo}-{hi}"
         return seg_, None
 
-    if len(gcl) != want_pieces:          # deterministic: never worth a retry
-        _diag("g_clause_patch", reason=f"gen_clauses_{len(gcl)}_vs_{want_pieces}")
-        return 0
+    def attempt(n):
+        """One try at the whole span: every run, in order, joined. 131: a take
+        that splits or cuts badly is a BAD TAKE, not a reason to rebuild."""
+        status(f"گوگل: {faDigits(j1 - j0)} جمله را همراه جمله‌های کناری‌اش دوباره می‌سازد…"
+               if n == 0 else f"برشِ جمله جا نیفتاد؛ برداشت دوباره ({faDigits(n + 1)}/۳)…")
+        pieces = []
+        for a, b, voice in runs:
+            seg_, why_ = make_run(a, b, voice, n)
+            if seg_ is None:
+                return None, why_
+            pieces.append(seg_)
+        if not pieces:
+            return None, "no_runs"
+        if len(pieces) == 1:
+            return pieces[0], None
+        gap = np.zeros(int(sr * 0.10), dtype=np.int16)
+        joined = []
+        for i, p in enumerate(pieces):
+            if i:
+                joined.append(gap)
+            joined.append(p)
+        return _crossfade_join(joined, sr, ms=10), None
+
     seg, why = None, None
     for n in range(3):
         seg, why = attempt(n)
@@ -4170,6 +4383,8 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
     out = _crossfade_join(parts, sr, ms=12)
     entry.update({"items": [{"kind": "t", "text": new_text.strip(), "span": (0, len(new_text.strip())), "pcm": out}],
                   "text": new_text.strip()})
+    for a_, b_, voice_ in runs:                    # 134: each line remembers its voice
+        _remember_line_voices(entry, "\n".join(nc[k][0] for k in range(a_, b_)), {**cfg, **(voice_ or {})})
     _diag("g_clause_patch", old=(i0, i1), new=(j0, j1), kept_ms=int((len(pcm) - (b[i1] - b[i0])) * 1000 / sr))
     return j1 - j0
 

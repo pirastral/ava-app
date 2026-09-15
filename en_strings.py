@@ -132,5 +132,8 @@ PATTERNS = [
  (r"^Fish Audio جمله‌ای را جا انداخت — برداشت دوباره \((\S+)\)…$", "Fish Audio skipped a sentence — retake ({0})…"),
  (r"^Fish Audio \((\d+)\): (.*)$", "Fish Audio ({0}): {1}"),
  (r"^برشِ جمله جا نیفتاد؛ برداشت دوباره \((\S+)\)…$", "The cut did not land cleanly; taking it again ({0})…"),
+ (r"^(\S+) خط دیگر هم باید ساخته شود .*$", "{0} more line(s) must be made; they keep their own voice."),
+ (r"^(\S+) بخشِ حذف‌شده از صدا برداشته شد.*$", "{0} deleted stretch(es) removed from the audio; nothing regenerated."),
+ (r"^(\S+) بخش با صداهای متفاوت ساخته می‌شود.*$", "{0} runs with different voices will be made; unselected lines keep their own voice."),
  (r"^Fish Audio ASR \((\d+)\): (.*)$", "Fish Audio ASR ({0}): {1}"),
 ]

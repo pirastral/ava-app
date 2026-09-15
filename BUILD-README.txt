@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist
 ======================================================================
-This zip is the COMPLETE application source as of update 132.
+This zip is the COMPLETE application source as of update 134.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,53 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 134 (on top of 133) — coverage-driven surgery, per-line voices
+  ONE PRIMITIVE. The new text is aligned once against the recording's transcript
+  (cached, no extra call). Every new word is then COVERED (it exists in the
+  audio) or UNCOVERED; every recorded word is still wanted or ORPHANED.
+  FROM THAT MAP:
+   · regenerate = your selection UNION the lines holding uncovered words, and
+     lines whose middle was gutted by a deletion (cutting inside a sentence
+     leaves an audible seam);
+   · delete = orphan runs that cover WHOLE old lines are CUT from the audio with
+     ZERO api calls — delete a paragraph, select nothing, press Regenerate;
+   · voice = a line YOU SELECTED gets the current voice; a line dragged in only
+     for repair keeps ITS OWN remembered voice (new per-part `voices` map). The
+     span is generated in runs of one voice each — two voices cannot come from
+     one request — and each run is spliced at its own word-anchored edges.
+  This fixes the field's worst case: delete words in sentence one, edit sentence
+  two, change the voice, select sentence two → sentence two in the NEW voice,
+  sentence one repaired in ITS OWN, everything else untouched.
+  Breaking a sentence with Enters still regenerates nothing extra: no word
+  changed, so every word stays covered.
+  Graceful degradation: when lines are near-identical the alignment cannot tell
+  which one was deleted, and the app regenerates instead of making a bad cut.
+  Both manuals gained a surgery table with these exact scenarios.
+
+WHAT CHANGED IN 133 (on top of 132) — every line is operable, always
+  Field report: after several edits, a one-line selection rebuilt the whole part
+  again; and breaking a paragraph into one-word lines worked for a few lines and
+  then rebuilt everything with the new voice. Two causes in the log:
+  1) `old_boundaries_unfound` five times → full rebuild. Surgery still demanded a
+     clause map of the OLD recording, although since 132 the splice is anchored
+     to the unchanged TEXT and does not need one. After edits the stored text and
+     the recording legitimately diverge (deleted lines are still in the audio),
+     the clause alignment reports `unmatched`, and a perfectly possible surgery
+     was thrown away. The clause map is now a FALLBACK: surgery proceeds on the
+     anchor alone, and gives up only when there is no transcript at all.
+  2) THE DURATION SANITY CHECK REJECTED SHORT LINES. The expected length of a
+     replacement came from the part's per-character speaking rate — meaningful
+     for a sentence, worthless for a one-word line where pauses dominate. A
+     one-word line measured 475 ms against an "expected" 1381 ms, failed three
+     times and the part was rebuilt. The band now widens as the line shortens
+     (≥60 chars: 0.45–2.2×; ≥25: 0.30–3.2×; shorter: 0.12–6×) with an absolute
+     floor of 100 ms. Verified: every line of a one-word-per-line paragraph, and
+     single-character lines, are individually operable.
+  Also: the UI's "one sentence per line" now uses the SAME marks as the engine's
+  clause splitter (129) — a colon, and an ender typed without the following
+  space — so the lines you see and the units surgery can target are identical.
+  ۳:۳۰ still stays on one line.
 
 WHAT CHANGED IN 132 (on top of 131) — surgery targets what you selected
   Field report: "I edit one line and the next one is regenerated too; sometimes
@@ -690,6 +737,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۳۲»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۳۴»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»
