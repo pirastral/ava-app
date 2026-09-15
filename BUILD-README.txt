@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist
 ======================================================================
-This zip is the COMPLETE application source as of update 131.
+This zip is the COMPLETE application source as of update 132.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,31 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 132 (on top of 131) — surgery targets what you selected
+  Field report: "I edit one line and the next one is regenerated too; sometimes
+  the whole text." Three causes, all confirmed against the reporter's text:
+  1) THE MIDDLE WAS JOINED WITH SPACES. When an edit spanned two clauses, the
+     replacement text joined them with a space; a clause not ending in a
+     sentence stop merged with the next, the piece split into fewer parts than
+     expected and surgery gave up — the log's `gen_clauses_2_vs_3`, three times,
+     then a full rebuild. (128 fixed this for the outer join and missed the
+     inner one.) Joined with a newline now. That check is DETERMINISTIC, so it
+     no longer costs three takes before giving up.
+  2) THE SPLICE IS NOW ANCHORED TO THE UNCHANGED TEXT, not to clause indices.
+     The transcript is asked two questions: where does the text BEFORE the edit
+     end in this recording, and where does the text AFTER it begin? Everything
+     between is replaced. A neighbour's own words hold its audio in place, so an
+     edit to one line cannot drag the next.
+  3) A SELECTION IS THE AUTHORITY. It names exactly the sentences to redo and
+     the diff no longer widens it. Splitting a sentence with Enter changes the
+     clause list, and a clause-level diff called BOTH halves "changed" — which
+     dragged the untouched half, and with `whole_part_changed` sometimes the
+     entire part, into the regeneration. Now: press Enter mid-sentence, select
+     the new second line, regenerate — the first half's audio is KEPT (cut at
+     the word boundary from the transcript) and only the second half is made.
+  A single-clause part can now be operated on too: with the splice anchored to
+  text, half of one clause can be kept.
 
 WHAT CHANGED IN 131 (on top of 130) — surgery retries instead of giving up
   A surgical take that splits wrongly, whose boundaries cannot be found, or
@@ -665,6 +690,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۳۱»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۳۲»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

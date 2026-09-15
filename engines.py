@@ -71,8 +71,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 131
-BUILD_FA = "\u06f1\u06f3\u06f1"
+BUILD = 132
+BUILD_FA = "\u06f1\u06f3\u06f2"
 
 
 def _diag(tag, **kv):
@@ -3976,6 +3976,56 @@ def _g_boundaries(pcm, sr, clauses):
     return [_zc_snap(pcm, r[2], sr) for r in chosen]
 
 
+def _anchor_edges(words, head_text, tail_text, pcm, sr, fb_head, fb_tail):
+    """Where to cut the OLD recording, found by matching the text that is NOT
+    being replaced (132).
+
+      head_text  everything before the edit   -> the cut is after its last word
+      tail_text  everything after the edit    -> the cut is before its first word
+
+    Clause indices are not used: the unchanged text anchors itself, so an edit to
+    one line cannot drag its neighbour, and an Enter that splits a sentence keeps
+    the first half's audio. Falls back to the silence-based cuts when the
+    transcript cannot answer.
+    """
+    import difflib
+    if not words:
+        return fb_head, fb_tail
+    ow = [_norm_word(w) for w, _, _ in words]
+    head_end, tail_start = fb_head, fb_tail
+
+    hw = [_norm_word(w) for w in _text_words(head_text)]
+    if not hw:
+        head_end = 0
+    else:
+        sm = difflib.SequenceMatcher(None, hw, ow, autojunk=False)
+        blocks = [bl for bl in sm.get_matching_blocks() if bl.size]
+        if blocks:
+            bl = max(blocks, key=lambda x: x.a + x.size)        # the block that reaches the end of the head
+            j = min(len(words) - 1, bl.b + bl.size - 1)
+            head_end = int(words[j][2] * sr) + int(sr * 0.04)
+
+    tw = [_norm_word(w) for w in _text_words(tail_text)]
+    if not tw:
+        tail_start = len(pcm)
+    else:
+        sm = difflib.SequenceMatcher(None, tw, ow, autojunk=False)
+        blocks = [bl for bl in sm.get_matching_blocks() if bl.size]
+        if blocks:
+            bl = min(blocks, key=lambda x: x.a)                  # the block that starts the tail
+            j = max(0, bl.b)
+            tail_start = int(words[j][1] * sr) - int(sr * 0.04)
+
+    head_end = max(0, min(int(head_end), len(pcm)))
+    tail_start = max(0, min(int(tail_start), len(pcm)))
+    if tail_start <= head_end:                                   # nonsense: keep the clause-based cuts
+        _diag("g_anchor", mode="fallback", head_ms=int(head_end * 1000 / sr), tail_ms=int(tail_start * 1000 / sr))
+        return fb_head, max(fb_head + 1, fb_tail)
+    _diag("g_anchor", head_ms=int(head_end * 1000 / sr), tail_ms=int(tail_start * 1000 / sr),
+          fb_head_ms=int(fb_head * 1000 / sr), fb_tail_ms=int(fb_tail * 1000 / sr))
+    return head_end, tail_start
+
+
 def _word_edge(clauses, words, k, pcm, sr, which, fallback):
     """Sample offset of the START of clause k, from the transcript: just before
     that clause's first matched word. `fallback` when the alignment cannot say.
@@ -4014,39 +4064,32 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
     import difflib
     old_text, pcm, sr = entry["text"], entry["items"][0]["pcm"], entry["sr"]
     oc, nc = _g_clauses(old_text), _g_clauses(new_text)
-    if len(oc) < 2 or len(nc) < 1:
+    if len(nc) < 1 or (len(oc) < 2 and len(nc) < 2):
         _diag("g_clause_patch", reason=f"too_few_clauses_{len(oc)}_{len(nc)}")
         return 0
     sm = difflib.SequenceMatcher(None, [c[0].strip() for c in oc], [c[0].strip() for c in nc], autojunk=False)
     ops = [o for o in sm.get_opcodes() if o[0] != "equal"]
-    if ops:
+    has_sel = sel_start is not None and sel_end is not None and sel_end > sel_start
+    hit = [k for k, c in enumerate(nc) if c[1][0] < sel_end and c[1][1] > sel_start] if has_sel else []
+    # 132: A SELECTION IS THE AUTHORITY. It names exactly the sentences to redo;
+    # the diff no longer widens it. Splitting a sentence with Enter changes the
+    # clause list, and a clause-level diff then calls BOTH halves "changed" —
+    # which used to drag the untouched half (and sometimes the whole part) into
+    # the regeneration. With the splice anchored to the unchanged TEXT (see
+    # _anchor_edges) the old audio can be cut anywhere, so the selection alone
+    # decides.
+    if hit:
+        j0, j1 = hit[0], hit[-1] + 1
+        i0, i1 = min(j0, max(0, len(oc) - 1)), min(max(j1, 1), len(oc))
+    elif ops:
         i0, i1 = min(o[1] for o in ops), max(o[2] for o in ops)
         j0, j1 = min(o[3] for o in ops), max(o[4] for o in ops)
     else:
-        # text unchanged: the selection names the clause(s) to redo
-        if sel_start is None or sel_end is None or sel_end <= sel_start:
-            _diag("g_clause_patch", reason="no_change_no_selection")
-            return 0
-        hit = [k for k, c in enumerate(nc) if c[1][0] < sel_end and c[1][1] > sel_start]
-        if not hit:
-            _diag("g_clause_patch", reason="selection_matched_no_clause")
-            return 0
-        i0 = j0 = hit[0]; i1 = j1 = hit[-1] + 1
-    if ops and sel_start is not None and sel_end is not None and sel_end > sel_start:
-        # a selection widens the range; outside the changed span old and new
-        # clauses correspond 1:1 (prefix: same index, suffix: shifted by delta)
-        hit = [k for k, c in enumerate(nc) if c[1][0] < sel_end and c[1][1] > sel_start]
-        if hit:
-            delta = len(oc) - len(nc)
-            nj0, nj1 = min(j0, hit[0]), max(j1, hit[-1] + 1)
-            if nj0 < j0:
-                i0 = min(i0, nj0)
-            if nj1 > j1:
-                i1 = max(i1, nj1 + delta)
-            j0, j1 = nj0, nj1
-    if i0 <= 0 and i1 >= len(oc):
+        _diag("g_clause_patch", reason="no_change_no_selection" if not has_sel else "selection_matched_no_clause")
+        return 0
+    if j0 <= 0 and j1 >= len(nc):
         _diag("g_clause_patch", reason="whole_part_changed")
-        return 0                                    # everything changed: nothing to save
+        return 0                                    # nothing before or after the edit to keep
     if j1 <= j0:
         # pure deletion: drop the old clauses' audio, keep the neighbours
         cuts = _g_bounds(pcm, sr, oc, status, {"fa": "fa-IR", "en": "en-US", "de": "de-DE", "tr": "tr-TR", "fr": "fr-FR", "es": "es-ES"}.get(cfg.get("g_lang")), cfg, old_text)
@@ -4070,7 +4113,7 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
     # prosodic context, then keep only the middle
     before = nc[j0 - 1][0].strip() if j0 > 0 else ""
     after = nc[j1][0].strip() if j1 < len(nc) else ""
-    middle = " ".join(c[0].strip() for c in nc[j0:j1])
+    middle = "\n".join(c[0].strip() for c in nc[j0:j1])   # 132: newline, never a space
     gen_text = "\n".join(x for x in (before, middle, after) if x)   # 128: newline, never a space
     gcl = _g_clauses(gen_text)
     k0 = 1 if before else 0
@@ -4086,10 +4129,9 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
         status(f"گوگل: {faDigits(j1 - j0)} جمله را همراه جمله‌های کناری‌اش دوباره می‌سازد…"
                if n == 0 else f"برشِ جمله جا نیفتاد؛ برداشت دوباره ({faDigits(n + 1)}/۳)…")
         np_, nsr_ = cloud_pcm(gen_text, {**cfg, "_no_audit": True}, status)
-        gcl_ = _g_clauses(gen_text)
-        if len(gcl_) != want_pieces:
-            return None, f"gen_clauses_{len(gcl_)}_vs_{want_pieces}"
-        gcuts_ = _g_bounds(np_, nsr_, gcl_, status, lang, cfg, gen_text)
+        # (the clause count of gen_text is deterministic and was checked before
+        #  the first take — no point re-checking it per attempt)
+        gcuts_ = _g_bounds(np_, nsr_, gcl, status, lang, cfg, gen_text)
         if gcuts_ is None:
             return None, "new_piece_boundaries_unfound"
         gb_ = [0] + gcuts_ + [len(np_)]
@@ -4100,6 +4142,9 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
             return None, f"segment_duration_{int(len(seg_) * 1000 / sr)}ms_want_{int(want * 1000 / sr)}ms"
         return seg_, None
 
+    if len(gcl) != want_pieces:          # deterministic: never worth a retry
+        _diag("g_clause_patch", reason=f"gen_clauses_{len(gcl)}_vs_{want_pieces}")
+        return 0
     seg, why = None, None
     for n in range(3):
         seg, why = attempt(n)
@@ -4118,16 +4163,9 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
     if abs(g - 1.0) > 0.05:
         seg = np.clip(seg.astype(np.float32) * g, -32768, 32767).astype(np.int16)
     seg = _sweep_stubs(seg, sr)
-    head_end, tail_start = b[i0], b[i1]
-    # 130: pin the seam to the WORDS, not to a silence that may fall on the
-    # wrong side of one. The head must end before the first word of clause i0;
-    # the tail must start at the first word of clause i1. Without this, a cut
-    # placed after that word leaves it in BOTH pieces — heard as a duplicated
-    # word at the join, in two different voices when the voice changed.
-    head_end = _word_edge(oc, old_words, i0, pcm, sr, "start", head_end)
-    tail_start = _word_edge(oc, old_words, i1, pcm, sr, "start", tail_start)
-    if tail_start <= head_end:
-        tail_start = max(head_end + 1, b[i1])
+    head_text = new_text[:nc[j0][1][0]] if j0 < len(nc) else new_text
+    tail_text = new_text[nc[j1 - 1][1][1]:] if j1 - 1 < len(nc) else ""
+    head_end, tail_start = _anchor_edges(old_words, head_text, tail_text, pcm, sr, b[i0], b[i1])
     parts = [x for x in (pcm[:head_end], seg, pcm[tail_start:]) if len(x)]
     out = _crossfade_join(parts, sr, ms=12)
     entry.update({"items": [{"kind": "t", "text": new_text.strip(), "span": (0, len(new_text.strip())), "pcm": out}],
