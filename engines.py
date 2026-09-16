@@ -71,8 +71,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 136
-BUILD_FA = "\u06f1\u06f3\u06f6"
+BUILD = 138
+BUILD_FA = "\u06f1\u06f3\u06f8"
 
 
 def _diag(tag, **kv):
@@ -3470,6 +3470,12 @@ def _google_stream(url, body, key, expect_sec, status):
 
 
 def _google_call(text, cfg, status):
+    spoken = re.sub(r"\[[^\]]*\]", " ", text or "").strip()
+    if not spoken:
+        # 137: a clause that is only a tag, or an empty selection, produced a
+        # request Google rejects with 400 «invalid argument» (twice in the field
+        # log). There is nothing to say — fail cleanly instead of burning a key.
+        raise RuntimeError("این تکه چیزی برای خواندن ندارد (فقط برچسب یا فاصله).")
     """Two doors to the same model. FIELD LOG (build 90): the Interactions
     endpoint accepted the request and then stayed silent for 180 s, three
     times, from a network where generateContent (the diacritizer's endpoint)
@@ -4175,7 +4181,7 @@ def _coverage(old_words, new_text, old_text=None):
     words are orphaned. Returns (covered_per_clause, orphan_runs) where
     covered_per_clause[k] = (matched, total) and orphan_runs are (i, j) spans of
     transcript indices no longer present in the text. (134)"""
-    import difflib
+    import difflib, collections
     nc = _g_clauses(new_text)
     ours, owner = [], []
     for k, (c, _) in enumerate(nc):
@@ -4223,9 +4229,33 @@ def _coverage(old_words, new_text, old_text=None):
         for a, b, n in sm2.get_matching_blocks():
             for i in range(n):
                 t_owner[b + i] = o_owner[a + i]
+    # what the edit really removed — the only thing that can justify an orphan
+    removed_ct = collections.Counter()
+    if old_text:
+        a_ = [_norm_word(w) for w in _text_words(old_text)]
+        b2_ = [_norm_word(w) for w in _text_words(new_text)]
+        for tag, i1_, i2_, j1_, j2_ in difflib.SequenceMatcher(None, a_, b2_, autojunk=False).get_opcodes():
+            if tag in ("delete", "replace"):
+                removed_ct.update(a_[i1_:i2_])
+    def _corroborated(run):
+        """Is this stretch of transcript really text the edit removed, or just
+        ASR noise? At least half its words must be among the removed ones, and a
+        one-word run is never enough on its own. (137)"""
+        got = [tw[x] for x in range(run[0], run[1])]
+        if not got or not removed_ct:
+            return False
+        pool = dict(removed_ct); hit = 0
+        for w in got:
+            if pool.get(w, 0) > 0:
+                pool[w] -= 1; hit += 1
+        return hit >= max(1, 0.5 * len(got)) and (len(got) >= 2 or hit == len(got))
     inside = []
     for (i, j) in orphans:
         gutted_line = None
+        if not _corroborated((i, j)):
+            _diag("g_orphan_ignored", words=j - i, sample=" ".join(tw[i:min(j, i + 3)])[:40])
+            inside.append(False)                    # False = ASR noise: neither cut nor regenerate
+            continue
         if t_owner:
             touched = {t_owner[x] for x in range(i, j) if x in t_owner}
             for k in touched:
@@ -4244,7 +4274,7 @@ def _coverage(old_words, new_text, old_text=None):
             la = owner[old2new[after]] if after is not None else None
             gutted_line = lb if (lb is not None and lb == la) else None
         inside.append(gutted_line)
-    return cov, list(zip(orphans, inside))
+    return cov, [(r, ins) for r, ins in zip(orphans, inside) if ins is not False]
 
 
 def line_voice_map(entry):
@@ -4358,9 +4388,7 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
                 _remember_line_voices(entry, new_text, {**(entry.get("payload") or {}), **cfg})
                 return 1
             # otherwise the surviving edit continues below, against the cut audio
-    if j0 <= 0 and j1 >= len(nc):
-        _diag("g_clause_patch", reason="whole_part_changed")
-        return 0                                    # nothing before or after the edit to keep
+    whole = j0 <= 0 and j1 >= len(nc)
     if j1 <= j0:
         # pure deletion: drop the old clauses' audio, keep the neighbours
         lang0 = {"fa": "fa-IR", "en": "en-US", "de": "de-DE", "tr": "tr-TR", "fr": "fr-FR", "es": "es-ES"}.get(cfg.get("g_lang"))
@@ -4416,17 +4444,29 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
             runs[-1][1] = k + 1
         else:
             runs.append([k, k + 1, want])
+    if whole and len(runs) <= 1:
+        # the whole part, one voice: the full path is equivalent and keeps the
+        # part's lead-in and its completeness audit
+        _diag("g_clause_patch", reason="whole_part_one_voice")
+        return 0
+    if whole:
+        _diag("g_clause_patch", note=f"whole_part_in_{len(runs)}_voices")
     if len(runs) > 1:
         _diag("g_clause_patch", runs=len(runs))
         status(f"{faDigits(len(runs))} بخش با صداهای متفاوت ساخته می‌شود؛ خط‌هایی که خودتان انتخاب نکرده‌اید صدای خودشان را نگه می‌دارند.")
     middle = "\n".join(c[0].strip() for c in nc[j0:j1])   # 132: newline, never a space
     rate = len(pcm) / max(1, _g_speech_len(old_text))            # samples per spoken char
 
+    base_voice = {k: (entry.get("payload") or {}).get(k) for k in ("g_voice", "f_voice")}
+
     def make_run(a, b, voice, n):
-        """Generate clauses [a,b) in ONE voice, with their neighbours as spoken
-        context, and cut the target out. (134: a span can hold several runs.)"""
-        ctx_b = nc[a - 1][0].strip() if a > 0 else ""
-        ctx_a = nc[b][0].strip() if b < len(nc) else ""
+        """Generate clauses [a,b) in ONE voice and cut the target out.
+        Neighbours are sent as spoken context ONLY when the run keeps the part's
+        own voice; in a different voice they buy nothing and cost a seam (138)."""
+        same_voice = all((voice or {}).get(k, base_voice.get(k)) == base_voice.get(k)
+                         for k in ("g_voice", "f_voice"))
+        ctx_b = nc[a - 1][0].strip() if (a > 0 and same_voice) else ""
+        ctx_a = nc[b][0].strip() if (b < len(nc) and same_voice) else ""
         mid = "\n".join(c[0].strip() for c in nc[a:b])
         gtext = "\n".join(x for x in (ctx_b, mid, ctx_a) if x)
         gcl_ = _g_clauses(gtext)
@@ -4509,6 +4549,11 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
     # "unscripted sound" and the "blippy abrupt start" heard in the field.
     head = _sweep_stubs(pcm[:head_end], sr) if head_end else pcm[:head_end]
     tail = _sweep_stubs(pcm[tail_start:], sr) if tail_start < len(pcm) else pcm[tail_start:]
+    kept = len(pcm) - (tail_start - head_end)
+    if kept < int(sr * 0.25) and len(pcm) > int(sr * 1.0):
+        _diag("g_clause_patch", reason="splice_keeps_nothing",
+              head_ms=int(head_end * 1000 / sr), tail_ms=int(tail_start * 1000 / sr))
+        return 0                                  # → the honest full rebuild
     parts = [x for x in (head, seg, tail) if len(x)]
     out = _crossfade_join(parts, sr, ms=12)
     entry.update({"items": [{"kind": "t", "text": new_text.strip(), "span": (0, len(new_text.strip())), "pcm": out}],

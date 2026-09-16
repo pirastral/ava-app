@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist
 ======================================================================
-This zip is the COMPLETE application source as of update 136.
+This zip is the COMPLETE application source as of update 138.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,42 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 138 (on top of 137) — from the field report
+  1) THE WHOLE PART CAME BACK IN THE NEW VOICE (field tests 1, 6, and the
+     one-word-per-line case). When the span to regenerate covered the whole part,
+     surgery gave up and let the full path rebuild it — in ONE voice, the one
+     just selected. So selecting a single line and changing its voice could
+     return the entire part in that voice. Now the runs are generated separately
+     even then, each in its own voice, and the audio is replaced by their join:
+     the selected line gets the new voice, every other line keeps its own. Only
+     when the whole part shares ONE voice does the full path run (it is
+     equivalent there, and keeps the lead-in and the audit).
+  2) A VOICE CHANGE SENDS ONLY THE SELECTED LINE. Neighbouring sentences were
+     being generated as prosodic context and trimmed away; in a DIFFERENT voice
+     they buy nothing, and they cost time, quota and a seam. Exactly as the field
+     asked: "if I regen a line with another voice I don't need any parts before
+     or after it". With the part's own voice the context is still sent, because
+     there it does match the tone.
+
+WHAT CHANGED IN 137 (on top of 136) — read out of the 136 field log
+  1) A MISHEARD WORD IS NOT A DELETION. The log's dominant pattern: coverage of
+     0.94 — near perfect — yet a line marked "gutted" and regenerated, because
+     ONE transcript word had no counterpart in the text («g_cut_rejected words=1
+     matched=0», «dragged_in=1 chosen=1», and once «dragged_in=6 chosen=1»).
+     Persian ASR mishears constantly and every such word was read as "the user
+     deleted something here". An orphan run must now be CORROBORATED by the text
+     itself: at least half its words must be among the words the edit actually
+     removed, and a single word is never enough on its own. Ignored runs are
+     logged as g_orphan_ignored. This is the cause of most "it regenerated lines
+     I did not touch" reports.
+  2) A SPLICE THAT KEEPS NOTHING IS NOT SURGERY. Field: head 1.2 s, tail 17.4 s
+     of a 17.4 s recording — the entire take replaced while the log called it a
+     patch («kept_ms=0»). Such a splice now returns 0 so the honest full path
+     runs, which keeps the part's lead-in and its completeness audit.
+  3) NO MORE 400s FROM AN EMPTY REQUEST. Twice in the log Google rejected a
+     request on both doors with «invalid argument»: the piece contained only a
+     tag or whitespace. Such a piece now fails cleanly and burns no key.
 
 WHAT CHANGED IN 136 (on top of 135) — the rest of the two-hour field report
   A) THE VOICE BLEED (tests 7, 8, 9, 10, 15). After every surgery the part's
@@ -793,6 +829,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۳۶»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۳۸»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»
