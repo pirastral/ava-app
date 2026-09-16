@@ -71,8 +71,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 138
-BUILD_FA = "\u06f1\u06f3\u06f8"
+BUILD = 140
+BUILD_FA = "\u06f1\u06f4\u06f0"
 
 
 def _diag(tag, **kv):
@@ -1963,6 +1963,13 @@ def generate_gulp(payload, status):
         gid = next(_gulp_ids)
         entry = {"sr": sr, "items": items, "text": text, "engine": eng, "lead_in": lead_in, "born": time.time(),
                  "payload": {k: payload[k] for k in payload if k.startswith("g_") or k.startswith("f_")}}
+        # 139: remember where every line's audio is, so later edits are
+        # bookkeeping rather than a fresh alignment of the whole recording
+        try:
+            build_line_index(entry, text, pcm, sr, payload, status,
+                             {"fa": "fa-IR", "en": "en-US"}.get(payload.get("g_lang")))
+        except Exception as e:
+            _diag("line_index", mode="failed", msg=str(e)[:70])
         _ensure_valid(entry, "تولید", status)
         _GULP_PCM[gid] = entry
         return pcm_to_mp3(_assemble(entry), sr), gid
@@ -2747,16 +2754,31 @@ def _cbx_patch_middle(entry, new_items, pre, suf, payload, status):
     return True
 
 
+def _fork_entry(src):
+    """A deep-enough copy of a part: its audio, items, line map and voices are
+    independent of the original. (140)"""
+    import copy
+    e = {k: v for k, v in src.items() if k not in ("items", "lines", "voices", "payload")}
+    e["items"] = [{**it, "pcm": (it["pcm"].copy() if it.get("pcm") is not None else None)} for it in src.get("items", [])]
+    e["lines"] = copy.deepcopy(src.get("lines") or [])
+    e["voices"] = copy.deepcopy(src.get("voices") or {})
+    e["payload"] = dict(src.get("payload") or {})
+    e["born"] = time.time()
+    return e
+
+
 def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
     _require_license()
     _G_INCOMPLETE.clear()
     """Regenerate only the clauses that the edit/selection touched; every
     other clause's audio is reused bit-identical."""
     _job_start()
-    entry = _GULP_PCM.get(int(gid))
-    if entry is None:
+    src = _GULP_PCM.get(int(gid))
+    if src is None:
         raise RuntimeError("این بخش دیگر در حافظه نیست؛ یک بار دیگر «تبدیل به گفتار» را بزنید.")
-    _ensure_valid(entry, "پایهٔ ویرایش", status)
+    _ensure_valid(src, "پایهٔ ویرایش", status)
+    entry = _fork_entry(src)                      # 140: edit a COPY; the original stays for Undo
+    new_gid = next(_gulp_ids)
     new_text = new_text.strip()
     if payload["engine"] in ("google", "fish") or entry.get("engine") in ("google", "fish"):
         eng = payload["engine"] if payload["engine"] in ("google", "fish") else entry.get("engine")
@@ -2770,6 +2792,17 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
         # touched (with their neighbours as prosodic context), cut the new
         # clause out at its pause boundaries and splice it into the original
         # at the same kind of boundary. Falls back to a whole-part take.
+        if entry.get("engine") == eng and len(entry["items"]) == 1 and entry["items"][0].get("pcm") is not None \
+                and line_index(entry):
+            n = patch_by_lines(entry, new_text, sel_start, sel_end, cfg, status,
+                               lambda t, c, st: cloud_pcm(t, c, st))
+            if n is not None and n >= 0:
+                entry["payload"] = {**(entry.get("payload") or {}),
+                                    **{k: cfg[k] for k in cfg if (k.startswith("g_") or k.startswith("f_"))
+                                       and k not in ("g_voice", "g_preset", "g_age", "g_state",
+                                                     "f_voice", "f_preset", "f_age", "f_state")}}
+                _GULP_PCM[new_gid] = entry
+                return pcm_to_mp3(_assemble(entry), entry["sr"]), n, "lines", new_gid
         if entry.get("engine") == eng and len(entry["items"]) == 1 and entry["items"][0].get("pcm") is not None:
             # 130: a voice / voice-setting change is a legitimate surgical edit —
             # only the selected clauses are re-voiced, the rest of the audio is
@@ -2792,18 +2825,27 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
                 base.update(fresh)
                 entry["payload"] = base
                 _ensure_valid(entry, "ویرایش", status)
-                return pcm_to_mp3(_assemble(entry), entry["sr"]), done, "clauses"
+                _GULP_PCM[new_gid] = entry
+                return pcm_to_mp3(_assemble(entry), entry["sr"]), done, "clauses", new_gid
         cfg = {**cfg, "g_lead_in": entry.get("lead_in", "")}   # pinned at generation time
         status("جراحیِ جمله ممکن نشد؛ کل این بخش دوباره ساخته می‌شود.")
         pcm, sr = cloud_pcm(new_text, cfg, status)
         entry["voices"] = {}                       # 135: one voice now — forget every remembered line
         _remember_line_voices(entry, new_text, cfg)
+        entry["items"] = [{"kind": "t", "text": new_text, "span": (0, len(new_text)), "pcm": pcm}]
+        entry["sr"] = sr
+        try:
+            build_line_index(entry, new_text, pcm, sr, cfg, status,
+                             {"fa": "fa-IR", "en": "en-US"}.get(cfg.get("g_lang")))
+        except Exception:
+            entry["lines"] = []
         items = _clause_split(new_text, eng)
         items[0]["pcm"] = pcm
         entry.update({"sr": sr, "items": items, "text": new_text, "engine": eng,
                       "payload": {k: cfg[k] for k in cfg if k.startswith("g_") or k.startswith("f_")}})
         _ensure_valid(entry, "ویرایش", status)
-        return pcm_to_mp3(_assemble(entry), sr), 1, "full"
+        _GULP_PCM[new_gid] = entry
+        return pcm_to_mp3(_assemble(entry), sr), 1, "full", new_gid
     has_sel = sel_start is not None and sel_end is not None and sel_end > sel_start
     # the gulp's clause structure follows its BASE voice; a different voice in
     # the payload re-voices only the selection (the flanks' audio is reusable
@@ -2913,7 +2955,8 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
                                "speed", "noise", "noisew") if k in payload}})
     _ensure_valid(entry, "ویرایش", status)
     changed = words_done if mode == "words" else len(middle)
-    return pcm_to_mp3(_assemble(entry), entry["sr"]), changed, mode
+    _GULP_PCM[new_gid] = entry
+    return pcm_to_mp3(_assemble(entry), entry["sr"]), changed, mode, new_gid
 
 
 def _splice_pcm(ids, status):
@@ -3682,6 +3725,13 @@ def _g_completeness(text, words, strict=True):
         hit, tot = cov[-1]
         if tot >= 4 and hit < 0.75 * tot:
             _diag("g_completeness", clause=len(cov) - 1, matched=hit, of=tot, mode="tail")
+            return len(cov) - 1
+        # 140: even a high ratio can hide a cut-off ending. The final words of
+        # the text must be present in the final words of the transcript.
+        last = [_norm_word(w) for w in _text_words(text)][-3:]
+        tw = [_norm_word(w) for w, _, _ in words][-6:]
+        if last and tw and not any(w in tw for w in last[-2:]):
+            _diag("g_completeness", clause=len(cov) - 1, mode="tail_words_missing", want=" ".join(last)[:30])
             return len(cov) - 1
     return None
 
@@ -5789,3 +5839,195 @@ def settings_set(**kv):
     _SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
     _SETTINGS_FILE.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
     return d
+
+
+# ===========================================================================
+# 139 · THE LINE INDEX — the audio stops being a track of its own
+#
+# FIELD: "the transcription and word placement is being mangled on every
+# regeneration and it's becoming a track of its own irrespective of what's in
+# the text area". True, and structural: every edit re-derived where each line
+# lived by aligning a transcript against the stored text. Each splice left the
+# audio a little less like that text, and the next alignment was built on the
+# previous error. Editing deteriorated as it accumulated.
+#
+# The app already knows exactly where each line's audio is at the moment it
+# splices — it simply threw that away. Now it keeps it:
+#
+#     entry["lines"] = [{"text": …, "a": sample, "b": sample, "voice": {…}}]
+#
+# An edit is then BOOKKEEPING on that index, not forensics: a text diff says
+# which lines survive (their audio is kept, byte for byte, with its own voice),
+# which are gone (dropped) and which must be made. No alignment, no drift.
+# Generation still happens in runs with context, so cost and prosody are
+# unchanged.
+# ===========================================================================
+
+def _fade_edges(p, sr, ms=6):
+    """A 6 ms fade at both ends of a piece so plain concatenation never clicks. (140)"""
+    n = min(int(sr * ms / 1000), len(p) // 2)
+    if n <= 0:
+        return p
+    q = p.astype(np.float32)
+    ramp = np.linspace(0.0, 1.0, n, dtype=np.float32)
+    q[:n] *= ramp; q[-n:] *= ramp[::-1]
+    return q.astype(np.int16)
+
+
+def line_index(entry):
+    return entry.get("lines") or []
+
+
+def build_line_index(entry, text, pcm, sr, cfg, status, lang=None):
+    """Split a freshly generated part into per-line audio once, using the clause
+    boundaries the app already computes. Falls back to a single line covering
+    everything, which behaves exactly like the old single blob."""
+    cl = _g_clauses(text)
+    voice = {k: cfg[k] for k in ("g_voice", "g_preset", "g_age", "g_state",
+                                 "f_voice", "f_preset", "f_age", "f_state") if k in cfg}
+    if len(cl) < 2:
+        entry["lines"] = [{"text": text.strip(), "a": 0, "b": len(pcm), "voice": voice}]
+        return entry["lines"]
+    words = transcribe_words(pcm, sr, status, lang, text, cfg)
+    cuts = _g_bounds(pcm, sr, cl, status, lang, cfg, text, words)
+    if not cuts or len(cuts) != len(cl) - 1:
+        entry["lines"] = [{"text": text.strip(), "a": 0, "b": len(pcm), "voice": voice}]
+        _diag("line_index", mode="single", reason="no_boundaries")
+        return entry["lines"]
+    edges = [0] + [max(0, min(int(c), len(pcm))) for c in cuts] + [len(pcm)]
+    lines = []
+    for k, (c, _) in enumerate(cl):
+        lines.append({"text": c.strip(), "a": edges[k], "b": edges[k + 1], "voice": dict(voice)})
+    entry["lines"] = lines
+    _diag("line_index", lines=len(lines), ms=[int((l["b"] - l["a"]) * 1000 / sr) for l in lines][:8])
+    return lines
+
+
+def _lines_pcm(entry, pcm):
+    """The audio of each indexed line, in order."""
+    return [pcm[max(0, l["a"]):max(0, l["b"])] for l in line_index(entry)]
+
+
+def patch_by_lines(entry, new_text, sel_start, sel_end, cfg, status, call):
+    """Rebuild a part from its line index. Returns the number of lines generated,
+    or None when the index cannot be used (caller falls back)."""
+    old = line_index(entry)
+    if not old:
+        return None
+    pcm, sr = entry["items"][0]["pcm"], entry["sr"]
+    nc = _g_clauses(new_text)
+    if not nc:
+        return None
+    import difflib
+    ot = [_norm_word(" ".join(_text_words(l["text"]))) for l in old]
+    nt = [_norm_word(" ".join(_text_words(c))) for c, _ in nc]
+    sm = difflib.SequenceMatcher(None, ot, nt, autojunk=False)
+
+    plan = [None] * len(nc)                      # ("keep", old_idx) | ("make", voice)
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag == "equal":
+            for off in range(i2 - i1):
+                plan[j1 + off] = ("keep", i1 + off)
+        else:
+            for j in range(j1, j2):
+                # a changed line inherits the voice of the old line it replaces,
+                # or of its nearest neighbour — never the currently selected one
+                src = None
+                if i1 < len(old):
+                    src = old[min(i1 + (j - j1), len(old) - 1)]
+                elif old:
+                    src = old[-1]
+                plan[j] = ("make", dict((src or {}).get("voice") or {}))
+
+    # the selection is the conscious choice: those lines take the CURRENT voice
+    chosen = set()
+    if sel_start is not None and sel_end is not None and sel_end > sel_start:
+        cur = {k: cfg[k] for k in ("g_voice", "g_preset", "g_age", "g_state",
+                                   "f_voice", "f_preset", "f_age", "f_state") if k in cfg}
+        for k, (c, span) in enumerate(nc):
+            if span[0] < sel_end and span[1] > sel_start:
+                plan[k] = ("make", cur); chosen.add(k)
+    if not any(p and p[0] == "make" for p in plan):
+        return 0                                  # nothing to do
+
+    # group consecutive "make" lines that share a voice into one request
+    runs, k = [], 0
+    while k < len(nc):
+        if plan[k][0] != "make":
+            k += 1; continue
+        v = plan[k][1]; a = k
+        while k + 1 < len(nc) and plan[k + 1][0] == "make" and plan[k + 1][1] == v:
+            k += 1
+        runs.append((a, k + 1, v)); k += 1
+
+    base = {k2: (entry.get("payload") or {}).get(k2) for k2 in ("g_voice", "f_voice")}
+    made = {}
+    for a, b, v in runs:
+        same = all((v or {}).get(k2, base.get(k2)) == base.get(k2) for k2 in ("g_voice", "f_voice"))
+        ctx_b = nc[a - 1][0].strip() if (a > 0 and same) else ""
+        ctx_a = nc[b][0].strip() if (b < len(nc) and same) else ""
+        mid = "\n".join(c[0].strip() for c in nc[a:b])
+        gtext = "\n".join(x for x in (ctx_b, mid, ctx_a) if x)
+        status(f"ساختِ {faDigits(b - a)} خط…")
+        npcm, nsr = call(gtext, {**cfg, **(v or {}), "_no_audit": True}, status)
+        gcl = _g_clauses(gtext)
+        p0 = 1 if ctx_b else 0
+        want = p0 + (b - a) + (1 if ctx_a else 0)
+        seg_cuts = None
+        if len(gcl) == want and want > 1:
+            seg_cuts = _g_bounds(npcm, nsr, gcl, status, None, cfg, gtext)
+        if nsr != sr:
+            npcm = _resample(npcm, nsr, sr)
+            seg_cuts = [int(c * sr / nsr) for c in seg_cuts] if seg_cuts else None
+        if want == 1:
+            made[a] = npcm            # no context and one line: the take IS the target
+        elif seg_cuts and len(seg_cuts) == want - 1:
+            edges = [0] + seg_cuts + [len(npcm)]
+            for off in range(b - a):
+                made[a + off] = npcm[edges[p0 + off]:edges[p0 + off + 1]]
+        else:
+            # 139: boundaries unavailable. Handing the whole take — CONTEXT AND
+            # ALL — to the first line is how a sentence ends up spoken twice
+            # (field: «پیش‌گفتار» heard twice). Take the run again WITHOUT any
+            # context, so the whole recording IS the target and nothing can
+            # bleed in.
+            _diag("patch_lines", note="run_boundaries_unfound_retaking_without_context")
+            npcm2, nsr2 = call(mid, {**cfg, **(v or {}), "_no_audit": True}, status)
+            if nsr2 != sr:
+                npcm2 = _resample(npcm2, nsr2, sr)
+            cuts2 = _g_bounds(npcm2, sr, _g_clauses(mid), status, None, cfg, mid) if b - a > 1 else []
+            if b - a > 1 and cuts2 and len(cuts2) == (b - a) - 1:
+                e2 = [0] + [int(c) for c in cuts2] + [len(npcm2)]
+                for off in range(b - a):
+                    made[a + off] = npcm2[e2[off]:e2[off + 1]]
+            else:
+                made[a] = npcm2
+                for off in range(1, b - a):
+                    made[a + off] = np.zeros(0, dtype=np.int16)
+
+    # assemble in text order — kept audio is byte-identical, made audio is new
+    out, lines, at = [], [], 0
+    gap = np.zeros(int(sr * 0.10), dtype=np.int16)
+    for k2, (c, _) in enumerate(nc):
+        piece = made.get(k2) if plan[k2][0] == "make" else pcm[old[plan[k2][1]]["a"]:old[plan[k2][1]]["b"]]
+        if piece is None:
+            piece = np.zeros(0, dtype=np.int16)
+        if out:
+            out.append(gap); at += len(gap)
+        a0 = at
+        out.append(piece); at += len(piece)
+        voice = plan[k2][1] if plan[k2][0] == "make" else old[plan[k2][1]]["voice"]
+        lines.append({"text": c.strip(), "a": a0, "b": at, "voice": dict(voice or {})})
+    pieces = [_fade_edges(p, sr) for p in out if len(p)]
+    joined = np.concatenate(pieces) if pieces else np.zeros(0, dtype=np.int16)
+    # 140: offsets are EXACT — the map is computed from the same pieces that
+    # were concatenated, with no rescaling and no crossfade to shift them
+    entry["items"][0]["pcm"] = joined
+    entry["items"][0]["text"] = new_text
+    entry["items"][0]["span"] = (0, len(new_text))
+    entry["text"] = new_text
+    entry["lines"] = lines
+    entry["voices"] = {}                      # 140: the line index is the ONE voice record
+    n_made = sum(1 for p in plan if p[0] == "make")
+    _diag("patch_lines", made=n_made, kept=len(nc) - n_made, chosen=len(chosen), runs=len(runs))
+    return n_made

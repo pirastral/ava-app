@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist
 ======================================================================
-This zip is the COMPLETE application source as of update 138.
+This zip is the COMPLETE application source as of update 140.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,60 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 140 (on top of 139) — the harmony audit
+  A re-examination of every rule against every other, now that the line index
+  is the ground truth. Four places where mechanisms fought each other:
+  1) UNDO LIED AFTER A SURGERY. A surgery MUTATED the engine's part in place and
+     returned the same id. Undo restored the old playback audio in the UI, but
+     the id still pointed at the mutated entry — the one the final file and every
+     later edit use — with the NEW audio and NEW line map. A surgery now FORKS
+     the part: the copy is edited and registered under a fresh id, the original
+     survives untouched while the UI's history references it. (patch_gulp now
+     returns a 4-tuple; the UI adopts the new id.)
+  2) THE LINE MAP DRIFTED. Offsets were rescaled linearly after a crossfade join
+     — an approximation of a few ms per line that compounded over edits, the very
+     disease the index was built to cure. Pieces are now faded at their edges and
+     concatenated plainly, so the map is computed from the exact pieces joined.
+     Verified: after twelve successive edits every line's audio still matches its
+     map entry, measured on the sound itself.
+  3) THE LAST FEW WORDS. «…رن چهاردهم می‌گذارد؟» is the last 3 of a 17-word
+     clause; the 75 % tail check saw 82 % present and passed. Now the final two
+     words of the text must appear among the final words of the transcript, or
+     the take is flagged and retaken.
+  4) TWO VOICE RECORDS. The 134 per-line voice map (`voices`, keyed by text)
+     still existed beside the line index, each able to disagree with the other.
+     The line index is now the ONE record; `voices` is cleared whenever the index
+     is written.
+  Also verified in the audit: a surgical piece never borrows or overwrites the
+  document lead-in (136); the completeness audit never runs on surgical pieces
+  (128); the gc's 15 s birth grace covers forked parts (their `born` is reset);
+  Fish parts get a line index through the same cloud path as Google.
+
+WHAT CHANGED IN 139 (on top of 138) — THE LINE INDEX
+  Field: "the transcription and word placement is being mangled on every
+  regeneration and it's becoming a track of its own irrespective of what's in the
+  text area… edit is a deteriorating thing." Correct, and structural. Every edit
+  RE-DERIVED where each line lived by aligning a transcript against the stored
+  text. Each splice left the audio a little less like that text, and the next
+  alignment was built on the previous error — so editing got worse the more you
+  edited. The app already knew exactly where each line's audio was at the moment
+  it spliced; it threw that away.
+  NOW: entry["lines"] = [{text, a, b, voice}] — a per-line map of the recording,
+  built once when a part is generated (using boundaries the app already
+  computes) and MAINTAINED by every edit. An edit is bookkeeping on that map:
+  a text diff says which lines survive (their audio is kept byte-for-byte, with
+  their own voice), which are gone (dropped) and which must be made. No
+  alignment on the edit path, so no drift.
+  Consequences, each a field report:
+   · every line carries its OWN voice, so an edit elsewhere can never repaint it;
+   · a line far from the edit is never touched, even if it shares the new voice;
+   · pasted text lands where it was pasted, not where an earlier edit happened;
+   · «پیش‌گفتار» cannot be heard twice: if a run's internal boundaries cannot be
+     found, the run is RETAKEN WITHOUT CONTEXT so no neighbour can bleed in;
+   · a contextless single-line take is used whole — no cut, nothing to misplace.
+  Cost and prosody are unchanged: generation still happens in runs, with context
+  when the voice is the part's own.
 
 WHAT CHANGED IN 138 (on top of 137) — from the field report
   1) THE WHOLE PART CAME BACK IN THE NEW VOICE (field tests 1, 6, and the
@@ -829,6 +883,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۳۸»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۴۰»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

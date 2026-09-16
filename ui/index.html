@@ -1792,7 +1792,7 @@
               gulp: g.id, text: g.text, sel_start: g.sel.s, sel_end: g.sel.e, payload: gulpPayload(g) });
             bar.classList.remove("show");
             if(!res.ok) throw new Error(res.error || "خطای ناشناخته");
-            g.b64 = res.b64;
+            g.b64 = res.b64; if(res.gulp) g.id = res.gulp;   // 140: a surgery is a NEW part; the old one stays for Undo
             div.querySelector(".g-audio-row audio").src = audioURL(g);
             say(res.mode === "words"
               ? "بخش " + faNum(idx+1) + ": جراحی واژه‌ای؛ فقط " + faNum(res.changed) + " واژه دوباره ساخته و سر جای خودش نشانده شد."

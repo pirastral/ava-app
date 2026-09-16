@@ -138,11 +138,11 @@ class Api:
     def patch_gulp(self, req):
         try:
             import engines
-            mp3, n, mode = engines.patch_gulp(req["gulp"], req["text"],
+            mp3, n, mode, new_gid = engines.patch_gulp(req["gulp"], req["text"],
                                               req.get("sel_start"), req.get("sel_end"),
                                               req["payload"], self._status)
             b64 = base64.b64encode(mp3).decode("ascii")
-            return {"ok": True, "b64": b64, "gulp": req["gulp"], "changed": n, "mode": mode}
+            return {"ok": True, "b64": b64, "gulp": new_gid, "changed": n, "mode": mode}   # 140: a NEW part id
         except Exception as e:
             if type(e).__name__ != "Cancelled":
                 traceback.print_exc()
