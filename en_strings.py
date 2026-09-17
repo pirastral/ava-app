@@ -86,6 +86,8 @@ EXACT = {
  "جملهٔ جاافتاده را جداگانه می‌سازم و سرِ جایش می‌گذارم…": "Generating the missing sentence on its own and splicing it into place…",
  "صدا/تنظیمات این بخش عوض شده؛ فقط جمله‌های انتخاب‌شده با صدای تازه ساخته می‌شوند.": "The voice/settings of this part changed; only the selected sentences are rebuilt with the new voice.",
  "جراحیِ جمله ممکن نشد؛ کل این بخش دوباره ساخته می‌شود.": "Sentence surgery was not possible; the whole part is being rebuilt.",
+ "نقشهٔ جمله‌های این بخش قابل‌اعتماد نیست؛ ویرایش بعدی از روی رونویسیِ تازه انجام می‌شود، و اگر نشد کل بخش دوباره ساخته می‌شود.": "This part's sentence map is not trustworthy; the next edit will work from a fresh transcript, and rebuild the whole part if that fails.",
+ "مرز جمله‌های این بخش پیدا نشد؛ ویرایشِ جزئی روی آن کل بخش را دوباره می‌سازد.": "This part's sentence boundaries could not be found; a partial edit will rebuild the whole part.",
  "Fish Audio: کلید پذیرفته نشد (401). کلید را دوباره بررسی کنید.": "Fish Audio: key rejected (401). Check the key.",
  "Fish Audio: اعتبار حساب تمام شده (402). برای مدل پولی باید شارژ کنید؛ مدل رایگان s2.1-pro-free را انتخاب کنید.": "Fish Audio: out of credit (402). Top up for the paid model, or pick the free s2.1-pro-free.",
  "Fish Audio: برشِ جملهٔ راهنما قابل اعتماد نبود؛ بدون راهنما می‌سازم…": "Fish Audio: the lead-in cut was unreliable; generating without it…",

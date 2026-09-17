@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist
 ======================================================================
-This zip is the COMPLETE application source as of update 140.
+This zip is the COMPLETE application source as of update 142.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,66 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 142 (on top of 141) — THE MAP IS CHECKED AGAINST THE TEXT
+  The text area is authoritative for WHAT exists and in WHAT ORDER; it cannot say
+  WHERE a line's audio is, but it can say when a map is impossible. Every line
+  map is now validated against four invariants, after generation, BEFORE any
+  cut, after every edit, and after every rebuild:
+    · a line that exists has audio (a 0-sample range for a 1-word line is wrong);
+    · ranges are ordered, disjoint and inside the recording;
+    · a line's share of the duration follows its share of the words, loosely
+      (≤4× skew; lines under 3 words are not judged);
+    · the map covers the recording.
+  THE RULE THAT KEEPS THIS FROM HALLUCINATING: the text may REJECT a map, it may
+  never AUTHOR one. A rejected map is rebuilt from the transcript by the
+  word-span route (remembered voices survive, keyed by line text); if that fails
+  the map is marked UNTRUSTED with a visible message, and the next edit works
+  from a fresh transcript — never a cut on a map the app knows is wrong.
+  HARMONY AUDIT of the addition against every mechanism that touches the map:
+    · the older anchor-based surgery (the fallback when the map is untrusted)
+      changed the audio but left the map STALE — a stale map could pass by
+      chance and misplace a later cut. It now rebuilds and validates the map.
+    · a fork (140) carries `map_untrusted` with it; validation clears it when
+      evidence returns, so the flag is never sticky.
+    · surgical runs never run the audit or touch the lead-in (128/136) — unchanged.
+    · gain, silence/file parts, gc, captions: none read the map — unchanged.
+  Verified: the two field maps (an empty «پیش‌گفتار», a 6-word line squeezed to
+  0.4 s) are rejected; with no transcript nothing is invented; after 20 mixed
+  edits the map is provably valid at every step.
+
+WHAT CHANGED IN 141 (on top of 140) — from the 140 field session
+  1) AN ENTER IS A SPLIT, NOT A REWRITE. Pressing Enter inside a line showed up in
+     the line diff as "one old line replaced by three new lines", so all three
+     were marked to be made — the two never touched were regenerated (log:
+     `made=3 chosen=1`), and with six one-word lines the runs bled into each
+     other (`made=6 chosen=1`, «نبرد» and «روم» heard twice). If the new lines'
+     words are exactly the old lines' words, the audio ALREADY EXISTS: it is now
+     SLICED at the word timings and every piece kept with its own voice. Nothing
+     is generated for a split; only the line you select is made.
+  2) ONE UNMATCHED CLAUSE NO LONGER DISCARDS THE WHOLE ALIGNMENT. «پیش‌گفتار»
+     (one word, ZWNJ) is unmatched by the ASR; the boundary finder then gave up on
+     ALL seven boundaries and fell to silence mode, whose cuts were badly off
+     (1.6 s for a six-word line, 2.7 s for a twelve-word one). That poisoned the
+     line map: «با ایران» filed under the next line (so a paste landed
+     mid-sentence), «پیش‌گفتار» left with an empty range (so it was never read).
+     A boundary the words cannot place is now interpolated from its neighbours
+     and snapped to the nearest silence; the rest stay word-exact.
+  3) THE INDEX NEVER SILENTLY COLLAPSES TO ONE LINE. After a repair splice it
+     came back `single / no_boundaries`, so the next edit rebuilt everything. A
+     second route now builds it from each line's own first/last matched words;
+     only with no transcript at all does it collapse, and then the status says
+     so.
+  4) A LINE WITH NO REMEMBERED VOICE inherits the PART's base voice, never the
+     currently selected one (a third sentence came back in the new voice).
+  5) "App defaults" in a part's settings now clears the part's own settings, so
+     the gear icon goes back to plain.
+  6) After Undo/Redo every player is paused and reloaded, so none can keep a
+     previous source.
+  Verified with a synthetic engine whose voices are distinct tones, measured on
+  the audio itself: two-Enter split (1 generated of 6 lines), six one-word lines
+  edited one by one, paste-in landing after the whole line, gutting keeping
+  «پیش‌گفتار».
 
 WHAT CHANGED IN 140 (on top of 139) — the harmony audit
   A re-examination of every rule against every other, now that the line index
@@ -883,6 +943,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۴۰»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۴۲»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

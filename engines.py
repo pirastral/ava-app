@@ -71,8 +71,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 140
-BUILD_FA = "\u06f1\u06f4\u06f0"
+BUILD = 142
+BUILD_FA = "\u06f1\u06f4\u06f2"
 
 
 def _diag(tag, **kv):
@@ -1968,6 +1968,7 @@ def generate_gulp(payload, status):
         try:
             build_line_index(entry, text, pcm, sr, payload, status,
                              {"fa": "fa-IR", "en": "en-US"}.get(payload.get("g_lang")))
+            ensure_line_index(entry, status, payload)          # 142: checked against the text
         except Exception as e:
             _diag("line_index", mode="failed", msg=str(e)[:70])
         _ensure_valid(entry, "تولید", status)
@@ -2793,7 +2794,7 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
         # clause out at its pause boundaries and splice it into the original
         # at the same kind of boundary. Falls back to a whole-part take.
         if entry.get("engine") == eng and len(entry["items"]) == 1 and entry["items"][0].get("pcm") is not None \
-                and line_index(entry):
+                and line_index(entry) and ensure_line_index(entry, status, cfg):
             n = patch_by_lines(entry, new_text, sel_start, sel_end, cfg, status,
                                lambda t, c, st: cloud_pcm(t, c, st))
             if n is not None and n >= 0:
@@ -2825,6 +2826,13 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
                 base.update(fresh)
                 entry["payload"] = base
                 _ensure_valid(entry, "ویرایش", status)
+                # 142: the anchor path changed the audio — the map must follow it
+                try:
+                    build_line_index(entry, entry["text"], entry["items"][0]["pcm"], entry["sr"], cfg, status,
+                                     {"fa": "fa-IR", "en": "en-US"}.get(cfg.get("g_lang")))
+                    ensure_line_index(entry, status, cfg)
+                except Exception:
+                    entry["lines"] = []; entry["map_untrusted"] = True
                 _GULP_PCM[new_gid] = entry
                 return pcm_to_mp3(_assemble(entry), entry["sr"]), done, "clauses", new_gid
         cfg = {**cfg, "g_lead_in": entry.get("lead_in", "")}   # pinned at generation time
@@ -2837,6 +2845,7 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
         try:
             build_line_index(entry, new_text, pcm, sr, cfg, status,
                              {"fa": "fa-IR", "en": "en-US"}.get(cfg.get("g_lang")))
+            ensure_line_index(entry, status, cfg)
         except Exception:
             entry["lines"] = []
         items = _clause_split(new_text, eng)
@@ -4796,12 +4805,14 @@ def _g_boundaries_words(pcm, sr, clauses, words):
         _diag("g_words_align", matched=len(m2t), of=len(ours), mode="thin")
         return None
     cuts = []
+    holes = []
     for k in range(B):
         last = [i for i in range(len(ours)) if owner[i] == k and i in m2t]
         nxt = [i for i in range(len(ours)) if owner[i] == k + 1 and i in m2t]
         if not last or not nxt:
-            _diag("g_words_align", clause=k, mode="unmatched")
-            return None
+            _diag("g_words_align", clause=k, mode="unmatched_interpolate")
+            cuts.append(None); holes.append(k)          # 141: fill in below, do not give up
+            continue
         j, j2 = m2t[last[-1]], m2t[nxt[0]]
         # Between the two anchors there may be words the ASR mis-heard OR
         # omitted entirely (FIELD, 96: «یا یک شورا میگرفت» went missing and the
@@ -4821,9 +4832,24 @@ def _g_boundaries_words(pcm, sr, clauses, words):
             if gap > best_gap:
                 best_gap, best_t = gap, (words[q][2] + words[q + 1][1]) / 2 if gap > 0 else words[q][2]
         cuts.append(int(best_t * sr))
+    if holes:
+        if len(holes) > max(1, B // 3):
+            _diag("g_words_align", holes=len(holes), of=B, mode="too_many_unmatched")
+            return None
+        runs = _silence_runs(pcm, sr, min_ms=70)
+        total_chars = max(1, sum(_g_speech_len(c) for c, _ in clauses))
+        for k in holes:
+            lo = max([c for c in cuts[:k] if c is not None], default=0)
+            hi = min([c for c in cuts[k + 1:] if c is not None], default=len(pcm))
+            # where the text says this boundary should be, proportionally
+            frac = sum(_g_speech_len(c) for c, _ in clauses[:k + 1]) / total_chars
+            guess = int(len(pcm) * frac)
+            guess = max(lo + 1, min(guess, hi - 1))
+            cand = [r for r in runs if lo < r[2] < hi]
+            cuts[k] = min(cand, key=lambda r: abs(r[2] - guess))[2] if cand else guess
     if any(cuts[k] >= cuts[k + 1] for k in range(B - 1)) or cuts[-1] >= len(pcm):
         return None
-    _diag("g_boundaries", need=B, mode="words", ms=[int(c * 1000 / sr) for c in cuts])
+    _diag("g_boundaries", need=B, mode="words" if not holes else f"words+{len(holes)}interp", ms=[int(c * 1000 / sr) for c in cuts])
     return [_zc_snap(pcm, c, sr) for c in cuts]
 
 
@@ -5878,6 +5904,53 @@ def line_index(entry):
     return entry.get("lines") or []
 
 
+def _cuts_from_word_spans(pcm, sr, clauses, words):
+    """Boundaries from each clause's own matched words: cut midway between the
+    end of one clause's last matched word and the start of the next clause's
+    first. Tolerates unmatched clauses by interpolating. (141)"""
+    if not words:
+        return None
+    import difflib
+    ours, owner = [], []
+    for k, (c, _) in enumerate(clauses):
+        ws = _text_words(c); ours += ws; owner += [k] * len(ws)
+    tw = [_norm_word(w) for w, _, _ in words]
+    sm = difflib.SequenceMatcher(None, ours, tw, autojunk=False)
+    m2t = {}
+    for a, b, n in sm.get_matching_blocks():
+        for i in range(n):
+            m2t[a + i] = b + i
+    if len(m2t) < 0.4 * len(ours):
+        return None
+    ends, starts = {}, {}
+    for i, k in enumerate(owner):
+        if i in m2t:
+            starts.setdefault(k, words[m2t[i]][1]); ends[k] = words[m2t[i]][2]
+    cuts = []
+    for k in range(len(clauses) - 1):
+        e, s_ = ends.get(k), starts.get(k + 1)
+        if e is not None and s_ is not None and s_ >= e:
+            cuts.append(int((e + s_) / 2 * sr))
+        elif e is not None:
+            cuts.append(int((e + 0.05) * sr))
+        elif s_ is not None:
+            cuts.append(int(max(0.0, s_ - 0.05) * sr))
+        else:
+            cuts.append(None)
+    known = [c for c in cuts if c is not None]
+    if not known:
+        return None
+    for k in range(len(cuts)):                       # interpolate the unknown ones
+        if cuts[k] is None:
+            lo = max([c for c in cuts[:k] if c is not None], default=0)
+            hi = min([c for c in cuts[k + 1:] if c is not None], default=len(pcm))
+            cuts[k] = (lo + hi) // 2
+    if any(cuts[k] >= cuts[k + 1] for k in range(len(cuts) - 1)) or cuts[-1] >= len(pcm):
+        return None
+    _diag("g_boundaries", need=len(cuts), mode="word_spans", ms=[int(c * 1000 / sr) for c in cuts])
+    return [_zc_snap(pcm, c, sr) for c in cuts]
+
+
 def build_line_index(entry, text, pcm, sr, cfg, status, lang=None):
     """Split a freshly generated part into per-line audio once, using the clause
     boundaries the app already computes. Falls back to a single line covering
@@ -5891,8 +5964,11 @@ def build_line_index(entry, text, pcm, sr, cfg, status, lang=None):
     words = transcribe_words(pcm, sr, status, lang, text, cfg)
     cuts = _g_bounds(pcm, sr, cl, status, lang, cfg, text, words)
     if not cuts or len(cuts) != len(cl) - 1:
+        cuts = _cuts_from_word_spans(pcm, sr, cl, words)
+    if not cuts or len(cuts) != len(cl) - 1:
         entry["lines"] = [{"text": text.strip(), "a": 0, "b": len(pcm), "voice": voice}]
         _diag("line_index", mode="single", reason="no_boundaries")
+        status("مرز جمله‌های این بخش پیدا نشد؛ ویرایشِ جزئی روی آن کل بخش را دوباره می‌سازد.")
         return entry["lines"]
     edges = [0] + [max(0, min(int(c), len(pcm))) for c in cuts] + [len(pcm)]
     lines = []
@@ -5901,6 +5977,33 @@ def build_line_index(entry, text, pcm, sr, cfg, status, lang=None):
     entry["lines"] = lines
     _diag("line_index", lines=len(lines), ms=[int((l["b"] - l["a"]) * 1000 / sr) for l in lines][:8])
     return lines
+
+
+def _split_lines_audio(entry, pcm, sr, old_lines, new_clauses, status):
+    """Split the audio of old_lines (contiguous, same words) into one piece per
+    new clause, at word timings. Returns [(pcm, voice)] or None. (141)"""
+    a, b = old_lines[0]["a"], old_lines[-1]["b"]
+    seg = pcm[a:b]
+    if len(seg) < sr * 0.1:
+        return None
+    if len(new_clauses) == 1:
+        return [(seg, dict(old_lines[0].get("voice") or {}))]
+    joined = "\n".join(c[0].strip() for c in new_clauses)
+    words = transcribe_words(seg, sr, status, None, joined, entry.get("payload") or {})
+    cuts = _g_bounds(seg, sr, [(c[0], c[1]) for c in new_clauses], status, None, entry.get("payload") or {}, joined, words)
+    if not cuts or len(cuts) != len(new_clauses) - 1:
+        return None
+    edges = [0] + [max(0, min(int(c), len(seg))) for c in cuts] + [len(seg)]
+    # which old line did each new clause come from (by cumulative word count)?
+    out, k_old, consumed = [], 0, 0
+    o_counts = [len(_text_words(l["text"])) for l in old_lines]
+    for i, (c, _) in enumerate(new_clauses):
+        n = len(_text_words(c))
+        while k_old < len(old_lines) - 1 and consumed + n > sum(o_counts[:k_old + 1]):
+            k_old += 1
+        consumed += n
+        out.append((seg[edges[i]:edges[i + 1]], dict(old_lines[k_old].get("voice") or {})))
+    return out
 
 
 def _lines_pcm(entry, pcm):
@@ -5923,11 +6026,22 @@ def patch_by_lines(entry, new_text, sel_start, sel_end, cfg, status, call):
     nt = [_norm_word(" ".join(_text_words(c))) for c, _ in nc]
     sm = difflib.SequenceMatcher(None, ot, nt, autojunk=False)
 
-    plan = [None] * len(nc)                      # ("keep", old_idx) | ("make", voice)
+    plan = [None] * len(nc)                      # ("keep", old_idx) | ("make", voice) | ("slice", pcm, voice)
     for tag, i1, i2, j1, j2 in sm.get_opcodes():
         if tag == "equal":
             for off in range(i2 - i1):
                 plan[j1 + off] = ("keep", i1 + off)
+        elif tag == "replace" and "".join(ot[i1:i2]) == "".join(nt[j1:j2]):
+            # same words, different line breaks → split the existing audio
+            pieces = _split_lines_audio(entry, pcm, sr, old[i1:i2], nc[j1:j2], status)
+            if pieces is not None:
+                for off, (piece, voice) in enumerate(pieces):
+                    plan[j1 + off] = ("slice", piece, voice)
+                _diag("patch_lines", note=f"resegmented_{i2 - i1}_to_{j2 - j1}_without_generation")
+                continue
+            for j in range(j1, j2):                  # could not split: make them, in their own voice
+                src = old[min(i1 + (j - j1), i2 - 1)]
+                plan[j] = ("make", dict(src.get("voice") or {}))
         else:
             for j in range(j1, j2):
                 # a changed line inherits the voice of the old line it replaces,
@@ -5947,6 +6061,13 @@ def patch_by_lines(entry, new_text, sel_start, sel_end, cfg, status, call):
         for k, (c, span) in enumerate(nc):
             if span[0] < sel_end and span[1] > sel_start:
                 plan[k] = ("make", cur); chosen.add(k)
+    # a line with no remembered voice inherits the PART's base voice, never the
+    # currently selected one (141: a third sentence came back in the new voice)
+    base_v = {k2: v2 for k2, v2 in (entry.get("payload") or {}).items()
+              if k2 in ("g_voice", "g_preset", "g_age", "g_state", "f_voice", "f_preset", "f_age", "f_state")}
+    for k in range(len(nc)):
+        if plan[k] and plan[k][0] == "make" and k not in chosen and not plan[k][1]:
+            plan[k] = ("make", dict(base_v))
     if not any(p and p[0] == "make" for p in plan):
         return 0                                  # nothing to do
 
@@ -6009,14 +6130,19 @@ def patch_by_lines(entry, new_text, sel_start, sel_end, cfg, status, call):
     out, lines, at = [], [], 0
     gap = np.zeros(int(sr * 0.10), dtype=np.int16)
     for k2, (c, _) in enumerate(nc):
-        piece = made.get(k2) if plan[k2][0] == "make" else pcm[old[plan[k2][1]]["a"]:old[plan[k2][1]]["b"]]
+        if plan[k2][0] == "make":
+            piece = made.get(k2)
+        elif plan[k2][0] == "slice":
+            piece = plan[k2][1]
+        else:
+            piece = pcm[old[plan[k2][1]]["a"]:old[plan[k2][1]]["b"]]
         if piece is None:
             piece = np.zeros(0, dtype=np.int16)
         if out:
             out.append(gap); at += len(gap)
         a0 = at
         out.append(piece); at += len(piece)
-        voice = plan[k2][1] if plan[k2][0] == "make" else old[plan[k2][1]]["voice"]
+        voice = plan[k2][1] if plan[k2][0] == "make" else (plan[k2][2] if plan[k2][0] == "slice" else old[plan[k2][1]]["voice"])
         lines.append({"text": c.strip(), "a": a0, "b": at, "voice": dict(voice or {})})
     pieces = [_fade_edges(p, sr) for p in out if len(p)]
     joined = np.concatenate(pieces) if pieces else np.zeros(0, dtype=np.int16)
@@ -6028,6 +6154,99 @@ def patch_by_lines(entry, new_text, sel_start, sel_end, cfg, status, call):
     entry["text"] = new_text
     entry["lines"] = lines
     entry["voices"] = {}                      # 140: the line index is the ONE voice record
+    ensure_line_index(entry, status)          # 142: the result is checked against the text too
     n_made = sum(1 for p in plan if p[0] == "make")
     _diag("patch_lines", made=n_made, kept=len(nc) - n_made, chosen=len(chosen), runs=len(runs))
     return n_made
+
+
+# ===========================================================================
+# 142 · THE MAP IS CHECKED AGAINST THE TEXT — reject, never author
+#
+# The text area is authoritative for WHAT exists and in WHAT ORDER. It cannot
+# say WHERE a line's audio is, but it can say when a map is impossible:
+#   · a line that exists has audio            (a 0-sample range is wrong)
+#   · ranges are ordered, disjoint, in bounds  (a hole or an overlap is wrong)
+#   · a line's share of the duration follows   (a 6-word line at 1.6 s beside a
+#     its share of the words, loosely           1-word line at 2.5 s is wrong)
+# The rule that keeps this from hallucinating: the text may REJECT a map, it
+# may never AUTHOR one. A rejected map is rebuilt from the transcript by the
+# second route; if that fails too, the map is marked untrusted and the next
+# edit rebuilds the part with a visible message — never a cut on a map the
+# app knows is wrong.
+# ===========================================================================
+MAP_MAX_SKEW = 4.0        # a line may be at most 4× longer or shorter than its word share implies
+
+
+def validate_line_index(entry, pcm=None, sr=None):
+    """Return [] when the map is consistent with the text, else the reasons."""
+    lines = entry.get("lines") or []
+    pcm = entry["items"][0]["pcm"] if pcm is None else pcm
+    sr = entry["sr"] if sr is None else sr
+    if not lines or pcm is None:
+        return ["no_map"]
+    n = len(pcm)
+    bad = []
+    cl = _g_clauses(entry.get("text") or "")
+    if len(cl) != len(lines):
+        bad.append(f"line_count_{len(lines)}_vs_text_{len(cl)}")
+    prev_b = 0
+    for k, l in enumerate(lines):
+        a, b = int(l.get("a", 0)), int(l.get("b", 0))
+        words = len(_text_words(l.get("text") or ""))
+        if a < 0 or b > n or b < a:
+            bad.append(f"line{k}_out_of_bounds"); continue
+        if a < prev_b:
+            bad.append(f"line{k}_overlaps_previous")
+        prev_b = b
+        if words and b - a < int(sr * 0.12):
+            bad.append(f"line{k}_empty_for_{words}_words")
+    total_words = sum(len(_text_words(l.get("text") or "")) for l in lines) or 1
+    spoken = sum(max(0, int(l["b"]) - int(l["a"])) for l in lines) or 1
+    for k, l in enumerate(lines):
+        words = len(_text_words(l.get("text") or ""))
+        if words < 3:
+            continue                                      # too short to judge by proportion
+        share = words / total_words
+        got = max(0, int(l["b"]) - int(l["a"])) / spoken
+        if got > 0 and (got / share > MAP_MAX_SKEW or share / got > MAP_MAX_SKEW):
+            bad.append(f"line{k}_duration_skew_{got/share:.1f}x")
+    if lines and int(lines[-1]["b"]) < n * 0.6:
+        bad.append("map_covers_less_than_60pct")
+    return bad
+
+
+def ensure_line_index(entry, status, cfg=None, lang=None):
+    """Validate the map; if it is wrong, rebuild it by the second route; if that
+    fails, mark it untrusted. Returns True when the map can be used for a cut."""
+    bad = validate_line_index(entry)
+    if not bad:
+        entry.pop("map_untrusted", None)
+        return True
+    _diag("line_map_rejected", reasons=",".join(bad)[:120])
+    pcm, sr = entry["items"][0]["pcm"], entry["sr"]
+    text = entry.get("text") or ""
+    cl = _g_clauses(text)
+    try:
+        words = transcribe_words(pcm, sr, status, lang, text, cfg or entry.get("payload") or {})
+        cuts = _cuts_from_word_spans(pcm, sr, cl, words) if len(cl) > 1 else []
+        if cuts is not None and len(cuts) == len(cl) - 1:
+            edges = [0] + [max(0, min(int(c), len(pcm))) for c in cuts] + [len(pcm)]
+            old_voice = {}
+            if entry.get("lines"):
+                old_voice = {l["text"]: l.get("voice") for l in entry["lines"]}
+            base = {k: v for k, v in (entry.get("payload") or {}).items()
+                    if k in ("g_voice", "g_preset", "g_age", "g_state", "f_voice", "f_preset", "f_age", "f_state")}
+            entry["lines"] = [{"text": c.strip(), "a": edges[k], "b": edges[k + 1],
+                               "voice": dict(old_voice.get(c.strip()) or base)} for k, (c, _) in enumerate(cl)]
+            bad2 = validate_line_index(entry)
+            if not bad2:
+                _diag("line_map_rebuilt", lines=len(cl))
+                entry.pop("map_untrusted", None)
+                return True
+            _diag("line_map_rejected", reasons="after_rebuild:" + ",".join(bad2)[:100])
+    except Exception as e:
+        _diag("line_map_rebuild_err", msg=str(e)[:80])
+    entry["map_untrusted"] = True
+    status("نقشهٔ جمله‌های این بخش قابل‌اعتماد نیست؛ ویرایش بعدی از روی رونویسیِ تازه انجام می‌شود، و اگر نشد کل بخش دوباره ساخته می‌شود.")
+    return False
