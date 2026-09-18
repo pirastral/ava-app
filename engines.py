@@ -71,8 +71,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 142
-BUILD_FA = "\u06f1\u06f4\u06f2"
+BUILD = 145
+BUILD_FA = "\u06f1\u06f4\u06f5"
 
 
 def _diag(tag, **kv):
@@ -2781,6 +2781,17 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
     entry = _fork_entry(src)                      # 140: edit a COPY; the original stays for Undo
     new_gid = next(_gulp_ids)
     new_text = new_text.strip()
+    # 143: no selection, or a selection that covers the whole text, means the
+    # user wants the PART REMADE — one voice, fresh audio, fresh map, fresh
+    # transcript. It must owe nothing to earlier surgeries (field: "scars" —
+    # extra pauses, mismatched tone, a line read twice, «پیش‌گفتار» dropped).
+    _sel_all = (sel_start is not None and sel_end is not None
+                and sel_start <= (len(new_text) - len(new_text.lstrip())) and sel_end >= len(new_text.rstrip()))
+    if (sel_start is None or sel_end is None or sel_end <= sel_start or _sel_all) \
+            and src.get("engine") in ("google", "fish") and (payload or {}).get("engine") in ("google", "fish"):
+        sel_start = sel_end = None
+        entry["lines"] = []; entry.pop("map_untrusted", None); entry["voices"] = {}
+        _diag("patch", mode="fresh_full", reason="no_selection" if not _sel_all else "select_all")
     if payload["engine"] in ("google", "fish") or entry.get("engine") in ("google", "fish"):
         eng = payload["engine"] if payload["engine"] in ("google", "fish") else entry.get("engine")
         cfg = payload if payload["engine"] == eng else {**entry["payload"], **payload, "engine": eng}
@@ -2793,7 +2804,8 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
         # touched (with their neighbours as prosodic context), cut the new
         # clause out at its pause boundaries and splice it into the original
         # at the same kind of boundary. Falls back to a whole-part take.
-        if entry.get("engine") == eng and len(entry["items"]) == 1 and entry["items"][0].get("pcm") is not None \
+        _has_sel = sel_start is not None and sel_end is not None and sel_end > sel_start
+        if _has_sel and entry.get("engine") == eng and len(entry["items"]) == 1 and entry["items"][0].get("pcm") is not None \
                 and line_index(entry) and ensure_line_index(entry, status, cfg):
             n = patch_by_lines(entry, new_text, sel_start, sel_end, cfg, status,
                                lambda t, c, st: cloud_pcm(t, c, st))
@@ -2804,7 +2816,7 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
                                                      "f_voice", "f_preset", "f_age", "f_state")}}
                 _GULP_PCM[new_gid] = entry
                 return pcm_to_mp3(_assemble(entry), entry["sr"]), n, "lines", new_gid
-        if entry.get("engine") == eng and len(entry["items"]) == 1 and entry["items"][0].get("pcm") is not None:
+        if _has_sel and entry.get("engine") == eng and len(entry["items"]) == 1 and entry["items"][0].get("pcm") is not None:
             # 130: a voice / voice-setting change is a legitimate surgical edit —
             # only the selected clauses are re-voiced, the rest of the audio is
             # kept bit-identical. The user is told, because the part will then
@@ -3701,6 +3713,7 @@ def _clause_coverage(text, words, strict=True):
     ours, owner = [], []
     for k, (c, _) in enumerate(cl):
         ws = _text_words(c); ours += ws; owner += [k] * len(ws)
+    words = _merge_split_words(ours, words or [])       # 145: same convention as the boundary finders
     tw = [_norm_word(w) for w, _, _ in (words or [])]
     if not ours or not tw:
         return None
@@ -3739,7 +3752,10 @@ def _g_completeness(text, words, strict=True):
         # the text must be present in the final words of the transcript.
         last = [_norm_word(w) for w in _text_words(text)][-3:]
         tw = [_norm_word(w) for w, _, _ in words][-6:]
-        if last and tw and not any(w in tw for w in last[-2:]):
+        import difflib as _dl
+        def _near(w):                                        # 143: ASR spelling tolerance
+            return any(_dl.SequenceMatcher(None, w, t).ratio() >= 0.7 for t in tw)
+        if last and tw and not any(_near(w) for w in last[-2:]):
             _diag("g_completeness", clause=len(cov) - 1, mode="tail_words_missing", want=" ".join(last)[:30])
             return len(cov) - 1
     return None
@@ -4081,6 +4097,7 @@ def _replacement_is_provable(words, pcm, sr, head_end, tail_start, old_text, new
     ours, owner = [], []
     for k, (c, _) in enumerate(nc):
         ws = _text_words(c); ours += ws; owner += [k] * len(ws)
+    words = _merge_split_words(ours, words)           # 145
     tw = [_norm_word(w) for w, _, _ in words]
     if not ours or not tw:
         return True
@@ -4122,6 +4139,7 @@ def _anchor_edges(words, head_text, tail_text, pcm, sr, fb_head, fb_tail):
     import difflib
     if not words:
         return fb_head, fb_tail
+    words = _merge_split_words([_norm_word(w) for w in _text_words(head_text + " " + tail_text)], words)   # 145
     ow = [_norm_word(w) for w, _, _ in words]
     head_end, tail_start = fb_head, fb_tail
 
@@ -4245,6 +4263,7 @@ def _coverage(old_words, new_text, old_text=None):
     ours, owner = [], []
     for k, (c, _) in enumerate(nc):
         ws = _text_words(c); ours += ws; owner += [k] * len(ws)
+    old_words = _merge_split_words(ours, old_words or [])  # 145
     tw = [_norm_word(w) for w, _, _ in (old_words or [])]
     if not ours or not tw:
         return None, []
@@ -4639,6 +4658,28 @@ def _norm_word(w):
     return re.sub(r"[\W_]+", "", w).lower()
 
 
+def _merge_split_words(ours, words):
+    """Merge adjacent transcript words when their concatenation is one of our
+    words and neither piece is on its own: an ASR writes «یک جانبه» for our
+    «یک‌جانبهٔ». Returns a new [(word, start, end)] list. (143)"""
+    if not words or not ours:
+        return words
+    vocab = set(ours)
+    singles = set(w for w in ours if len(w) > 1)
+    out, i = [], 0
+    tw = [_norm_word(w) for w, _, _ in words]
+    while i < len(tw):
+        merged = False
+        for span in (3, 2):
+            if i + span <= len(tw):
+                cat = "".join(tw[i:i + span])
+                if cat in vocab and not all(t in singles for t in tw[i:i + span]):
+                    out.append((cat, words[i][1], words[i + span - 1][2])); i += span; merged = True; break
+        if not merged:
+            out.append(words[i]); i += 1
+    return out
+
+
 def _text_words(text):
     return [t for t in (_norm_word(x) for x in re.sub(r"\[[^\]]+\]", " ", text).split()) if t]
 
@@ -4793,6 +4834,7 @@ def _g_boundaries_words(pcm, sr, clauses, words):
     for k, (c, _) in enumerate(clauses):
         ws = _text_words(c)
         ours += ws; owner += [k] * len(ws)
+    words = _merge_split_words(ours, words)               # 143: ZWNJ compounds
     tw = [_norm_word(w) for w, _, _ in words]
     if not ours or not tw:
         return None
@@ -5914,6 +5956,7 @@ def _cuts_from_word_spans(pcm, sr, clauses, words):
     ours, owner = [], []
     for k, (c, _) in enumerate(clauses):
         ws = _text_words(c); ours += ws; owner += [k] * len(ws)
+    words = _merge_split_words(ours, words)               # 143: ZWNJ compounds
     tw = [_norm_word(w) for w, _, _ in words]
     sm = difflib.SequenceMatcher(None, ours, tw, autojunk=False)
     m2t = {}
@@ -5990,8 +6033,15 @@ def _split_lines_audio(entry, pcm, sr, old_lines, new_clauses, status):
         return [(seg, dict(old_lines[0].get("voice") or {}))]
     joined = "\n".join(c[0].strip() for c in new_clauses)
     words = transcribe_words(seg, sr, status, None, joined, entry.get("payload") or {})
-    cuts = _g_bounds(seg, sr, [(c[0], c[1]) for c in new_clauses], status, None, entry.get("payload") or {}, joined, words)
-    if not cuts or len(cuts) != len(new_clauses) - 1:
+    cl_ = [(c[0], c[1]) for c in new_clauses]
+    cuts = _g_bounds(seg, sr, cl_, status, None, entry.get("payload") or {}, joined, words)
+    need = len(new_clauses) - 1
+    if not cuts or len(cuts) != need:
+        cuts = _cuts_from_word_spans(seg, sr, cl_, words)
+    if not cuts or len(cuts) != need:
+        cuts = _cuts_proportional_at_silence(seg, sr, cl_)
+        _diag("patch_lines", note="slice_by_proportion")
+    if not cuts or len(cuts) != need:
         return None
     edges = [0] + [max(0, min(int(c), len(seg))) for c in cuts] + [len(seg)]
     # which old line did each new clause come from (by cumulative word count)?
@@ -6004,6 +6054,26 @@ def _split_lines_audio(entry, pcm, sr, old_lines, new_clauses, status):
         consumed += n
         out.append((seg[edges[i]:edges[i + 1]], dict(old_lines[k_old].get("voice") or {})))
     return out
+
+
+def _cuts_proportional_at_silence(seg, sr, clauses):
+    """Cut points for clauses known to be inside `seg`, placed at the silence
+    nearest each clause's proportional position by character count. A choice of
+    cut point, never an invention of content. (143)"""
+    if len(clauses) < 2 or len(seg) < sr * 0.2:
+        return None
+    total = max(1, sum(_g_speech_len(c) for c, _ in clauses))
+    runs = _silence_runs(seg, sr, min_ms=40)
+    cuts, acc = [], 0
+    for c, _ in clauses[:-1]:
+        acc += _g_speech_len(c)
+        guess = int(len(seg) * acc / total)
+        cand = [r for r in runs if abs(r[2] - guess) < sr * 0.6]
+        cuts.append(min(cand, key=lambda r: abs(r[2] - guess))[2] if cand else guess)
+    cuts = [max(1, min(c, len(seg) - 1)) for c in cuts]
+    if any(cuts[k] >= cuts[k + 1] for k in range(len(cuts) - 1)):
+        return None
+    return cuts
 
 
 def _lines_pcm(entry, pcm):
@@ -6039,9 +6109,10 @@ def patch_by_lines(entry, new_text, sel_start, sel_end, cfg, status, call):
                     plan[j1 + off] = ("slice", piece, voice)
                 _diag("patch_lines", note=f"resegmented_{i2 - i1}_to_{j2 - j1}_without_generation")
                 continue
-            for j in range(j1, j2):                  # could not split: make them, in their own voice
+            for j in range(j1, j2):                  # could not slice: each becomes its own unit
                 src = old[min(i1 + (j - j1), i2 - 1)]
-                plan[j] = ("make", dict(src.get("voice") or {}))
+                plan[j] = ("make", dict(src.get("voice") or {}), "solo")
+            _diag("patch_lines", note=f"split_{i2 - i1}_to_{j2 - j1}_unsliceable_each_line_solo")
         else:
             for j in range(j1, j2):
                 # a changed line inherits the voice of the old line it replaces,
@@ -6067,26 +6138,31 @@ def patch_by_lines(entry, new_text, sel_start, sel_end, cfg, status, call):
               if k2 in ("g_voice", "g_preset", "g_age", "g_state", "f_voice", "f_preset", "f_age", "f_state")}
     for k in range(len(nc)):
         if plan[k] and plan[k][0] == "make" and k not in chosen and not plan[k][1]:
-            plan[k] = ("make", dict(base_v))
+            plan[k] = ("make", dict(base_v)) + tuple(plan[k][2:])   # 145: keep "solo"
     if not any(p and p[0] == "make" for p in plan):
         return 0                                  # nothing to do
 
     # group consecutive "make" lines that share a voice into one request
     runs, k = [], 0
+    def _solo(p):
+        return p[0] == "make" and len(p) > 2 and p[2] == "solo"
     while k < len(nc):
         if plan[k][0] != "make":
             k += 1; continue
         v = plan[k][1]; a = k
-        while k + 1 < len(nc) and plan[k + 1][0] == "make" and plan[k + 1][1] == v:
-            k += 1
+        if not _solo(plan[k]):
+            while (k + 1 < len(nc) and plan[k + 1][0] == "make" and plan[k + 1][1] == v
+                   and not _solo(plan[k + 1])):
+                k += 1
         runs.append((a, k + 1, v)); k += 1
 
     base = {k2: (entry.get("payload") or {}).get(k2) for k2 in ("g_voice", "f_voice")}
     made = {}
     for a, b, v in runs:
         same = all((v or {}).get(k2, base.get(k2)) == base.get(k2) for k2 in ("g_voice", "f_voice"))
-        ctx_b = nc[a - 1][0].strip() if (a > 0 and same) else ""
-        ctx_a = nc[b][0].strip() if (b < len(nc) and same) else ""
+        solo = b - a == 1 and _solo(plan[a])
+        ctx_b = nc[a - 1][0].strip() if (a > 0 and same and not solo) else ""
+        ctx_a = nc[b][0].strip() if (b < len(nc) and same and not solo) else ""
         mid = "\n".join(c[0].strip() for c in nc[a:b])
         gtext = "\n".join(x for x in (ctx_b, mid, ctx_a) if x)
         status(f"ساختِ {faDigits(b - a)} خط…")
@@ -6121,10 +6197,13 @@ def patch_by_lines(entry, new_text, sel_start, sel_end, cfg, status, call):
                 e2 = [0] + [int(c) for c in cuts2] + [len(npcm2)]
                 for off in range(b - a):
                     made[a + off] = npcm2[e2[off]:e2[off + 1]]
-            else:
+            elif b - a == 1:
                 made[a] = npcm2
-                for off in range(1, b - a):
-                    made[a + off] = np.zeros(0, dtype=np.int16)
+            else:
+                _diag("patch_lines", note=f"run_of_{b - a}_made_line_by_line")
+                for off in range(b - a):
+                    one, osr = call(nc[a + off][0].strip(), {**cfg, **(v or {}), "_no_audit": True}, status)
+                    made[a + off] = _resample(one, osr, sr) if osr != sr else one
 
     # assemble in text order — kept audio is byte-identical, made audio is new
     out, lines, at = [], [], 0

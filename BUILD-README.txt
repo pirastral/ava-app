@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist
 ======================================================================
-This zip is the COMPLETE application source as of update 142.
+This zip is the COMPLETE application source as of update 145.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,68 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 145 (on top of 144) — harmony audit of 143/144
+  Walking the new mechanisms against every older one found three seams:
+  1) ONE ALIGNMENT CONVENTION. The ZWNJ merge (143) was applied in the two
+     boundary finders but not in the completeness audit, the coverage map, the
+     anchor or the span proof — so the audit could still call «یک‌جانبهٔ» missing
+     and raise a false badge or a needless retake. Every word alignment in the
+     engine now merges split compounds first.
+  2) THE SOLO FLAG SURVIVES THE BASE-VOICE FALLBACK. A split line with no
+     remembered voice had its plan entry rebuilt without the "solo" mark, so it
+     could be grouped into a run again. Preserved.
+  3) HOLE BADGES AFTER THE PATCH PATH. Since 143 a no-selection regeneration goes
+     through patch_gulp, and the UI never applied the audit's holes after that
+     call — a hole found during a fresh full take went unreported. Applied.
+  Everything else checked and left alone: the fresh-full rule forks a new part
+  (Undo intact), runs the audit and the lead-in; local engines and silence/file
+  parts never enter the fresh-full branch; the map validation runs after every
+  solo generation; the anchor path remains the fallback only for an untrusted
+  map with a selection.
+
+WHAT CHANGED IN 144 (on top of 143) — a split line is independent from birth
+  When a line is broken into several by Enter, each new line is its own unit
+  from that moment: own audio, own voice, own map entry. 143 sliced them when it
+  could, but when the slice failed it marked all the new lines "make" and then
+  GROUPED them into one run — the very grouping that bled «نبرد یک‌جانبهٔ روم»
+  into one take. Now a new line whose audio cannot be sliced is generated ON
+  ITS OWN, in the old line's voice, never as part of a run and never with a
+  neighbour as context. Verified with every slicing route disabled: six
+  one-word lines, one selected → six single-line calls (one in the new voice,
+  five in the old), and afterwards each line edits independently.
+
+WHAT CHANGED IN 143 (on top of 142) — from the 142 field session
+  1) NOTHING SELECTED (or everything selected) = A FRESH START. The user's rule.
+     A full regeneration now owes nothing to the surgical past: one take in the
+     part's current voice, a fresh map, a fresh transcript. This removes the
+     "scars" (extra pauses, mismatched tone, a line read twice, «پیش‌گفتار»
+     dropped, a duplicated part that spoke only its last clause) — all of which
+     were the old no-selection path applying a diff on top of accumulated state.
+     Deleting with nothing selected therefore remakes the part; to delete for
+     free, select any short line.
+  2) THE ONE-WORD POISON. Log: `g_words_align holes=2 of=5 too_many_unmatched`
+     → the slice of the six one-word lines failed → all six regenerated, and the
+     contextless fallback handed one take to the first line («نبرد یک‌جانبهٔ
+     روم» read together, «روم» again). Two fixes:
+       · ZWNJ compounds: the ASR writes «یک جانبه» for our «یک‌جانبهٔ». Before
+         aligning, adjacent transcript words whose concatenation is one of our
+         words are merged into one spanning both — the two "unmatched" lines now
+         match.
+       · the slice never gives up on a pure re-segmentation: words → word spans
+         → proportional cut at the nearest silence (a choice of cut point inside
+         audio the text says is there — never an invention of content).
+       · a run whose boundaries cannot be found in a fresh take is made ONE LINE
+         AT A TIME, so no neighbour can bleed in.
+  3) The last-words truncation check tolerates the ASR's spelling of the final
+     word (fuzzy match), so a real truncation is caught without false alarms.
+  4) The «ناقص» badge clears at the start of every regeneration of that part
+     (the audit re-marks it if needed), and CLICKING it shows the missing
+     sentence in the status line — native tooltips are unreliable in the webview.
+  5) Both in-app manuals re-read in full and rewritten where the engine had moved
+     on: the Regenerate bullet, the whole surgery section (the line map, the
+     text check, the no-selection rule, the deletion rows, the failure path) and
+     the Undo paragraph — in both languages.
 
 WHAT CHANGED IN 142 (on top of 141) — THE MAP IS CHECKED AGAINST THE TEXT
   The text area is authoritative for WHAT exists and in WHAT ORDER; it cannot say
@@ -943,6 +1005,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۴۲»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۴۵»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»
