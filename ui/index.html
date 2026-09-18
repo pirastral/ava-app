@@ -730,7 +730,7 @@
       </div>
       <div class="finalmsg" id="finalMsg"></div>
     </div>
-  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۱۲۵</span>
+  <footer>Built by <a class="xlink">@kamangir31</a> — آوای جاوید شاه <span id="buildTag" style="opacity:.7">· نسخهٔ ۱۴۶</span>
     <span class="warn">این برنامه را فقط از خودِ سازنده‌اش بگیرید؛ نسخه‌ای که از جای ناشناس آمده باشد ممکن است بدافزار داشته باشد.</span>
   </footer>
 </div>
@@ -1777,7 +1777,17 @@
       ta.addEventListener("input", autoGrow);
       const rw = div.querySelector(".regen-wrap");
       const updSel = () => {
-        const s = ta.selectionStart, e = ta.selectionEnd;
+        let s = ta.selectionStart, e = ta.selectionEnd;
+        if(e != null && s != null && e > s){
+          // 146: the engine receives ta.value.trim(); the offsets must describe THAT
+          // string — shift out any leading whitespace, drop a trailing line break a
+          // triple-click includes, and clamp to the trimmed length.
+          const lead = ta.value.length - ta.value.replace(/^\s+/, "").length;
+          const len = ta.value.trim().length;
+          s = Math.max(0, s - lead); e = Math.max(0, e - lead);
+          while(e > s && /\s/.test(ta.value.trim().charAt(e - 1))) e--;
+          e = Math.min(e, len); s = Math.min(s, len);
+        }
         g.sel = (e != null && s != null && e > s) ? { s, e } : null;
         rw.classList.toggle("sel", !!g.sel);
       };

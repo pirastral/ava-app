@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist
 ======================================================================
-This zip is the COMPLETE application source as of update 145.
+This zip is the COMPLETE application source as of update 146.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,38 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 146 (on top of 145) — from the 145 field session
+  145 was shippable; 146 changes as little as possible.
+  1) FISH: A WEAK TRANSCRIPT MUST NOT SLICE. Log: `g_words_align matched=0 of=13
+     mode=thin` — Google's ASR recognised nothing in Fish Audio's Persian, so
+     the Enter-split fell to a silence guess and cut in the wrong place; the old
+     voice's remainder («که کسی جدی‌اش نگرفت») then sat in the next line's range
+     and was heard after the new voice. When the alignment accounts for less
+     than 40 % of the words, the split is not sliced: each new line is made on
+     its own (144's solo path), in its previous voice. Google audio, where the
+     ASR is reliable, is unaffected.
+  2) FISH: A BOUNDARY PLACED FROM A WEAK WITNESS IS CROSS-CHECKED. Only for
+     Fish parts (cross-engine transcript): a word-placed cut far from where the
+     text's proportions say it should be sits on a mis-heard word, and is
+     snapped to the silence nearest the proportional position. Google parts are
+     untouched.
+  3) THE PASTE "INVALID ARGUMENT". Attempts 1–4 made 3 pieces and the third was
+     refused with 400 on BOTH doors; attempt 5 made the same three and all
+     passed. The «سهمیه ته کشید» seen alongside was a real, separate 429 on one
+     key that rotated correctly (429 → next key → 200). Now a 400 is: logged
+     with what was sent (voice, model, style, age, mood, lead-in length, first
+     40 chars); retried once as a stripped-down request (text + voice only,
+     zero-width/format characters removed); and if refused again, reported
+     NAMING the line — never mistaken for a dead key.
+  4) SELECTION OFFSETS DESCRIBE THE TEXT THAT IS SENT. They were taken from the
+     raw textarea while the engine received ta.value.trim(): leading whitespace
+     shifted them and a triple-click's trailing line break extended them. Both
+     are normalised now, so dragging and triple-clicking behave the same.
+  5) The static footer placeholder still read «نسخهٔ ۱۲۵» (the runtime stamp from
+     the engine was always correct); updated.
+  Rebuilt after the sandbox reset: the regression battery (146 guarantees G1–G5
+  re-asserted on the SHIPPED 145 source, byte-identical md5) and the UI suite.
 
 WHAT CHANGED IN 145 (on top of 144) — harmony audit of 143/144
   Walking the new mechanisms against every older one found three seams:
@@ -1005,6 +1037,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۴۵»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۴۶»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

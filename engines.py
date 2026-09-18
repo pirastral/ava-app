@@ -71,8 +71,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 145
-BUILD_FA = "\u06f1\u06f4\u06f5"
+BUILD = 146
+BUILD_FA = "\u06f1\u06f4\u06f6"
 
 
 def _diag(tag, **kv):
@@ -3533,6 +3533,10 @@ def _google_stream(url, body, key, expect_sec, status):
     return pcm, sr
 
 
+class _GoogleReject(RuntimeError):
+    pass
+
+
 def _google_call(text, cfg, status):
     spoken = re.sub(r"\[[^\]]*\]", " ", text or "").strip()
     if not spoken:
@@ -3587,9 +3591,29 @@ def _google_call(text, cfg, status):
         if timeouts and len(timeouts) == len(doors):
             raise RuntimeError(f"گوگل جواب نداد ({_G_TIMEOUT} ثانیه از هر دو مسیر صبر کردیم). اینترنت یا وی‌پی‌ان را چک کنید و دوباره بزنید.")
         if rejects:
-            raise RuntimeError("گوگل این درخواست را قبول نکرد: " + rejects[-1].msg[:160])
+            # 146: say WHAT was refused, so the next report is diagnosable
+            _diag("google_reject_detail", chars=len(text or ""), voice=str(cfg.get("g_voice"))[:24],
+                  model=str(cfg.get("g_model"))[:32], preset=str(cfg.get("g_preset"))[:20],
+                  age=str(cfg.get("g_age"))[:12], state=str(cfg.get("g_state"))[:16],
+                  lead=len(cfg.get("g_lead_in") or ""), head=(text or "")[:40].replace("\n", "⏎"))
+            raise _GoogleReject(rejects[-1].msg[:160])
         raise timeouts[-1]
-    return google_rotate(call, status, "گوگل")
+    try:
+        return google_rotate(call, status, "گوگل")
+    except _GoogleReject as first:
+        # 146: one more try with the request stripped to the essentials — plain
+        # text, the voice, no persona/style/lead-in. FIELD: a freshly pasted line
+        # was refused four times and accepted on the fifth; a refusal must not
+        # look like a dead key, and it must name the line.
+        if cfg.get("_stripped_retry"):
+            raise RuntimeError("گوگل این خط را قبول نکرد: «" + (text or "")[:60].replace("\n", " ") + "» — " + str(first))
+        status("گوگل این تکه را قبول نکرد؛ یک بار دیگر با درخواستِ ساده‌تر امتحان می‌کنم…")
+        _diag("google_reject_retry", chars=len(text or ""))
+        bare = {k: v for k, v in cfg.items() if k not in ("g_preset", "g_age", "g_state", "g_preset_custom",
+                                                          "g_age_custom", "g_state_custom", "g_lead_in", "g_duo")}
+        bare["g_lead_in"] = ""; bare["_stripped_retry"] = True
+        clean = re.sub(r"[\u200b\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]", "", text or "")
+        return _google_call(clean, bare, status)
 
 
 def google_probe(model, status):
@@ -4822,7 +4846,7 @@ def google_words(pcm, sr, status, lang=None, text=None):
         return None
 
 
-def _g_boundaries_words(pcm, sr, clauses, words):
+def _g_boundaries_words(pcm, sr, clauses, words, weak=False):
     """Clause boundaries from word timestamps: align our clause words to the
     transcript (order-preserving, diacritic-insensitive) and cut midway in
     the gap after each clause's last matched word. None if alignment is thin."""
@@ -4889,6 +4913,21 @@ def _g_boundaries_words(pcm, sr, clauses, words):
             guess = max(lo + 1, min(guess, hi - 1))
             cand = [r for r in runs if lo < r[2] < hi]
             cuts[k] = min(cand, key=lambda r: abs(r[2] - guess))[2] if cand else guess
+    if weak:                                            # 146: cross-check against the text's proportions
+        total_chars = max(1, sum(_g_speech_len(c) for c, _ in clauses))
+        runs = _silence_runs(pcm, sr, min_ms=60)
+        fixed = 0
+        for k in range(B):
+            frac = sum(_g_speech_len(c) for c, _ in clauses[:k + 1]) / total_chars
+            guess = int(len(pcm) * frac)
+            span = _g_speech_len(clauses[k][0]) + _g_speech_len(clauses[k + 1][0])
+            tol = max(int(sr * 1.2), int(len(pcm) * 0.30 * span / total_chars))
+            if abs(cuts[k] - guess) > tol:
+                cand = [r for r in runs if abs(r[2] - guess) < tol]
+                if cand:
+                    cuts[k] = min(cand, key=lambda r: abs(r[2] - guess))[2]; fixed += 1
+        if fixed:
+            _diag("g_boundaries", weak_witness_corrected=fixed)
     if any(cuts[k] >= cuts[k + 1] for k in range(B - 1)) or cuts[-1] >= len(pcm):
         return None
     _diag("g_boundaries", need=B, mode="words" if not holes else f"words+{len(holes)}interp", ms=[int(c * 1000 / sr) for c in cuts])
@@ -4903,8 +4942,9 @@ def _g_bounds(pcm, sr, clauses, status, lang=None, cfg=None, text=None, words=No
         return []
     if words is None:
         words = transcribe_words(pcm, sr, status, lang, text, cfg)
+    weak = (cfg or {}).get("engine") == "fish"           # 146: Google's ASR on Fish audio is a weak witness
     if words:
-        cuts = _g_boundaries_words(pcm, sr, clauses, words)
+        cuts = _g_boundaries_words(pcm, sr, clauses, words, weak=weak)
         if cuts is not None:
             return cuts
     return _g_boundaries(pcm, sr, clauses)
@@ -6034,6 +6074,9 @@ def _split_lines_audio(entry, pcm, sr, old_lines, new_clauses, status):
     joined = "\n".join(c[0].strip() for c in new_clauses)
     words = transcribe_words(seg, sr, status, None, joined, entry.get("payload") or {})
     cl_ = [(c[0], c[1]) for c in new_clauses]
+    if _align_ratio(cl_, words) < 0.4:
+        _diag("patch_lines", note="slice_refused_weak_transcript")
+        return None                                   # → each new line is made on its own (144)
     cuts = _g_bounds(seg, sr, cl_, status, None, entry.get("payload") or {}, joined, words)
     need = len(new_clauses) - 1
     if not cuts or len(cuts) != need:
@@ -6054,6 +6097,20 @@ def _split_lines_audio(entry, pcm, sr, old_lines, new_clauses, status):
         consumed += n
         out.append((seg[edges[i]:edges[i + 1]], dict(old_lines[k_old].get("voice") or {})))
     return out
+
+
+def _align_ratio(clauses, words):
+    """How much of the text the transcript actually accounts for. (146)"""
+    if not words:
+        return 0.0
+    import difflib
+    ours = [w for c, _ in clauses for w in _text_words(c)]
+    words = _merge_split_words(ours, words)
+    tw = [_norm_word(w) for w, _, _ in words]
+    if not ours or not tw:
+        return 0.0
+    sm = difflib.SequenceMatcher(None, ours, tw, autojunk=False)
+    return sum(b.size for b in sm.get_matching_blocks()) / len(ours)
 
 
 def _cuts_proportional_at_silence(seg, sr, clauses):
