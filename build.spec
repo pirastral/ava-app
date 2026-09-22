@@ -37,7 +37,7 @@ for meta in ["requests", "tqdm", "regex", "packaging", "filelock", "pyyaml",
         pass
 
 # 126: the activation module ships; the ISSUER (issue_license.py) never does.
-hiddenimports += ["licensing", "nacl.signing", "nacl.exceptions"]
+hiddenimports += ["licensing", "nacl.signing", "nacl.exceptions", "socks", "sockshandler"]   # 148: SOCKS proxies
 
 a = Analysis(["app.py"], datas=datas, binaries=binaries, hiddenimports=hiddenimports,
              excludes=["tkinter", "matplotlib", "IPython", "pytest"])

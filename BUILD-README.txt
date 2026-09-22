@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist
 ======================================================================
-This zip is the COMPLETE application source as of update 146.
+This zip is the COMPLETE application source as of update 150.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,121 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 150 (on top of 149) — no VPN first, all routes at once
+  The app must work with no VPN at all, and Iranian users cycle between VPNs
+  and proxies because none works best all the time.
+   · DIRECT (NO VPN) IS FIRST, ALWAYS — also on every re-search after a failure,
+     because the VPN may simply have been switched off. Only an explicitly chosen
+     proxy mode ("manual/system proxy first") puts that proxy ahead of it. When
+     direct and a proxy both answer, direct is used.
+   · ALL ROUTES ARE PROBED AT ONCE (threads). Priority is the order; the search
+     settles as soon as every route ahead of the best answer has failed. Eight
+     routes of 0.5 s each settle in 0.5 s instead of 4 s. The whole search has a
+     4-second budget, so a hanging network can never hang the app.
+   · A FAILED ROUTE IS BENCHED FOR 60 SECONDS, NOT FOR THE SESSION. Switch from
+     v2rayN to Clash and back an hour later, and each is found again. Direct is
+     never benched at all — it costs nothing to ask, in parallel.
+   · WARM-UP AT LAUNCH: once the licence is valid the route search starts in the
+     background, so a route is usually ready before the first request.
+   · the route state is guarded by a lock, so the warm-up and a request can never
+     apply routes over each other.
+  Verified: no VPN → direct, first probe; 8 routes in parallel in 0.5 s; direct
+  wins when both work; VPN switched mid-session → direct tried first, then the
+  new VPN found; the old VPN found again a minute later; the warm-up returns in
+  0 ms; a hanging network gives up within the budget.
+
+WHAT CHANGED IN 149 (on top of 148) — the route finder can never imprison the app
+  An audit of 148 against the question "can the VPN logic lock out a user who
+  has no VPN?" found two traps and one bug:
+   · THE PRISON: a manual proxy (or "direct", or "system") was the ONLY route
+     tried. A proxy saved in Iran would lock out the same user abroad with no
+     VPN — and tell them to turn their VPN on. Every mode is now a PREFERENCE: its
+     route is tried first, then the automatic search runs, and direct is always
+     the last resort. The user is told when their chosen route failed and which
+     one was used.
+   · THE DEAD PROXY: when no route worked, the last applied proxy stayed set for
+     the whole app. Now the proxy environment the app STARTED with is snapshotted
+     and restored — the user's own settings return untouched.
+   · ONE KEY: the "two keys in a row unreachable → re-route" rule could not fire
+     with a single key, so a one-key user whose VPN dropped was told "no key
+     answered". The threshold is now min(2, number of keys).
+  Also:
+   · Tor: Tor Browser (9150) and the Tor service (9050), SOCKS, tried LAST among
+     proxies. The manual says plainly that Google blocks most Tor exits and that
+     Tor gives no anonymity from Google (every request carries the user's key).
+   · Fish Audio, the music search and model downloads now use the route finder
+     too (through _net_ready, which can never raise or block a request).
+   · no message assumes Iran or a VPN any more: "the internet is not connected,
+     or — if you are in a country that restricts Google, such as Iran — the VPN".
+   · UI labels say what the modes now do: "… first".
+  Verified: abroad with no VPN connects on the first probe; the stale-manual-
+  proxy case falls through to direct; the user's own proxy setting is restored
+  after a total failure; a VPN switched off mid-session re-routes with one key.
+
+WHAT CHANGED IN 148 (on top of 147) — the app finds a route through the VPN
+  For users in Iran a VPN is mandatory, so a blocked network is the most common
+  way the app fails. Three facts found in 147's investigation:
+   · the app honours a Windows STATIC system proxy (requests reads the registry);
+   · it does NOT honour a PAC proxy (AutoConfigURL) — many VPN clients default to
+     PAC or "system proxy" modes the browser follows and the app does not, so
+     "the browser works, the app is refused";
+   · with no PySocks bundled it could not use a SOCKS-only proxy.
+  NOW — a route finder (ensure_route):
+   · Automatic mode (default) tries, in order: the current route (env / system
+     proxy); each local proxy of the common clients that is LISTENING on
+     127.0.0.1 — v2rayN 10809/10808, Nekoray/Nekobox 2080, Clash 7890, Hiddify
+     12334, v2rayA 20171/20170, plus 1080 and 8889 — HTTP then SOCKS; finally
+     direct (which IS the VPN when the client runs in TUN mode).
+   · each route is tested against Google with a deliberately invalid key: a
+     working route answers JSON «API key not valid», a blocked one Google's HTML
+     403. No quota is spent; only Google and loopback proxies are contacted.
+   · the first working route is applied process-wide through the standard proxy
+     environment variables, which requests AND huggingface_hub honour (direct
+     sets NO_PROXY=* so a registry proxy is bypassed too).
+   · it runs before the first Google request of a session, and again when a
+     request is blocked mid-session: re-search once, retry the request once. Still
+     no key is ever condemned. If no route works, the message names the cause
+     (VPN off → turn it on / TUN; region → Europe or North America; blocked →
+     another server or TUN).
+   · Settings → "Network and VPN" (beside Google keys): Automatic / System proxy
+     only / Manual proxy (http:// or socks5h://) / Direct, and a "Test network"
+     button that shows which route reached Google.
+   · PySocks now ships (requirements.txt + hiddenimports), so SOCKS routes work.
+  Both manuals gained a "VPN and connecting to Google" section, and the network
+  troubleshooting entry points to it.
+  Verified with a REAL socket listening on 127.0.0.1:10809 for port detection;
+  probe classification, route selection and application, mid-session re-route,
+  and manual/direct modes tested with mocked Google answers (Google itself is
+  unreachable from the build sandbox).
+
+WHAT CHANGED IN 147 (on top of 146) — keys wrongly condemned by a network block
+  FIELD (a user's log): the same 18 keys worked all day under 126. The moment
+  146 ran, the connection to Google broke — «Max retries exceeded», dropped
+  connections, then Google's HTML «Error 403 (Forbidden)» front-door page
+  (what a blocked region or a flagged VPN/proxy exit receives). The rotation
+  treated EVERY 403 as "bad key": the first key was condemned, the next got the
+  identical page and was condemned, and all 18 were marked invalid — ON DISK.
+  Re-pasting revived them and the next request killed them all again. The rule
+  was identical in 126; it surfaced only when that user's network changed.
+  NOW:
+   · one classifier, _google_fault(): a key is condemned ONLY when Google names
+     the key (invalid / expired / leaked / blocked / API not enabled for the
+     project). An HTML front-door page is "network"; «User location is not
+     supported» is "region"; any other 403 is "other" and condemns nothing.
+   · network or region: rotation STOPS at once (every key would get the same
+     page) and says plainly that it is not a key problem and no key was touched.
+   · two keys in a row that never reached Google also stop the rotation — no
+     more cycling through 18 keys × 3 attempts on a dead connection.
+   · raw HTML never reaches the status line; only a page's <title> survives.
+   · ONE-TIME REPAIR: every "bad" mark written before 147 may come from the old
+     rule, so all are cleared once; genuinely bad keys are re-marked on first
+     use. And any condemned key that answers again is restored automatically.
+   · the Lyria music path had a comment saying its paid-only 403 "must not flag
+     the key" — and flagged it anyway, so one attempt at music on a free key
+     would have wiped every key. It now uses the same classifier.
+  Both manuals gained two troubleshooting entries (the network message, and
+  keys that became invalid for no reason).
 
 WHAT CHANGED IN 146 (on top of 145) — from the 145 field session
   145 was shippable; 146 changes as little as possible.
@@ -1037,6 +1152,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۴۶»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۵۰»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

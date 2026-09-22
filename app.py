@@ -396,6 +396,26 @@ class Api:
                 "fish_tags": engines.FISH_TAGS, "fish_models": [[k, v["label"], v["paid"]] for k, v in engines.FISH_MODELS.items()],
                 "fish_library_tags": engines.FISH_LIBRARY_TAGS}
 
+    # ---- 148: network / VPN route --------------------------------------------
+    def net_get(self):
+        import engines
+        ns = engines.net_settings()
+        return {"ok": True, **ns, "route": engines._NET.get("label") or ""}
+
+    def net_set(self, req):
+        import engines
+        engines.settings_set(net_mode=req.get("mode", "auto"), net_custom=(req.get("custom") or "").strip())
+        engines._NET.update(route=None, label="", checked=0.0, failed={})
+        return {"ok": True}
+
+    def net_test(self):
+        import engines
+        engines._NET.update(route=None, label="", checked=0.0, failed={})
+        ok, label, report = engines.ensure_route(lambda *a, **k: None, force=True)
+        return {"ok": True, "reached": ok, "label": label,
+                "text": engines.net_status_text(ok, label, report),
+                "tried": [{"route": r, "result": v} for r, v in report]}
+
     def settings_get(self):
         import engines
         return {"ok": True, **engines.settings_get()}
@@ -575,6 +595,8 @@ def main():
     # is never loaded behind it, so there is nothing to reveal by closing a dialog.
     import engines
     licensed = engines.license_status()["ok"]
+    if licensed:
+        engines.warm_route()          # 150: find a network route in the background at launch
     window = webview.create_window(
         "آوای جاوید شاه — تبدیل متن فارسی به گفتار",
         url=str(_res_path("ui") / ("index.html" if licensed else "gate.html")),

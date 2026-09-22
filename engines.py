@@ -71,8 +71,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 146
-BUILD_FA = "\u06f1\u06f4\u06f6"
+BUILD = 150
+BUILD_FA = "\u06f1\u06f5\u06f0"
 
 
 def _diag(tag, **kv):
@@ -921,6 +921,7 @@ def _verify_repo_cache(repo_id, status, token=None):
     A damaged file otherwise crashes the whole app at load time."""
     try:
         import os
+        _net_ready(status) if "status" in dir() else _net_ready()
         from huggingface_hub import HfApi, hf_hub_download, try_to_load_from_cache
         sizes = {s.rfilename: s.size for s in
                  HfApi().model_info(repo_id, files_metadata=True, token=token).siblings
@@ -3137,13 +3138,23 @@ def google_keys():
         if legacy:
             keys = [{"key": legacy, "until": 0, "bad": False}]
             _google_keys_write(keys)
+    try:
+        if keys and not data.get("repaired_147"):
+            revived = sum(1 for k in keys if k.get("bad"))
+            for k in keys:
+                k["bad"] = False
+            _GKEYS_FILE.write_text(json.dumps({"keys": keys, "repaired_147": True}), encoding="utf-8")
+            if revived:
+                _diag("google_keys_repaired", revived=revived)
+    except Exception:
+        pass
     return keys
 
 
 def _google_keys_write(keys):
     try:
         MODELS_DIR.mkdir(exist_ok=True)
-        _GKEYS_FILE.write_text(json.dumps({"keys": keys}), encoding="utf-8")
+        _GKEYS_FILE.write_text(json.dumps({"keys": keys, "repaired_147": True}), encoding="utf-8")
     except Exception:
         pass
 
@@ -3215,7 +3226,7 @@ def _google_usable_keys():
     return [k["key"] for k in google_keys() if not k.get("bad") and k.get("until", 0) <= now]
 
 
-def google_rotate(call, status, what="گوگل"):
+def google_rotate(call, status, what="گوگل", _rerouted=False):
     """Run call(key) over the key list: quota → next key (this one sleeps till
     the Pacific midnight), invalid → next key (flagged), transient 5xx → retry
     the same key up to 3 times. Raises a Farsi error naming the remedy."""
@@ -3225,23 +3236,53 @@ def google_rotate(call, status, what="گوگل"):
         if google_keys():
             raise RuntimeError("سهمیهٔ امروزِ همهٔ کلیدهای گوگل تمام شده یا کلیدها معتبر نیستند؛ یک کلید تازه اضافه کنید یا فردا سر بزنید.")
         raise RuntimeError("هنوز کلید گوگل ندارید؛ از دکمهٔ «کلیدهای گوگل» یک کلید رایگان وارد کنید.")
+    # 148: make sure there is a working route through the user's VPN first
+    try:
+        ensure_route(status)
+    except Exception as e:
+        _diag("net_route_err", msg=str(e)[:80])
     last = None
+    net_keys = 0                                   # 147: keys that failed on the NETWORK in a row
     for key in keys:
+        net_fail = False
         for attempt in range(3):
             _check_cancel()
             try:
-                return call(key)
+                out = call(key)
+                if any(k.get("key") == key and k.get("bad") for k in google_keys()):
+                    _google_mark(key, "ok")                 # 147: a key that works is not bad
+                return out
             except Cancelled:
                 raise
             except _GoogleHTTP as e:
                 last = e
+                kind = _google_fault(e.code, e.msg)
+                if kind in ("network", "region"):
+                    # every key would get the same page — stop, condemn nothing
+                    _diag("google_blocked", kind=kind, code=e.code, msg=_google_clean_msg(e.msg))
+                    if not _rerouted:
+                        # 148: the route died mid-session — look for another one, retry once
+                        _bench(_NET["route"] or "direct")
+                        ok, label, report = ensure_route(status, force=True)
+                        if ok:
+                            status(f"{what}: مسیرِ شبکه عوض شد («{label}»)؛ دوباره امتحان می‌کنم…")
+                            return google_rotate(call, status, what, _rerouted=True)
+                        raise RuntimeError(f"{what}: " + net_status_text(ok, label, report) + " هیچ کلیدی نامعتبر نشد.")
+                    raise RuntimeError(f"{what}: " + (_NET_BLOCK_MSG if kind == "network" else _REGION_MSG))
                 if e.code == 429:
                     if "per minute" in e.msg.lower() or "rpm" in e.msg.lower():
                         status(f"{what}: به سقف درخواست در دقیقه خوردیم — ۲۰ ثانیه صبر می‌کنیم…"); time.sleep(20); continue
                     _google_mark(key, "exhausted"); status(f"{what}: سهمیهٔ امروزِ این کلید ته کشید؛ می‌رویم سراغ کلید بعدی…")
                     break
-                if e.code in (401, 403) or (e.code == 400 and "api key" in e.msg.lower()):
+                if kind == "key":
                     _google_mark(key, "bad"); status(f"{what}: این کلید را قبول نکرد؛ می‌رویم سراغ کلید بعدی…")
+                    _diag("google_key_bad", code=e.code, msg=_google_clean_msg(e.msg))
+                    break
+                if e.code in (401, 403):
+                    # 147: a refusal Google did not attribute to the key — try the next
+                    # key, but leave this one alone
+                    _diag("google_403_unattributed", msg=_google_clean_msg(e.msg))
+                    status(f"{what}: گوگل این درخواست را رد کرد ({e.code})؛ کلید بعدی را امتحان می‌کنم…")
                     break
                 if e.code >= 500:
                     _diag("google_5xx", code=e.code, msg=e.msg[:120])
@@ -3249,17 +3290,76 @@ def google_rotate(call, status, what="گوگل"):
                     for _ in range(4 * (2 + attempt * 2)):
                         _check_cancel(); time.sleep(0.25)
                     continue
-                raise RuntimeError(f"{what}: {e.msg}")
+                raise RuntimeError(f"{what}: {_google_clean_msg(e.msg)}")
             except requests.RequestException as e:
-                last = e
-                why = type(e).__name__ + (": " + str(e)[:90] if str(e) else "")
-                _diag("google_net", err=why)
-                status(f"{what}: اتصال برقرار نشد ({why}) — تلاش {attempt + 2} از ۳…")
+                last = e; net_fail = True
+                why = type(e).__name__
+                _diag("google_net", err=why + ": " + str(e)[:90])
+                status(f"{what}: اتصال به گوگل برقرار نشد — تلاش {attempt + 2} از ۳…")
                 for _ in range(4 * (2 + attempt * 2)):
                     _check_cancel(); time.sleep(0.25)
-        else:
-            continue
-    raise RuntimeError(f"{what}: با هیچ‌کدام از کلیدها جواب نگرفتیم — " + (getattr(last, "msg", None) or str(last) or "؟"))
+        # 147: two keys in a row that never reached Google means the network, not the keys
+        net_keys = net_keys + 1 if net_fail and not isinstance(last, _GoogleHTTP) else 0
+        if net_keys >= min(2, len(keys)):          # 149: with ONE key, one unreachable key is enough
+            _diag("google_blocked", kind="network", reason="two_keys_unreachable")
+            if not _rerouted:
+                _bench(_NET["route"] or "direct")
+                ok, label, report = ensure_route(status, force=True)
+                if ok:
+                    status(f"{what}: مسیرِ شبکه عوض شد («{label}»)؛ دوباره امتحان می‌کنم…")
+                    return google_rotate(call, status, what, _rerouted=True)
+                raise RuntimeError(f"{what}: " + net_status_text(ok, label, report) + " هیچ کلیدی نامعتبر نشد.")
+            raise RuntimeError(f"{what}: " + _NET_BLOCK_MSG)
+    raise RuntimeError(f"{what}: با هیچ‌کدام از کلیدها جواب نگرفتیم — " +
+                       _google_clean_msg(getattr(last, "msg", None) or str(last) or "؟"))
+
+
+# ===========================================================================
+# 147 · A KEY IS CONDEMNED ONLY WHEN GOOGLE SAYS THE KEY IS THE PROBLEM
+# FIELD (a user in 146, same keys that worked all day in 126): the network to
+# Google broke — dropped connections, then Google's HTML «Error 403
+# (Forbidden)» front-door page, which is what a blocked region or a flagged
+# VPN/proxy exit receives. The rotation treated EVERY 403 as "bad key", so the
+# first key was condemned, the next got the identical page and was condemned,
+# and all 18 were marked invalid — on disk. Re-pasting revived them and the
+# next request killed them all again. The rule was the same in 126; it only
+# surfaced when that user's network changed.
+# ===========================================================================
+def _google_fault(code, msg):
+    """What a Google error is really about: "key", "network", "region" or "other"."""
+    m = (msg or "").lower()
+    head = m.lstrip()[:300]
+    if head.startswith("<!doctype") or head.startswith("<html") or "<html" in head:
+        return "network"                                  # a front-door web page, not an API answer
+    if "location is not supported" in m or "user location" in m:
+        return "region"
+    key_words = ("api key not valid", "api_key_invalid", "api key expired", "api_key_expired",
+                 "reported as leaked", "api key was reported", "api_key_service_blocked",
+                 "service_disabled", "has not been used in project", "api has not been used",
+                 "requests from this api key are blocked", "api key not found")
+    if any(k in m for k in key_words):
+        return "key"
+    if code == 401 or (code == 400 and "api key" in m):
+        return "key"
+    return "other"                                         # an unexplained 403 does NOT condemn a key
+
+
+def _google_clean_msg(msg):
+    """Never show raw HTML to a user: keep a page's <title>, drop the markup."""
+    m = msg or ""
+    if "<" in m[:300] and ">" in m[:300]:
+        import re as _re
+        t = _re.search(r"<title>(.*?)</title>", m, _re.I | _re.S)
+        return (t.group(1).strip() if t else _re.sub(r"<[^>]+>", " ", m)).strip()[:120]
+    return m[:200]
+
+
+_NET_BLOCK_MSG = ("گوگل از این شبکه درخواست نمی‌پذیرد (خطای ۴۰۳ یا قطع اتصال). "
+                  "این مشکل از کلیدها نیست و هیچ کلیدی نامعتبر نشد. معمولاً یکی از این سه است: "
+                  "فیلترشکن قطع شده، سرورِ فیلترشکن از طرف گوگل مسدود است (سرور یا کشورِ دیگری انتخاب کنید)، "
+                  "یا فیلترشکن فقط مرورگر را پوشش می‌دهد (آن را روی حالتِ TUN بگذارید).")
+_REGION_MSG = ("گوگل می‌گوید این سرویس در موقعیتِ فعلیِ شبکه در دسترس نیست. "
+               "این مشکل از کلیدها نیست و هیچ کلیدی نامعتبر نشد؛ با فیلترشکنی که مقصدش کشورِ دیگری است امتحان کنید.")
 
 
 class _GoogleHTTP(Exception):
@@ -5047,8 +5147,13 @@ def lyria_music(preset, custom, seconds, status):
         try:
             data = _google_post(_GOOGLE_URL, body, key, timeout=300); break
         except _GoogleHTTP as e:
-            if e.code in (401, 403) or (e.code == 400 and "api key" in e.msg.lower()):
-                _google_mark(key, "bad"); denied.append(e.msg[:80]); continue
+            kind = _google_fault(e.code, e.msg)
+            if kind in ("network", "region"):
+                raise RuntimeError("موسیقی: " + (_NET_BLOCK_MSG if kind == "network" else _REGION_MSG))
+            if kind == "key":
+                _google_mark(key, "bad"); denied.append(_google_clean_msg(e.msg)[:80]); continue
+            if e.code in (401, 403):
+                denied.append(_google_clean_msg(e.msg)[:80]); continue      # 147: Lyria refusal ≠ bad key
             if e.code in (402, 429) or "billing" in e.msg.lower():
                 denied.append(e.msg[:80]); continue
             raise RuntimeError("موسیقی: " + e.msg[:160])
@@ -5295,6 +5400,7 @@ def _http_get_json(url, params, headers=None, timeout=30):
 
 
 def music_search(provider, query, key, status, style="ambient", page=1):
+    _net_ready(status)
     """One page (MUSIC_PAGE) of candidates for a style — or a free-text query
     when the user typed one. Returns {items, page, has_more}."""
     _check_cancel()
@@ -5641,6 +5747,7 @@ def _fish_get(path, params=None, timeout=60):
 
 
 def fish_wallet():
+    _net_ready()
     """Credit balance and package — the key dialog's probe."""
     out = {}
     try:
@@ -5718,6 +5825,7 @@ def fish_clone_create(path, title, status, transcript=None, enhance=False, visib
 
 
 def fish_my_voices():
+    _net_ready()
     """The user's own Fish voices (clones, designs)."""
     j = _fish_get("/model", {"self": "true", "page_size": 100, "sort_by": "created_at"})
     return [{"id": "m:" + it["_id"], "title": it.get("title", ""), "state": it.get("state"), "languages": it.get("languages") or [],
@@ -5833,7 +5941,17 @@ def _fish_speakers_text(text, cfg, status):
     return "\n".join(out), refs
 
 
+def _net_ready(status=lambda *a, **k: None):
+    """Set up a route before a non-Google request. Never raises, never blocks a
+    request that would have worked anyway. (149)"""
+    try:
+        ensure_route(status)
+    except Exception as e:
+        _diag("net_route_err", msg=str(e)[:80])
+
+
 def _fish_call(text, cfg, status):
+    _net_ready(status)
     """One take from Fish: returns (pcm int16 mono, sr)."""
     model = cfg.get("f_model") or "s2.1-pro-free"
     duo = bool(cfg.get("f_speakers"))
@@ -6386,3 +6504,262 @@ def ensure_line_index(entry, status, cfg=None, lang=None):
     entry["map_untrusted"] = True
     status("نقشهٔ جمله‌های این بخش قابل‌اعتماد نیست؛ ویرایش بعدی از روی رونویسیِ تازه انجام می‌شود، و اگر نشد کل بخش دوباره ساخته می‌شود.")
     return False
+
+
+# ===========================================================================
+# 148 · FINDING A ROUTE TO GOOGLE THROUGH THE USER'S VPN
+#
+# For users in Iran a VPN is not optional, so "the network is blocked" is the
+# most common way the app fails, not an edge case. Three facts shaped this:
+#   · the app honours a Windows STATIC system proxy (requests reads the registry)
+#   · it does NOT honour a PAC proxy (AutoConfigURL) — many clients default to it,
+#     so the browser works while the app goes out directly and is refused
+#   · without PySocks it cannot use a SOCKS-only proxy
+# Popular clients all expose a local proxy on a known 127.0.0.1 port. The route
+# finder tries, in order: the current route (env / system proxy), each local
+# proxy port that is listening (HTTP, then SOCKS), and finally a direct
+# connection (which is the VPN itself when the client runs in TUN mode). Each is
+# tested against Google with a deliberately invalid key — a reachable, allowed
+# route answers JSON «API key not valid», a blocked one answers Google's HTML 403
+# — so testing spends no quota. The first route that works is applied to the
+# whole process through the standard proxy environment variables, which
+# requests and huggingface_hub both honour.
+#
+# Safety: only loopback addresses and Google itself are ever contacted.
+# ===========================================================================
+LOCAL_PROXY_PORTS = [
+    (10809, "http", "v2rayN"), (10808, "socks5h", "v2rayN"),
+    (2080, "http", "Nekoray/Nekobox"), (2080, "socks5h", "Nekoray/Nekobox"),
+    (7890, "http", "Clash"), (7890, "socks5h", "Clash"),
+    (12334, "http", "Hiddify"), (12334, "socks5h", "Hiddify"),
+    (20171, "http", "v2rayA"), (20170, "socks5h", "v2rayA"),
+    (1080, "socks5h", "SOCKS"), (8889, "http", "HTTP"),
+    # 149: Tor last — slowest, and Google blocks most Tor exits; tried, never assumed
+    (9150, "socks5h", "Tor Browser"), (9050, "socks5h", "Tor"),
+]
+_NET = {"route": None, "label": "", "checked": 0.0, "failed": {}}
+_ENV_AT_START = {k: os.environ.get(k) for k in _PROXY_ENV + ("NO_PROXY", "no_proxy")} if False else None
+
+
+def _snapshot_env():
+    """The proxy environment exactly as the app found it, taken once. (149)"""
+    global _ENV_AT_START
+    if _ENV_AT_START is None:
+        _ENV_AT_START = {k: os.environ.get(k) for k in _PROXY_ENV + ("NO_PROXY", "no_proxy")}
+    return _ENV_AT_START
+
+
+def _restore_env():
+    """Undo every route the app applied, leaving the user's own settings intact. (149)"""
+    for k, v in _snapshot_env().items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+_PROBE_URL = "https://generativelanguage.googleapis.com/v1beta/models?key=AIza-ava-route-probe-not-a-key"
+_PROXY_ENV = ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "https_proxy", "http_proxy", "all_proxy")
+
+
+def net_settings():
+    st = settings_get() or {}
+    mode = st.get("net_mode") or "auto"
+    return {"mode": mode if mode in ("auto", "system", "custom", "direct") else "auto",
+            "custom": (st.get("net_custom") or "").strip()}
+
+
+def _port_open(port, timeout=0.15):
+    import socket
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
+def _socks_ok():
+    try:
+        import socks  # noqa: F401  (PySocks)
+        return True
+    except Exception:
+        return False
+
+
+def _probe_route(proxy_url, timeout=6.0):
+    """Test one route against Google without spending quota.
+    Returns "ok", "blocked", "region" or "unreachable"."""
+    s = requests.Session()
+    s.trust_env = False                          # test THIS route, not whatever the env says
+    proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else {}
+    try:
+        r = s.get(_PROBE_URL, proxies=proxies, timeout=timeout)
+    except Exception as e:
+        _diag("net_probe", route=proxy_url or "direct", result="unreachable", err=type(e).__name__)
+        return "unreachable"
+    body = (r.text or "")[:400].lower()
+    if "<html" in body or "<!doctype" in body:
+        res = "blocked"
+    elif "location is not supported" in body or "user location" in body:
+        res = "region"
+    elif r.status_code in (400, 401, 403) and ("api key" in body or "api_key" in body):
+        res = "ok"                              # reached the API, which rejected our fake key: the route works
+    elif r.status_code == 200:
+        res = "ok"
+    else:
+        res = "blocked"
+    _diag("net_probe", route=proxy_url or "direct", result=res, code=r.status_code)
+    return res
+
+
+def _current_route():
+    """The proxy the process would use right now (env, else Windows static proxy)."""
+    import urllib.request
+    p = urllib.request.getproxies()
+    return p.get("https") or p.get("http") or None
+
+
+def _apply_route(proxy_url):
+    """Make every outbound request in the process use this route."""
+    _snapshot_env()
+    for k in _PROXY_ENV:
+        os.environ.pop(k, None)
+    if proxy_url:
+        for k in ("HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"):
+            os.environ[k] = proxy_url
+        os.environ.pop("NO_PROXY", None); os.environ.pop("no_proxy", None)
+    else:
+        os.environ["NO_PROXY"] = "*"             # direct: also bypass a registry proxy
+        os.environ["no_proxy"] = "*"
+
+
+def _candidates():
+    """Routes in the order they are tried. A mode the user picked puts its route
+    FIRST — it is never the only one tried. (149: a manual proxy saved in Iran
+    must not imprison someone who later uses the app abroad with no VPN.)"""
+    ns = net_settings()
+    out, seen = [], set()
+    def add(url, label):
+        key = url or "direct"
+        if key not in seen:
+            out.append((url, label)); seen.add(key)
+    cur = _current_route()
+    # 150: a proxy the user explicitly chose goes first; otherwise NO VPN goes first —
+    # the app must work with no VPN at all, and after any failure the VPN may simply
+    # have been switched off.
+    if ns["mode"] == "custom" and ns["custom"]:
+        add(ns["custom"], "پروکسیِ دستی")
+    elif ns["mode"] == "system" and cur:
+        add(cur, "پروکسیِ سیستم")
+    add(None, "مستقیم")
+    if cur:
+        add(cur, "پروکسیِ سیستم")
+    socks = _socks_ok()
+    for port, scheme, client in LOCAL_PROXY_PORTS:
+        if scheme.startswith("socks") and not socks:
+            continue
+        url = f"{scheme}://127.0.0.1:{port}"
+        if url in seen or not _port_open(port):
+            continue
+        add(url, f"{client} ({port})")
+    return out
+
+
+PROBE_TIMEOUT = 4.0          # 150: seconds for the whole parallel search, not per route
+BENCH_SECONDS = 60.0         # 150: a failed route sits out this long — VPNs are switched often
+import threading as _threading
+_NET_LOCK = _threading.Lock()
+
+
+def _benched(key):
+    import time as _t
+    return _t.time() - (_NET["failed"].get(key, 0) if isinstance(_NET["failed"], dict) else 0) < BENCH_SECONDS
+
+
+def _bench(key):
+    import time as _t
+    if not isinstance(_NET["failed"], dict):
+        _NET["failed"] = {}
+    _NET["failed"][key] = _t.time()
+
+
+def ensure_route(status=lambda *a, **k: None, force=False):
+    """Find and apply a working route to Google. Returns (ok, label, report).
+    150: all routes are probed at once; priority is their order; a failed route is
+    benched for a minute, not for the session."""
+    import time as _t
+    with _NET_LOCK:
+        if _NET["route"] is not None and not force and _t.time() - _NET["checked"] < 1800:
+            return True, _NET["label"], []
+        if not isinstance(_NET["failed"], dict):
+            _NET["failed"] = {}
+        cands = _candidates()
+        # direct is NEVER benched: after any failure the VPN may simply be off, and it
+        # costs nothing to ask — every route is probed in parallel
+        live = [(u, l) for u, l in cands if u is None or not (force and _benched(u or "direct"))]
+        if not live:                           # everything benched: try them all again
+            live = cands
+        status("شبکه: دنبالِ مسیرِ کارآمد می‌گردم…")
+        results = [None] * len(live)
+        done = _threading.Event()
+
+        def run(i, url):
+            results[i] = _probe_route(url, timeout=PROBE_TIMEOUT)
+            # decide as soon as the best possible answer is known
+            for j, r in enumerate(results):
+                if r is None:
+                    return
+                if r == "ok":
+                    done.set(); return
+            done.set()
+
+        threads = [_threading.Thread(target=run, args=(i, u), daemon=True) for i, (u, _) in enumerate(live)]
+        for th in threads:
+            th.start()
+        done.wait(PROBE_TIMEOUT + 1.0)
+        report, verdicts = [], set()
+        chosen = None
+        for i, (url, label) in enumerate(live):
+            r = results[i] or "unreachable"    # not back in time counts as unreachable
+            report.append((label, r)); verdicts.add(r)
+            if r == "ok" and chosen is None:
+                chosen = (url, label)
+            elif r != "ok":
+                _bench(url or "direct")
+        if chosen:
+            url, label = chosen
+            _apply_route(url)
+            _NET.update(route=url or "", label=label, checked=_t.time())
+            _diag("net_route", chosen=url or "direct", label=label, tried=len(live))
+            return True, label, report
+        _restore_env()                         # 149: never leave a dead route applied
+        _NET.update(route=None, label="", checked=0.0)
+        _diag("net_route", chosen="none", tried=len(report), verdicts=",".join(sorted(verdicts)))
+        return False, "", report
+
+
+def net_status_text(ok, label, report):
+    ns = net_settings()
+    chosen = {"custom": "پروکسیِ دستی", "direct": "مستقیم", "system": "پروکسیِ سیستم"}.get(ns["mode"])
+    if ok:
+        note = ""
+        if chosen and label != chosen:
+            note = f" (مسیرِ انتخابی‌تان، «{chosen}»، جواب نداد؛ برنامه خودش مسیرِ دیگری پیدا کرد.)"
+        return f"اتصال به گوگل برقرار است — از راهِ «{label}».{note}"
+    if not report:
+        return "هیچ مسیری برای امتحان پیدا نشد."
+    if all(r == "unreachable" for _, r in report):
+        return ("به گوگل نرسیدیم: اینترنت وصل نیست، یا — اگر در کشوری هستید که گوگل را محدود کرده، مثل ایران — "
+                "فیلترشکن وصل نیست. اگر فیلترشکن روشن است، آن را روی حالتِ TUN بگذارید.")
+    if any(r == "region" for _, r in report):
+        return "گوگل این سرویس را برای کشورِ فعلیِ فیلترشکن ارائه نمی‌دهد؛ سروری در اروپا یا آمریکای شمالی انتخاب کنید."
+    return ("گوگل نشانیِ فعلیِ فیلترشکن را مسدود کرده است؛ سرور یا کشورِ دیگری انتخاب کنید، "
+            "یا فیلترشکن را روی حالتِ TUN بگذارید.")
+
+
+def warm_route():
+    """Find a route in the background at launch — never blocks, never raises. (150)"""
+    def go():
+        try:
+            ensure_route()
+        except Exception as e:
+            _diag("net_route_err", msg=str(e)[:80])
+    _threading.Thread(target=go, daemon=True).start()
