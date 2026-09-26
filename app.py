@@ -396,6 +396,82 @@ class Api:
                 "fish_tags": engines.FISH_TAGS, "fish_models": [[k, v["label"], v["paid"]] for k, v in engines.FISH_MODELS.items()],
                 "fish_library_tags": engines.FISH_LIBRARY_TAGS}
 
+    # ---- 151: Gemini 3.8 voices ------------------------------------------------
+    def g38_library(self, req=None):
+        try:
+            import engines
+            v = engines.g38_library(self._status, (req or {}).get("language") or "fa-IR", bool((req or {}).get("force")))
+            return {"ok": True, "voices": v}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    # ---- 152 ------------------------------------------------------------------
+    def g38_search(self, req):
+        try:
+            import engines
+            return {"ok": True, "voices": engines.g38_library_search(req or {}, self._status)}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def g38_preview(self, req):
+        try:
+            import engines
+            pcm, sr = engines.g38_preview(req.get("voice", "Charon"), req.get("style", ""), req.get("text", ""),
+                                          req.get("cfg") or {}, self._status)
+            return {"ok": True, "b64": base64.b64encode(engines.pcm_to_mp3(pcm, sr)).decode("ascii")}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def g38_design(self, req):
+        try:
+            import engines
+            return {"ok": True, "design": engines.g38_design_create(req.get("name", ""), req.get("prompt", ""),
+                                                                    req.get("gender", ""), self._status)}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def g38_designs(self):
+        import engines
+        return {"ok": True, "designs": engines.g38_designs()}
+
+    def g38_design_delete(self, req):
+        import engines
+        engines.g38_design_delete(req.get("id", ""))
+        return {"ok": True}
+
+    def g38_clones(self):
+        import engines
+        return {"ok": True, "clones": engines.g38_clones(), "consent": engines.G38_CONSENT_EN,
+                "tags": engines.G38_TAGS}
+
+    def g38_pick_audio(self, req):
+        """Pick a reference or consent recording from disk."""
+        try:
+            result = self._window.create_file_dialog(
+                webview.OPEN_DIALOG, directory=_downloads_dir(), allow_multiple=False,
+                file_types=("Audio (*.wav;*.mp3;*.ogg;*.flac;*.m4a;*.webm)",))
+            if not result:
+                return {"ok": False, "error": "cancelled"}
+            path = result if isinstance(result, str) else result[0]
+            import engines
+            _, secs = engines._to_wav24k_mono(open(path, "rb").read())
+            return {"ok": True, "path": path, "seconds": round(secs, 1), "name": os.path.basename(path)}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def g38_clone_create(self, req):
+        try:
+            import engines
+            c = engines.g38_clone_create(req.get("name", ""), req["ref"], req["consent"], self._status)
+            return {"ok": True, "clone": c}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def g38_clone_delete(self, req):
+        import engines
+        engines.g38_clone_delete(req.get("id", ""))
+        return {"ok": True}
+
     # ---- 148: network / VPN route --------------------------------------------
     def net_get(self):
         import engines

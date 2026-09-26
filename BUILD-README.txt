@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist
 ======================================================================
-This zip is the COMPLETE application source as of update 150.
+This zip is the COMPLETE application source as of update 152.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,89 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 152 (on top of 151) — Gemini 3.8 designed from its own features
+  151 adapted the 3.1 panel. 152 builds the 3.8 side from what 3.8 actually offers,
+  checked against Google's full Voices API reference:
+   · NO SLIDERS EXIST for 3.8: a request carries only the transcript, a per-turn
+     style and speaker, the voice and the output format. The only "pitch" is a
+     voice CLASSIFICATION (low/medium/high) used to filter the library. Voice
+     "remixing" (deepen an existing voice, change its pace/accent) is announced as
+     coming soon and is not in the API; the manual says so plainly.
+   · TONE OF A PART: the Reading style + Mood dropdowns → one short constant style
+     for every line (Google's recipe against drift).
+   · TONE OF A LINE: a {marker} in the text ({غمگین}), from the tags menu or typed.
+     Visible in the editor, never read aloud; Persian mood names map to 3.8's short
+     English style via the existing mood list; free text passes through.
+   · AGE, GENDER, ACCENT are voice traits on 3.8 → chosen in the voice browser or
+     set in voice design, never sent as style.
+   · CAST: any number of characters (name, voice, default tone, ▶ preview). A line
+     starting "Name:" (a cast name) is spoken in that character's voice and tone;
+     the label is never spoken nor counted as a word; a label's colon no longer
+     splits the clause. Planner (g38_plan): two alternating characters with
+     catalog voices → ONE native two-speaker request (natural turn-taking;
+     backchannels |…| work); otherwise one request per run of lines sharing voice
+     and style, joined. Plain text without labels or markers keeps the single-
+     request path with its lead-in continuity. In the line map and in surgery a
+     character's line always carries that character's voice.
+   · LISTENER REACTIONS |آره| inserted like tags.
+   · VOICE BROWSER: the whole library with Google's filters (gender, pitch,
+     context, language, search), ▶ preview (a short synthesis), choose.
+   · VOICE DESIGN: age/gender/pitch/texture compose an English description the
+     user can edit; Google returns a sample, played at once. A designed voice is
+     PINNED to the key that created it (google_rotate(only_key_tag=…)): a design
+     regenerated elsewhere would be a different voice.
+   · the 3.1 two-speaker tick is hidden on 3.8 (the cast replaces it); 3.1 and
+     2.5 requests remain byte-identical to build 150.
+  Both manuals: the 3.8 section rewritten — how mood and age reach 3.8, the part
+  and line tone, tags, characters, reactions, browsing, design, cloning, and
+  what is not available yet.
+
+WHAT CHANGED IN 151 (on top of 150) — the Gemini 3.8 TTS fork
+  Two new models at the TOP of the Google model menu: gemini-3.8-flash-tts and
+  gemini-3.8-flash-lite-tts (free tier; Persian supported). Every model option
+  is now pinnable as the default (settings: default_g_model). Selecting a 3.8
+  model forks the Google engine; 3.1 and 2.5 are untouched — verified BYTE-FOR-
+  BYTE: both request bodies and the transcript are identical to build 150.
+  ENGINE (everything behind _is_g38):
+   · the text is a VERBATIM transcript (Google: directions in it are read aloud);
+     [مکث]/[مکث بلند] → <short pause>/<long pause>; [laughs] → <laugh> etc.;
+     delivery tags ([slow], [excited]) are removed — they belong in style.
+   · style goes in parts[].speech_metadata.style: ONE short string, identical for
+     every part, DERIVED from the existing lists (the reading style's profile
+     head + the mood's short tag), so every style and mood works on 3.8 with no
+     new list. Plain reading sends no style. Age is NOT sent (a voice trait on
+     3.8). This is Google's own recipe against voice drift: their docs name long
+     "Audio Profile / Director's Notes" blocks — what 3.1's director sends — as
+     the most common cause of drift.
+   · bodies follow Google's 3.8 schema on both doors (generateContent/stream and
+     Interactions); audio requested as AUDIO_L16 so the PCM path is unchanged.
+   · voices: prebuilt names, Voice Library ids ("lib:…", Persian list fetched
+     from GET /v1beta/voices?language_code=fa-IR), and CLONES ("clone:…").
+   · CLONES FOLLOW THE KEY: the reference (10–30 s) and the spoken consent are
+     stored LOCALLY (AvaModels/g38_voices/<id>/), converted to 24 kHz mono WAV.
+     A replicated voice belongs to the Google project of the key that made it,
+     so the app creates it in each project the first time a key from that
+     project is used, and caches the voice_… per key. Rotation to another key
+     therefore carries the clone along (test: KEY-A 429 → KEY-B sends KEY-B's own
+     clone id). A rejected consent recording is explained, never treated as a bad
+     key. Designed voices are NOT offered: a design regenerated in another
+     project would be a different voice, so it cannot follow the rotation.
+   · word counting (surgery, completeness audit, line map) now ignores 3.8 tags
+     (<laugh>, <short pause>, |mhm|) — they are sounds, not words; otherwise
+     every tagged 3.8 part would have looked incomplete. (The speech-length count
+     strips tags in a first pass: a single pattern let [\W_]+ swallow " <" and
+     the tag survived.)
+  UI: body.g38 switches the fork: age hidden (main and part settings), the tag
+  menus (main and per part) offer 3.8's angle-bracket tags with their own note,
+  the voice lists (main and part settings) gain the Persian library and the
+  user's clones, and a "Clone a voice…" dialog. Tag labels are now HTML-escaped
+  (a raw <laugh> rendered as an invisible element — caught by the UI test).
+  Both manuals: a new "Google 3.8" section and the model menu updated.
+  NOT verifiable from the build sandbox (Google unreachable): real audio from
+  3.8, the Voice Library response shape, and whether consent read in English
+  over a Persian reference passes Google's check. The engine follows Google's
+  published schema exactly; the first run on a real key is the proof.
 
 WHAT CHANGED IN 150 (on top of 149) — no VPN first, all routes at once
   The app must work with no VPN at all, and Iranian users cycle between VPNs
@@ -1152,6 +1235,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۵۰»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۵۲»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

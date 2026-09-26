@@ -71,8 +71,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 150
-BUILD_FA = "\u06f1\u06f5\u06f0"
+BUILD = 152
+BUILD_FA = "\u06f1\u06f5\u06f2"
 
 
 def _diag(tag, **kv):
@@ -3097,7 +3097,9 @@ GOOGLE_VOICES = ["Zephyr", "Puck", "Charon", "Kore", "Fenrir", "Leda", "Orus", "
                  "Autonoe", "Enceladus", "Iapetus", "Umbriel", "Algieba", "Despina", "Erinome", "Algenib",
                  "Rasalgethi", "Laomedeia", "Achernar", "Alnilam", "Schedar", "Gacrux", "Pulcherrima",
                  "Achird", "Zubenelgenubi", "Vindemiatrix", "Sadachbia", "Sadaltager", "Sulafat"]
-GOOGLE_MODELS = {"gemini-3.1-flash-tts-preview": {"tags": True},
+GOOGLE_MODELS = {"gemini-3.8-flash-tts": {"tags": True, "g38": True},        # 151
+                 "gemini-3.8-flash-lite-tts": {"tags": True, "g38": True},   # 151
+                 "gemini-3.1-flash-tts-preview": {"tags": True},
                  "gemini-2.5-flash-preview-tts": {"tags": False},
                  "gemini-2.5-pro-preview-tts": {"tags": False}}
 # 117: reading styles describe the FORMAT — register, pacing, articulation,
@@ -3226,12 +3228,18 @@ def _google_usable_keys():
     return [k["key"] for k in google_keys() if not k.get("bad") and k.get("until", 0) <= now]
 
 
-def google_rotate(call, status, what="گوگل", _rerouted=False):
+def google_rotate(call, status, what="گوگل", _rerouted=False, only_key_tag=None):
     """Run call(key) over the key list: quota → next key (this one sleeps till
     the Pacific midnight), invalid → next key (flagged), transient 5xx → retry
-    the same key up to 3 times. Raises a Farsi error naming the remedy."""
+    the same key up to 3 times. Raises a Farsi error naming the remedy.
+    152: only_key_tag restricts the rotation to one key (a designed voice lives
+    in the project of the key that created it)."""
     import time
     keys = _google_usable_keys()
+    if only_key_tag:
+        keys = [k for k in keys if _key_tag(k) == only_key_tag]
+        if not keys:
+            raise RuntimeError("این صدای طراحی‌شده فقط با کلیدی کار می‌کند که آن را ساخته، و سهمیهٔ امروزِ آن کلید تمام شده یا آن کلید حذف شده است. فردا دوباره امتحان کنید یا صدای دیگری انتخاب کنید.")
     if not keys:
         if google_keys():
             raise RuntimeError("سهمیهٔ امروزِ همهٔ کلیدهای گوگل تمام شده یا کلیدها معتبر نیستند؛ یک کلید تازه اضافه کنید یا فردا سر بزنید.")
@@ -3266,7 +3274,7 @@ def google_rotate(call, status, what="گوگل", _rerouted=False):
                         ok, label, report = ensure_route(status, force=True)
                         if ok:
                             status(f"{what}: مسیرِ شبکه عوض شد («{label}»)؛ دوباره امتحان می‌کنم…")
-                            return google_rotate(call, status, what, _rerouted=True)
+                            return google_rotate(call, status, what, _rerouted=True, only_key_tag=only_key_tag)
                         raise RuntimeError(f"{what}: " + net_status_text(ok, label, report) + " هیچ کلیدی نامعتبر نشد.")
                     raise RuntimeError(f"{what}: " + (_NET_BLOCK_MSG if kind == "network" else _REGION_MSG))
                 if e.code == 429:
@@ -3307,7 +3315,7 @@ def google_rotate(call, status, what="گوگل", _rerouted=False):
                 ok, label, report = ensure_route(status, force=True)
                 if ok:
                     status(f"{what}: مسیرِ شبکه عوض شد («{label}»)؛ دوباره امتحان می‌کنم…")
-                    return google_rotate(call, status, what, _rerouted=True)
+                    return google_rotate(call, status, what, _rerouted=True, only_key_tag=only_key_tag)
                 raise RuntimeError(f"{what}: " + net_status_text(ok, label, report) + " هیچ کلیدی نامعتبر نشد.")
             raise RuntimeError(f"{what}: " + _NET_BLOCK_MSG)
     raise RuntimeError(f"{what}: با هیچ‌کدام از کلیدها جواب نگرفتیم — " +
@@ -3408,6 +3416,12 @@ _G_TAG = re.compile(r"\[[A-Za-z][A-Za-z ,=.'-]{0,40}\]")
 
 PAUSE_SECONDS = {"short pause": 0.6, "long pause": 1.5, "مکث": 0.5, "مکث بلند": 1.2}
 _G_ANY_PAUSE = re.compile(r"\[\s*(short pause|long pause|مکث بلند|مکث)\s*\]")
+
+
+def _is_g38(model_or_cfg):
+    """Is this a Gemini 3.8 TTS request? The single switch for the 3.8 fork. (151)"""
+    m = model_or_cfg.get("g_model") if isinstance(model_or_cfg, dict) else model_or_cfg
+    return bool(GOOGLE_MODELS.get(m or "", {}).get("g38"))
 
 
 def google_text(text, model):
@@ -3657,12 +3671,23 @@ def _google_call(text, cfg, status):
     expect_sec = max(3.0, len(gt) / 11.0 + 1.5 * len(re.findall(r"\[(?:short pause|long pause|sighs?|laughs?|gasps?|coughs?|crying)\]", gt)))
     if re.search(r"\[(?:very )?slow\]", gt):
         expect_sec *= 1.5
-    doors = [("streamGenerateContent", f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent",
-              _google_legacy_body(text, cfg)),
-             ("interactions", _GOOGLE_URL, _google_body(text, cfg))]
+    g38 = _is_g38(model)
+    if g38:
+        gt = g38_text(text)
+        expect_sec = max(3.0, len(gt) / 11.0 + 1.5 * len(re.findall(r"<(?:short pause|long pause|sighs?|laugh\w*|gasp|cough|cry|sob)>", gt)))
+    doors_31 = [("streamGenerateContent", f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent",
+                 _google_legacy_body(text, cfg)),
+                ("interactions", _GOOGLE_URL, _google_body(text, cfg))] if not g38 else None
 
     def call(key):
         rejects, timeouts = [], []
+        if g38:
+            voice = g38_resolve_voice(cfg, key, status)          # 151: per-key, clones recreated on demand
+            doors = [("streamGenerateContent", f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent",
+                      _g38_legacy_body(text, cfg, voice)),
+                     ("interactions", _GOOGLE_URL, _g38_interactions_body(text, cfg, voice))]
+        else:
+            doors = doors_31
         for name, url, body in doors:
             _check_cancel()
             try:
@@ -3699,7 +3724,7 @@ def _google_call(text, cfg, status):
             raise _GoogleReject(rejects[-1].msg[:160])
         raise timeouts[-1]
     try:
-        return google_rotate(call, status, "گوگل")
+        return google_rotate(call, status, "گوگل", only_key_tag=g38_design_key_tag(cfg) if g38 else None)
     except _GoogleReject as first:
         # 146: one more try with the request stripped to the essentials — plain
         # text, the voice, no persona/style/lead-in. FIELD: a freshly pasted line
@@ -3895,6 +3920,13 @@ def google_pcm(text, cfg, status):
     text = text.strip()
     if not text:
         raise RuntimeError("در این بخش چیزی برای خواندن نیست.")
+    if _is_g38(cfg) and g38_needs_plan(text, cfg):
+        # 152: a cast or per-line tones — each run of lines in its own voice and
+        # style, two alternating catalog voices as one native dialogue request
+        pcm, sr = g38_synthesize(text, cfg, status)
+        if not cfg.get("_no_audit"):
+            _G_LAST["tail"] = _continuity_tail(text)
+        return pcm, sr
     chunks = _split_sentences(text, max_len=900) if len(text) > 900 else [text]
     waves, sr = [], 24000
     lead = _g_lead_in(text, cfg)
@@ -4104,6 +4136,10 @@ _G_SENT_END = re.compile(
     r"|\n+")
 
 
+# 152: a one-word speaker label at the start of a line, followed by speech
+_LABEL_RE = re.compile(r"(?m)^[ \t]*[^\s:：\[\]<>{}]{1,24}[ \t]*[:：][ \t]*(?=\S)")
+
+
 def _g_clauses(text):
     """Google-text clauses. A clause ends at a sentence stop, a newline, or a
     PAUSE tag (which stays with the clause before it — that is where the
@@ -4111,7 +4147,12 @@ def _g_clauses(text):
     clause that follows it, a mid-sentence tag stays inside its sentence.
     Fragments without real words merge forward. Returns [(text, (start, end))]."""
     cuts = set()
+    # 152: a speaker label at the start of a line ("Name: …", one word, text after
+    # it on the same line) belongs to its line — its colon is not a clause end
+    labels = {m.end() for m in _LABEL_RE.finditer(text)}
     for m in _G_SENT_END.finditer(text):
+        if m.end() in labels:
+            continue
         cuts.add(m.end())
     for m in _G_PAUSE_TAG.finditer(text):
         mm = re.compile(r"\s+").match(text, m.end())
@@ -4143,7 +4184,9 @@ def _g_clauses(text):
 
 def _g_speech_len(text):
     """Characters that are actually spoken: no tags, no punctuation, no spaces."""
-    return len(re.sub(r"\[[^\]]+\]|[\W_]+", "", text))
+    t = re.sub(r"\[[^\]]+\]|<[a-zA-Z][a-zA-Z \-]{0,30}>|\|[^|\n]{1,40}\||\{[^{}\n]{1,60}\}", " ", text)   # tags first
+    t = _LABEL_RE.sub(" ", t)
+    return len(re.sub(r"[\W_]+", "", t))
 
 
 def _g_boundaries(pcm, sr, clauses):
@@ -4805,7 +4848,12 @@ def _merge_split_words(ours, words):
 
 
 def _text_words(text):
-    return [t for t in (_norm_word(x) for x in re.sub(r"\[[^\]]+\]", " ", text).split()) if t]
+    t = re.sub(r"\[[^\]]+\]", " ", text)
+    t = re.sub(r"<[a-zA-Z][a-zA-Z \-]{0,30}>", " ", t)        # 151: 3.8 vocal tags are not words
+    t = re.sub(r"\|[^|\n]{1,40}\|", " ", t)                    # 151: 3.8 backchannels |mhm|
+    t = re.sub(r"\{[^{}\n]{1,60}\}", " ", t)                    # 152: {tone} markers
+    t = _LABEL_RE.sub(" ", t)                                      # 152: "Name:" speaker labels
+    return [w for w in (_norm_word(x) for x in t.split()) if w]
 
 
 def _parse_secs(v):
@@ -6152,6 +6200,24 @@ def _cuts_from_word_spans(pcm, sr, clauses, words):
     return [_zc_snap(pcm, c, sr) for c in cuts]
 
 
+def _clause_speakers(text, cfg):
+    """{clause index: character voice} for clauses on a labelled line. (152)"""
+    cast = g38_cast(cfg) if _is_g38(cfg) else {}
+    if not cast:
+        return {}
+    out, pos, spk_at = {}, 0, []
+    for raw in text.split("\n"):
+        m = _LABEL_RE.match(raw)
+        name = raw[:m.end()].strip().rstrip(":：").strip() if m else None
+        spk_at.append((pos, pos + len(raw), cast[name]["voice"] if name in cast else None))
+        pos += len(raw) + 1
+    for k, (c, (a, b)) in enumerate(_g_clauses(text)):
+        for lo, hi, v in spk_at:
+            if lo <= a < hi + 1 and v:
+                out[k] = v; break
+    return out
+
+
 def build_line_index(entry, text, pcm, sr, cfg, status, lang=None):
     """Split a freshly generated part into per-line audio once, using the clause
     boundaries the app already computes. Falls back to a single line covering
@@ -6172,9 +6238,13 @@ def build_line_index(entry, text, pcm, sr, cfg, status, lang=None):
         status("مرز جمله‌های این بخش پیدا نشد؛ ویرایشِ جزئی روی آن کل بخش را دوباره می‌سازد.")
         return entry["lines"]
     edges = [0] + [max(0, min(int(c), len(pcm))) for c in cuts] + [len(pcm)]
+    spk = _clause_speakers(text, cfg)
     lines = []
     for k, (c, _) in enumerate(cl):
-        lines.append({"text": c.strip(), "a": edges[k], "b": edges[k + 1], "voice": dict(voice)})
+        v = dict(voice)
+        if spk.get(k):
+            v["g_voice"] = spk[k]                                   # 152: a character's own voice
+        lines.append({"text": c.strip(), "a": edges[k], "b": edges[k + 1], "voice": v})
     entry["lines"] = lines
     _diag("line_index", lines=len(lines), ms=[int((l["b"] - l["a"]) * 1000 / sr) for l in lines][:8])
     return lines
@@ -6307,6 +6377,11 @@ def patch_by_lines(entry, new_text, sel_start, sel_end, cfg, status, call):
         for k, (c, span) in enumerate(nc):
             if span[0] < sel_end and span[1] > sel_start:
                 plan[k] = ("make", cur); chosen.add(k)
+    # 152: a line spoken by a cast character is always made in that character's
+    # voice — change the character's voice in the cast to re-voice its lines
+    for k, v in _clause_speakers(new_text, cfg).items():
+        if k < len(plan) and plan[k] and plan[k][0] == "make":
+            plan[k] = ("make", {**(plan[k][1] or {}), "g_voice": v}) + tuple(plan[k][2:])
     # a line with no remembered voice inherits the PART's base voice, never the
     # currently selected one (141: a third sentence came back in the new voice)
     base_v = {k2: v2 for k2, v2 in (entry.get("payload") or {}).items()
@@ -6763,3 +6838,555 @@ def warm_route():
         except Exception as e:
             _diag("net_route_err", msg=str(e)[:80])
     _threading.Thread(target=go, daemon=True).start()
+
+
+# ===========================================================================
+# 151 · THE GEMINI 3.8 TTS FORK (gemini-3.8-flash-tts / gemini-3.8-flash-lite-tts)
+#
+# Everything here runs only when _is_g38(model) is true; 3.1 and 2.5 are
+# untouched. The 3.8 rules, from Google's documentation:
+#   · the text is a VERBATIM transcript — directions in it would be READ ALOUD;
+#   · sustained delivery goes in parts[].speech_metadata.style — SHORT, and the
+#     same string reused across turns for a consistent baseline;
+#   · long "Audio Profile"/"Director's Notes" blocks are "the most common cause
+#     of voice drift" — which is exactly what the 3.1 director layer sends;
+#   · age, gender and accent are voice traits, not style: choose a voice;
+#   · point-in-time sounds are inline angle-bracket tags, in English, even for
+#     Persian text: <laugh>, <sigh>, <short pause> …;
+#   · the voice is speechConfig.voiceConfig.voice: a prebuilt name, a Voice
+#     Library id, or a voice_… / voicekey_… of a designed or replicated voice.
+# ===========================================================================
+G38_TAGS = ["<laugh>", "<chuckle>", "<giggle>", "<sigh>", "<gasp>", "<breath>", "<heavy breath>",
+            "<cough>", "<throat-clearing>", "<cry>", "<sob>", "<whispers>", "<yawn>", "<groan>",
+            "<phew>", "<tsk>", "<short pause>", "<long pause>"]
+# Ava's older bracket tags → 3.8's inline vocal tags
+_G38_TAG_MAP = {"laughs": "<laugh>", "laugh": "<laugh>", "laughing": "<laugh>", "chuckles": "<chuckle>",
+                "giggles": "<giggle>", "sighs": "<sigh>", "sigh": "<sigh>", "gasps": "<gasp>", "gasp": "<gasp>",
+                "coughs": "<cough>", "cough": "<cough>", "crying": "<cry>", "cries": "<cry>", "sobbing": "<sob>",
+                "whispers": "<whispers>", "whispering": "<whispers>", "breath": "<breath>", "breathes": "<breath>",
+                "short pause": "<short pause>", "long pause": "<long pause>", "yawns": "<yawn>", "groans": "<groan>"}
+# 151: the 3.8 style is DERIVED from the lists the app already has, so every
+# reading style and every mood works on 3.8 with nothing new to maintain:
+#   · a mood contributes its short English tag  ("[sobbing hard][gasping]" →
+#     "sobbing hard, gasping");
+#   · a reading style contributes the head of its profile ("Broadcast news
+#     bulletin. Formal register, …" → "Broadcast news bulletin, formal register").
+# "Plain reading" contributes nothing — Google: test plain TTS first.
+
+
+def _g38_state_style(key, custom=""):
+    if key == "custom":
+        return (custom or "").strip()
+    for row in DIRECTOR_STATES:
+        if row[0] == key and key:
+            return ", ".join(x.strip() for x in re.findall(r"\[([^\]]+)\]", row[4]) if x.strip())
+    return ""
+
+
+def _g38_preset_style(key, custom=""):
+    if key == "custom":
+        return (custom or "").strip()
+    if not key or key == "neutral":
+        return ""
+    prof = GOOGLE_PRESETS.get(key, "")
+    sents = [x.strip() for x in re.split(r"(?<=[.!?])\s+", prof) if x.strip()]
+    if not sents:
+        return ""
+    head = sents[0].rstrip(".")
+    if len(sents) > 1:
+        head += ", " + sents[1].split(",")[0].rstrip(".").lower()
+    return head[:80]
+
+
+def g38_text(text):
+    """The verbatim transcript 3.8 expects: Ava's pause markers and bracket tags
+    become 3.8's angle-bracket vocal tags; bracket tags that are DELIVERY rather
+    than a sound ([slow], [excited]…) are removed — on 3.8 they belong in style,
+    and in the text they would be read aloud."""
+    t = (text or "").strip()
+    t = re.sub(r"(?:\s*\[(?:short pause|long pause|مکث بلند|مکث)\]\s*)+$", "", t)
+    t = re.sub(r"(?:\s*<(?:short pause|long pause)>\s*)+$", "", t)
+    t = _G_PAUSE_LONG.sub(" <long pause> ", t)
+    t = _G_PAUSE.sub(" <short pause> ", t)
+    def tag(m):
+        k = m.group(1).strip().lower()
+        return f" {_G38_TAG_MAP[k]} " if k in _G38_TAG_MAP else " "
+    t = re.sub(r"\[([^\]\[]{1,40})\]", tag, t)
+    t = re.sub(r"\{[^{}\n]{1,60}\}", " ", t)                    # 152: tone markers → style, never spoken
+    t = _LABEL_RE.sub("", t)                                       # 152: speaker labels → voice, never spoken
+    t = re.sub(r"[ \t]+", " ", t)
+    t = re.sub(r" *\n *", "\n", t)
+    return t.strip()
+
+
+def g38_style(cfg):
+    """ONE short delivery string, identical for every part of a document — the
+    3.8 recipe for a consistent tone. Age is deliberately NOT included (a voice
+    trait: choose a voice)."""
+    if "_g38_style" in cfg:
+        return (cfg.get("_g38_style") or "")[:160]
+    base = _g38_preset_style(cfg.get("g_preset") or "neutral", cfg.get("g_style"))
+    mood = _g38_state_style(cfg.get("g_state") or "", cfg.get("g_state_custom"))
+    parts = [p for p in (base, mood) if p]
+    return ", ".join(parts)[:160]
+
+
+def _g38_voice_config(voice):
+    return {"voice": voice or "Charon"}
+
+
+def _g38_legacy_body(text, cfg, voice):
+    """generateContent / streamGenerateContent body, per Google's 3.8 schema."""
+    speakers = cfg.get("g_speakers") or []
+    style = g38_style(cfg)
+    if len(speakers) == 2:
+        parts = []
+        names = [sp.get("name", "") for sp in speakers]
+        for line in g38_text(text).split("\n"):
+            m = re.match(r"\s*([^:：]{1,24})\s*[:：]\s*(.+)", line)
+            if m and m.group(1).strip() in names:
+                p = {"text": m.group(2).strip(), "speech_metadata": {"speaker": m.group(1).strip()}}
+            elif line.strip():
+                p = {"text": line.strip(), "speech_metadata": {"speaker": names[0]}}
+            else:
+                continue
+            if style:
+                p["speech_metadata"]["style"] = style
+            parts.append(p)
+        sc = {"multiSpeakerVoiceConfig": {"speakerVoiceConfigs": [
+            {"speaker": sp.get("name", ""), "voiceConfig": {"prebuiltVoiceConfig": {"voiceName": sp.get("voice") or "Charon"}}}
+            for sp in speakers]}}
+    else:
+        part = {"text": g38_text(text)}
+        if style:
+            part["speech_metadata"] = {"style": style}
+        parts = [part]
+        sc = {"voiceConfig": _g38_voice_config(voice)}
+    return {"contents": [{"role": "user", "parts": parts}],
+            "generationConfig": {"responseModalities": ["AUDIO"],
+                                 "responseFormat": {"audio": {"mimeType": "AUDIO_L16", "sampleRate": 24000}},
+                                 "speechConfig": sc}}
+
+
+def _g38_interactions_body(text, cfg, voice):
+    """Interactions API body, per Google's 3.8 examples."""
+    style = g38_style(cfg)
+    content = {"type": "text", "text": g38_text(text)}
+    if style:
+        content["annotations"] = [{"type": "speech_metadata", "style": style}]
+    return {"model": cfg.get("g_model"),
+            "input": [{"type": "user_input", "content": [content]}],
+            "response_format": {"type": "audio"},
+            "generation_config": {"speech_config": [{"voice": voice or "Charon"}]}}
+
+
+# ---------------------------------------------------------------------------
+# voices: prebuilt names, the Voice Library, and CLONES that follow the key
+# ---------------------------------------------------------------------------
+_G38_DIR_NAME = "g38_voices"
+
+
+def _g38_dir():
+    d = MODELS_DIR / _G38_DIR_NAME
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _g38_index_path():
+    return _g38_dir() / "index.json"
+
+
+def _g38_index():
+    try:
+        return json.loads(_g38_index_path().read_text(encoding="utf-8"))
+    except Exception:
+        return {"clones": {}}
+
+
+def _g38_index_write(ix):
+    _g38_index_path().write_text(json.dumps(ix, ensure_ascii=False), encoding="utf-8")
+
+
+def _key_tag(key):
+    import hashlib
+    return hashlib.sha256((key or "").encode()).hexdigest()[:16]
+
+
+def _to_wav24k_mono(data_bytes, max_s=None):
+    """Any audio file → 24 kHz mono 16-bit WAV bytes, as Google recommends."""
+    import io
+    pcm, sr = _decode_audio(data_bytes)
+    if pcm.ndim > 1:
+        pcm = pcm.mean(axis=1).astype(np.int16)
+    if sr != 24000:
+        pcm = _resample(pcm, sr, 24000)
+    if max_s:
+        pcm = pcm[: int(24000 * max_s)]
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(24000)
+        wf.writeframes(pcm.astype(np.int16).tobytes())
+    return buf.getvalue(), len(pcm) / 24000.0
+
+
+G38_CONSENT_EN = "I am the owner of this voice and I consent to Google using this voice to create a synthetic voice model."
+
+
+def g38_clone_create(name, ref_path, consent_path, status=lambda *a, **k: None):
+    """Store a clone LOCALLY: the reference (10–30 s) and the consent recording.
+    Nothing is sent now — the voice is created in each Google project the first
+    time a key from that project is used with it."""
+    import uuid
+    ref_bytes, ref_s = _to_wav24k_mono(Path(ref_path).read_bytes(), max_s=30)
+    if ref_s < 10:
+        raise RuntimeError(f"صدای نمونه باید دست‌کم ۱۰ ثانیه باشد؛ این {faDigits(round(ref_s, 1))} ثانیه است.")
+    con_bytes, con_s = _to_wav24k_mono(Path(consent_path).read_bytes(), max_s=30)
+    if con_s < 3:
+        raise RuntimeError("صدای اجازه‌نامه خیلی کوتاه است؛ جملهٔ اجازه را کامل بخوانید.")
+    cid = uuid.uuid4().hex[:12]
+    d = _g38_dir() / cid
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "reference.wav").write_bytes(ref_bytes)
+    (d / "consent.wav").write_bytes(con_bytes)
+    ix = _g38_index()
+    ix["clones"][cid] = {"name": (name or "صدای من").strip()[:40], "created": time.time(),
+                         "ref_s": round(ref_s, 1), "ids": {}}
+    _g38_index_write(ix)
+    _diag("g38_clone", action="stored", ref_s=round(ref_s, 1))
+    return {"id": cid, "name": ix["clones"][cid]["name"], "ref_s": round(ref_s, 1)}
+
+
+def g38_clones():
+    ix = _g38_index()
+    return [{"id": k, "name": v.get("name", ""), "ref_s": v.get("ref_s", 0), "projects": len(v.get("ids", {}))}
+            for k, v in sorted(ix["clones"].items(), key=lambda kv: -kv[1].get("created", 0))]
+
+
+def g38_clone_delete(cid):
+    import shutil
+    ix = _g38_index()
+    ix["clones"].pop(cid, None)
+    _g38_index_write(ix)
+    shutil.rmtree(_g38_dir() / cid, ignore_errors=True)
+    return True
+
+
+def _g38_create_remote(cid, key, status):
+    """Create the clone in the Google project behind this key; returns voice_…"""
+    import base64
+    d = _g38_dir() / cid
+    ref, con = (d / "reference.wav").read_bytes(), (d / "consent.wav").read_bytes()
+    body = {"store": True, "voice": {
+        "model": "gemini-3.8-flash-tts", "type": "replicated",
+        "display_name": ("ava-" + cid)[:40],
+        "replicated": {"source_audio": {"mime_type": "audio/wav", "data": base64.b64encode(ref).decode()},
+                       "consent_audio": {"mime_type": "audio/wav", "data": base64.b64encode(con).decode()}}}}
+    status("صدای شبیه‌سازی‌شده برای این کلید ساخته می‌شود (فقط بارِ اول)…")
+    data = _google_post("https://generativelanguage.googleapis.com/v1beta/voices", body, key, timeout=_G_TIMEOUT)
+    vid = None
+    if isinstance(data, dict):
+        vid = data.get("id") or (data.get("voice") or {}).get("id") or data.get("name")
+        if isinstance(vid, str) and vid.startswith("voices/"):
+            vid = vid.split("/", 1)[1]
+    if not vid:
+        raise RuntimeError("گوگل صدای شبیه‌سازی را ساخت ولی شناسه‌ای برنگرداند.")
+    _diag("g38_clone", action="created_in_project", key=_key_tag(key)[:6])
+    return vid
+
+
+def g38_resolve_voice(cfg, key, status=lambda *a, **k: None):
+    """The voice string for THIS key: clones are created in the key's project on
+    first use and remembered; library ids and prebuilt names pass through."""
+    v = (cfg.get("g_voice") or "Charon").strip()
+    if v.startswith("lib:"):
+        return v[4:]
+    if v.startswith("design:"):
+        d = _g38_index().get("designs", {}).get(v[7:])
+        if not d:
+            raise RuntimeError("این صدای طراحی‌شده دیگر روی این دستگاه نیست؛ صدای دیگری انتخاب کنید.")
+        return d["voice_id"]
+    if v.startswith("clone:"):
+        cid = v[6:]
+        ix = _g38_index()
+        entry = ix["clones"].get(cid)
+        if not entry:
+            raise RuntimeError("این صدای شبیه‌سازی‌شده دیگر روی این دستگاه نیست؛ صدای دیگری انتخاب کنید.")
+        tag = _key_tag(key)
+        if tag in entry.get("ids", {}):
+            return entry["ids"][tag]
+        try:
+            vid = _g38_create_remote(cid, key, status)
+        except _GoogleHTTP as e:
+            if e.code == 400 and "consent" in (e.msg or "").lower():
+                raise RuntimeError("گوگل اجازه‌نامهٔ صوتی را نپذیرفت: جملهٔ اجازه باید با همان صدا، کامل و واضح خوانده شده باشد.")
+            raise
+        ix = _g38_index()                                   # re-read: another call may have written
+        ix["clones"].setdefault(cid, entry).setdefault("ids", {})[tag] = vid
+        _g38_index_write(ix)
+        return vid
+    return v
+
+
+_G38_LIB = {"at": 0.0, "voices": []}
+
+
+def g38_library(status=lambda *a, **k: None, language="fa-IR", force=False):
+    """Google's Voice Library, filtered to a language (Persian by default).
+    Catalog voices are Google's own, so their ids work with any key."""
+    if _G38_LIB["voices"] and not force and time.time() - _G38_LIB["at"] < 86400:
+        return _G38_LIB["voices"]
+
+    def call(key):
+        s_ = requests.Session()
+        r = s_.get("https://generativelanguage.googleapis.com/v1beta/voices",
+                   params={"language_code": language, "type": "prebuilt", "page_size": 500},
+                   headers={"x-goog-api-key": key}, timeout=_G_TIMEOUT)
+        if r.status_code != 200:
+            raise _GoogleHTTP(r.status_code, r.text[:300])
+        return r.json()
+    data = google_rotate(call, status, "کتابخانهٔ صداها")
+    out = []
+    for v in (data or {}).get("voices", []) or []:
+        vid = v.get("id") or v.get("name")
+        if not vid:
+            continue
+        out.append({"id": vid, "name": v.get("display_name") or v.get("displayName") or vid,
+                    "gender": v.get("gender", ""), "pitch": v.get("pitch", ""),
+                    "persona": v.get("persona", ""), "description": (v.get("description") or "")[:120]})
+    _G38_LIB.update(at=time.time(), voices=out)
+    _diag("g38_library", language=language, count=len(out))
+    return out
+
+
+# ===========================================================================
+# 152 · GEMINI 3.8, DESIGNED FROM ITS OWN FEATURES
+#   · tone per line: a {marker} in the text → that line's speech_metadata.style
+#   · a cast of any size: "Name:" at the start of a line → that character's
+#     voice and default style
+#   · two characters with catalog voices talking in turn → ONE native two-
+#     speaker request (natural turn-taking, backchannels |…| work); anything
+#     else → one request per run of lines sharing voice and style, joined
+#   · voice design (age, gender, pitch, texture…) and the full voice library
+# ===========================================================================
+_TONE_RE = re.compile(r"\{([^{}\n]{1,60})\}")
+# Persian tone names → the short English style 3.8 is trained on (from the
+# mood list the app already has, plus reading styles)
+def _tone_to_style(tone):
+    t = (tone or "").strip()
+    if not t:
+        return ""
+    for row in DIRECTOR_STATES:
+        if row[0] and (t == row[1] or t.lower() == row[2].lower() or t == row[0]):
+            return _g38_state_style(row[0])
+    return t                                                       # free text passes through as written
+
+
+def g38_cast(cfg):
+    """{name: {"voice": …, "style": …}} from the payload."""
+    out = {}
+    for c in cfg.get("g38_cast") or []:
+        n = (c.get("name") or "").strip()
+        if n:
+            out[n] = {"voice": (c.get("voice") or "").strip() or "Charon", "style": _tone_to_style(c.get("style") or "")}
+    return out
+
+
+def g38_lines(text, cfg):
+    """[(speaker|None, style, spoken_text)] per line of the part."""
+    cast = g38_cast(cfg)
+    default_style = g38_style(cfg)
+    out = []
+    for raw in (text or "").split("\n"):
+        if not raw.strip():
+            continue
+        spk = None
+        m = _LABEL_RE.match(raw)
+        if m:
+            name = raw[:m.end()].strip().rstrip(":：").strip()
+            if name in cast:
+                spk = name
+                raw = raw[m.end():]
+        tones = [_tone_to_style(x) for x in _TONE_RE.findall(raw)]
+        style = ", ".join(x for x in tones if x) or (cast[spk]["style"] if spk and cast[spk]["style"] else default_style)
+        out.append((spk, style[:160], raw))
+    return out
+
+
+def _is_catalog_voice(v):
+    v = (v or "").strip()
+    return bool(v) and not v.startswith(("clone:", "design:"))
+
+
+def g38_plan(text, cfg):
+    """Group the lines into requests. Returns [{"kind": "solo"|"duo", …}]."""
+    cast = g38_cast(cfg)
+    lines = g38_lines(text, cfg)
+    def voice_of(spk):
+        return cast[spk]["voice"] if spk else (cfg.get("g_voice") or "Charon")
+    plan = []
+    i = 0
+    while i < len(lines):
+        spk, style, txt = lines[i]
+        # a stretch where exactly two characters with catalog voices alternate →
+        # one native two-speaker request
+        j, pair = i, []
+        while j < len(lines) and lines[j][0]:
+            if lines[j][0] not in pair:
+                if len(pair) == 2:
+                    break
+                pair.append(lines[j][0])
+            j += 1
+        if (len(pair) == 2 and j - i >= 2 and all(_is_catalog_voice(voice_of(p)) for p in pair)
+                and voice_of(pair[0]) != voice_of(pair[1])):
+            plan.append({"kind": "duo", "speakers": [{"name": p, "voice": voice_of(p).replace("lib:", "")} for p in pair],
+                         "turns": [{"speaker": lines[k][0], "style": lines[k][1], "text": lines[k][2]} for k in range(i, j)],
+                         "lines": list(range(i, j))})
+            i = j
+            continue
+        v = voice_of(spk)
+        k = i + 1
+        while k < len(lines) and voice_of(lines[k][0]) == v and lines[k][1] == style:
+            k += 1
+        plan.append({"kind": "solo", "voice": v, "style": style,
+                     "text": "\n".join(lines[n][2] for n in range(i, k)), "lines": list(range(i, k))})
+        i = k
+    return plan
+
+
+def g38_needs_plan(text, cfg):
+    """Only texts that use a cast label or a tone marker take the planner; a plain
+    text keeps the single-request path (with its lead-in continuity)."""
+    return bool(_TONE_RE.search(text or "")) or any(s for s, _, _ in g38_lines(text, cfg))
+
+
+def _g38_duo_body(turns, speakers):
+    parts = []
+    for t in turns:
+        p = {"text": g38_text(t["text"]), "speech_metadata": {"speaker": t["speaker"]}}
+        if t.get("style"):
+            p["speech_metadata"]["style"] = t["style"]
+        if p["text"]:
+            parts.append(p)
+    return {"contents": [{"role": "user", "parts": parts}],
+            "generationConfig": {"responseModalities": ["AUDIO"],
+                                 "responseFormat": {"audio": {"mimeType": "AUDIO_L16", "sampleRate": 24000}},
+                                 "speechConfig": {"multiSpeakerVoiceConfig": {"speakerVoiceConfigs": [
+                                     {"speaker": sp["name"], "voiceConfig": {"prebuiltVoiceConfig": {"voiceName": sp["voice"]}}}
+                                     for sp in speakers]}}}}
+
+
+def g38_synthesize(text, cfg, status):
+    """Render a part that uses a cast or tone markers: request by request, joined
+    with a natural gap. Returns (pcm, sr)."""
+    plan = g38_plan(text, cfg)
+    model = cfg.get("g_model")
+    pieces, sr_out = [], 24000
+    for step in plan:
+        if step["kind"] == "duo":
+            body = _g38_duo_body(step["turns"], step["speakers"])
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent"
+            gt = " ".join(g38_text(t["text"]) for t in step["turns"])
+            expect = max(3.0, len(gt) / 11.0)
+            pcm, sr = google_rotate(lambda key: _google_stream(url, body, key, expect, status), status, "گوگل")
+        else:
+            sub = {**cfg, "g_voice": step["voice"], "_g38_style": step["style"], "g_lead_in": ""}
+            pcm, sr = _google_call(step["text"], sub, status)
+        if sr != sr_out:
+            pcm = _resample(pcm, sr, sr_out)
+        if pieces:
+            pieces.append(np.zeros(int(sr_out * 0.25), dtype=np.int16))
+        pieces.append(pcm)
+    _diag("g38_plan", requests=len(plan), duo=sum(1 for p in plan if p["kind"] == "duo"))
+    return (np.concatenate(pieces) if pieces else np.zeros(0, dtype=np.int16)), sr_out
+
+
+# ---- voice design: pinned to the key that created it -----------------------
+def g38_designs():
+    ix = _g38_index()
+    return [{"id": k, "name": v.get("name", ""), "prompt": v.get("prompt", "")}
+            for k, v in sorted(ix.get("designs", {}).items(), key=lambda kv: -kv[1].get("created", 0))]
+
+
+def g38_design_key_tag(cfg):
+    v = (cfg.get("g_voice") or "")
+    if v.startswith("design:"):
+        d = _g38_index().get("designs", {}).get(v[7:])
+        return d.get("key") if d else None
+    return None
+
+
+def g38_design_create(name, prompt, gender, status=lambda *a, **k: None):
+    """Design a voice at Google from a description; returns its preview audio."""
+    import uuid, base64
+    prompt = (prompt or "").strip()
+    if len(prompt) < 8:
+        raise RuntimeError("توصیفِ صدا خیلی کوتاه است.")
+    holder = {}
+
+    def call(key):
+        body = {"store": True, "voice": {"model": "gemini-3.8-flash-tts", "type": "prompted",
+                                        "display_name": (name or "Ava design")[:40],
+                                        "language_code": "fa-IR", "prompted": {"input": prompt[:1500]}}}
+        if gender in ("male", "female", "neutral"):
+            body["voice"]["gender"] = gender
+        data = _google_post("https://generativelanguage.googleapis.com/v1beta/voices", body, key, timeout=_G_TIMEOUT)
+        holder["key"] = key
+        return data
+    status("گوگل صدا را از روی توصیف می‌سازد…")
+    data = google_rotate(call, status, "طراحی صدا")
+    vid = (data or {}).get("id")
+    if not vid:
+        raise RuntimeError("گوگل صدا را ساخت ولی شناسه‌ای برنگرداند.")
+    did = uuid.uuid4().hex[:12]
+    ix = _g38_index()
+    ix.setdefault("designs", {})[did] = {"name": (name or "صدای طراحی‌شده").strip()[:40], "prompt": prompt[:1500],
+                                         "voice_id": vid, "key": _key_tag(holder["key"]), "created": time.time()}
+    _g38_index_write(ix)
+    sample = ((data or {}).get("sample_audio") or {}).get("data")
+    _diag("g38_design", action="created")
+    return {"id": did, "name": ix["designs"][did]["name"], "sample_b64": sample,
+            "sample_mime": ((data or {}).get("sample_audio") or {}).get("mime_type", "audio/wav")}
+
+
+def g38_design_delete(did):
+    ix = _g38_index()
+    ix.get("designs", {}).pop(did, None)
+    _g38_index_write(ix)
+    return True
+
+
+# ---- the full Voice Library, with Google's own filters ----------------------
+def g38_library_search(filters, status=lambda *a, **k: None):
+    """GET /v1beta/voices with any of Google's filters; catalog voices only."""
+    params = [("type", "prebuilt"), ("page_size", "1000")]
+    for f in ("gender", "pitch", "language_code", "accent", "persona", "context"):
+        for val in (filters.get(f) or []) if isinstance(filters.get(f), list) else ([filters[f]] if filters.get(f) else []):
+            params.append(("context" if f == "context" else f, val))
+    if filters.get("search"):
+        params.append(("search", filters["search"][:200]))
+
+    def call(key):
+        r = requests.Session().get("https://generativelanguage.googleapis.com/v1beta/voices",
+                                   params=params, headers={"x-goog-api-key": key}, timeout=_G_TIMEOUT)
+        if r.status_code != 200:
+            raise _GoogleHTTP(r.status_code, r.text[:300])
+        return r.json()
+    data = google_rotate(call, status, "کتابخانهٔ صداها")
+    out = []
+    for v in (data or {}).get("voices", []) or []:
+        vid = v.get("id")
+        if vid:
+            out.append({k: v.get(k, "") for k in ("id", "display_name", "gender", "pitch", "accent", "persona",
+                                                   "context", "language_code", "description")})
+    _diag("g38_library", filters=len(params) - 2, count=len(out))
+    return out
+
+
+def g38_preview(voice, style, text, cfg, status=lambda *a, **k: None):
+    """A short sample in any voice, for auditioning before choosing."""
+    sub = {**cfg, "g_model": cfg.get("g_model") if _is_g38(cfg) else "gemini-3.8-flash-lite-tts",
+           "g_voice": voice, "g_lead_in": "", "_no_audit": True}
+    if style is not None:                          # None → the part's own reading style and mood
+        sub["_g38_style"] = _tone_to_style(style)
+    pcm, sr = _google_call((text or "سلام، این صدای من است؛ امیدوارم خوشتان بیاید.")[:200], sub, status)
+    return pcm, sr
