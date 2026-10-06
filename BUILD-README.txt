@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist
 ======================================================================
-This zip is the COMPLETE application source as of update 158.
+This zip is the COMPLETE application source as of update 163.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,140 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 163 (on top of 162) — the video tab, completed (checkpoint)
+  · ANIMATIONS from the mock, in the shared renderer (preview == export): in (type word by word / fade /
+    rise / pop), out (fade / sink / shrink), while on screen (breathe / wave / shine), speed 1–10, and the
+    text background's own animation (open from the centre / stretch / fade).
+  · STICKERS: emoji on an optional circle; 12-emoji grid + any emoji; size and rotation (the mock's panel).
+  · PICTURES/VIDEOS: the mock's 3×3 position grid and a size slider. VIDEO SOUND: «muted» off → volume
+    0–200%; heard in the preview, mixed into the export at its place, trim, loop and volume.
+  · SUBTITLE TIMING on the layer timeline: drag a cue to move it, its edges to retime it, double-click to
+    edit its text; the first edit fixes the subtitles in place («Re-sync» follows the timeline again).
+  · OLDER macOS (Safari < 26, no AudioEncoder): the export's audio becomes MP3 — the page sends the final
+    mix to the engine in chunks (mp3_begin/chunk/end, LAME), the frames go into the MP4 as mp4a/0x6B.
+    The vendored mp4-muxer gained an "mp3" codec (marked patch, ui-src/mp4-muxer.js).
+  · The preview renders at 1× while playing and sharper when paused.
+  · Manuals: «ویدیو» and «نمونهٔ صداها» sections (FA + EN).
+  Tests: t8 (8: sticker drawn, 7 animation behaviours, grid, cue drag → fixed subtitles, video sound only
+    in its span, MP3 route offered, MP3-route export, the MP4 decodes back — mp4a/0x6B) + t4/t5/t6/t7/t1f
+    + engine 146–160 — all pass.
+
+WHAT CHANGED IN 162 (on top of 161) — unlimited speakers + voice previews (checkpoint)
+  · SPEAKERS (ui-src/speakers.js): ONE list for every engine, any number of speakers, each with its own
+    engine, voice and style. Each line is its own request, so a line starting with a known speaker's
+    «Name:» takes that speaker's voice; the NAME IS NEVER SENT (a line tone {…} stays); an unnamed line
+    continues the previous speaker. Word times are shifted back past the name (trims/caret stay exact).
+    Replaces the 3.8 characters, the 3.1 pair and the Fish speakers (migrated automatically on load);
+    g38_cast / g_speakers / f_speakers are now sent empty — the per-line voice does the work.
+    «Put this name at the start of the selected line» on each speaker row.
+  · VIDEO matches the audio: the speakers are exactly this list (a name not in the list is just text —
+    the audio would read it aloud); up to 8 orbs (two rows past four).
+  · VOICE PREVIEWS: ▶ on every row of every voice menu (Google, Fish, Chatterbox, the light voices via
+    the engine menu) and on each speaker; every preview says «پایَنده ایران، جاوید شاه!».
+    Bundled previews: Settings → «ساختنِ همهٔ نمونه‌صداها…» makes 95 files once on YOUR machine
+    (3 models × 30 Google voices, مانا/ژیرو/امیر, Chatterbox default, Fish default) into a folder you pick;
+    commit that folder as ui/previews and every build ships them (played instantly, offline). Anything
+    not bundled (your own Fish/designed/cloned/library voices) is made on first play and cached
+    (engines.voice_preview → MODELS_DIR/previews).
+  Tests: t7 (12: speakers, never-sent names, tones, continuation, aligned words, video speakers, 2 rows,
+    ▶ rows, preview phrase/voice, speaker ▶, the 95-file builder, migration) + t4/t5/t6/t1f/t2r/t3r
+    + engine 146–160 — all pass.
+
+WHAT CHANGED IN 161 (on top of 160) — THE VIDEO TAB (checkpoint; not for deployment yet)
+  Built on the latest mock (ava-editor-10): its stage, design system, Orb Lab shader and panels,
+  with a real document underneath. ui-src/video-lib.js (the mock's VS/FS/STYLES/PALS/WAVES — the orb
+  shader extended to ONE ORB PER SPEAKER, up to 4) + ui-src/video.js (document, renderer, editing,
+  inspector, layers, exporter) + ui-src/mp4-muxer.js (MIT, embedded, offline).
+  · Mode tabs صدا | ویدیو. Video defaults: 16:9, 2K, 30 fps (also 9:16, 1:1, 4:5; 1080p/2K/4K; 30/60).
+  · ONE renderer (vFrame) draws every frame — preview and export are the same pixels. Levels and
+    ripple pulses are functions of time only (frame-identical). Speakers come from the «Name:» lines
+    (characters, two speakers, Fish speakers); an unnamed line continues the previous speaker.
+  · Canvas editing from the mock: click select, drag move with centre/edge snap guides, 8 handles
+    (fixed ratio; Shift free; Alt from centre), rotate (Shift 15°), arrows nudge 1 output px, Delete,
+    Esc, double-click text to edit in place; handles may extend past the frame.
+  · Inspector: video settings, subtitles (follow timeline or fixed + re-sync), timing, size and position
+    in OUTPUT px + lock, text, picture/video with full stroke + shadow, podcast design (12 designs, layout
+    auto/single/quote, 6 waveforms, sensitivity, ripples, glow, iridescence, grain, 8 palettes,
+    background mesh/photo/video/plain + zoom, overlay, gradient, names). A reset on every section.
+  · Layer timeline: subtitles on top, objects (drag rows to reorder, drag bars to move, edges to trim),
+    audio as one track (double-click → audio mode).
+  · EXPORT: WebCodecs + MP4 muxer, codecs by capability (H.264 → VP9 → AV1; AAC → Opus); audio made
+    exactly as the audio export (with music by default). The AAC header is built here — Safari's encoder
+    writes a broken one (WebKit bug 302253 → silent track). Streamed to disk in chunks.
+  · Engine: asset store (chunked), streamed save, .ava carries the video tab + every asset it uses.
+  · Audio fix found on the way: pasting «راوی: …» split the name off (the splitter treats ":" as a
+    sentence end) — speaker prefixes are now kept, for characters/two speakers/Fish speakers too.
+  NOT YET (next): animations and stickers from the mock; subtitle cue editing on the timeline; videos'
+    own sound in the mix; WKWebView verification of the H.264/AAC path (tested here: VP9+Opus); a path for
+    macOS without an audio encoder (Safari < 26); preview speed at 4K; manuals for the video tab.
+  Tests: video suite t6 (15, incl. a real MP4 export verified box by box: ftyp/moov/mdat, vide+soun,
+    6.30 s) + 146–160 + audio suites t4/t5/t1f — all pass.
+
+WHAT CHANGED IN 160 (on top of 159) — the audio app, complete
+  · TAGS/TONES FIXED — root cause: escapeHtml did not escape double quotes, so every menu item's
+    onclick="insertTag("<laugh>")" broke at the first quote (syntax error on click). escapeHtml now
+    escapes quotes (protects every attribute); tag/tone items carry data-tag/data-tone with one
+    delegated listener; menus never steal the caret; insertion remembers your last line.
+  · KEYBOARD: ←/→ jump the playhead 3 s (playing or not) unless the caret is in a line; Esc deselects.
+  · PLAYHEAD: the timeline runs past the last clip (tail); the playhead stops 50 px before the end; its
+    label is clamped inside its host (never clipped); playback auto-scrolls to keep it in view.
+  · PRECISION: the line index's transcription WORD TIMESTAMPS are now kept on the part (wrapping
+    transcribe_words + build/ensure_line_index) and used for line words when they line up one-for-one
+    (energy estimate as fallback); inside each word time is divided over the letters by weight
+    (diacritics/joiners 0, long vowels 1.3) — trims and the caret are letter-precise.
+  · PER-TRACK VOLUME 0–200 % (header slider), live in playback (track gains) and in export (clip gain;
+    music via level_db). EXPORT: default WITH music; «voice only» option; muted tracks excluded; all
+    voice tracks mixed.
+  · RESET buttons beside every setting (project, line, each engine, music) + «reset all» per engine.
+  · RESTORED (dropped in 159): all six diacritization tools incl. OpenAI and Anthropic, Gemini named
+    «3.5 Flash»; Google custom style (preset «custom»); 3.1 two speakers (g_speakers); Fish custom
+    style, age, state and multi-speaker (f_speakers); the automatic low-quota warning.
+  · 3.8: IPA pronunciation insert (/…/) and overlapping-reaction insert (|…|) in the tag menu; native
+    two-speaker requests come from characters (the engine's planner pairs two prebuilt-voice characters).
+  · Previews stop when ANY dialog closes; the line's voice menu has library/designed/cloned voices +
+    recents; the last CSS tooltip (gapless, on the track header) moved to the top layer.
+  · PROJECT FILES (.ava): «Save project…» / «Open project…» — project.json (the document),
+    parts/<id>.wav (each referenced part, lossless), parts.json (text, line map, word times),
+    music.mp3. Reopening restores exactly, with fresh part ids and no re-voicing.
+  · NOT IN THIS BUILD — the video editor (16:9 default; export 1080p/2K/4K, 2K default; 30/60 fps,
+    30 default; one orb per speaker in podcast styles). It is the next build sequence.
+  Tests: test160 + 146–159 (source and compiled) + feedback suite (21) + this round's suite t5 (19)
+    + editor rounds 1–3 — all pass; protected rehearsal verified.
+
+WHAT CHANGED IN 159 (on top of 158) — the editor is the app; first feedback round
+  · The old interface is REMOVED. ui/index.html is the editor (built from ui-src: editor.src.html,
+    editor.js, lists.js — the lists moved out of the old interface, which is kept only in the dev kit).
+  · Window opens 16:9 at the largest size inside 90% of the screen.
+  · Icons: the new crown-on-blue artwork (icon.ico; icon.png on Apple's grid → icon.icns by the
+    workflow); the transparent crown is the in-app logo; favicon from the new icon.
+  · Fixes: inspector tab never switches on its own (only on a NEW selection or a tab click — dropdown
+    changes and clearing diacritics stay put); live mute during playback (per-track gains); full
+    deselect from the empty timeline; trim handles follow the pointer (DOM moves + cached waveforms);
+    Delete/Backspace remove the selected clip or lines; app-level ⌘Z / ⇧⌘Z / Ctrl+Y everywhere incl.
+    typing (one step per burst); tooltips on one top layer; status in the primary colour; «تبدیل به
+    گفتار» left, direction right; آن‌دو / ری‌دو; no preview badge or old-interface link.
+  · Dropdown = classic conventions: anchored to its button (width/edge), opens up when needed, search
+    for long lists, "recent" group, pin = default (default_engine, default_g_model), delete on rows,
+    arrow keys; joined controls round correctly (hidden select moved out of the join).
+  · Music: tabs (my library + Freesound/Openverse/Jamendo + Lyria), style chips that search at once,
+    pages, preview + «استفاده» on every row incl. the library, ONE shared preview player (stops on close),
+    Lyria generation; ducking amount slider (dB → engine duck_db); delete music from the timeline only.
+  · Voices (3.8): Extended Voice Library browser (2,000+; language/gender/pitch/context/search, pages,
+    previews; Persian has no tagged voices → whole library with a note); voice design; cloning (marked
+    paid-tier/EEA); characters (name, voice, tone, preview, library pick). Fish: voice groups (mine /
+    recent / designed, deletable), library search with pages, clone from file, design + keep.
+    Chatterbox samples deletable. Settings dialog: route mode, test, quota. Export menu: save text, new doc.
+  · Precision: the engine returns WORD timings per line (energy-guided, no extra request); trimming
+    paints exactly the dropped words red, the playhead caret and splits land on words; timings survive
+    diacritic edits (re-located by letters).
+  · Diacritization: per selected line(s) (line toolbar button) or all; patient retries through Google's
+    "high demand"/timeouts (4, 10, 25 s) — the field log showed it giving up at once.
+  · Gemini 3.8 per Google's current prompting guide (2026-10-01): ~40 recommended <tags> restored incl.
+    <long pause>; Persian + English |backchannels|; IPA in /slashes/ documented; 2.5 models removed from
+    the menu (there is no Gemini 3.5 SPEECH model — 3.5 Flash is the text model diacritization uses).
+  · Manuals follow the app theme (?theme=) and have proper padding.
+  Tests: test159 + 146–156 + feedback suite t4 (21 checks) + editor rounds 1–3 — see the dev kit.
 
 WHAT CHANGED IN 158 (on top of 157) — the app icon + a correct protection gate
   · APP ICON: icon.png and icon.ico are now IN the build (they were only in the repo, so uploads
@@ -1379,6 +1513,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۵۸»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۶۳»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

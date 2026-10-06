@@ -1,4 +1,4 @@
-<!doctype html><html lang="en" dir="ltr"><head><meta charset="utf-8"><title>Avaye Javid Shah — Manual</title>
+<!doctype html><html lang="en" dir="ltr"><head><script>try{var t=new URLSearchParams(location.search).get('theme');if(t)document.documentElement.setAttribute('data-theme',t)}catch(e){}</script><meta charset="utf-8"><title>Avaye Javid Shah — Manual</title>
 <style>
 body{font-family:Inter,-apple-system,"Segoe UI",Roboto,sans-serif;max-width:900px;margin:0 auto;padding:20px 22px 40px;line-height:1.75;color:#1c2230;background:#ffffff}
 h1{font-size:1.6rem;margin:0 0 6px}.sub{color:#5b6372;margin-bottom:28px}
@@ -14,7 +14,7 @@ table{width:100%;border-collapse:collapse;margin:12px 0;font-size:.92rem}th,td{b
 html[data-theme=dark] th,html[data-theme=dark] td{border-color:#2a3447}html[data-theme=dark] th{background:#0d111a}
 </style></head><body><script>try{var t=new URLSearchParams(location.search).get('theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
 <h1>Avaye Javid Shah — the complete manual</h1>
-<div class="sub">Build 158 — from getting keys to building the final file</div>
+<div class="sub">Build 163 — from getting keys to building the final file</div>
 <nav><a href="#s0">1) What this app does and why it is different</a><a href="#s1">2) Installation, first run and operating-system security warnings</a><a href="#s2">3) Keys: up to thirty free Google keys with three accounts, and the free Fish Audio key</a><a href="#s3">4) Text, diacritization and tags</a><a href="#s4">5) The engines: settings and workflow for each</a><a href="#s5">6) Parts: the heart of the app</a><a href="#s6">7) Reading style, speaker age and mood</a><a href="#s7">8) Dialogue and several speakers</a><a href="#s8">9) Background music and mixing</a><a href="#s9">10) The final file and captions</a><a href="#s10">11) Complete workflows with examples</a><a href="#s11">12) Tips and troubleshooting</a> <a href="#s12">13) The new editor — preview</a></nav>
 <h2 id="s0">1) What this app does and why it is different</h2>
 <p><b>Avaye Javid Shah</b> turns text into speech, but its job is not "press one button, get one file". It splits a long text into <b>short, editable parts</b> and lets you listen to each one separately, correct it, rebuild it with a different engine, duplicate it, turn it into silence or into an audio file, raise or lower its volume, and move it around in the list. At the end, all the parts are joined into one file together with a background music bed.</p>
@@ -271,8 +271,28 @@ html[data-theme=dark] th,html[data-theme=dark] td{border-color:#2a3447}html[data
 <li><b>Export</b> builds the file from the timeline — each clip's position, trim and row — with or without music; subtitles come from the lines.</li>
 <li><b>Engines:</b> choose the project's engine in the inspector; each engine has the same settings as in the current interface. A line can also have its own engine — consecutive lines with the same engine and voice are still made in one request, and Chatterbox and the light voices also give every line its own clip. The tag menu follows the line's engine: Fish's tags for Fish, pauses only for Chatterbox and the light voices.</li>
 <li><b>Music:</b> search Freesound, Openverse, Jamendo or Lyria, listen before choosing, and the creator's credit stays under the music settings.</li>
-<li><b>Still only in the current interface:</b> characters, the 3.8 voice browser, voice design and cloning, and Fish Audio's library, cloning and voice design. Audio lives in the app's memory: after closing the app the text comes back and "Voice it" makes it again.</li>
+<li><b>Everything is in this editor:</b> the old interface is gone; Google's 2,000+ voice library, voice design and cloning, characters, Fish's library, cloning and design, music with tabs, styles and pages, and connection and quota settings are all here. Undo and redo with ⌘Z and ⇧⌘Z, and Delete for timeline clips.</li>
+<li><b>Projects:</b> «Final file» → «Save project…» stores everything in one <code>.ava</code> file — text, timeline, voiced audio and music — and «Open project…» brings it back exactly, with nothing re-voiced.</li>
+<li><b>Keyboard:</b> ← and → move the playhead 3 s (with the caret in a line they move the caret); ⌘Z and ⇧⌘Z undo and redo; Delete removes the selected clip; Esc deselects.</li>
+<li><b>Reset:</b> every setting has a reset button, and each engine has «reset all».</li>
+<li><b>Track volume:</b> every track has a volume slider up to 200%, applied in playback and export. The final file includes music by default, with a voice-only option; muted tracks are left out and all voice tracks are mixed together.</li>
+<li><b>Several speakers:</b> on 3.8 through characters (two characters with prebuilt voices are made in one multi-speaker request), on 3.1 with «two speakers», on Fish with «speakers». On 3.8 the tag menu also inserts IPA pronunciation (<code>/…/</code>) and overlapping reactions (<code>|…|</code>).</li>
+<li><b>Precision:</b> word times come from Google's own transcription and are divided down to letters; trimming and the playhead caret are letter-precise.</li>
 </ul>
+<h2 id="s14">Video</h2>
+<p>The «Video» tab at the top turns this project into a video. The preview and the final file are exactly the same.</p>
+<ul>
+<li><b>Stage:</b> click an object to select it; drag to move, snapping to the centre and edges. Eight handles resize with a fixed ratio (Shift frees it, Alt scales from the centre); the top handle rotates (Shift for 15° steps). Arrows nudge, Delete removes, Esc deselects. Double-click text to edit it in place.</li>
+<li><b>Podcast design:</b> 12 designs, layout, six waveforms (including glass and water orbs), sensitivity, water ripples on peaks, glow, iridescence, grain, palettes, and a mesh, photo, video or plain background. One orb per speaker, up to eight; each orb reacts to its own speaker's voice.</li>
+<li><b>Add:</b> text, pictures, videos and stickers. Pictures and videos have corners, stroke and shadow, and snap into place with a 3×3 grid. Turn a video's sound on to hear it in playback and in the final file.</li>
+<li><b>Animation:</b> in (type word by word, fade, rise, pop), out (fade, sink, shrink), while on screen (breathe, wave, shine), speed, and the text background's own animation.</li>
+<li><b>Subtitles:</b> they follow the timeline automatically. Move, retime or double-click a cue on the video timeline to edit it, and the subtitles become fixed; «Re-sync» returns them to the timeline.</li>
+<li><b>Video timeline:</b> subtitles on top, then layers (drag a row to reorder, a bar to move it, its edges to trim), then audio (double-click: back to the audio tab).</li>
+<li><b>Export:</b> «Export the video…» — 1080p, 2K (default) or 4K, at 30 (default) or 60 fps, with music (default) or voice only. On macOS with Safari 26 or later the audio is AAC; on older versions, MP3.</li>
+<li><b>Projects:</b> the <code>.ava</code> file keeps everything, including the video tab and its pictures and videos.</li>
+</ul>
+<h2 id="s15">Voice samples</h2>
+<p>Every voice in the menus, and every speaker, has a ▶ button that says «پایَنده ایران، جاوید شاه!» in that voice. Make the built-in voices' samples once from «Connection and quota» → «Make all voice samples…», and put the folder in the repository as <code>ui/previews</code> so every build ships them. Your own voices (Fish, designed, cloned, library) are made on first play and kept.</p>
 <h2 id="s13">Rights</h2>
 <p>© Avaye Javid Shah — all rights reserved. Each activation is for one machine and its holder's personal use only; copying, redistributing, selling, or modifying the app to get around activation is not permitted.</p>
 </body></html>

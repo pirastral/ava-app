@@ -436,6 +436,131 @@ class Api:
                 "fish_library_tags": engines.FISH_LIBRARY_TAGS}
 
     # ---- 151: Gemini 3.8 voices ------------------------------------------------
+    # ---- 161: the video tab's assets and the streamed MP4 save ------------------------
+    def asset_begin(self, name, mime):
+        import engines
+        return {"ok": True, "id": engines.asset_begin(name, mime)}
+
+    def asset_chunk(self, aid, b64):
+        import engines
+        try:
+            return {"ok": engines.asset_chunk(aid, b64)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def asset_end(self, aid):
+        import engines
+        return {"ok": True, "asset": engines.asset_end(aid)}
+
+    def asset_info(self, aid):
+        import engines
+        return {"ok": True, "asset": engines.asset_info(aid)}
+
+    def asset_read(self, aid, offset=0, size=4194304):
+        import engines
+        try:
+            return {"ok": True, "b64": engines.asset_read(aid, offset, size)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def video_save_open(self, suggested="video.mp4"):
+        """Ask where to save the MP4, then accept it in chunks (big files never cross in one piece)."""
+        try:
+            import engines
+            res = self._window.create_file_dialog(webview.SAVE_DIALOG, directory=_downloads_dir(), save_filename=suggested)
+            if not res:
+                return {"ok": False, "error": "cancelled"}
+            path = res if isinstance(res, str) else res[0]
+            if not str(path).lower().endswith(".mp4"):
+                path = str(path) + ".mp4"
+            return {"ok": True, "job": engines.save_stream_open(path), "path": str(path)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def video_save_chunk(self, job, b64):
+        import engines
+        try:
+            return {"ok": engines.save_stream_chunk(job, b64)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def video_save_close(self, job):
+        import engines
+        return {"ok": True, "path": engines.save_stream_close(job)}
+
+    # ---- 162: voice previews ------------------------------------------------------------
+    def mp3_begin(self, sr, ch):
+        import engines
+        return {"ok": True, "job": engines.mp3_begin(sr, ch)}
+
+    def mp3_chunk(self, job, b64):
+        import engines
+        return {"ok": engines.mp3_chunk(job, b64)}
+
+    def mp3_end(self, job):
+        import engines
+        try:
+            return {"ok": True, "b64": engines.mp3_end(job)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def voice_preview(self, payload):
+        try:
+            import engines
+            return {"ok": True, "b64": base64.b64encode(engines.voice_preview(payload or {}, self._status)).decode("ascii")}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def previews_build(self, jobs):
+        """Build the bundled previews into a folder the founder picks (then commit it as ui/previews)."""
+        try:
+            import engines
+            res = self._window.create_file_dialog(webview.FOLDER_DIALOG, directory=_downloads_dir())
+            if not res:
+                return {"ok": False, "error": "cancelled"}
+            folder = res if isinstance(res, str) else res[0]
+            return {"ok": True, **engines.previews_build(jobs or [], folder, self._status)}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def project_save(self, doc):
+        """160: save the whole project — document, voiced parts, music — as one .ava file."""
+        try:
+            import engines
+            data = engines.project_pack(doc or {})
+            res = self._window.create_file_dialog(webview.SAVE_DIALOG, directory=_downloads_dir(), save_filename="project.ava")
+            if not res:
+                return {"ok": False, "error": "cancelled"}
+            path = res if isinstance(res, str) else res[0]
+            if not str(path).lower().endswith(".ava"):
+                path = str(path) + ".ava"
+            open(path, "wb").write(data)
+            return {"ok": True, "path": str(path)}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def project_open(self):
+        """160: reopen a .ava project exactly as it was saved."""
+        try:
+            import engines
+            res = self._window.create_file_dialog(webview.OPEN_DIALOG, directory=_downloads_dir(), allow_multiple=False,
+                                                  file_types=("Avaye Javid Shah project (*.ava)",))
+            if not res:
+                return {"ok": False, "error": "cancelled"}
+            path = res if isinstance(res, str) else res[0]
+            return {"ok": True, "path": str(path), **engines.project_unpack(open(path, "rb").read())}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def g38_voices(self, req=None):
+        """159: one page of the Extended Voice Library with filters."""
+        try:
+            import engines
+            req = req or {}
+            return {"ok": True, **engines.g38_voice_page(req.get("filters") or {}, req.get("page_token") or "", self._status)}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
     def g38_library(self, req=None):
         try:
             import engines
@@ -712,10 +837,18 @@ def main():
     licensed = engines.license_status()["ok"]
     if licensed:
         engines.warm_route()          # 150: find a network route in the background at launch
+    # 159: open 16:9, as large as fits inside 90% of the screen
+    win_w, win_h = 1600, 900
+    try:
+        sc = webview.screens[0]
+        W, H = int(sc.width * 0.9), int(sc.height * 0.9)
+        win_w, win_h = (W, int(W * 9 / 16)) if W * 9 / 16 <= H else (int(H * 16 / 9), H)
+    except Exception:
+        pass
     window = webview.create_window(
         "آوای جاوید شاه — تبدیل متن فارسی به گفتار",
         url=str(_res_path("ui") / ("index.html" if licensed else "gate.html")),
-        js_api=api, width=980 if licensed else 720, height=880 if licensed else 760,
+        js_api=api, width=win_w if licensed else 720, height=win_h if licensed else 760,
         min_size=(420, 640))
     api._window = window
     webview.start()

@@ -94,8 +94,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 158
-BUILD_FA = "\u06f1\u06f5\u06f8"
+BUILD = 163
+BUILD_FA = "\u06f1\u06f6\u06f3"
 
 
 def _diag(tag, **kv):
@@ -459,11 +459,25 @@ def _llm_map(text, status, label, call_one):
     keep that chunk unchanged rather than accept corrupted text."""
     chunks = _llm_chunks(text)
     out = []
+    def patient(ch, i):
+        # 159: the field log showed every model "experiencing high demand" and the app giving up at once
+        waits = [0, 4, 10, 25]
+        for k, w in enumerate(waits):
+            if w:
+                status(f"گوگل شلوغ است؛ {w} ثانیهٔ دیگر دوباره امتحان می‌کنم… (تکهٔ {i})")
+                time.sleep(w)
+            try:
+                return call_one(ch)
+            except Exception as e:
+                m = str(e).lower()
+                if k == len(waits) - 1 or not any(x in m for x in ("high demand", "overloaded", "unavailable", "503", "timed out", "timeout", "try again later")):
+                    raise
+                _diag("ezafe_retry", attempt=k + 1)
     for i, ch in enumerate(chunks, 1):
         status(f"حرکت‌گذاری با {label}… تکهٔ {i} از {len(chunks)}")
-        t = _clean_llm(call_one(ch))
+        t = _clean_llm(patient(ch, i))
         if _skeleton(t) != _skeleton(ch):
-            t = _clean_llm(call_one(ch))
+            t = _clean_llm(patient(ch, i))
             if _skeleton(t) != _skeleton(ch):
                 t = ch
         out.append(t)
@@ -5397,7 +5411,8 @@ def final_files(ids, music_cfg, status):
                 raise RuntimeError("موسیقی‌ای انتخاب نشده؛ از منبع بالا یکی را انتخاب کنید یا از «موسیقی‌های قبلی» بردارید.")
         status("دارم موسیقی را زیر صدا می‌گذارم…")
         mixed = mix_music(clean_pcm, sr, _MUSIC["pcm"], _MUSIC["sr"],
-                          level_db=float(music_cfg.get("level_db", -16)), duck=bool(music_cfg.get("duck", True)),
+                          level_db=float(music_cfg.get("level_db", -16)), duck=float(music_cfg.get("duck_db", 12)) > 0 and bool(music_cfg.get("duck", True)),
+                          duck_db=float(music_cfg.get("duck_db", 12)),
                           fade_out=float(music_cfg.get("fade_out", music_cfg.get("fade", 1.5))), fade_in=float(music_cfg.get("fade_in", 1.5)))
         out["music"] = pcm_to_mp3(mixed, sr)
     return out
@@ -6889,15 +6904,22 @@ def warm_route():
 #   · the voice is speechConfig.voiceConfig.voice: a prebuilt name, a Voice
 #     Library id, or a voice_… / voicekey_… of a designed or replicated voice.
 # ===========================================================================
-G38_TAGS = ["<laugh>", "<sigh>", "<gasp>", "<cough>", "<breath>", "<short pause>"]   # 153: only what Google documents for 3.8
+G38_TAGS = ["<argh>", "<breath>", "<heavy breath>", "<exhales>", "<cackle>", "<cheer>", "<chuckle>", "<cough>", "<cry>", "<gasp>",
+            "<giggle>", "<groan>", "<growl>", "<grunt>", "<hiss>", "<laugh>", "<laughter>", "<moan>", "<pant>", "<phew>", "<scream>",
+            "<shout>", "<shriek>", "<sigh>", "<sneeze>", "<snicker>", "<snort>", "<sob>", "<throat-clearing>", "<tsk>", "<whimper>",
+            "<whispers>", "<yawn>", "<short pause>", "<long pause>"]   # 159: Google's recommended list
 # Ava's older bracket tags → 3.8's inline vocal tags
 # 153: ONLY the inline tags Google documents for 3.8 — <laugh> <sigh> <gasp> <cough> <breath> <short pause>.
 # Laughter variants become <laugh>; a long pause becomes two documented short pauses; delivery cues
 # (whispering, crying, sobbing…) and undocumented sounds are dropped here — on 3.8 delivery belongs in
 # the style, and an unknown tag may be read aloud or ignored.
-_G38_TAG_MAP = {"laughs": "<laugh>", "laugh": "<laugh>", "laughing": "<laugh>", "chuckles": "<laugh>", "giggles": "<laugh>",
+# 159: Google's prompting guide (updated 2026-10-01) recommends these angle-bracket vocal tags for 3.8,
+# including <long pause> — build 153 had cut the list to six from an older page; restored here.
+_G38_TAG_MAP = {"laughs": "<laugh>", "laugh": "<laugh>", "laughing": "<laughter>", "chuckles": "<chuckle>", "giggles": "<giggle>",
                 "sighs": "<sigh>", "sigh": "<sigh>", "gasps": "<gasp>", "gasp": "<gasp>", "coughs": "<cough>", "cough": "<cough>",
-                "breath": "<breath>", "breathes": "<breath>", "short pause": "<short pause>", "long pause": "<short pause> <short pause>"}
+                "crying": "<cry>", "cries": "<cry>", "sobbing": "<sob>", "whispers": "<whispers>", "whispering": "<whispering>",
+                "breath": "<breath>", "breathes": "<breath>", "short pause": "<short pause>", "long pause": "<long pause>",
+                "yawns": "<yawn>", "groans": "<groan>", "screams": "<scream>", "shouting": "<shout>", "sneezes": "<sneeze>"}
 # 151: the 3.8 style is DERIVED from the lists the app already has, so every
 # reading style and every mood works on 3.8 with nothing new to maintain:
 #   · a mood contributes its short English tag  ("[sobbing hard][gasping]" →
@@ -6939,7 +6961,7 @@ def g38_text(text):
     t = (text or "").strip()
     t = re.sub(r"(?:\s*\[(?:short pause|long pause|مکث بلند|مکث)\]\s*)+$", "", t)
     t = re.sub(r"(?:\s*<(?:short pause|long pause)>\s*)+$", "", t)
-    t = _G_PAUSE_LONG.sub(" <short pause> <short pause> ", t)   # 153: <long pause> is not documented
+    t = _G_PAUSE_LONG.sub(" <long pause> ", t)   # 159: documented in Google's prompting guide
     t = _G_PAUSE.sub(" <short pause> ", t)
     def tag(m):
         k = m.group(1).strip().lower()
@@ -7524,7 +7546,8 @@ def timeline_files(spec, music_cfg, status):
             raise RuntimeError("موسیقی‌ای انتخاب نشده؛ از منبع بالا یکی را انتخاب کنید یا از «موسیقی‌های قبلی» بردارید.")
         status("دارم موسیقی را زیر صدا می‌گذارم…")
         mixed = mix_music(pcm, sr, _MUSIC["pcm"], _MUSIC["sr"],
-                          level_db=float(music_cfg.get("level_db", -16)), duck=bool(music_cfg.get("duck", True)),
+                          level_db=float(music_cfg.get("level_db", -16)), duck=float(music_cfg.get("duck_db", 12)) > 0 and bool(music_cfg.get("duck", True)),
+                          duck_db=float(music_cfg.get("duck_db", 12)),
                           fade_out=float(music_cfg.get("fade_out", music_cfg.get("fade", 1.5))), fade_in=float(music_cfg.get("fade_in", 1.5)))
         out["music"] = pcm_to_mp3(mixed, sr)
     return out
@@ -7621,3 +7644,420 @@ def _clause_line_spans(e, sr, text):
     lines = text.split("\n")
     res = [{"text": lines[k].strip(), "t0": round(v["t0"] / sr, 3), "t1": round(v["t1"] / sr, 3)} for k, v in sorted(out.items()) if lines[k].strip()]
     return res if res else None
+
+
+# ===========================================================================
+# 159 · WORD TIMINGS — so trimming, the playhead caret and splits land on words
+#   Each line's span is cut into its words by matching the line's characters to
+#   the audio's quiet dips: each boundary goes to the quietest frame within
+#   ±120 ms of where the characters say it should fall. No extra request.
+# ===========================================================================
+def _word_times(pcm, sr, a, b, text):
+    words = list(re.finditer(r"\S+", text or ""))
+    if not words or b <= a:
+        return []
+    seg = pcm[a:b].astype(np.float32)
+    hop = max(1, int(sr * 0.01)); n = len(seg) // hop
+    if n < 2:
+        return []
+    env = np.sqrt(np.mean(seg[:n * hop].reshape(n, hop) ** 2, axis=1) + 1e-9)
+    weights = [max(1, len(re.sub(r"[\u064B-\u0655\u0670\W_]", "", w.group(0)))) for w in words]
+    tot = float(sum(weights)); cuts, acc = [], 0.0
+    for wgt in weights[:-1]:
+        acc += wgt
+        guess = min(n - 1, max(1, int(acc / tot * n)))
+        lo, hi = max(1, guess - 12), min(n - 1, guess + 12)
+        k = lo + int(np.argmin(env[lo:hi])) if hi > lo else guess
+        cuts.append(max(cuts[-1] + 1 if cuts else 1, min(n - 1, k)))
+    edges = [0] + cuts + [n]
+    return [{"w": w.group(0), "c0": w.start(), "c1": w.end(),
+             "t0": round((a + edges[i] * hop) / sr, 3), "t1": round((a + min(len(seg), edges[i + 1] * hop)) / sr, 3)}
+            for i, w in enumerate(words)]
+
+
+_gulp_lines_158 = gulp_lines
+
+
+def gulp_lines(gid):
+    """159: the same line spans, each now carrying its words with times."""
+    spans = _gulp_lines_158(gid)
+    e = _GULP_PCM.get(int(gid)) if gid is not None else None
+    if not e or not spans:
+        return spans
+    try:
+        pcm = _assemble(e); sr = e["sr"]
+        for sp in spans:
+            sp["words"] = _word_times(pcm, sr, int(sp["t0"] * sr), int(sp["t1"] * sr), sp.get("text", ""))
+    except Exception as ex:
+        _diag("word_times_error", err=str(ex)[:120])
+    return spans
+
+
+def g38_voice_page(filters=None, page_token="", status=lambda *a, **k: None):
+    """The Extended Voice Library (2,000+ voices), one page at a time, with Google's filters
+    (language_code, gender, pitch, contexts, search, type). When a language filter finds
+    nothing — Persian returned 0 in the field log — the page comes from the whole library."""
+    f = dict(filters or {})
+    def fetch(params):
+        def call(key):
+            r = requests.get("https://generativelanguage.googleapis.com/v1beta/voices", params=params,
+                             headers={"x-goog-api-key": key}, timeout=_G_TIMEOUT)
+            if r.status_code != 200:
+                raise _GoogleHTTP(r.status_code, r.text[:300])
+            return r.json()
+        return google_rotate(call, status, "کتابخانهٔ صداها")
+    params = [("page_size", str(int(f.get("page_size") or 60)))]
+    for k in ("language_code", "gender", "pitch", "contexts", "type"):
+        vals = f.get(k) or []
+        for v in ([vals] if isinstance(vals, str) else vals):
+            if v:
+                params.append(("context" if k == "contexts" else k, v))
+    if f.get("search"):
+        params.append(("search", f["search"]))
+    if page_token:
+        params.append(("page_token", page_token))
+    data = fetch(params); fell_back = False
+    if not data.get("voices") and f.get("language_code") and not page_token:
+        _diag("g38_library_fallback", language=str(f.get("language_code"))[:30])
+        data = fetch([p for p in params if p[0] != "language_code"]); fell_back = True
+    voices = []
+    for v in data.get("voices", []) or []:
+        voices.append({"id": v.get("id") or (v.get("name") or "").split("/")[-1], "name": v.get("display_name") or v.get("displayName") or v.get("id"),
+                       "description": v.get("description", ""), "language": v.get("language_code") or v.get("languageCode", ""),
+                       "accent": v.get("accent", ""), "gender": v.get("gender", ""), "pitch": v.get("pitch", ""),
+                       "persona": v.get("persona", ""), "contexts": v.get("contexts") or v.get("context") or [], "type": v.get("type", "")})
+    _diag("g38_voice_page", count=len(voices), fell_back=fell_back)
+    return {"voices": voices, "next": data.get("next_page_token") or data.get("nextPageToken") or "", "fell_back": fell_back}
+
+
+# ===========================================================================
+# 160 · REAL WORD TIMESTAMPS — the line index already transcribes the take with word
+#   timestamps; they were used for clause boundaries and then thrown away. Now the
+#   part keeps them, and line words take their times from them whenever the words
+#   line up one-for-one (the energy estimate stays as the fallback).
+# ===========================================================================
+_LAST_WORDS = {"words": None, "n": -1}
+_transcribe_words_159 = transcribe_words
+
+
+def transcribe_words(pcm, sr, *a, **k):
+    r = _transcribe_words_159(pcm, sr, *a, **k)
+    if r:
+        _LAST_WORDS.update(words=[(str(t), float(s0), float(s1)) for t, s0, s1 in r], n=len(pcm))
+    return r
+
+
+def _keep_words(fn, pcm_of):
+    def wrapped(entry, *a, **k):
+        _LAST_WORDS.update(words=None, n=-1)
+        out = fn(entry, *a, **k)
+        try:
+            pcm = pcm_of(entry, a, k)
+            if isinstance(entry, dict) and _LAST_WORDS["words"] and pcm is not None and _LAST_WORDS["n"] == len(pcm):
+                entry["words_ts"] = list(_LAST_WORDS["words"])
+        except Exception:
+            pass
+        return out
+    return wrapped
+
+
+build_line_index = _keep_words(build_line_index, lambda e, a, k: a[1] if len(a) > 1 else k.get("pcm"))
+ensure_line_index = _keep_words(ensure_line_index, lambda e, a, k: (e.get("items") or [{}])[0].get("pcm"))
+_TAG_TOKEN = re.compile(r"^(<[^>]*>|\|[^|]*\||\{[^{}]*\}|\[[^\[\]]*\])$")
+
+
+def _ts_words(e, sp):
+    """Line words timed from the transcription, when its words in this span match the line's spoken words."""
+    ts = e.get("words_ts") or []
+    toks = [m for m in re.finditer(r"\S+", sp.get("text", "")) if not _TAG_TOKEN.match(m.group(0))]
+    inside = [w for w in ts if sp["t0"] - 0.12 <= (w[1] + w[2]) / 2 <= sp["t1"] + 0.12]
+    if not toks or len(inside) != len(toks):
+        return None
+    return [{"w": m.group(0), "c0": m.start(), "c1": m.end(), "t0": round(max(sp["t0"], w[1]), 3), "t1": round(min(sp["t1"], w[2]), 3), "src": "asr"}
+            for m, w in zip(toks, inside)]
+
+
+_gulp_lines_159 = gulp_lines
+
+
+def gulp_lines(gid):
+    e = _GULP_PCM.get(int(gid)) if gid is not None else None
+    if e and e.get("saved_spans") and not e.get("lines"):
+        return e["saved_spans"]                                   # a part restored from a project file
+    spans = _gulp_lines_159(gid)
+    if e and spans and e.get("words_ts"):
+        for sp in spans:
+            w = _ts_words(e, sp)
+            if w:
+                sp["words"] = w
+    return spans
+
+
+# ===========================================================================
+# 160 · PROJECT FILES (.ava) — reopen a project exactly as it was, with no re-voicing.
+#   One zip: project.json (the editor's document), parts/<id>.wav (each referenced
+#   part's audio, lossless), parts.json (its text, line map, word times), music.mp3.
+# ===========================================================================
+def project_pack(doc):
+    import zipfile, io as _io, json as _json, wave as _wave
+    buf = _io.BytesIO()
+    gids = sorted({int(c["gulp"]) for t in (doc or {}).get("tracks", []) for c in t.get("clips", [])
+                   if c.get("gulp") is not None and int(c["gulp"]) in _GULP_PCM})
+    parts = {}
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("project.json", _json.dumps({"format": "ava-project", "version": 1, "build": BUILD, "doc": doc}, ensure_ascii=False))
+        for g in gids:
+            e = _GULP_PCM[g]; pcm = _assemble(e).astype(np.int16); sr = int(e["sr"])
+            wb = _io.BytesIO(); w = _wave.open(wb, "wb"); w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr); w.writeframes(pcm.tobytes()); w.close()
+            z.writestr(f"parts/{g}.wav", wb.getvalue())
+            parts[str(g)] = {"sr": sr, "text": e.get("text", ""), "lines": e.get("lines") or [], "words_ts": e.get("words_ts"),
+                             "engine": e.get("engine"), "spans": gulp_lines(g)}
+        z.writestr("parts.json", _json.dumps(parts, ensure_ascii=False, default=lambda o: list(o) if isinstance(o, tuple) else (o.item() if hasattr(o, "item") else str(o))))
+        if _MUSIC.get("pcm") is not None:
+            z.writestr("music.mp3", pcm_to_mp3(_MUSIC["pcm"], _MUSIC["sr"]))
+            z.writestr("music.json", _json.dumps({"name": _MUSIC.get("name") or "music"}, ensure_ascii=False))
+    _diag("project_pack", parts=len(gids), music=_MUSIC.get("pcm") is not None)
+    return buf.getvalue()
+
+
+def project_unpack(data):
+    import zipfile, io as _io, json as _json, wave as _wave, base64 as _b64
+    z = zipfile.ZipFile(_io.BytesIO(data))
+    if "project.json" not in z.namelist():
+        raise RuntimeError("این فایل، فایلِ پروژهٔ آوای جاوید شاه نیست.")
+    meta = _json.loads(z.read("project.json").decode("utf-8"))
+    parts = _json.loads(z.read("parts.json").decode("utf-8")) if "parts.json" in z.namelist() else {}
+    remap = {}
+    for g, info in parts.items():
+        w = _wave.open(_io.BytesIO(z.read(f"parts/{g}.wav"))); sr = w.getframerate()
+        pcm = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).copy(); w.close()
+        ng = next(_gulp_ids)
+        _GULP_PCM[ng] = {"sr": sr, "items": [{"kind": "t", "text": "", "span": (0, 0), "pcm": pcm}], "text": info.get("text", ""),
+                         "lines": info.get("lines") or [], "words_ts": [tuple(x) for x in (info.get("words_ts") or [])] or None,
+                         "engine": info.get("engine"), "restored": True, "saved_spans": info.get("spans")}
+        remap[int(g)] = ng
+    doc = meta.get("doc") or {}
+    for t in doc.get("tracks", []):
+        for c in t.get("clips", []):
+            if c.get("gulp") is not None and int(c["gulp"]) in remap:
+                c["gulp"] = remap[int(c["gulp"])]
+    music = None
+    if "music.mp3" in z.namelist():
+        mname = (_json.loads(z.read("music.json").decode("utf-8")) if "music.json" in z.namelist() else {}).get("name") or "music"
+        music = {"b64": _b64.b64encode(z.read("music.mp3")).decode("ascii"), "name": mname}
+    _diag("project_unpack", parts=len(remap), music=bool(music))
+    return {"doc": doc, "music": music, "remap": {str(k): v for k, v in remap.items()}}
+
+
+_ensure_valid_159 = _ensure_valid
+
+
+def _ensure_valid(entry, where, status):
+    if isinstance(entry, dict) and entry.get("restored"):
+        return                                                   # checked when saved; the zip guards its bytes
+    return _ensure_valid_159(entry, where, status)
+
+
+# ===========================================================================
+# 161 · VIDEO: an ASSET STORE for the video tab's pictures and videos (chunked, so large
+#   files cross the bridge in pieces), a STREAMED SAVE for big MP4 exports, and project
+#   files that carry every asset the video tab uses.
+# ===========================================================================
+import base64 as _b64m, uuid as _uuid_v, json as _json_v
+_ASSET_DIR = MODELS_DIR / "assets"
+_ASSET_OPEN, _SAVE_OPEN = {}, {}
+
+
+def _asset_meta_path(aid):
+    return _ASSET_DIR / f"{aid}.json"
+
+
+def asset_begin(name, mime):
+    _ASSET_DIR.mkdir(parents=True, exist_ok=True)
+    aid = _uuid_v.uuid4().hex[:16]
+    _ASSET_OPEN[aid] = open(_ASSET_DIR / f"{aid}.bin", "wb")
+    _asset_meta_path(aid).write_text(_json_v.dumps({"name": str(name)[:200], "mime": str(mime)[:80]}, ensure_ascii=False), encoding="utf-8")
+    return aid
+
+
+def asset_chunk(aid, b64):
+    f = _ASSET_OPEN.get(aid)
+    if not f:
+        raise RuntimeError("این فایل باز نیست؛ دوباره اضافه‌اش کنید.")
+    f.write(_b64m.b64decode(b64))
+    return True
+
+
+def asset_end(aid):
+    f = _ASSET_OPEN.pop(aid, None)
+    if f:
+        f.close()
+    return asset_info(aid)
+
+
+def asset_info(aid):
+    p = _ASSET_DIR / f"{aid}.bin"
+    if not p.exists():
+        return None
+    meta = _json_v.loads(_asset_meta_path(aid).read_text(encoding="utf-8")) if _asset_meta_path(aid).exists() else {}
+    return {"id": aid, "size": p.stat().st_size, "name": meta.get("name", aid), "mime": meta.get("mime", "application/octet-stream")}
+
+
+def asset_read(aid, offset=0, size=4 * 1024 * 1024):
+    p = _ASSET_DIR / f"{aid}.bin"
+    with open(p, "rb") as f:
+        f.seek(int(offset))
+        data = f.read(int(size))
+    return _b64m.b64encode(data).decode("ascii")
+
+
+def save_stream_open(path):
+    job = _uuid_v.uuid4().hex[:12]
+    _SAVE_OPEN[job] = {"f": open(path, "wb"), "path": str(path)}
+    return job
+
+
+def save_stream_chunk(job, b64):
+    _SAVE_OPEN[job]["f"].write(_b64m.b64decode(b64))
+    return True
+
+
+def save_stream_close(job):
+    j = _SAVE_OPEN.pop(job, None)
+    if j:
+        j["f"].close()
+        _diag("video_export_saved", path=j["path"][-60:])
+        return j["path"]
+    return None
+
+
+def _video_asset_ids(doc):
+    v = (doc or {}).get("video") or {}
+    ids = {o.get("asset") for o in v.get("objects", []) if o.get("asset")}
+    if (v.get("pod") or {}).get("bgAsset"):
+        ids.add(v["pod"]["bgAsset"])
+    return {i for i in ids if i and (_ASSET_DIR / f"{i}.bin").exists()}
+
+
+_project_pack_160 = project_pack
+
+
+def project_pack(doc):
+    """161: the same project file, now also carrying every picture and video of the video tab."""
+    import zipfile, io as _io
+    base = _project_pack_160(doc)
+    ids = _video_asset_ids(doc)
+    if not ids:
+        return base
+    buf = _io.BytesIO(base)
+    with zipfile.ZipFile(buf, "a", zipfile.ZIP_STORED) as z:
+        man = {}
+        for i in sorted(ids):
+            z.write(_ASSET_DIR / f"{i}.bin", f"assets/{i}.bin")
+            man[i] = asset_info(i)
+        z.writestr("assets.json", _json_v.dumps(man, ensure_ascii=False))
+    _diag("project_pack_assets", n=len(ids))
+    return buf.getvalue()
+
+
+_project_unpack_160 = project_unpack
+
+
+def project_unpack(data):
+    import zipfile, io as _io
+    out = _project_unpack_160(data)
+    z = zipfile.ZipFile(_io.BytesIO(data))
+    if "assets.json" in z.namelist():
+        _ASSET_DIR.mkdir(parents=True, exist_ok=True)
+        man = _json_v.loads(z.read("assets.json").decode("utf-8"))
+        remap = {}
+        for i, meta in man.items():
+            raw = z.read(f"assets/{i}.bin"); dst = _ASSET_DIR / f"{i}.bin"
+            nid = i if (not dst.exists() or dst.stat().st_size == len(raw)) else _uuid_v.uuid4().hex[:16]
+            (_ASSET_DIR / f"{nid}.bin").write_bytes(raw)
+            _asset_meta_path(nid).write_text(_json_v.dumps({"name": (meta or {}).get("name", nid), "mime": (meta or {}).get("mime", "")}, ensure_ascii=False), encoding="utf-8")
+            remap[i] = nid
+        v = out["doc"].get("video") or {}
+        for o in v.get("objects", []):
+            if o.get("asset") in remap:
+                o["asset"] = remap[o["asset"]]
+        if (v.get("pod") or {}).get("bgAsset") in remap:
+            v["pod"]["bgAsset"] = remap[v["pod"]["bgAsset"]]
+        _diag("project_unpack_assets", n=len(remap))
+    return out
+
+
+# ===========================================================================
+# 162 · VOICE PREVIEWS — every voice says «پایَنده ایران، جاوید شاه!». Bundled previews are
+#   built ONCE on the founder's machine (his keys, his local models) by previews_build and
+#   shipped inside the app; any other voice is synthesised on first play and cached.
+# ===========================================================================
+import hashlib as _hl_p
+PREVIEW_TEXT = "پایَنده ایران، جاوید شاه!"
+_PREV_DIR = MODELS_DIR / "previews"
+
+
+def _preview_payload(payload):
+    p = dict(payload or {}); p["text"] = PREVIEW_TEXT
+    for k in ("g38_cast", "g_speakers", "f_speakers"):
+        p[k] = []
+    return p
+
+
+def _preview_key(p):
+    keep = {k: p.get(k) for k in sorted(p) if k not in ("text",) and (k == "engine" or k.startswith(("g_", "f_", "cbx", "exag", "cfg", "temp", "speed", "noise")))}
+    return _hl_p.sha1(_json_v.dumps(keep, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:20]
+
+
+def voice_preview(payload, status=lambda *a, **k: None):
+    """One voice saying the preview line — from the cache when it has been made before."""
+    p = _preview_payload(payload); _PREV_DIR.mkdir(parents=True, exist_ok=True)
+    f = _PREV_DIR / f"{_preview_key(p)}.mp3"
+    if f.exists() and f.stat().st_size > 200:
+        return f.read_bytes()
+    mp3, gid = generate_gulp(p, status)
+    _GULP_PCM.pop(gid, None)                                     # a preview is not part of the document
+    f.write_bytes(mp3)
+    return mp3
+
+
+def previews_build(jobs, out_dir, status=lambda *a, **k: None):
+    """Make the bundled previews: jobs = [{"rel": "google/<model>/<voice>.mp3", "payload": {...}}]."""
+    import pathlib as _pl
+    root = _pl.Path(out_dir); made, failed = 0, []
+    for i, j in enumerate(jobs, 1):
+        rel = str(j.get("rel", "")).replace("\\", "/").lstrip("/")
+        if not rel.endswith(".mp3") or ".." in rel:
+            continue
+        status(f"نمونهٔ صدا {i} از {len(jobs)}: {rel}")
+        try:
+            data = voice_preview(j.get("payload") or {}, status)
+            dst = root / rel; dst.parent.mkdir(parents=True, exist_ok=True); dst.write_bytes(data); made += 1
+        except Exception as e:
+            failed.append({"rel": rel, "error": str(e)[:160]})
+    _diag("previews_build", made=made, failed=len(failed))
+    return {"made": made, "failed": failed, "folder": str(root)}
+
+
+# ===========================================================================
+# 163 · MP3 for the video export on macOS versions without a WebKit AudioEncoder
+#   (Safari < 26): the page sends the final mix (int16, interleaved) in chunks; the
+#   engine encodes it with LAME; the page puts the MP3 frames into the MP4.
+# ===========================================================================
+_MP3_JOBS = {}
+
+
+def mp3_begin(sr, ch):
+    job = _uuid_v.uuid4().hex[:12]; _MP3_JOBS[job] = {"sr": int(sr), "ch": int(ch), "pcm": bytearray()}; return job
+
+
+def mp3_chunk(job, b64):
+    _MP3_JOBS[job]["pcm"] += _b64m.b64decode(b64); return True
+
+
+def mp3_end(job):
+    j = _MP3_JOBS.pop(job); enc = lameenc.Encoder()
+    enc.set_bit_rate(192); enc.set_in_sample_rate(j["sr"]); enc.set_channels(j["ch"]); enc.set_quality(2)
+    data = enc.encode(bytes(j["pcm"])) + enc.flush()
+    _diag("mp3_for_video", seconds=round(len(j["pcm"]) / 2 / j["ch"] / j["sr"], 1), bytes=len(data))
+    return _b64m.b64encode(data).decode("ascii")
