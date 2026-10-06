@@ -1,4 +1,4 @@
-# >>> THIS FILE GOES IN THE REPO AT:  .github/workflows/build.yml  (UPDATED in 155 — replace the copy in the repo)
+# >>> THIS FILE GOES IN THE REPO AT:  .github/workflows/build.yml  (UPDATED in 158 — replace the copy in the repo)
 # 155: protected builds — the app's own code is compiled to native machine code, the bundled keys are
 # sealed inside it, each copy you give someone carries its opaque copy id, and a gate refuses to publish
 # an app that still contains readable source or plain keys. Run it by hand with a copy id for a recipient.
@@ -105,15 +105,12 @@ jobs:
           pyinstaller build.spec --noconfirm
           ls -la dist
 
-      - name: Verify protection — no source, no plain keys in the app
+      # 158: the gate looks INSIDE the app's Python archive (PyInstaller's own viewer) — an
+      # uncompiled module would hide there, not as a .py file. Only OUR module names are checked,
+      # so library files that happen to be called app.py (pywebview's Android code) don't matter.
+      - name: Verify protection — compiled code only, none in the Python archive, no keys
         shell: bash
-        run: |
-          set -euo pipefail
-          APP=$(find dist -maxdepth 1 -name "*.app" | head -1)
-          BAD=$(find "$APP" \( -name "engines.py" -o -name "app.py" -o -name "licensing.py" -o -name "en_strings.py" -o -name "_vault.py" -o -name "token.txt" -o -name "builtin_keys.json" \) -print)
-          if [ -n "$BAD" ]; then echo "::error::readable source or keys inside the app:"; echo "$BAD"; exit 1; fi
-          find "$APP" -name "engines*.so" | grep -q . || { echo "::error::compiled engine missing — not publishing"; exit 1; }
-          echo "protected: compiled engine present, no source, no plain keys"
+        run: python tools/verify_protection.py
 
       # A build that cannot start must never be published. This caught the
       # setuptools/pkg_resources breakage; it stays as a permanent gate.
@@ -259,13 +256,12 @@ jobs:
       - name: Build
         run: pyinstaller build.spec --noconfirm
 
-      - name: Verify protection — no source, no plain keys in the app
-        shell: pwsh
-        run: |
-          $bad = Get-ChildItem dist -Recurse -Include engines.py,app.py,licensing.py,en_strings.py,_vault.py,token.txt,builtin_keys.json
-          if ($bad) { Write-Error ("readable source or keys inside the app: " + ($bad.FullName -join ", ")); exit 1 }
-          if (-not (Get-ChildItem dist -Recurse -Filter "engines*.pyd")) { Write-Error "compiled engine missing — not publishing"; exit 1 }
-          Write-Host "protected: compiled engine present, no source, no plain keys"
+      # 158: the gate looks INSIDE the app's Python archive (PyInstaller's own viewer) — an
+      # uncompiled module would hide there, not as a .py file. Only OUR module names are checked,
+      # so library files that happen to be called app.py (pywebview's Android code) don't matter.
+      - name: Verify protection — compiled code only, none in the Python archive, no keys
+        shell: bash
+        run: python tools/verify_protection.py
 
       - name: Read build number
         id: v
