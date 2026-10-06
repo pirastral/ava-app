@@ -3,7 +3,16 @@
 import sys
 from PyInstaller.utils.hooks import collect_all, copy_metadata
 
-datas, binaries, hiddenimports = [("ui", "ui"), ("token.txt", "."), ("icon.png", "."), ("voices", "voices"), ("builtin_keys.json", ".")], [], []
+import os as _os0, json as _json0
+datas, binaries, hiddenimports = [("ui", "ui"), ("icon.png", "."), ("voices", "voices")], [], []
+# 155: in a protected build tools/protect.py has sealed these into the compiled vault and deleted them;
+# a plain source build (development) still bundles them as before.
+for _f in ("token.txt", "builtin_keys.json"):
+    if _os0.path.exists(_f):
+        datas.append((_f, "."))
+# 155: PyInstaller cannot see imports inside compiled modules — protect.py lists them.
+if _os0.path.exists("_hidden.json"):
+    hiddenimports += _json0.load(open("_hidden.json"))
 for pkg in ["nacl", "torch", "torchaudio", "chatterbox", "transformers", "tokenizers",
             "piper", "onnxruntime", "lameenc", "perth", "s3tokenizer",
             "librosa", "safetensors", "huggingface_hub", "numpy", "requests",
@@ -39,7 +48,8 @@ for meta in ["requests", "tqdm", "regex", "packaging", "filelock", "pyyaml",
 # 126: the activation module ships; the ISSUER (issue_license.py) never does.
 hiddenimports += ["licensing", "nacl.signing", "nacl.exceptions", "socks", "sockshandler"]   # 148: SOCKS proxies
 
-a = Analysis(["app.py"], datas=datas, binaries=binaries, hiddenimports=hiddenimports,
+# 155: start from the launcher; the app itself is a compiled module in a protected build
+a = Analysis(["main.py"], datas=datas, binaries=binaries, hiddenimports=hiddenimports,
              excludes=["tkinter", "matplotlib", "IPython", "pytest"])
 pyz = PYZ(a.pure)
 

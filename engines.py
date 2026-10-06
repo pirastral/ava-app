@@ -19,7 +19,9 @@ def license_status():
         import licensing
         rec = licensing.load_stored(MODELS_DIR, LICENSE_PUBLIC_KEY)
         if rec:
-            return {"ok": True, "id": rec.get("licensee", ""), "expires": rec.get("expires")}
+            exp = rec.get("expires")
+            days = None if not exp else max(0, int((float(exp) - time.time()) // 86400))
+            return {"ok": True, "id": rec.get("licensee", ""), "expires": exp, "days_left": days, "copy": COPY_ID}
         return {"ok": False, "code": licensing.request_code()}
     except Exception as e:
         return {"ok": False, "code": "", "error": str(e)}
@@ -61,7 +63,28 @@ def _res_path(name: str) -> Path:
     return base / name
 
 
+# 155 · THE SEALED VAULT. The cloud build (tools/protect.py) writes _vault.py — the copy id
+# and the bundled keys, obfuscated — and compiles it to native code with the rest of the app;
+# the plain token.txt / builtin_keys.json never ship. A source checkout has no vault and falls
+# back to the plain files, so development works unchanged.
+try:
+    import _vault as _V
+except Exception:
+    _V = None
+COPY_ID = (getattr(_V, "COPY_ID", "") or "dev") if _V else "dev"
+
+
+def _vault(name):
+    try:
+        return (_V.get(name) or "") if _V else ""
+    except Exception:
+        return ""
+
+
 def read_token() -> str:
+    t = _vault("hf_token")
+    if t:
+        return t
     try:
         t = _res_path("token.txt").read_text(encoding="utf-8").strip()
         if t and "PASTE" not in t.upper():
@@ -71,8 +94,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 152
-BUILD_FA = "\u06f1\u06f5\u06f2"
+BUILD = 157
+BUILD_FA = "\u06f1\u06f5\u06f7"
 
 
 def _diag(tag, **kv):
@@ -3265,6 +3288,9 @@ def google_rotate(call, status, what="گوگل", _rerouted=False, only_key_tag=N
             except _GoogleHTTP as e:
                 last = e
                 kind = _google_fault(e.code, e.msg)
+                if kind == "tier":       # 155: Google refuses on account level — every free key gets the same answer
+                    _diag("google_tier_stop", code=e.code)
+                    raise RuntimeError(f"{what}: " + _TIER_MSG)
                 if kind in ("network", "region"):
                     # every key would get the same page — stop, condemn nothing
                     _diag("google_blocked", kind=kind, code=e.code, msg=_google_clean_msg(e.msg))
@@ -3344,7 +3370,11 @@ def _google_fault(code, msg):
     key_words = ("api key not valid", "api_key_invalid", "api key expired", "api_key_expired",
                  "reported as leaked", "api key was reported", "api_key_service_blocked",
                  "service_disabled", "has not been used in project", "api has not been used",
-                 "requests from this api key are blocked", "api key not found")
+                 "requests from this api key are blocked", "api key not found",
+                 # 153: free-tier projects Google has reviewed and restricted ("Your project has been
+                 # denied access" / "This project's API access is restricted") — a dead key: rotate past it
+                 # instead of retrying it on every request
+                 "project has been denied access", "has been denied access", "api access is restricted")
     if any(k in m for k in key_words):
         return "key"
     if code == 401 or (code == 400 and "api key" in m):
@@ -5382,6 +5412,9 @@ MUSIC_PROVIDERS = ["freesound", "openverse", "jamendo", "lyria", "file"]
 def builtin_key(name):
     """Keys shipped inside the app (builtin_keys.json) for the free music
     sources — used only when the user has not saved their own."""
+    v = _vault(name)                      # 155: sealed inside the compiled app
+    if v:
+        return v
     try:
         return (json.loads(_res_path("builtin_keys.json").read_text(encoding="utf-8")) or {}).get(name, "") or ""
     except Exception:
@@ -6856,15 +6889,15 @@ def warm_route():
 #   · the voice is speechConfig.voiceConfig.voice: a prebuilt name, a Voice
 #     Library id, or a voice_… / voicekey_… of a designed or replicated voice.
 # ===========================================================================
-G38_TAGS = ["<laugh>", "<chuckle>", "<giggle>", "<sigh>", "<gasp>", "<breath>", "<heavy breath>",
-            "<cough>", "<throat-clearing>", "<cry>", "<sob>", "<whispers>", "<yawn>", "<groan>",
-            "<phew>", "<tsk>", "<short pause>", "<long pause>"]
+G38_TAGS = ["<laugh>", "<sigh>", "<gasp>", "<cough>", "<breath>", "<short pause>"]   # 153: only what Google documents for 3.8
 # Ava's older bracket tags → 3.8's inline vocal tags
-_G38_TAG_MAP = {"laughs": "<laugh>", "laugh": "<laugh>", "laughing": "<laugh>", "chuckles": "<chuckle>",
-                "giggles": "<giggle>", "sighs": "<sigh>", "sigh": "<sigh>", "gasps": "<gasp>", "gasp": "<gasp>",
-                "coughs": "<cough>", "cough": "<cough>", "crying": "<cry>", "cries": "<cry>", "sobbing": "<sob>",
-                "whispers": "<whispers>", "whispering": "<whispers>", "breath": "<breath>", "breathes": "<breath>",
-                "short pause": "<short pause>", "long pause": "<long pause>", "yawns": "<yawn>", "groans": "<groan>"}
+# 153: ONLY the inline tags Google documents for 3.8 — <laugh> <sigh> <gasp> <cough> <breath> <short pause>.
+# Laughter variants become <laugh>; a long pause becomes two documented short pauses; delivery cues
+# (whispering, crying, sobbing…) and undocumented sounds are dropped here — on 3.8 delivery belongs in
+# the style, and an unknown tag may be read aloud or ignored.
+_G38_TAG_MAP = {"laughs": "<laugh>", "laugh": "<laugh>", "laughing": "<laugh>", "chuckles": "<laugh>", "giggles": "<laugh>",
+                "sighs": "<sigh>", "sigh": "<sigh>", "gasps": "<gasp>", "gasp": "<gasp>", "coughs": "<cough>", "cough": "<cough>",
+                "breath": "<breath>", "breathes": "<breath>", "short pause": "<short pause>", "long pause": "<short pause> <short pause>"}
 # 151: the 3.8 style is DERIVED from the lists the app already has, so every
 # reading style and every mood works on 3.8 with nothing new to maintain:
 #   · a mood contributes its short English tag  ("[sobbing hard][gasping]" →
@@ -6906,7 +6939,7 @@ def g38_text(text):
     t = (text or "").strip()
     t = re.sub(r"(?:\s*\[(?:short pause|long pause|مکث بلند|مکث)\]\s*)+$", "", t)
     t = re.sub(r"(?:\s*<(?:short pause|long pause)>\s*)+$", "", t)
-    t = _G_PAUSE_LONG.sub(" <long pause> ", t)
+    t = _G_PAUSE_LONG.sub(" <short pause> <short pause> ", t)   # 153: <long pause> is not documented
     t = _G_PAUSE.sub(" <short pause> ", t)
     def tag(m):
         k = m.group(1).strip().lower()
@@ -7053,7 +7086,10 @@ def g38_clone_create(name, ref_path, consent_path, status=lambda *a, **k: None):
                          "ref_s": round(ref_s, 1), "ids": {}}
     _g38_index_write(ix)
     _diag("g38_clone", action="stored", ref_s=round(ref_s, 1))
-    return {"id": cid, "name": ix["clones"][cid]["name"], "ref_s": round(ref_s, 1)}
+    out = {"id": cid, "name": ix["clones"][cid]["name"], "ref_s": round(ref_s, 1)}
+    if ref_s < 30:                        # 155: Google recreates a voice from about 30 seconds of speech
+        out["note"] = f"نمونه {round(ref_s)} ثانیه است؛ گوگل برای ساختنِ صدا حدودِ ۳۰ ثانیه صدا می‌خواهد. با نمونهٔ کوتاه‌تر ممکن است شبیه‌سازی رد شود یا صدا کمتر شبیه شود."
+    return out
 
 
 def g38_clones():
@@ -7356,7 +7392,7 @@ def g38_design_delete(did):
 
 
 # ---- the full Voice Library, with Google's own filters ----------------------
-def g38_library_search(filters, status=lambda *a, **k: None):
+def _g38_library_once(filters, status=lambda *a, **k: None):
     """GET /v1beta/voices with any of Google's filters; catalog voices only."""
     params = [("type", "prebuilt"), ("page_size", "1000")]
     for f in ("gender", "pitch", "language_code", "accent", "persona", "context"):
@@ -7390,3 +7426,198 @@ def g38_preview(voice, style, text, cfg, status=lambda *a, **k: None):
         sub["_g38_style"] = _tone_to_style(style)
     pcm, sr = _google_call((text or "سلام، این صدای من است؛ امیدوارم خوشتان بیاید.")[:200], sub, status)
     return pcm, sr
+
+
+# ===========================================================================
+# 153 · groundwork for the line-based editor and its timeline
+#   Parts stay the unit of GENERATION (Google keeps its tone inside one call);
+#   lines become the unit of EDITING. gulp_lines() hands the editor each line's
+#   span inside its part, from the part's own line map; timeline_files() builds
+#   the final file from clips placed on a timeline (position, trim, row, gain).
+# ===========================================================================
+def gulp_lines(gid):
+    """[{"text", "t0", "t1"}] for each editor line (newline-separated) of a part, in
+    seconds inside the part's assembled audio. A part without a trustworthy line map
+    (or made clause by clause with pauses) comes back as ONE span covering it all."""
+    e = _GULP_PCM.get(int(gid)) if gid is not None else None
+    if not e:
+        return []
+    sr = e["sr"]; text = e.get("text") or ""
+    total = sum(len(i["pcm"]) for i in e.get("items", []) if isinstance(i.get("pcm"), np.ndarray))
+    whole = [{"text": text.strip(), "t0": 0.0, "t1": round(total / sr, 3), "whole": True}]
+    lines = e.get("lines") or []
+    speech = [i for i in e.get("items", []) if isinstance(i.get("pcm"), np.ndarray) and len(i["pcm"])]
+    clause_items = [i for i in e.get("items", []) if i.get("kind") == "t" and i.get("span") and isinstance(i.get("pcm"), np.ndarray)]
+    if len(clause_items) > 1:
+        return _clause_line_spans(e, sr, text) or whole       # 156: local engines, clause by clause
+    if not lines or e.get("map_untrusted") or len(speech) != 1:
+        return whole
+    clauses = _g_clauses(text)
+    if len(clauses) != len(lines):
+        return whole
+    starts, pos = [], 0
+    for raw in text.split("\n"):
+        starts.append(pos); pos += len(raw) + 1
+    out = {}
+    for (ctext, (a, _b)), ln in zip(clauses, lines):
+        k = max(i for i, st in enumerate(starts) if st <= a)
+        span = out.setdefault(k, {"text": text.split("\n")[k].strip(), "t0": ln["a"] / sr, "t1": ln["b"] / sr})
+        span["t0"] = min(span["t0"], ln["a"] / sr); span["t1"] = max(span["t1"], ln["b"] / sr)
+    return [{"text": v["text"], "t0": round(v["t0"], 3), "t1": round(v["t1"], 3)} for k, v in sorted(out.items()) if v["text"]]
+
+
+def timeline_pcm(spec, status=lambda *a, **k: None):
+    """Mix clips placed on a timeline. spec = {"clips": [...]}, each clip one of
+         {"gulp": id, "in": s, "out": s, "at": s, "gain": 1.0}   a slice of a part's audio
+         {"silence": seconds, "at": s}                             room, nothing to mix
+    Clips may overlap (two rows speaking at once); they are summed, then kept out of
+    clipping by a soft peak limit. Returns (int16 pcm, sr)."""
+    clips = [c for c in (spec or {}).get("clips", []) if c.get("gulp") is not None]
+    if not clips:
+        raise RuntimeError("روی خطِ زمان چیزی برای ساختن نیست.")
+    entries = {}
+    for c in clips:
+        g = int(c["gulp"])
+        if g not in _GULP_PCM:
+            raise RuntimeError("بعضی از بخش‌ها دیگر در حافظه نیستند؛ یک بار دیگر «تبدیل به گفتار» را بزنید.")
+        if g not in entries:
+            _ensure_valid(_GULP_PCM[g], "ساختنِ فایل از خطِ زمان", status)
+            entries[g] = (_assemble(_GULP_PCM[g]), _GULP_PCM[g]["sr"])
+    sr = max(r for _, r in entries.values())
+    rendered = {g: (_resample(p, r, sr) if r != sr else p) for g, (p, r) in entries.items()}
+    end = 0.0
+    for c in clips:
+        dur = max(0.0, float(c.get("out", 0)) - float(c.get("in", 0)))
+        end = max(end, float(c.get("at", 0)) + dur)
+    for c in (spec or {}).get("clips", []):
+        if c.get("silence") is not None:
+            end = max(end, float(c.get("at", 0)) + float(c["silence"]))
+    status("دارم کلیپ‌های خطِ زمان را کنارِ هم می‌گذارم…")
+    mix = np.zeros(int(end * sr) + 1, dtype=np.float32)
+    for c in clips:
+        src = rendered[int(c["gulp"])]
+        a = max(0, int(float(c.get("in", 0)) * sr)); b = min(len(src), int(float(c.get("out", 0)) * sr))
+        if b <= a:
+            continue
+        at = max(0, int(float(c.get("at", 0)) * sr))
+        seg = src[a:b].astype(np.float32) * float(c.get("gain", 1.0))
+        n = min(len(seg), len(mix) - at)
+        if n > 0:
+            mix[at:at + n] += seg[:n]
+    peak = float(np.max(np.abs(mix))) if len(mix) else 0.0
+    if peak > 32000:                                           # overlapping voices summed above full scale
+        mix *= 32000.0 / peak
+    _diag("timeline", clips=len(clips), seconds=round(len(mix) / sr, 1))
+    return mix.astype(np.int16), sr
+
+
+def timeline_files(spec, music_cfg, status):
+    """The final file(s) from the timeline: the clean one always, and the music
+    version when music is on — the same music bed, level, fades and ducking as before."""
+    _require_license()
+    pcm, sr = timeline_pcm(spec, status)
+    out = {"clean": pcm_to_mp3(pcm, sr), "seconds": round(len(pcm) / sr, 1)}
+    if music_cfg and music_cfg.get("on"):
+        if _MUSIC["pcm"] is None and music_cfg.get("file"):
+            music_load(music_cfg["file"])
+        if _MUSIC["pcm"] is None:
+            raise RuntimeError("موسیقی‌ای انتخاب نشده؛ از منبع بالا یکی را انتخاب کنید یا از «موسیقی‌های قبلی» بردارید.")
+        status("دارم موسیقی را زیر صدا می‌گذارم…")
+        mixed = mix_music(pcm, sr, _MUSIC["pcm"], _MUSIC["sr"],
+                          level_db=float(music_cfg.get("level_db", -16)), duck=bool(music_cfg.get("duck", True)),
+                          fade_out=float(music_cfg.get("fade_out", music_cfg.get("fade", 1.5))), fade_in=float(music_cfg.get("fade_in", 1.5)))
+        out["music"] = pcm_to_mp3(mixed, sr)
+    return out
+
+
+def timeline_captions(cues, fmt="srt"):
+    """SRT or VTT from the subtitle cues the editor holds: [{"t0", "t1", "text"}]
+    — subtitles keep their OWN timings (they are edited independently of the speech)."""
+    def ts(t, sep):
+        t = max(0.0, float(t)); h = int(t // 3600); m = int(t % 3600 // 60); s = int(t % 60); ms = int(round((t - int(t)) * 1000)) % 1000
+        return f"{h:02d}:{m:02d}:{s:02d}{sep}{ms:03d}"
+    rows = [c for c in (cues or []) if (c.get("text") or "").strip() and float(c.get("t1", 0)) > float(c.get("t0", 0))]
+    rows.sort(key=lambda c: float(c["t0"]))
+    if fmt == "vtt":
+        return "WEBVTT\n\n" + "\n".join(f"{ts(c['t0'], '.')} --> {ts(c['t1'], '.')}\n{c['text'].strip()}\n" for c in rows)
+    return "\n".join(f"{k}\n{ts(c['t0'], ',')} --> {ts(c['t1'], ',')}\n{c['text'].strip()}\n" for k, c in enumerate(rows, 1))
+
+
+# ===========================================================================
+# 154 · what the new editor needs to come back to its work
+# ===========================================================================
+import uuid as _uuid
+SESSION = _uuid.uuid4().hex[:12]       # parts live in memory: a new session means they are gone
+
+
+def gulp_audio(gid):
+    """A part's audio and line spans by id, so the editor can play and edit parts it
+    made earlier in this session (e.g. after switching interfaces) without regenerating."""
+    e = _GULP_PCM.get(int(gid))
+    if not e:
+        raise RuntimeError("این بخش دیگر در حافظه نیست؛ دوباره تبدیل به گفتار کنید.")
+    return pcm_to_mp3(_assemble(e), e["sr"]), gulp_lines(gid)
+
+
+# ===========================================================================
+# 155 · paid-only features, the library fallback, the protection stamp
+# ===========================================================================
+_TIER_MSG = ("گوگل می‌گوید این کار — شبیه‌سازیِ صدا — فقط با کلیدِ پروژه‌ای انجام می‌شود که پرداختش فعال است "
+             "(سطحِ ۱ به بالا)؛ کلیدهای رایگان این امکان را ندارند، پس کلیدهای دیگر امتحان نشدند. یکی از صداهای "
+             "آماده یا طراحی‌شده را انتخاب کنید، یا کلیدِ یک پروژهٔ پرداختی اضافه کنید. گوگل این امکان را در "
+             "منطقهٔ اقتصادیِ اروپا هم فعلاً در دسترس نمی‌گذارد.")
+_google_fault_base = _google_fault
+
+
+def _google_fault(code, msg):
+    """155: a feature Google reserves for paid projects is neither a dead key nor a
+    network fault — it is the ACCOUNT, so no other free key can succeed."""
+    m = (msg or "").lower()
+    if code in (400, 403) and ("paid quota tier" in m or "requires paid" in m):
+        return "tier"
+    return _google_fault_base(code, msg)
+
+
+def g38_library_search(filters, status=lambda *a, **k: None):
+    """155: when a language filter finds no voices, show the whole library instead of an
+    empty list (the Persian filter returned 0 in the field log)."""
+    out = _g38_library_once(filters, status)
+    if not out and filters.get("language_code"):
+        _diag("g38_library_fallback", language=str(filters.get("language_code"))[:20])
+        status("صدایی با برچسبِ این زبان پیدا نشد؛ همهٔ صداها نشان داده می‌شوند.")
+        out = _g38_library_once({k: v for k, v in filters.items() if k != "language_code"}, status)
+    return out
+
+
+_diag("protect", copy=COPY_ID, compiled=str(__file__).endswith((".so", ".pyd")))
+
+
+# ===========================================================================
+# 156 · line spans for parts made CLAUSE BY CLAUSE (Chatterbox, the light voices)
+#   Their audio is assembled piece by piece (_assemble_raw): a pause is its own fill or
+#   silence; a clause is its audio plus an optional gap. Repeating that exact layout gives
+#   each clause's position, and each clause's text span says which editor line it is on —
+#   so local engines get one clip per line too, with no transcription at all.
+# ===========================================================================
+def _clause_line_spans(e, sr, text):
+    starts, pos = [], 0
+    for raw in text.split("\n"):
+        starts.append(pos); pos += len(raw) + 1
+    out, at = {}, 0
+    for i in e.get("items", []):
+        if i.get("kind") == "p":
+            tone = i.get("pcm")
+            at += len(tone) if isinstance(tone, np.ndarray) and tone.dtype == np.int16 and len(tone) > 0 else int(sr * i.get("sec", 0))
+            continue
+        pcm = i.get("pcm"); n = len(pcm) if isinstance(pcm, np.ndarray) else 0
+        sp = i.get("span")
+        if n and sp and i.get("text"):
+            k = max(j for j, st in enumerate(starts) if st <= sp[0])
+            span = out.setdefault(k, {"t0": at, "t1": at + n})
+            span["t0"] = min(span["t0"], at); span["t1"] = max(span["t1"], at + n)
+        at += n
+        if i.get("gap"):
+            at += int(sr * i["gap"])
+    lines = text.split("\n")
+    res = [{"text": lines[k].strip(), "t0": round(v["t0"] / sr, 3), "t1": round(v["t1"] / sr, 3)} for k, v in sorted(out.items()) if lines[k].strip()]
+    return res if res else None

@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="fa" dir="ltr" data-theme="ava-night">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>آوای جاوید شاه — ویرایشگر</title>
+<!--FAVICON-->
+<!--FONTS-->
+<!--CSS-->
+</head>
+<body class="h-screen overflow-hidden bg-base-100 text-base-content font-sans antialiased">
+<!--ICONS-->
+<span hidden class="bg-primary text-primary-content bg-secondary text-secondary-content bg-accent text-accent-content bg-error text-error-content"></span>
+
+<div class="flex h-screen flex-col gap-3 p-3">
+
+  <!-- ============ HEADER: the app on the right, actions on the left ============ -->
+  <header class="navbar min-h-13 gap-2 rounded-3xl bg-base-200 px-3" dir="rtl">
+    <div class="navbar-start gap-2.5">
+      <!--LOGO-->
+      <div class="ui text-sm font-bold" data-en="Avaye Javid Shah">آوای جاوید شاه</div>
+      <a class="xlink badge badge-outline h-7 cursor-pointer gap-1.5 rounded-full border-base-content/20 ps-0.5 pe-2.5 text-xs font-semibold" dir="ltr" title="x.com/kamangir31"><img src="<!--XAVATAR-->" alt="@kamangir31" class="size-6 rounded-full">@kamangir31</a>
+      <span class="badge badge-ghost badge-sm ui" data-en="new editor · preview">ویرایشگرِ تازه · پیش‌نمایش</span>
+    </div>
+    <div class="navbar-end gap-1">
+      <a href="index.html" class="btn btn-ghost btn-sm gap-1.5 tooltip tooltip-bottom" data-tip="همهٔ امکاناتِ فعلی آن‌جاست؛ کارِ این‌جا ذخیره می‌ماند"><svg class="size-4 rtl:-scale-x-100"><use href="#i-arrow-right"/></svg><span class="ui" data-en="Classic interface">رابطِ قبلی</span></a>
+      <div class="divider divider-horizontal mx-0"></div>
+      <button id="keysBtn" class="btn btn-ghost btn-sm gap-1.5 tooltip tooltip-bottom" data-tip="کلیدهای گوگل" onclick="openKeys()"><svg class="size-4"><use href="#i-key-round"/></svg><span id="keysBadge" class="badge badge-sm badge-secondary">—</span></button>
+      <div class="tooltip tooltip-bottom" id="netTip" data-tip="اتصال به گوگل"><span class="btn btn-ghost btn-sm btn-square"><span id="netDot" class="status status-md"></span></span></div>
+      <button id="langBtn" class="btn btn-ghost btn-sm btn-square" aria-label="language"><svg class="size-4"><use href="#i-languages"/></svg></button>
+      <label class="swap swap-rotate btn btn-ghost btn-sm btn-square" aria-label="theme"><input type="checkbox" class="theme-controller" value="ava-day" id="themeChk"><svg class="swap-off size-4"><use href="#i-moon"/></svg><svg class="swap-on size-4"><use href="#i-sun"/></svg></label>
+      <button class="btn btn-ghost btn-sm btn-square" aria-label="help" onclick="openHelp()"><svg class="size-4"><use href="#i-circle-help"/></svg></button>
+      <div class="dropdown dropdown-end">
+        <div tabindex="0" role="button" class="btn btn-outline btn-sm gap-1.5"><svg class="size-4"><use href="#i-download"/></svg><span class="ui" data-en="Export">فایل نهایی</span><svg class="size-3.5 opacity-60"><use href="#i-chevron-down"/></svg></div>
+        <ul tabindex="0" class="dropdown-content menu menu-sm ui z-40 mt-1 w-60 rounded-box border border-base-300 bg-base-200 p-1.5 shadow-lg" dir="rtl">
+          <li><a onclick="exportAudio(false)" data-en="Save MP3">ذخیرهٔ MP3</a></li>
+          <li><a onclick="exportAudio(true)" data-en="Save the version with music">ذخیرهٔ نسخهٔ با موسیقی</a></li>
+          <li><a onclick="exportCaptions('srt')" data-en="Subtitles SRT">زیرنویس SRT</a></li>
+          <li><a onclick="exportCaptions('vtt')" data-en="Subtitles VTT">زیرنویس VTT</a></li>
+        </ul>
+      </div>
+    </div>
+  </header>
+
+  <div class="flex min-h-0 flex-1 gap-3">
+    <div class="flex min-w-0 flex-1 flex-col gap-3">
+
+      <!-- ============ SCRIPT: one text, each line a part ============ -->
+      <main class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl bg-base-200 p-3">
+        <div class="ui flex flex-wrap items-center gap-1.5 border-b border-base-300 px-1 pb-3" dir="rtl">
+          <button id="genBtn" class="btn btn-primary btn-sm" onclick="generateAll()"><svg class="size-4"><use href="#i-sparkles"/></svg><span data-en="Voice it">تبدیل به گفتار</span></button>
+          <div class="divider divider-horizontal mx-0"></div>
+          <div class="join">
+            <select id="ezTool" class="select select-sm join-item w-40" aria-label="ابزار حرکت‌گذاری"></select>
+            <button class="btn btn-sm join-item gap-1.5 border-base-content/15 bg-base-100" onclick="diacritize()"><svg class="size-4"><use href="#i-wand-sparkles"/></svg><span data-en="Auto diacritize">حرکت‌گذاری خودکار</span></button>
+          </div>
+          <button class="btn btn-ghost btn-sm btn-square tooltip tooltip-bottom" data-tip="پاک‌کردن همهٔ حرکت‌ها" onclick="clearDiacritics()" aria-label="clear"><svg class="size-4"><use href="#i-eraser"/></svg></button>
+          <button class="btn btn-ghost btn-sm btn-square tooltip tooltip-bottom" data-tip="راهنمای حرکت‌گذاری" onclick="openHelp('guide')" aria-label="guide"><svg class="size-4"><use href="#i-book-open"/></svg></button>
+          <div class="dropdown">
+            <div tabindex="0" role="button" id="tagBtn" class="btn btn-ghost btn-sm gap-1.5"><svg class="size-4"><use href="#i-tag"/></svg><span data-en="Sound tags">تگ صوتی</span></div>
+            <ul tabindex="0" id="tagMenu" class="dropdown-content menu menu-sm z-30 mt-1 max-h-80 w-60 flex-nowrap overflow-y-auto rounded-box border border-base-300 bg-base-200 p-1.5 shadow-lg"></ul>
+          </div>
+          <div class="dropdown">
+            <div tabindex="0" role="button" id="toneBtn" class="btn btn-ghost btn-sm gap-1.5"><svg class="size-4"><use href="#i-smile"/></svg><span data-en="Line tone">لحنِ خط</span></div>
+            <ul tabindex="0" id="toneMenu" class="dropdown-content menu menu-sm z-30 mt-1 max-h-80 w-48 flex-nowrap overflow-y-auto rounded-box border border-base-300 bg-base-200 p-1.5 shadow-lg"></ul>
+          </div>
+          <div class="ms-auto join" role="radiogroup" aria-label="جهتِ متن">
+            <button id="dirRtl" class="btn btn-sm join-item btn-primary gap-1" onclick="setEditorDir('rtl')"><svg class="size-4"><use href="#i-pilcrow-right"/></svg><span data-en="RTL">راست‌به‌چپ</span></button>
+            <button id="dirLtr" class="btn btn-sm join-item gap-1 border-base-content/15 bg-base-100" onclick="setEditorDir('ltr')"><svg class="size-4"><use href="#i-pilcrow-left"/></svg><span data-en="LTR">چپ‌به‌راست</span></button>
+          </div>
+        </div>
+        <div id="editorArea" class="min-h-0 flex-1 overflow-y-auto px-1 pt-4 sm:px-6">
+          <div id="editor" dir="rtl" class="relative mx-auto max-w-3xl rounded-box border border-base-300 bg-base-100/60 py-2 text-lg leading-loose"></div>
+          <p class="ui mx-auto mt-2 max-w-3xl text-xs text-base-content/50" dir="rtl" data-en="Each line is a part. Enter makes a new part; Shift-click selects a range, Ctrl-click several; click outside the text to deselect.">هر خط یک بخش است. Enter بخشِ تازه می‌سازد؛ Shift و کلیک یک بازه را انتخاب می‌کند و Ctrl و کلیک چند خط را؛ کلیک بیرون از متن، انتخاب را برمی‌دارد.</p>
+        </div>
+        <div class="ui flex items-center gap-3 border-t border-base-300 px-1 pt-2 text-xs" dir="rtl">
+          <span id="status" class="min-w-0 flex-1 truncate text-base-content/70"></span>
+          <progress id="prog" class="progress progress-primary hidden w-32" value="0" max="100"></progress>
+          <button id="cancelBtn" class="btn btn-ghost btn-xs hidden" onclick="cancelJob()" data-en="Cancel">لغو</button>
+        </div>
+      </main>
+
+      <!-- ============ TIMELINE (always left-to-right) ============ -->
+      <section class="flex h-[38vh] min-h-60 flex-col gap-3 overflow-hidden rounded-3xl bg-base-200 p-3" dir="ltr">
+        <div class="flex items-center gap-1 rounded-box bg-base-100/50 px-2 py-1.5">
+          <div class="flex items-center gap-0.5">
+            <button class="btn btn-ghost btn-sm btn-circle tooltip tooltip-right" data-tip="برگرداندن" onclick="undo()" aria-label="undo"><svg class="size-4"><use href="#i-undo-2"/></svg></button>
+            <button class="btn btn-ghost btn-sm btn-circle tooltip tooltip-right" data-tip="دوباره" onclick="redo()" aria-label="redo"><svg class="size-4"><use href="#i-redo-2"/></svg></button>
+            <label id="snapBtn" class="btn btn-ghost btn-sm gap-1 text-base-content/60 has-[:checked]:bg-primary/20 has-[:checked]:text-primary tooltip" data-tip="اسنپ: چسبیدنِ کلیپ‌ها به لبهٔ هم"><input type="checkbox" class="hidden" checked onchange="snapOn=this.checked"><svg class="size-4"><use href="#i-magnet"/></svg><span class="ui text-xs" data-en="Snap">اسنپ</span></label>
+          </div>
+          <div class="mx-auto flex items-center gap-1.5">
+            <button class="btn btn-ghost btn-sm btn-circle tooltip" data-tip="رفتن به ابتدا" onclick="seek(0, true)" aria-label="go to start"><svg class="size-4"><use href="#i-arrow-left-to-line"/></svg></button>
+            <button class="btn btn-ghost btn-sm btn-circle tooltip" data-tip="خطِ قبلی" onclick="jumpLine(-1)" aria-label="previous line"><svg class="size-4"><use href="#i-skip-back"/></svg></button>
+            <button id="playBtn" class="btn btn-secondary btn-circle size-12" onclick="togglePlay()" aria-label="play"><svg class="size-5" id="playIco"><use href="#i-play"/></svg></button>
+            <button class="btn btn-ghost btn-sm btn-circle tooltip" data-tip="خطِ بعدی" onclick="jumpLine(1)" aria-label="next line"><svg class="size-4"><use href="#i-skip-forward"/></svg></button>
+            <button id="tBtn" class="btn btn-ghost btn-sm px-2 text-sm font-semibold tabular-nums tooltip" data-tip="برای نوشتنِ زمان کلیک کنید" onclick="editTime()">00:00.0</button>
+            <span class="text-sm tabular-nums text-base-content/50" id="tTotal">/ 00:00.0</span>
+          </div>
+          <div class="flex items-center gap-1">
+            <input id="zoom" type="range" min="8" max="60" value="22" class="range range-xs w-28 text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" aria-label="zoom">
+            <button class="btn btn-ghost btn-sm btn-circle tooltip tooltip-left" data-tip="بازنشانیِ زوم" onclick="setZoom(22)" aria-label="reset zoom"><svg class="size-4"><use href="#i-rotate-ccw"/></svg></button>
+          </div>
+        </div>
+        <div class="flex min-h-0 flex-1 flex-col">
+          <div class="flex shrink-0"><div class="w-52 shrink-0"></div><div id="rulerView" class="min-w-0 flex-1 overflow-hidden"><div id="ruler" class="relative h-7 cursor-pointer"></div></div></div>
+          <div id="tlScroll" class="relative min-h-0 flex-1 overflow-auto">
+            <div id="tlBody" class="relative flex w-max min-w-full">
+              <div id="heads" class="sticky left-0 z-[30] w-52 shrink-0 bg-base-200"></div>
+              <div id="lanesWrap" class="relative min-w-0 flex-1"><div id="lanes" class="relative"></div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ============ INSPECTOR (always on the right) ============ -->
+    <aside class="ui flex w-80 shrink-0 flex-col overflow-hidden rounded-3xl bg-base-200 p-2" dir="rtl">
+      <div role="tablist" class="tabs tabs-border px-2 pt-1">
+        <a role="tab" class="tab hidden" id="it-line" onclick="showInsp('line')" data-en="This line">این خط</a>
+        <a role="tab" class="tab tab-active" id="it-proj" onclick="showInsp('proj')" data-en="Project">پروژه</a>
+      </div>
+      <div class="min-h-0 flex-1 overflow-y-auto">
+        <div id="insp-line" class="hidden space-y-3 p-4">
+          <div class="flex items-center gap-2"><span class="text-sm font-bold" id="lineTitle"></span><span id="lineState"></span></div>
+          <p class="text-xs text-base-content/60" data-en="A line can have its own voice; changing it marks the line for re-voicing.">هر خط می‌تواند صدای خودش را داشته باشد؛ عوض کردنش خط را برای بازتولید علامت می‌زند.</p>
+          <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Engine">موتور</legend><select id="lnEngine" class="select select-sm w-full" onchange="setLineOpt('engine', this.value)"></select></fieldset>
+          <div id="lnGoogle" class="space-y-3">
+          <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Voice">صدا</legend><select id="lnVoice" class="select select-sm w-full" onchange="setLineOpt('gVoice', this.value)"></select></fieldset>
+          <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Reading style">سبکِ خواندن</legend><select id="lnPreset" class="select select-sm w-full" onchange="setLineOpt('gPreset', this.value)"></select></fieldset>
+          <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Mood">حال و احساس</legend><select id="lnState" class="select select-sm w-full" onchange="setLineOpt('gState', this.value)"></select></fieldset>
+          </div>
+        </div>
+        <div id="insp-proj" class="space-y-3 p-4">
+          <div class="flex items-center gap-2"><span class="text-sm font-bold" id="projTitle" data-en="Project">پروژه</span></div>
+          <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Engine">موتور</legend><select id="pEngine" class="select select-sm w-full" onchange="setProj('engine', this.value)"></select></fieldset>
+          <div id="engGoogle" class="space-y-3">
+          <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Model">مدل</legend><select id="pModel" class="select select-sm w-full" onchange="setProj('g_model', this.value)"></select></fieldset>
+          <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Voice">صدا</legend><select id="pVoice" class="select select-sm w-full" onchange="setProj('g_voice', this.value)"></select></fieldset>
+          <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Reading style">سبکِ خواندن</legend><select id="pPreset" class="select select-sm w-full" onchange="setProj('g_preset', this.value)"></select></fieldset>
+          <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Mood">حال و احساس</legend><select id="pState" class="select select-sm w-full" onchange="setProj('g_state', this.value)"></select></fieldset>
+          <fieldset class="fieldset" id="pAgeWrap"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Speaker age">سن و شخصیتِ گوینده</legend><select id="pAge" class="select select-sm w-full" onchange="setProj('g_age', this.value)"></select></fieldset>
+          <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Language">زبان</legend><select id="pLang" class="select select-sm w-full" onchange="setProj('g_lang', this.value)"></select></fieldset>
+          <label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span data-en="Continuity between parts">پیوستگیِ لحن بینِ بخش‌ها</span><input id="pCont" type="checkbox" class="toggle toggle-sm toggle-primary" checked onchange="setProj('g_continuity', this.checked)"></label>
+          </div>
+          <div id="engCbx" class="hidden space-y-3">
+            <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Voice">صدا</legend><div class="join w-full"><select id="cbxVoice" class="select select-sm join-item flex-1" onchange="setEng('cbxVoice', this.value)"></select><button class="btn btn-sm join-item border-base-content/15 bg-base-100" onclick="addCbxVoice()" data-en="Add sample…">نمونهٔ تازه…</button></div></fieldset>
+            <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Speed">سرعت</legend><input id="cbxSpeed" type="range" data-unit="×" min="0.7" max="1.3" step="0.05" value="1" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="setEng('cbxSpeed', +this.value)"></fieldset><fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Expressiveness">شدتِ بیان و احساس</legend><input id="cbxExag" type="range" data-unit="" min="0" max="1" step="0.05" value="0.8" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="setEng('cbxExag', +this.value)"></fieldset><fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Faithfulness to the text">پایبندی به متن</legend><input id="cbxCfg" type="range" data-unit="" min="0" max="1" step="0.05" value="1" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="setEng('cbxCfg', +this.value)"></fieldset><fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Variety">تنوع و خلاقیت</legend><input id="cbxTemp" type="range" data-unit="" min="0" max="1.5" step="0.05" value="0" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="setEng('cbxTemp', +this.value)"></fieldset>
+          </div>
+          <div id="engLight" class="hidden space-y-3">
+            <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Speed">سرعت</legend><input id="lightSpeed" type="range" data-unit="×" min="0.5" max="2" step="0.05" value="1" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="setEng('lightSpeed', +this.value)"></fieldset><fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Intonation">آهنگ و حالتِ گفتار</legend><input id="lightNoise" type="range" data-unit="" min="0.1" max="1.3" step="0.05" value="0.667" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="setEng('lightNoise', +this.value)"></fieldset><fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Stretch and timbre">کشش و تن</legend><input id="lightNoiseW" type="range" data-unit="" min="0.1" max="1.5" step="0.05" value="0.8" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="setEng('lightNoiseW', +this.value)"></fieldset>
+          </div>
+          <div id="engFish" class="hidden space-y-3">
+            <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Fish Audio key">کلیدِ Fish Audio</legend><div class="join w-full"><input id="fishKey" type="password" class="input input-sm join-item flex-1" dir="ltr" placeholder="Fish Audio key" onchange="saveFishKey(this.value)"><button class="btn btn-sm join-item border-base-content/15 bg-base-100" onclick="probeFish()" data-en="Test">آزمایش</button></div></fieldset>
+            <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Model">مدل</legend><select id="fishModel" class="select select-sm w-full" onchange="setEng('fishModel', this.value)"></select></fieldset><fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Speed and quality">سرعت و کیفیت</legend><select id="fishLatency" class="select select-sm w-full" onchange="setEng('fishLatency', this.value)"><option value="normal">normal — بهترین کیفیت</option><option value="balanced">balanced — میانه</option><option value="low">low — سریع‌ترین</option></select></fieldset>
+            <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Voice">صدا</legend><select id="fishVoice" class="select select-sm w-full" onchange="setEng('fishVoice', this.value)"></select></fieldset><fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Reading style">سبکِ خواندن</legend><select id="fishPreset" class="select select-sm w-full" onchange="setEng('fishPreset', this.value)"></select></fieldset>
+            <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Speed">سرعت</legend><input id="fishSpeed" type="range" data-unit="×" min="0.5" max="2" step="0.05" value="1" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="setEng('fishSpeed', +this.value)"></fieldset><fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Loudness">بلندی</legend><input id="fishVolume" type="range" data-unit="dB" min="-12" max="12" step="1" value="0" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="setEng('fishVolume', +this.value)"></fieldset><fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Expressiveness (temperature)">شدتِ بیان (temperature)</legend><input id="fishTemp" type="range" data-unit="" min="0" max="1" step="0.05" value="0.7" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="setEng('fishTemp', +this.value)"></fieldset><fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Variety (top-p)">تنوع (top-p)</legend><input id="fishTopP" type="range" data-unit="" min="0" max="1" step="0.05" value="0.7" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="setEng('fishTopP', +this.value)"></fieldset>
+            <label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span data-en="Continuity between parts">پیوستگیِ لحن بینِ بخش‌ها</span><input id="fishCont" type="checkbox" class="toggle toggle-sm toggle-primary" checked onchange="setEng('fishCont', this.checked)"></label><label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span data-en="Continuity within a part">پیوستگیِ درونِ هر بخش</span><input id="fishCondPrev" type="checkbox" class="toggle toggle-sm toggle-primary" checked onchange="setEng('fishCondPrev', this.checked)"></label><label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span data-en="Even out loudness">هم‌سطح‌سازیِ بلندی</span><input id="fishNormLoud" type="checkbox" class="toggle toggle-sm toggle-primary" checked onchange="setEng('fishNormLoud', this.checked)"></label><label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span data-en="Normalise text (English/Chinese only)">نرمال‌سازیِ متن (فقط انگلیسی و چینی)</span><input id="fishNormalize" type="checkbox" class="toggle toggle-sm toggle-primary"  onchange="setEng('fishNormalize', this.checked)"></label><label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span data-en="Quality guard">نگهبانِ کیفیت</span><input id="fishQuality" type="checkbox" class="toggle toggle-sm toggle-primary"  onchange="setEng('fishQuality', this.checked)"></label>
+          </div>
+          <p class="text-xs text-base-content/60" data-en="Changing the project's engine or voice marks every line that uses it for re-voicing.">عوض کردنِ موتور یا صدای پروژه، همهٔ خط‌هایی را که از آن استفاده می‌کنند برای بازتولید علامت می‌زند.</p>
+        </div>
+        <div id="insp-music" class="hidden space-y-3 p-4">
+          <div class="flex items-center gap-2"><svg class="size-4 text-secondary"><use href="#i-music"/></svg><span class="text-sm font-bold" data-en="Background music">موسیقی پس‌زمینه</span></div>
+          <p class="text-xs text-base-content/70" id="musicName" dir="auto"></p><p class="text-xs text-base-content/50" id="musicCredit" dir="auto"></p>
+          <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Music level against the voice">بلندی موسیقی نسبت به صدا</legend><input id="mLevel" type="range" data-unit="dB" min="-30" max="0" value="-16" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="setMusic('level_db', +this.value)"></fieldset>
+          <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Fade in">محو شدنِ اول کار</legend><input id="mFadeIn" type="range" data-unit="s" min="0" max="5" step="0.5" value="1.5" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="setMusic('fade_in', +this.value)"></fieldset>
+          <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Fade out">محو شدنِ آخر کار</legend><input id="mFadeOut" type="range" data-unit="s" min="0" max="5" step="0.5" value="1.5" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="setMusic('fade_out', +this.value)"></fieldset>
+          <label class="flex w-full cursor-pointer items-start justify-between gap-3 text-sm"><span data-en="Duck the music softly while someone speaks">وقتی گوینده حرف می‌زند موسیقی نرم پایین برود — دوازده دسی‌بل، با شیب آرام</span><input id="mDuck" type="checkbox" class="toggle toggle-sm toggle-secondary" checked onchange="setMusic('duck', this.checked)"></label>
+          <button class="btn btn-ghost btn-sm w-full gap-1.5" onclick="removeMusic()"><svg class="size-4"><use href="#i-trash-2"/></svg><span data-en="Remove the music">برداشتنِ موسیقی</span></button>
+        </div>
+      </div>
+    </aside>
+  </div>
+  <footer class="ui -mt-1 flex flex-wrap items-center justify-center gap-x-1.5 text-[11px] text-base-content/55" dir="rtl">
+    <span>Built by <a class="xlink link link-hover font-semibold text-base-content/75" dir="ltr">@kamangir31</a> — <span data-en="Avaye Javid Shah">آوای جاوید شاه</span></span>
+    <span id="edBuild"></span>
+    <span data-en="· © Avaye Javid Shah — for the licence holder's personal use only; copying and redistribution are not permitted">· © آوای جاوید شاه — فقط برای استفادهٔ شخصیِ دارندهٔ مجوز؛ کپی و انتشار مجاز نیست</span>
+    <span class="text-warning/80" data-en="· Get this app only from its maker; a copy from an unknown source may carry malware.">· این برنامه را فقط از خودِ سازنده‌اش بگیرید؛ نسخه‌ای که از جای ناشناس آمده باشد ممکن است بدافزار داشته باشد.</span>
+  </footer>
+</div>
+
+<!-- object toolbars and menus: always the top layer -->
+<ul id="clipBar" class="menu menu-horizontal menu-xs fixed z-[1000] hidden gap-0.5 rounded-box border border-base-300 bg-base-200 p-1 shadow-xl"></ul>
+<ul id="trackMenu" class="menu menu-sm fixed z-[1100] hidden w-56 rounded-box border border-base-300 bg-base-200 p-1.5 shadow-xl" dir="rtl"></ul>
+<ul id="ddMenu" class="menu menu-sm fixed z-[1100] hidden max-h-80 flex-nowrap overflow-y-auto rounded-box border border-base-300 bg-base-200 p-1.5 shadow-xl"></ul>
+
+<!-- ============ KEYS ============ -->
+<dialog id="keysDlg" class="modal">
+  <div class="modal-box ui max-w-xl" dir="rtl">
+    <form method="dialog"><button class="btn btn-sm btn-circle btn-ghost absolute top-3 end-3" aria-label="بستن"><svg class="size-4"><use href="#i-x"/></svg></button></form>
+    <h3 class="text-lg font-bold" data-en="Google keys">کلیدهای گوگل</h3>
+    <p class="mt-1 text-xs text-base-content/70" data-en="These keys serve both Google speech and diacritization. When one key's daily quota runs out, the app moves to the next.">این کلیدها هم برای گفتارِ گوگل استفاده می‌شوند، هم برای حرکت‌گذاری. هر وقت سهمیهٔ روزانهٔ یک کلید تمام شود، برنامه سراغِ کلیدِ بعدی می‌رود.</p>
+    <ul id="keyList" class="list mt-3 max-h-52 overflow-y-auto rounded-box border border-base-300"></ul>
+    <textarea id="keyNew" class="textarea textarea-sm mt-3 w-full" rows="3" dir="ltr" placeholder="AIza… (one key per line)"></textarea>
+    <div class="modal-action mt-3">
+      <button class="btn btn-ghost btn-sm gap-1.5" onclick="probeKeys()"><svg class="size-4"><use href="#i-zap"/></svg><span data-en="Test the connection">آزمایشِ اتصال</span></button>
+      <button class="btn btn-primary btn-sm" onclick="saveKeys()" data-en="Add keys">افزودنِ کلیدها</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>بستن</button></form>
+</dialog>
+
+<!-- ============ HELP: the app's own manual ============ -->
+<dialog id="helpDlg" class="modal">
+  <div class="modal-box flex h-[85vh] max-w-4xl flex-col p-0">
+    <form method="dialog"><button class="btn btn-sm btn-circle btn-ghost absolute top-3 end-3 z-10" aria-label="بستن"><svg class="size-4"><use href="#i-x"/></svg></button></form>
+    <iframe id="helpFrame" class="min-h-0 w-full flex-1 rounded-box" title="راهنما"></iframe>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>بستن</button></form>
+</dialog>
+
+<!-- ============ MUSIC: the app's music library ============ -->
+<dialog id="musicDlg" class="modal">
+  <div class="modal-box ui max-w-xl" dir="rtl">
+    <form method="dialog"><button class="btn btn-sm btn-circle btn-ghost absolute top-3 end-3" aria-label="بستن"><svg class="size-4"><use href="#i-x"/></svg></button></form>
+    <h3 class="text-lg font-bold" data-en="Background music">موسیقی پس‌زمینه</h3>
+    <div class="mt-3 flex gap-2"><select id="mProv" class="select select-sm w-48"></select><input id="mQuery" class="input input-sm flex-1" dir="auto" placeholder="مثلاً: ambient piano" onkeydown="if(event.key==='Enter')searchMusic()"><button class="btn btn-primary btn-sm" onclick="searchMusic()" data-en="Search">جست‌وجو</button></div>
+    <ul id="musicResults" class="list mt-2 max-h-56 overflow-y-auto rounded-box border border-base-300"></ul>
+    <div class="mt-3 text-xs font-medium text-base-content/70" data-en="Your music library">کتابخانهٔ موسیقی‌های شما</div>
+    <ul id="musicList" class="list mt-3 max-h-64 overflow-y-auto rounded-box border border-base-300"></ul>
+    <div class="modal-action mt-3"><button class="btn btn-ghost btn-sm gap-1.5" onclick="importMusic()"><svg class="size-4"><use href="#i-folder-open"/></svg><span data-en="Choose an audio file">انتخاب فایل صوتی از دستگاه</span></button></div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>بستن</button></form>
+</dialog>
+
+<script>
+/*@CLASSIC*/
+</script>
+<script>
+/*@EDITOR*/
+</script>
+</body>
+</html>

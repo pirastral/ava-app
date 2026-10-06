@@ -121,7 +121,7 @@ class Api:
             import engines
             mp3, gid = engines.generate_gulp(payload, self._status)
             b64 = base64.b64encode(mp3).decode("ascii")
-            return {"ok": True, "b64": b64, "gulp": gid}
+            return {"ok": True, "b64": b64, "gulp": gid, "lines": engines.gulp_lines(gid)}   # 153: each line's span
         except Exception as e:
             if type(e).__name__ != "Cancelled":
                 traceback.print_exc()
@@ -142,11 +142,50 @@ class Api:
                                               req.get("sel_start"), req.get("sel_end"),
                                               req["payload"], self._status)
             b64 = base64.b64encode(mp3).decode("ascii")
-            return {"ok": True, "b64": b64, "gulp": new_gid, "changed": n, "mode": mode}   # 140: a NEW part id
+            return {"ok": True, "b64": b64, "gulp": new_gid, "changed": n, "mode": mode, "lines": engines.gulp_lines(new_gid)}   # 140: a NEW part id; 153: line spans
         except Exception as e:
             if type(e).__name__ != "Cancelled":
                 traceback.print_exc()
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def timeline_files(self, spec, music=None):
+        """153: the final file(s) from the timeline — clips at their positions, trims and rows."""
+        try:
+            import engines
+            engines._job_start()
+            files = engines.timeline_files(spec, music, self._status)
+            out = {"ok": True, "b64": base64.b64encode(files["clean"]).decode("ascii"),
+                   "kb": len(files["clean"]) // 1024, "seconds": files["seconds"]}
+            if "music" in files:
+                out["b64_music"] = base64.b64encode(files["music"]).decode("ascii")
+                out["kb_music"] = len(files["music"]) // 1024
+            return out
+        except Exception as e:
+            if type(e).__name__ != "Cancelled":
+                traceback.print_exc()
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def session(self):
+        """154: the engine session — parts made in another session are no longer in memory."""
+        import engines
+        return {"ok": True, "session": engines.SESSION, "build": engines.BUILD}
+
+    def gulp_audio(self, gid):
+        """154: a part's audio and line spans, for the new editor."""
+        try:
+            import engines
+            mp3, lines = engines.gulp_audio(gid)
+            return {"ok": True, "b64": base64.b64encode(mp3).decode("ascii"), "lines": lines}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def timeline_captions(self, req):
+        """153: SRT/VTT from the subtitle cues, with their own timings."""
+        try:
+            import engines
+            return {"ok": True, "text": engines.timeline_captions(req.get("cues", []), req.get("fmt", "srt"))}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
     def splice(self, ids, music=None):
         """Final file(s): always the clean one; with music when asked (96)."""

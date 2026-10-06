@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist
 ======================================================================
-This zip is the COMPLETE application source as of update 152.
+This zip is the COMPLETE application source as of update 157.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,131 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 157 (on top of 156)
+  · The new editor shows the founder's handle exactly as the classic interface does: the
+    @kamangir31 pill (avatar copied from the classic header at build time) right after the logo
+    and app name, and the classic footer line — "Built by @kamangir31 — آوای جاوید شاه", the
+    build number, "© آوای جاوید شاه — personal use only…", and the get-it-only-from-its-maker
+    warning. Both open https://x.com/kamangir31 through open_url (the page never navigates).
+  · Footer text and build number switch with the language.
+  DISTRIBUTION — HOW IT WORKS (clarified):
+  · ACTIVATION IS UNCHANGED: give someone the app; they send the request code; you run the usual
+    issue command (add --expires YYYY-MM-DD for an expiring licence); send back the activation.
+    No GitHub step per person.
+  · COPY STAMPS ARE OPTIONAL. A normal build (every push) is stamped "dev" and can go to anyone.
+    Only if you want a leaked, cracked copy to say whose it was, run the workflow by hand with a
+    copy id (L-02…) and give that person that build — the id has to be baked into their copy.
+  · The Hugging Face token lives only in the GitHub secret HF_TOKEN; the build writes it in and
+    the protect step seals it into the compiled vault. Never commit token.txt.
+
+WHAT CHANGED IN 156 (on top of 155) — the new editor, stage 2: every engine + music search
+  · Engine chooser in the inspector (the list is copied from the classic menu at build time):
+    Google, Chatterbox, Fish Audio, مانا، ژیرو، امیر — each with the classic controls, ranges and
+    defaults (Chatterbox: voice sample + add sample, speed, expressiveness, faithfulness, variety;
+    light voices: speed, intonation, stretch; Fish: key + test, model, latency, voice (default +
+    your voices), reading style, speed, loudness, temperature, top-p, five toggles).
+  · Requests carry exactly the classic fields for every engine (payloadFor ≙ gulpPayload).
+  · A line can have its own engine; runs split by engine + voice; changing an engine setting marks
+    only the lines that engine voices; one undo step per slider drag.
+  · Engine: gulp_lines now gives per-line spans for parts made CLAUSE BY CLAUSE (Chatterbox, light
+    voices) by repeating _assemble_raw's exact layout — so every engine gets one clip per line.
+  · Tags follow the line's engine: Google by model (documented 3.8 / 3.1 / none for 2.5), Fish's
+    own tags, pauses only for Chatterbox and the light voices.
+  · Music: search Freesound / Openverse / Jamendo / Lyria (providers copied from the classic menu),
+    preview before choosing, music_fetch adds it to the library; the credit shows in the panel.
+  · Fix: a slider unit missing from the Persian unit table now shows as written (×).
+  · Still classic-only: characters (cast), the 3.8 voice browser/design/cloning, Fish's library,
+    cloning and voice design. The protection pipeline from 155 is unchanged and re-verified.
+  Tests: test156 (source + compiled) + 146–155 + classic UI suite + three editor rounds — all pass.
+
+WHAT CHANGED IN 155 (on top of 154) — the protected build (no server)
+  PROTECTION (tools/protect.py, run by the cloud build before PyInstaller; never shipped):
+   · STAMP: each build carries an opaque copy id (COPY_ID — "dev" for normal pushes; OPTIONALLY run
+     the workflow by hand with copy_id L-02 etc. when you want a copy to be traceable). The id means nothing
+     without your offline ledger; a leaked build tells you whose copy it was.
+   · SEAL: builtin_keys.json and token.txt are folded into _vault.py (obfuscated) and DELETED;
+     the vault is compiled with the app — the keys never ship as readable files (verified: the
+     token and keys do not appear as text anywhere in the compiled modules).
+   · COMPILE: app, engines, licensing, en_strings and the vault become native machine code
+     (Cython); their .py sources are deleted before packaging. main.py is the 2-line launcher.
+   · MINIFY: interface scripts minified with terser (soft: skipped with a notice if unavailable).
+   · build.spec starts from main.py, bundles the plain key files only in a source build, and
+     reads _hidden.json (imports PyInstaller cannot see inside compiled modules).
+   · WORKFLOW (WORKFLOW-build.yml — UPDATE the repo's .github/workflows/build.yml): copy_id
+     input; "Protect — compile, seal, stamp" step; "Verify protection" gate that refuses to
+     publish if any source file or plain key is inside the app; stamped copies are named
+     …-L-02.zip and delivered as artifacts only (never on the shared release); the build number
+     is read from BUILD_NUMBER (engines.py no longer exists after protection).
+   · Honest scope: unreadable code and a hard-to-patch activation — not an impossible one. Keep
+     copies few, give activations an expiry (--expires), stamp every copy you hand out.
+  LICENCE: license_state reports days_left and the copy id; both interfaces warn 21 days
+     before an expiring licence ends (renewal via whoever gave the app — no contact route).
+  NOTICES: © / personal-use, no-redistribution text on the activation screen, in the classic
+     footer and in the manuals (new "Rights" section).
+  GEMINI 3.8 CLONING (field log): "Voice replication requires Paid Quota Tier 1" is now its own
+     fault class — one request, then a clear stop (the log showed 28 wasted requests across all
+     keys). Model labels say cloning needs a paid key; a reference under ~30 s gets a note; a
+     language-filtered voice search that finds nothing falls back to the whole library.
+  Tests: test155 (source AND compiled) + 146–154 on source and on the protected output + classic
+     UI suite (source and minified) + both editor rounds (source and minified) — all pass.
+
+WHAT CHANGED IN 154 (on top of 153) — the new editor, first stage (audio mode, Google)
+  · ui/editor.html: the new design (boxed layout, crown icon, Vazirmatn + Noto Sans, daisyUI),
+    opened from «ویرایشگرِ تازه» in the classic header; «رابطِ قبلی» goes back. The classic
+    interface stays the default and keeps every feature until the editor carries them all.
+  · Model: each line is a part (unit of editing); runs of consecutive same-voice lines (≤600
+    chars, the classic Google part size) are one generate_gulp request, sliced into per-line
+    clips by the "lines" spans; no map → one clip carrying those lines («یک کلیپ»).
+  · Re-voice = patch_gulp on the clip's part with the part's current text and the line as the
+    selection (surgery); later clips shift by the duration change. Enter in a voiced line and
+    split at the playhead cut existing audio (no request). Trim inward only (red words).
+  · Timeline: rows on overlap (bracket in the script), snap, gapless, mute, + menus (new line,
+    1 s silence, audio file via file_gulp; music from the library), clip toolbar, top-layer
+    menus/toolbars, ruler outside the scroller, one scroller for headers and tracks.
+  · Playback: WebAudio mix of the clips + the music bed (level, fades, 12 dB ducking) —
+    preview only; the file is built by timeline_files. Captions via timeline_captions.
+  · Autosave (settings ed_doc / ed_session): same session → work back, audio fetched by id
+    (gulp_audio); new session → text back, lines marked not voiced. Undo/redo snapshots;
+    gc_gulps keeps every part history references.
+  · Reused verbatim from the classic UI at build time (one source of truth): voices, styles,
+    tags (3.1 and documented 3.8), tones, models, diacritization tools, languages, sentence
+    reflow and its English table. Keys dialog (add/remove/test), help (the manual), language
+    shared via ava-lang, themed custom dropdown for every select (build-110 rule), Blob-free
+    audio (decoded buffers; nothing base64 in the DOM).
+  · Engine: SESSION id + gulp_audio(gid); app.session(), app.gulp_audio().
+  · Source: ui-src/editor.src.html + ui-src/editor.js; built by build-editor.py (dev kit).
+  · Manual: section 13 (fa + en). Tests: test154 + batteries 146–153 + classic UI suite +
+    two Playwright rounds against a simulated engine (all pass).
+
+WHAT CHANGED IN 153 (on top of 152) — Gemini updates + groundwork for the new editor
+  GEMINI (from the October 2026 review of Google's changes):
+   · the Oct 9 change limits the CONSUMER Gemini app (free users → Flash-Lite); it does
+     not touch the Gemini API or AI Studio keys, so nothing changes for the app's free keys.
+   · a free-tier project Google has reviewed and restricted ("Your project has been denied
+     access" / "This project's API access is restricted") is now classified as a DEAD KEY:
+     rotation moves past it instead of retrying it on every request (_google_fault).
+   · 3.8 inline tags cut to what Google documents: <laugh> <sigh> <gasp> <cough> <breath>
+     <short pause>, backchannels |mhm| |yeah|. Removed: <chuckle> <giggle> <cry> <sob>
+     <whispers> <yawn> <groan> <phew> <tsk> <heavy breath> <throat-clearing>, the
+     undocumented <long pause>, and the unverified Persian backchannels. In the engine,
+     laughter variants map to <laugh>, a long pause becomes two <short pause>s, delivery
+     cues are dropped (on 3.8 delivery belongs in the style). The custom-tag example in
+     3.8 mode now reads <laugh> (3.1 keeps [whispers], a valid 3.1 tag).
+   · 2.5 Flash / 2.5 Pro TTS labelled deprecated (Google's deprecations page names 3.8
+     as their replacement; no shutdown date announced yet).
+  NEW-EDITOR GROUNDWORK (the redesign ships in stages; the current interface stays
+  fully working until the new editor carries every feature):
+   · generate_gulp / patch_gulp also return "lines": each editor line's span (seconds)
+     inside its part, from the part's own line map (gulp_lines); a part without a
+     trusted map returns one span — so parts stay the unit of GENERATION and lines
+     become the unit of EDITING, with no extra requests.
+   · timeline_files(spec, music): the final file(s) from clips placed on a timeline —
+     position, trim (in/out), overlapping rows summed under a soft peak limit, gain,
+     silences — with the same music bed, level, fades and ducking as before.
+   · timeline_captions(cues, fmt): SRT/VTT from subtitle cues with their own timings.
+  Tests: test153 (6 groups) + batteries 146–152 + UI suite pass. (test149 needs
+  PySocks installed, as in the shipped app.)
 
 WHAT CHANGED IN 152 (on top of 151) — Gemini 3.8 designed from its own features
   151 adapted the 3.1 panel. 152 builds the 3.8 side from what 3.8 actually offers,
@@ -1235,6 +1360,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۵۲»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۵۷»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

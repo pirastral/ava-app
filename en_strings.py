@@ -97,6 +97,9 @@ EXACT = {
  "Fish Audio: اعتبار حساب تمام شده (402). برای مدل پولی باید شارژ کنید؛ مدل رایگان s2.1-pro-free را انتخاب کنید.": "Fish Audio: out of credit (402). Top up for the paid model, or pick the free s2.1-pro-free.",
  "Fish Audio: برشِ جملهٔ راهنما قابل اعتماد نبود؛ بدون راهنما می‌سازم…": "Fish Audio: the lead-in cut was unreliable; generating without it…",
  "مدل S1 چندگوینده را پشتیبانی نمی‌کند؛ یکی از مدل‌های S2 را انتخاب کنید.": "S1 has no multi-speaker mode; pick an S2 model.",
+    'روی خطِ زمان چیزی برای ساختن نیست.': 'There is nothing on the timeline to build.',
+    'دارم کلیپ\u200cهای خطِ زمان را کنارِ هم می\u200cگذارم…': "Placing the timeline's clips…",
+    'ساختنِ فایل از خطِ زمان': 'building the file from the timeline',
 }
 PATTERNS = [
  (r"^دارم گفتار را می‌سازم… بخش (\S+) از (\S+)$", "Generating speech… part {0} of {1}"),

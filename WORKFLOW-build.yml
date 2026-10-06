@@ -1,4 +1,7 @@
-# >>> THIS FILE GOES IN THE REPO AT:  .github/workflows/build.yml  (already deployed since 89 — unchanged)
+# >>> THIS FILE GOES IN THE REPO AT:  .github/workflows/build.yml  (UPDATED in 155 — replace the copy in the repo)
+# 155: protected builds — the app's own code is compiled to native machine code, the bundled keys are
+# sealed inside it, each copy you give someone carries its opaque copy id, and a gate refuses to publish
+# an app that still contains readable source or plain keys. Run it by hand with a copy id for a recipient.
 
 # Ava — build workflow
 # ---------------------------------------------------------------------------
@@ -19,6 +22,11 @@ on:
     branches: [main]
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      copy_id:
+        description: "Copy id for a build you will give someone — opaque, like L-02, never a name. Leave dev for your own build."
+        required: false
+        default: "dev"
 
 jobs:
   macos:
@@ -63,6 +71,17 @@ jobs:
           pip install pyinstaller
           python -c "import setuptools, pkg_resources; print('setuptools', setuptools.__version__); print('NullProvider present:', hasattr(pkg_resources, 'NullProvider'))"
 
+      # 155: PROTECT — compile the app's own code to native machine code, seal the bundled keys
+      # into it, stamp the copy id, minify the interface scripts. Nothing readable ships.
+      - name: Protect — compile, seal, stamp
+        shell: bash
+        env:
+          COPY_ID: ${{ github.event.inputs.copy_id || 'dev' }}
+        run: |
+          set -euo pipefail
+          pip install "cython>=3.0"
+          python tools/protect.py
+
       # build.spec needs icon.icns on macOS and the repo carries only
       # icon.png / icon.ico, so the .icns is generated here.
       - name: Create icon.icns from icon.png
@@ -85,6 +104,16 @@ jobs:
           set -euo pipefail
           pyinstaller build.spec --noconfirm
           ls -la dist
+
+      - name: Verify protection — no source, no plain keys in the app
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=$(find dist -maxdepth 1 -name "*.app" | head -1)
+          BAD=$(find "$APP" \( -name "engines.py" -o -name "app.py" -o -name "licensing.py" -o -name "en_strings.py" -o -name "_vault.py" -o -name "token.txt" -o -name "builtin_keys.json" \) -print)
+          if [ -n "$BAD" ]; then echo "::error::readable source or keys inside the app:"; echo "$BAD"; exit 1; fi
+          find "$APP" -name "engines*.so" | grep -q . || { echo "::error::compiled engine missing — not publishing"; exit 1; }
+          echo "protected: compiled engine present, no source, no plain keys"
 
       # A build that cannot start must never be published. This caught the
       # setuptools/pkg_resources breakage; it stays as a permanent gate.
@@ -109,14 +138,16 @@ jobs:
         id: v
         run: |
           set -euo pipefail
-          N=$(grep -m1 -oE 'BUILD = [0-9]+' engines.py | grep -oE '[0-9]+')
+          N=$(cat BUILD_NUMBER 2>/dev/null || grep -m1 -oE 'BUILD = [0-9]+' engines.py | grep -oE '[0-9]+')   # 155: engines.py is compiled away by then
           echo "build number: $N"
           echo "n=$N" >> "$GITHUB_OUTPUT"
+          C="${{ github.event.inputs.copy_id || 'dev' }}"
+          if [ "$C" = "dev" ]; then echo "c=" >> "$GITHUB_OUTPUT"; else echo "c=-$C" >> "$GITHUB_OUTPUT"; fi
 
       - name: Package the app
         run: |
           set -euo pipefail
-          Z="Ava-macOS-v${{ steps.v.outputs.n }}.zip"
+          Z="Ava-macOS-v${{ steps.v.outputs.n }}${{ steps.v.outputs.c }}.zip"
           # Discover the bundle instead of hardcoding its name: the previous
           # workflow said "dist/Ava.app" while build.spec now produces
           # "dist/Avaye Javid Shah.app" — a rename in the spec silently broke
@@ -133,7 +164,7 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          Z="Ava-macOS-v${{ steps.v.outputs.n }}.zip"
+          Z="Ava-macOS-v${{ steps.v.outputs.n }}${{ steps.v.outputs.c }}.zip"
           unzip -t "$Z" > /dev/null && echo "zip integrity OK"
           rm -rf _v && mkdir _v && ditto -x -k "$Z" _v
           APP=$(find _v -maxdepth 1 -name "*.app" | head -1)
@@ -152,7 +183,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Ava-macOS
-          path: Ava-macOS-v${{ steps.v.outputs.n }}.zip
+          path: Ava-macOS-v${{ steps.v.outputs.n }}${{ steps.v.outputs.c }}.zip
           compression-level: 0
           retention-days: 30
 
@@ -163,7 +194,7 @@ jobs:
             echo ""
             echo "**برای مک حتماً از این راه دانلود کنید — یک فایل، بدون لایهٔ اضافه:**"
             echo ""
-            echo "[Releases](${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ steps.v.outputs.n }}) → \`Ava-macOS-v${{ steps.v.outputs.n }}.zip\`"
+            echo "[Releases](${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ steps.v.outputs.n }}) → \`Ava-macOS-v${{ steps.v.outputs.n }}${{ steps.v.outputs.c }}.zip\`"
             echo ""
             echo "زیپ را باز کنید → برنامه آمادهٔ اجراست (دوبار-کلیک)."
             echo ""
@@ -176,11 +207,12 @@ jobs:
       # permissions, tag conflicts), the artifacts above are already uploaded
       # and the build stays green.
       - uses: softprops/action-gh-release@v2
+        if: ${{ (github.event.inputs.copy_id || 'dev') == 'dev' }}
         continue-on-error: true
         with:
           tag_name: v${{ steps.v.outputs.n }}
           name: نسخهٔ ${{ steps.v.outputs.n }}
-          files: Ava-macOS-v${{ steps.v.outputs.n }}.zip
+          files: Ava-macOS-v${{ steps.v.outputs.n }}${{ steps.v.outputs.c }}.zip
           body: |
             مک: فایل زیپ را باز کنید و برنامه را دوبار-کلیک کنید.
             اگر مک اجازهٔ اجرا نداد: روی برنامه راست-کلیک کنید و Open را بزنید.
@@ -213,16 +245,37 @@ jobs:
           pip install pyinstaller
           python -c "import pkg_resources; print('NullProvider present:', hasattr(pkg_resources, 'NullProvider'))"
 
+      # 155: PROTECT — compile the app's own code to native machine code, seal the bundled keys
+      # into it, stamp the copy id, minify the interface scripts. Nothing readable ships.
+      - name: Protect — compile, seal, stamp
+        shell: bash
+        env:
+          COPY_ID: ${{ github.event.inputs.copy_id || 'dev' }}
+        run: |
+          set -euo pipefail
+          pip install "cython>=3.0"
+          python tools/protect.py
+
       - name: Build
         run: pyinstaller build.spec --noconfirm
+
+      - name: Verify protection — no source, no plain keys in the app
+        shell: pwsh
+        run: |
+          $bad = Get-ChildItem dist -Recurse -Include engines.py,app.py,licensing.py,en_strings.py,_vault.py,token.txt,builtin_keys.json
+          if ($bad) { Write-Error ("readable source or keys inside the app: " + ($bad.FullName -join ", ")); exit 1 }
+          if (-not (Get-ChildItem dist -Recurse -Filter "engines*.pyd")) { Write-Error "compiled engine missing — not publishing"; exit 1 }
+          Write-Host "protected: compiled engine present, no source, no plain keys"
 
       - name: Read build number
         id: v
         shell: bash
         run: |
           set -euo pipefail
-          N=$(grep -m1 -oE 'BUILD = [0-9]+' engines.py | grep -oE '[0-9]+')
+          N=$(cat BUILD_NUMBER 2>/dev/null || grep -m1 -oE 'BUILD = [0-9]+' engines.py | grep -oE '[0-9]+')   # 155: engines.py is compiled away by then
           echo "n=$N" >> "$GITHUB_OUTPUT"
+          C="${{ github.event.inputs.copy_id || 'dev' }}"
+          if [ "$C" = "dev" ]; then echo "c=" >> "$GITHUB_OUTPUT"; else echo "c=-$C" >> "$GITHUB_OUTPUT"; fi
 
       - name: Package
         shell: pwsh
@@ -230,8 +283,8 @@ jobs:
           $src = Get-ChildItem dist -Directory | Select-Object -First 1
           if (-not $src) { Write-Error "no build folder found in dist/"; exit 1 }
           Write-Host "packaging: $($src.FullName)"
-          Compress-Archive -Path $src.FullName -DestinationPath "Ava-Windows-v${{ steps.v.outputs.n }}.zip" -Force
-          Get-Item "Ava-Windows-v${{ steps.v.outputs.n }}.zip" | Select-Object Name, Length
+          Compress-Archive -Path $src.FullName -DestinationPath "Ava-Windows-v${{ steps.v.outputs.n }}${{ steps.v.outputs.c }}.zip" -Force
+          Get-Item "Ava-Windows-v${{ steps.v.outputs.n }}${{ steps.v.outputs.c }}.zip" | Select-Object Name, Length
 
       # ARTIFACT — Actions -> Artifacts -> Ava-Windows holds the program
       # folder itself, so expanding it gives the folder directly.
@@ -254,11 +307,12 @@ jobs:
           retention-days: 30
 
       - uses: softprops/action-gh-release@v2
+        if: ${{ (github.event.inputs.copy_id || 'dev') == 'dev' }}
         continue-on-error: true
         with:
           tag_name: v${{ steps.v.outputs.n }}
           name: نسخهٔ ${{ steps.v.outputs.n }}
-          files: Ava-Windows-v${{ steps.v.outputs.n }}.zip
+          files: Ava-Windows-v${{ steps.v.outputs.n }}${{ steps.v.outputs.c }}.zip
 
   # Downloads the macOS artifact back out of GitHub and reports exactly what
   # survived the round trip: symlinks, the executable bit, and the code
