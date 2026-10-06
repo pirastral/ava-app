@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist
 ======================================================================
-This zip is the COMPLETE application source as of update 157.
+This zip is the COMPLETE application source as of update 158.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,25 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 158 (on top of 157) — the app icon + a correct protection gate
+  · APP ICON: icon.png and icon.ico are now IN the build (they were only in the repo, so uploads
+    never replaced the old ones). icon.ico (Windows) = the new crown icon as a full square, sizes
+    16–256. icon.png (macOS — the workflow turns it into icon.icns) = the same artwork fitted to
+    Apple's icon grid: an 824 px rounded square centred on a 1024 px transparent canvas, so it
+    sits correctly in the Dock instead of as a plain square.
+  · GATE (tools/verify_protection.py, replaces both name-based checks): the 157 gate flagged any
+    file NAMED app.py — pywebview ships two for Android, so Windows failed (and macOS would have).
+    Worse, a name search could never catch the real risk: an uncompiled module is packed INSIDE
+    PyInstaller's Python archive as bytecode, not left as a .py file. The new gate lists the
+    archive with PyInstaller's own viewer and fails if any OUR module is in it, checks each is
+    present as a compiled .so/.pyd, and that no plain key/source file of ours is in the app's data
+    folders. Tested on miniature PyInstaller builds: protected → pass; uncompiled → caught;
+    planted token.txt → caught; pywebview-style library app.py files → ignored. The compiled
+    launcher → app → engines chain resolves through _hidden.json and runs.
+  · The first failure after updating only the workflow was ORDER, not a bug: that commit ran
+    before tools/protect.py existed in the repo.
+  · protect.py compiles with all cores (faster CI).
 
 WHAT CHANGED IN 157 (on top of 156)
   · The new editor shows the founder's handle exactly as the classic interface does: the
@@ -1360,6 +1379,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۵۷»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۵۸»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»
