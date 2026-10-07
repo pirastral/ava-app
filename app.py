@@ -1,3 +1,5 @@
+import sys
+import os
 """Ava — Persian text-to-speech desktop app."""
 import multiprocessing
 multiprocessing.freeze_support()  # stops helper processes from opening new app windows
@@ -519,7 +521,7 @@ class Api:
             if not res:
                 return {"ok": False, "error": "cancelled"}
             folder = res if isinstance(res, str) else res[0]
-            return {"ok": True, **engines.previews_build(jobs or [], folder, self._status)}
+            return {"ok": True, **engines.previews_build(jobs or [], folder, self._status, bundled_dir=str(_res_path("ui") / "previews"))}
         except Exception as e:
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 

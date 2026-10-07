@@ -7,7 +7,16 @@
 <!--FAVICON-->
 <!--FONTS-->
 <!--CSS-->
-<style>body.mode-video .audio-only{display:none!important}body.mode-audio .video-only{display:none!important}</style>
+<style>dialog [aria-label="close"]:focus{outline:none;box-shadow:none}.ddb{display:inline-grid;place-items:center;width:1.5rem;height:1.5rem;flex:none;border-radius:9999px;cursor:pointer}.ddb:hover{background:color-mix(in oklab,var(--color-base-content) 10%,transparent)}.ddb svg{width:14px!important;height:14px!important;flex:none}*{scrollbar-width:thin;scrollbar-color:color-mix(in oklab,var(--color-base-content) 22%,transparent) transparent}
+::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}
+::-webkit-scrollbar-thumb{background:color-mix(in oklab,var(--color-base-content) 20%,transparent);border-radius:9999px;border:2px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background-color:color-mix(in oklab,var(--color-base-content) 36%,transparent)}
+.ddtrig{height:auto!important;min-height:var(--size,2rem);white-space:normal!important;line-height:1.4;padding-block:.3rem}
+.ddtrig .ddlbl{white-space:normal;overflow-wrap:anywhere}
+#ddMenu .menu a{white-space:normal}
+.tp-x{font-size:0}
+.lane.lane-hot{background:color-mix(in oklab,var(--color-primary) 10%,transparent)}
+body.mode-video .audio-only{display:none!important}body.mode-audio .video-only{display:none!important}</style>
 </head>
 <body class="h-screen overflow-hidden bg-base-100 text-base-content font-sans antialiased">
 <!--ICONS-->
@@ -21,21 +30,19 @@
       <!--LOGO-->
       <div class="ui text-sm font-bold" data-en="Avaye Javid Shah">آوای جاوید شاه</div>
       <a class="xlink badge badge-outline h-7 cursor-pointer gap-1.5 rounded-full border-base-content/20 ps-0.5 pe-2.5 text-xs font-semibold" dir="ltr" title="x.com/kamangir31"><img src="<!--XAVATAR-->" alt="@kamangir31" class="size-6 rounded-full">@kamangir31</a>
-      <div role="tablist" class="tabs tabs-box tabs-sm ms-2"><a role="tab" id="m-audio" class="tab tab-active gap-1.5" onclick="setMode('audio')"><svg class="size-4"><use href="#i-mic"/></svg><span data-en="Audio">صدا</span></a><a role="tab" id="m-video" class="tab gap-1.5" onclick="setMode('video')"><svg class="size-4"><use href="#i-video"/></svg><span data-en="Video">ویدیو</span></a></div>
     </div>
+    <div class="navbar-center"><div role="tablist" class="tabs tabs-box tabs-sm"><a role="tab" id="m-audio" class="tab tab-active gap-1.5" onclick="setMode('audio')"><svg class="size-4"><use href="#i-audio-waveform"/></svg><span data-en="Audio">صدا</span></a><a role="tab" id="m-video" class="tab gap-1.5" onclick="setMode('video')"><svg class="size-4"><use href="#i-film"/></svg><span data-en="Video">ویدیو</span></a></div></div>
     <div class="navbar-end gap-1">
       <button id="keysBtn" class="btn btn-ghost btn-sm gap-1.5" data-tip="کلیدهای گوگل" onclick="openKeys()"><svg class="size-4"><use href="#i-key-round"/></svg><span id="keysBadge" class="badge badge-sm badge-secondary">—</span></button>
       <button id="netTip" class="btn btn-ghost btn-sm btn-square" data-tip="اتصال و سهمیه" onclick="openSettings()" aria-label="network"><span id="netDot" class="status status-md"></span></button>
       <button id="langBtn" class="btn btn-ghost btn-sm btn-square" aria-label="language"><svg class="size-4"><use href="#i-languages"/></svg></button>
       <label class="swap swap-rotate btn btn-ghost btn-sm btn-square" aria-label="theme"><input type="checkbox" class="theme-controller" value="ava-day" id="themeChk"><svg class="swap-off size-4"><use href="#i-moon"/></svg><svg class="swap-on size-4"><use href="#i-sun"/></svg></label>
       <button class="btn btn-ghost btn-sm btn-square" aria-label="help" onclick="openHelp()"><svg class="size-4"><use href="#i-circle-help"/></svg></button>
+      <div class="dropdown dropdown-end"> <div tabindex="0" role="button" class="btn btn-ghost btn-sm gap-1.5"><svg class="size-4"><use href="#i-folder-open"/></svg><span class="ui" data-en="File">پرونده</span></div> <ul tabindex="0" class="dropdown-content menu menu-sm ui z-40 mt-1 w-56 rounded-box border border-base-300 bg-base-200 p-1.5 shadow-lg" dir="rtl"><li><a onclick="menuDo(newDoc)" data-en="New project">پروژهٔ تازه</a></li><li><a onclick="menuDo(projectOpen)" data-en="Open project…">باز کردنِ پروژه…</a></li><li><a onclick="menuDo(projectSave)" data-en="Save project…">ذخیرهٔ پروژه…</a></li><li><a onclick="menuDo(saveText)" data-en="Save the text…">ذخیرهٔ متن…</a></li></ul></div>
       <div class="dropdown dropdown-end">
         <div tabindex="0" role="button" class="btn btn-outline btn-sm gap-1.5"><svg class="size-4"><use href="#i-download"/></svg><span class="ui" data-en="Export">فایل نهایی</span><svg class="size-3.5 opacity-60"><use href="#i-chevron-down"/></svg></div>
         <ul tabindex="0" class="dropdown-content menu menu-sm ui z-40 mt-1 w-60 rounded-box border border-base-300 bg-base-200 p-1.5 shadow-lg" dir="rtl">
-          <li><a onclick="exportAudio(false)" data-en="Save MP3">ذخیرهٔ MP3</a></li>
-          <li><a onclick="exportAudio(true)" data-en="Save the version with music">ذخیرهٔ نسخهٔ با موسیقی</a></li>
-          <li><a onclick="exportCaptions('srt')" data-en="Subtitles SRT">زیرنویس SRT</a></li>
-          <li><a onclick="exportCaptions('vtt')" data-en="Subtitles VTT">زیرنویس VTT</a></li><li class="menu-title" data-en="Document">سند</li><li><a onclick="projectSave()" data-en="Save project…">ذخیرهٔ پروژه…</a></li><li><a onclick="projectOpen()" data-en="Open project…">باز کردنِ پروژه…</a></li><li><a onclick="saveText()" data-en="Save the text…">ذخیرهٔ متن…</a></li><li><a onclick="newDoc()" data-en="New document">سندِ تازه</a></li>
+          <li><a onclick="menuDo(exportAudio, true)" data-en="Audio with music">صدا با موسیقی</a></li><li><a onclick="menuDo(exportAudio, false)" data-en="Voice tracks only">فقط ترک‌های گفتار</a></li><li><a onclick="menuDo(exportCaptions, 'srt')" data-en="Subtitles SRT">زیرنویس SRT</a></li><li><a onclick="menuDo(exportCaptions, 'vtt')" data-en="Subtitles VTT">زیرنویس VTT</a></li><li><a onclick="menuDo(openVExport)" data-en="Video…">ویدیو…</a></li>
         </ul>
       </div>
     </div>
@@ -53,7 +60,7 @@
           </div>
           <div class="divider divider-horizontal mx-0"></div>
           <div class="join">
-            <select id="ezTool" class="select select-sm join-item w-40" aria-label="ابزار حرکت‌گذاری"></select>
+            <select id="ezTool" data-compact class="select select-sm join-item w-40" aria-label="ابزار حرکت‌گذاری"></select>
             <button class="btn btn-sm join-item gap-1.5 border-base-content/15 bg-base-100" onclick="diacritize()"><svg class="size-4"><use href="#i-wand-sparkles"/></svg><span data-en="Auto diacritize">حرکت‌گذاری خودکار</span></button>
           </div>
           <button class="btn btn-ghost btn-sm btn-square" data-tip="پاک‌کردن همهٔ حرکت‌ها" onclick="clearDiacritics()" aria-label="clear"><svg class="size-4"><use href="#i-eraser"/></svg></button>
@@ -69,6 +76,15 @@
           <button id="genBtn" class="btn btn-primary btn-sm ms-auto" onclick="generateAll()"><svg class="size-4"><use href="#i-sparkles"/></svg><span data-en="Voice it">تبدیل به گفتار</span></button>
         </div>
         <section id="stageBox" class="video-only flex min-h-0 flex-1 flex-col px-1 pt-3 sm:px-4">
+  <div class="ui flex flex-wrap items-center gap-2 border-b border-base-300 px-1 pb-3" dir="rtl">
+          <svg class="size-4 opacity-70"><use href="#i-smartphone"/></svg>
+          <select id="res" class="select select-sm w-64" aria-label="اندازه">
+            <option value="9/16">ریلز، شورتز، تیک‌تاک — ۱۰۸۰×۱۹۲۰</option><option value="16/9">یوتیوب — ۱۹۲۰×۱۰۸۰</option>
+            <option value="4/5">پستِ اینستاگرام — ۱۰۸۰×۱۳۵۰</option><option value="1/1">مربع — ۱۰۸۰×۱۰۸۰</option>
+            <option value="16/9">یوتیوب 4K — ۳۸۴۰×۲۱۶۰</option><option value="custom">سفارشی…</option>
+          </select>
+          <span class="ms-auto text-xs text-base-content/60" data-en="Click to select, double-click text to edit it">کلیک برای انتخاب؛ دوبار کلیک روی متن برای ویرایش</span>
+        </div>
   <div id="stage" class="relative grid min-h-0 flex-1 place-items-center overflow-hidden p-3">
     <div id="frame" class="relative rounded-box bg-[#0c1230] shadow-2xl"><canvas id="vcanvas" class="absolute inset-0 h-full w-full rounded-box"></canvas>
       <div id="vover" class="absolute inset-0"><div id="gV" class="pointer-events-none absolute inset-y-0 left-1/2 z-[290] hidden w-px bg-primary"></div><div id="gH" class="pointer-events-none absolute inset-x-0 top-1/2 z-[290] hidden h-px bg-primary"></div>
@@ -108,9 +124,8 @@
           </div>
         </div>
         <div class="flex min-h-0 flex-1 flex-col">
-          <div class="flex shrink-0"><div class="w-52 shrink-0"></div><div id="vtl" class="video-only min-h-0 flex-1 overflow-y-auto"></div>
-<div id="rulerView" class="audio-only min-w-0 flex-1 overflow-hidden"><div id="ruler" class="relative h-7 cursor-pointer"></div></div></div>
-          <div id="tlScroll" class="audio-only relative min-h-0 flex-1 overflow-auto">
+          <div class="flex shrink-0"><div class="w-52 shrink-0"></div><div id="rulerView" class="min-w-0 flex-1 overflow-hidden"><div id="ruler" class="relative h-7 cursor-pointer"></div></div></div>
+          <div id="tlScroll" class="relative min-h-0 flex-1 overflow-auto">
             <div id="tlBody" class="relative flex w-max min-w-full">
               <div id="heads" class="sticky left-0 z-[30] w-52 shrink-0 bg-base-200"></div>
               <div id="lanesWrap" class="relative min-w-0 flex-1"><div id="lanes" class="relative"></div></div>
@@ -122,7 +137,205 @@
 
     <!-- ============ INSPECTOR (always on the right) ============ -->
     <aside class="ui flex w-80 shrink-0 flex-col overflow-hidden rounded-3xl bg-base-200 p-2" dir="rtl">
-  <div id="vinsp" class="video-only min-h-0 flex-1 overflow-y-auto"></div>
+  <div id="vinsp" class="video-only min-h-0 flex-1 overflow-y-auto">
+<div id="iv-proj" class="space-y-3 p-4">
+          <div class="text-sm font-bold" data-en="Video">ویدیو</div>
+          <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Frame rate">نرخ فریم</legend><select class="select select-sm w-full"><option>۳۰ فریم در ثانیه</option><option>۲۴</option><option>۶۰</option></select></fieldset>
+          <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Background">پس‌زمینه</legend><div class="flex gap-1.5"><input type="radio" name="vb" class="radio radio-sm border-0 bg-[#0c1230] checked:bg-[#0c1230]" checked aria-label="نیلگون"><input type="radio" name="vb" class="radio radio-sm border-0 bg-black checked:bg-black" aria-label="سیاه"><input type="radio" name="vb" class="radio radio-sm border-0 bg-white checked:bg-white" aria-label="سفید"></div></fieldset>
+          <p class="text-xs text-base-content/60" data-en="Select an object on the canvas or a clip on the timeline to edit it.">برای ویرایش، یک شیء روی صفحه یا یک کلیپ روی تایم‌لاین را انتخاب کنید.</p>
+        </div>
+<div id="iv-text" class="hidden">
+          <div class="flex items-center gap-2 px-4 pt-3"><svg class="size-4 text-primary"><use href="#i-type"/></svg><span class="text-sm font-bold" data-en="Text">متن</span><span class="badge badge-ghost badge-sm ms-auto tabular-nums" dir="ltr">0:00.5 → 0:08</span></div>
+          <div class="space-y-3 p-4">
+            <p class="text-xs text-base-content/60" data-en="Double-click the text on the canvas to edit it.">برای ویرایشِ نوشته، روی خودِ متن در صفحه دوبار کلیک کنید.</p>
+            <div class="grid grid-cols-2 gap-2"><select class="select select-sm"><option>Vazirmatn</option><option>Noto Sans</option></select><select class="select select-sm"><option>سیاه</option><option>پررنگ</option><option>معمولی</option></select></div>
+            <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Size">اندازه</legend><input type="range" data-unit="px" min="12" max="96" value="40" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full"></fieldset>
+            <div class="flex items-center gap-2">
+              <div class="join"><input class="join-item btn btn-sm btn-square border-base-content/15 bg-base-100 checked:bg-primary checked:text-primary-content" type="radio" name="ta" aria-label="⇥"><input class="join-item btn btn-sm btn-square border-base-content/15 bg-base-100 checked:bg-primary checked:text-primary-content" type="radio" name="ta" aria-label="≡" checked><input class="join-item btn btn-sm btn-square border-base-content/15 bg-base-100 checked:bg-primary checked:text-primary-content" type="radio" name="ta" aria-label="⇤"></div>
+              <div class="ms-auto flex gap-1.5"><input type="radio" name="tc" class="radio radio-sm border-0 bg-white checked:bg-white" checked aria-label="سفید"><input type="radio" name="tc" class="radio radio-sm border-0 bg-[#f2b233] checked:bg-[#f2b233]" aria-label="زعفرانی"><input type="radio" name="tc" class="radio radio-sm border-0 bg-[#e6a483] checked:bg-[#e6a483]" aria-label="هلویی"></div>
+            </div>
+            <div class="divider my-1"></div>
+            <label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span class="font-semibold" data-en="Background">پس‌زمینه</span><input id="bgOn" type="checkbox" class="toggle toggle-sm toggle-primary" checked onchange="$('titleBg').classList.toggle('bg-transparent', !this.checked)"></label>
+            <div class="join w-full"><input class="join-item btn btn-sm flex-1 border-base-content/15 bg-base-100 checked:bg-primary checked:text-primary-content" type="radio" name="bs" aria-label="گرد"><input class="join-item btn btn-sm flex-1 border-base-content/15 bg-base-100 checked:bg-primary checked:text-primary-content" type="radio" name="bs" aria-label="کپسولی" checked><input class="join-item btn btn-sm flex-1 border-base-content/15 bg-base-100 checked:bg-primary checked:text-primary-content" type="radio" name="bs" aria-label="قلم‌مو"></div>
+            <div class="flex gap-1.5"><input type="radio" name="bc" class="radio radio-sm border-0 bg-[#f2b233] checked:bg-[#f2b233]" checked aria-label="زعفرانی"><input type="radio" name="bc" class="radio radio-sm border-0 bg-[#e9603b] checked:bg-[#e9603b]" aria-label="نارنجی"><input type="radio" name="bc" class="radio radio-sm border-0 bg-black checked:bg-black" aria-label="سیاه"></div>
+            <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Padding">فاصلهٔ درونی</legend><input type="range" data-unit="px" min="0" max="40" value="12" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full"></fieldset>
+          </div>
+        </div>
+<div id="iv-sticker" class="hidden space-y-3 p-4">
+          <div class="flex items-center gap-2"><svg class="size-4 text-primary"><use href="#i-sticker"/></svg><span class="text-sm font-bold" data-en="Sticker">استیکر</span></div>
+  <div id="stkEmoji" class="grid grid-cols-6 gap-1.5"></div>
+  <label class="input input-sm w-full"><span class="label" data-en="Any emoji">هر ایموجی</span><input id="stkAny" dir="auto"></label>
+  <label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span class="font-semibold" data-en="Circle behind">دایرهٔ پشت</span><input id="stkBgOn" type="checkbox" class="toggle toggle-sm toggle-primary"></label>
+  <label class="flex items-center justify-between gap-3 text-sm"><span data-en="Circle colour">رنگِ دایره</span><input id="stkBgC" type="color" class="h-7 w-12 cursor-pointer rounded-field border border-base-content/15 bg-transparent"></label>
+          <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Size">اندازه</legend><input type="range" data-unit="%" min="10" max="200" value="80" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full"></fieldset>
+          <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Rotation">چرخش</legend><input id="stkRot" type="range" data-unit="°" min="-45" max="45" value="6" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full" oninput="objRotate('sticker', +this.value)"></fieldset>
+        </div>
+<div id="iv-pod" class="hidden">
+          <div class="flex items-center gap-2 px-4 pt-3"><svg class="size-4 text-primary"><use href="#i-podcast"/></svg><span class="text-sm font-bold" data-en="Podcast design">طرح پادکست</span></div>
+          <div class="px-4 pt-3"><div class="mb-1.5 text-xs font-semibold text-base-content/70" data-en="Designs">طرح‌ها</div><div id="styleGrid" class="grid grid-cols-3 gap-2"></div></div>
+          <div class="collapse collapse-arrow mt-2 rounded-none border-y border-base-300">
+            <input type="checkbox" checked aria-label="چیدمان و موج">
+            <div class="collapse-title text-sm font-semibold" data-en="Layout and waveform">چیدمان و موجِ صدا</div>
+            <div class="collapse-content space-y-3">
+              <select id="pLayout" class="select select-sm w-full" onchange="POD.layout=this.value; renderPod()"><option value="two">دو گوینده</option><option value="single">یک گوینده</option><option value="quote">نقل‌قولِ بزرگ</option></select>
+              <div class="grid grid-cols-3 gap-1.5" id="waveGrid"></div>
+            </div>
+          </div>
+          <div class="collapse collapse-arrow rounded-none border-b border-base-300">
+            <input type="checkbox" checked aria-label="واکنش به صدا">
+            <div class="collapse-title text-sm font-semibold" data-en="Reacting to the sound">واکنش به صدا</div>
+            <div class="collapse-content space-y-2">
+              <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Sensitivity">حساسیت</legend><input type="range" data-unit="%" min="0" max="100" value="60" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full" oninput="POD.sens=this.value/100"></fieldset>
+              <label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span data-en="Water ripples on the peaks">موجِ آب روی اوجِ صدا</span><input type="checkbox" class="toggle toggle-sm toggle-secondary" checked onchange="POD.ripple=this.checked"></label>
+              <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Glow">درخشش</legend><input id="pGlow" type="range" data-unit="%" min="0" max="100" value="60" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full" oninput="POD.glow=this.value/100"></fieldset>
+              <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Iridescence">رنگین‌کمانیِ شیشه</legend><input id="pIri" type="range" data-unit="%" min="0" max="100" value="35" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full" oninput="POD.iri=this.value/100"></fieldset>
+              <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Film grain">دانه‌دانه</legend><input id="pGrain" type="range" data-unit="%" min="0" max="100" value="10" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full" oninput="POD.grain=this.value/100"></fieldset>
+            </div>
+          </div>
+          <div class="collapse collapse-arrow rounded-none border-b border-base-300">
+            <input type="checkbox" checked aria-label="پس‌زمینه">
+            <div class="collapse-title text-sm font-semibold" data-en="Background">پس‌زمینه</div>
+            <div class="collapse-content space-y-3">
+              <div class="join w-full" id="bgJoin">
+                <input class="join-item btn btn-sm text-xs flex-1 border-base-content/15 bg-base-100 checked:bg-primary checked:text-primary-content" type="radio" name="bgt" aria-label="گرادیان" checked onchange="setBg('mesh')">
+                <input class="join-item btn btn-sm text-xs flex-1 border-base-content/15 bg-base-100 checked:bg-primary checked:text-primary-content" type="radio" name="bgt" aria-label="تصویر" onchange="setBg('image')">
+                <input class="join-item btn btn-sm text-xs flex-1 border-base-content/15 bg-base-100 checked:bg-primary checked:text-primary-content" type="radio" name="bgt" aria-label="ویدیو" onchange="setBg('video')">
+                <input class="join-item btn btn-sm text-xs flex-1 border-base-content/15 bg-base-100 checked:bg-primary checked:text-primary-content" type="radio" name="bgt" aria-label="رنگ" onchange="setBg('solid')">
+              </div>
+              <div><div class="mb-1 text-xs font-medium text-base-content/70" data-en="Palette">رنگ‌ها</div><div id="palGrid" class="flex flex-wrap gap-1.5"></div></div>
+              <div id="bgMesh" class="space-y-2">
+                <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Flow">پیچ‌وتاب</legend><input type="range" data-unit="%" min="0" max="100" value="35" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full" oninput="POD.warp=this.value/100"></fieldset>
+                <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Speed">سرعت</legend><input type="range" data-unit="%" min="0" max="300" value="100" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full" oninput="POD.drift = this.value / 100"></fieldset>
+              </div>
+              <div id="bgMedia" class="hidden space-y-2">
+                <button class="btn btn-sm w-full gap-1.5 border-base-content/15 bg-base-100"><svg class="size-4"><use href="#i-image"/></svg><span id="mediaPick" data-en="Choose a file…">انتخاب فایل…</span></button>
+                <div class="join w-full">
+                  <input class="join-item btn btn-sm text-xs flex-1 border-base-content/15 bg-base-100 checked:bg-primary checked:text-primary-content" type="radio" name="fit" aria-label="پوشاندنِ کادر" checked onchange="POD.fit=0">
+                  <input class="join-item btn btn-sm text-xs flex-1 border-base-content/15 bg-base-100 checked:bg-primary checked:text-primary-content" type="radio" name="fit" aria-label="جا دادنِ کامل" onchange="POD.fit=1">
+                </div>
+                <div class="flex items-start gap-3">
+                  <div><div class="mb-1 text-xs font-medium text-base-content/70" data-en="Position">جایگاه</div><div class="grid w-fit grid-cols-3 gap-1" id="posGrid"></div></div>
+                  <div class="flex-1 space-y-1">
+                    <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Zoom">زوم</legend><input type="range" data-unit="%" min="100" max="200" value="100" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full" oninput="POD.zoom=this.value/100"></fieldset>
+                    <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Slow drift">جابه‌جاییِ آرام</legend><input type="range" data-unit="%" min="0" max="300" value="100" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full" oninput="POD.drift = this.value / 100"></fieldset>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="collapse collapse-arrow rounded-none">
+            <input type="checkbox" checked aria-label="روکش">
+            <div class="collapse-title text-sm font-semibold" data-en="Overlay">روکش</div>
+            <div class="collapse-content space-y-3">
+              <div class="flex items-center gap-2"><input type="color" value="#000000" class="h-8 w-10 cursor-pointer rounded-field border border-base-content/15 bg-base-100 p-0.5" oninput="POD.ovColor=this.value; paintOverlay()" aria-label="رنگ روکش"><input type="range" data-unit="%" min="0" max="100" value="15" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] flex-1" oninput="POD.ovOp=this.value/100; paintOverlay()" aria-label="شفافیت روکش"></div>
+              <label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span data-en="Gradient overlay">روکشِ گرادیانی</span><input type="checkbox" class="toggle toggle-sm toggle-primary" checked onchange="POD.grad=this.checked; paintOverlay()"></label>
+              <div class="grid grid-cols-[1fr_auto_auto] items-center gap-2">
+                <select class="select select-sm" onchange="POD.gradDir=this.value; paintOverlay()"><option value="to top">از پایین به بالا</option><option value="to bottom">از بالا به پایین</option><option value="to left">از راست به چپ</option><option value="to right">از چپ به راست</option><option value="radial">از مرکز</option></select>
+                <input type="color" value="#05070f" class="h-8 w-10 cursor-pointer rounded-field border border-base-content/15 bg-base-100 p-0.5" oninput="POD.gradA=this.value; paintOverlay()" aria-label="رنگ اول">
+                <input type="color" value="#1c2a74" class="h-8 w-10 cursor-pointer rounded-field border border-base-content/15 bg-base-100 p-0.5" oninput="POD.gradB=this.value; paintOverlay()" aria-label="رنگ دوم">
+              </div>
+              <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Gradient opacity">شفافیتِ گرادیان</legend><input type="range" data-unit="%" min="0" max="100" value="70" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full" oninput="POD.gradOp=this.value/100; paintOverlay()"></fieldset>
+            </div>
+          </div>
+        </div>
+<div id="iv-pip" class="hidden space-y-3 p-4">
+          <div class="flex items-center gap-2"><svg class="size-4 text-primary"><use href="#i-image"/></svg><span class="text-sm font-bold" id="pipTitle">تصویر روی ویدیو</span></div>
+          <button class="btn btn-sm w-full gap-1.5 border-base-content/15 bg-base-100"><svg class="size-4"><use href="#i-folder-open"/></svg><span data-en="Choose a file…">انتخاب فایل…</span></button>
+          <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Size">اندازه</legend><input id="pipSize" type="range" data-unit="%" min="10" max="70" value="34" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full" oninput="pipSet('size', +this.value)"></fieldset>
+          <div class="flex items-start gap-4">
+            <div><div class="mb-1 text-xs font-medium text-base-content/70" data-en="Position">جایگاه</div><div class="grid w-fit grid-cols-3 gap-1" id="pipPos"></div></div>
+            <div class="flex-1 space-y-1">
+              <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Corners">گوشه‌ها</legend><input id="pipRad" type="range" data-unit="px" min="0" max="60" value="12" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full" oninput="pipSet('radius', +this.value)"></fieldset>
+            </div>
+          </div>
+          <div class="space-y-2 rounded-box border border-base-300 p-3">
+            <label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span class="font-semibold text-base-content" data-en="Stroke">خطِ دور</span><input id="pipBorder" type="checkbox" class="toggle toggle-sm toggle-primary" checked onchange="pipSet('border', this.checked)"></label>
+            <div id="pipStrokeOpts" class="space-y-2">
+              <div class="flex items-center gap-2">
+                <input id="pipSC" type="color" value="#ffffff" class="h-8 w-10 cursor-pointer rounded-field border border-base-content/15 bg-base-100 p-0.5" oninput="pipSet('sColor', this.value)" aria-label="رنگ خط">
+                <div class="join flex-1" id="pipSS">
+                  <input class="join-item btn btn-sm text-xs flex-1 border-base-content/15 bg-base-100 checked:bg-primary checked:text-primary-content" type="radio" name="pss" aria-label="پیوسته" data-v="solid" onchange="pipSet('sStyle', 'solid')">
+                  <input class="join-item btn btn-sm text-xs flex-1 border-base-content/15 bg-base-100 checked:bg-primary checked:text-primary-content" type="radio" name="pss" aria-label="خط‌چین" data-v="dashed" onchange="pipSet('sStyle', 'dashed')">
+                  <input class="join-item btn btn-sm text-xs flex-1 border-base-content/15 bg-base-100 checked:bg-primary checked:text-primary-content" type="radio" name="pss" aria-label="نقطه‌چین" data-v="dotted" onchange="pipSet('sStyle', 'dotted')">
+                </div>
+              </div>
+              <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Thickness">ضخامت</legend><input id="pipSW" type="range" data-unit="px" min="1" max="40" value="6" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full" oninput="pipSet('sWidth', +this.value)"></fieldset>
+              <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Opacity">شفافیت</legend><input id="pipSO" type="range" data-unit="%" min="0" max="100" value="90" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full" oninput="pipSet('sOpacity', +this.value)"></fieldset>
+            </div>
+          </div>
+          <div class="space-y-2 rounded-box border border-base-300 p-3">
+            <label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span class="font-semibold text-base-content" data-en="Drop shadow">سایه</span><input id="pipShadow" type="checkbox" class="toggle toggle-sm toggle-primary" checked onchange="pipSet('shadow', this.checked)"></label>
+            <div id="pipShadowOpts" class="space-y-2">
+              <div class="flex items-center gap-2"><input id="pipHC" type="color" value="#000000" class="h-8 w-10 cursor-pointer rounded-field border border-base-content/15 bg-base-100 p-0.5" oninput="pipSet('hColor', this.value)" aria-label="رنگ سایه"><span class="text-xs text-base-content/70" data-en="Colour">رنگ</span></div>
+              <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Opacity">شفافیت</legend><input id="pipHO" type="range" data-unit="%" min="0" max="100" value="55" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full" oninput="pipSet('hOpacity', +this.value)"></fieldset>
+              <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Angle">زاویه</legend><input id="pipHA" type="range" data-unit="°" min="0" max="360" value="135" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full" oninput="pipSet('hAngle', +this.value)"></fieldset>
+              <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Distance">فاصله</legend><input id="pipHD" type="range" data-unit="px" min="0" max="80" value="18" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full" oninput="pipSet('hDist', +this.value)"></fieldset>
+              <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Blur">محوشدگی</legend><input id="pipHB" type="range" data-unit="px" min="0" max="120" value="40" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full" oninput="pipSet('hBlur', +this.value)"></fieldset>
+              <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Spread">گسترش</legend><input id="pipHS" type="range" data-unit="px" min="0" max="40" value="0" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full" oninput="pipSet('hSpread', +this.value)"></fieldset>
+            </div>
+          </div>
+          <div id="pipVideo" class="space-y-1">
+            <label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span data-en="Muted">بی‌صدا</span><input id="pipMute" type="checkbox" class="toggle toggle-sm toggle-primary" checked onchange="pipSet('mute', this.checked)"></label>
+            <label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span data-en="Loop">تکرار</span><input id="pipLoop" type="checkbox" class="toggle toggle-sm toggle-primary" checked onchange="pipSet('loop', this.checked)"></label>
+          </div>
+          <p class="text-xs text-base-content/60" data-en="Drag it on the canvas to place it anywhere.">برای جابه‌جایی، روی صفحه بکشیدش.</p>
+        </div>
+        <!-- the animation TOOL: its own panel, opened from the floating toolbar -->
+<div id="iv-anim" class="hidden">
+          <div class="flex items-center gap-2 px-4 pt-3">
+            <button class="btn btn-ghost btn-xs btn-square" onclick="closeAnim()" aria-label="بازگشت"><svg class="size-4 rtl:-scale-x-100"><use href="#i-chevron-left"/></svg></button>
+            <svg class="size-4 text-secondary"><use href="#i-wand-sparkles"/></svg><span class="text-sm font-bold" data-en="Animation">انیمیشن</span><span class="badge badge-ghost badge-sm ms-auto" id="animTarget">متن</span>
+          </div>
+          <div class="space-y-3 p-4">
+            <div class="grid grid-cols-2 gap-2">
+              <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="In">ورود</legend><select class="select select-sm"><option>تایپ واژه‌به‌واژه</option><option>محو شدن</option><option>بالا آمدن</option><option>پریدن</option></select></fieldset>
+              <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Out">خروج</legend><select class="select select-sm"><option>محو شدن</option><option>پایین رفتن</option><option>کوچک شدن</option></select></fieldset>
+            </div>
+            <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="While on screen">در طولِ نمایش</legend><select class="select select-sm w-full"><option>بدون انیمیشن</option><option>نفس کشیدن</option><option>موج</option><option>درخشش</option></select></fieldset>
+            <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Speed">سرعت</legend><input type="range" data-unit="" min="1" max="10" value="5" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full"></fieldset>
+            <div id="animBg" class="rounded-box border border-base-300 bg-base-100 p-3">
+              <div class="mb-2 text-sm font-semibold" data-en="Background animation">انیمیشنِ پس‌زمینه</div>
+              <div class="grid grid-cols-2 gap-2">
+                <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="In">ورود</legend><select class="select select-sm"><option>باز شدن از وسط</option><option>کشیده شدن</option><option>محو شدن</option></select></fieldset>
+                <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Delay">تأخیر</legend><select class="select select-sm"><option>همراهِ متن</option><option>۰٫۲ ثانیه قبل</option><option>۰٫۲ ثانیه بعد</option></select></fieldset>
+              </div>
+            </div>
+            
+          </div>
+        </div>
+<div id="iv-sub" class="hidden">
+  <div class="flex items-center gap-2 px-4 pt-3"><svg class="size-4"><use href="#i-captions"/></svg><span class="text-sm font-bold" data-en="Subtitles">زیرنویس</span><span id="subTime" class="badge badge-ghost badge-sm ms-auto tabular-nums" dir="ltr"></span></div>
+  <div class="space-y-3 p-4">
+    <p class="text-xs text-base-content/60" data-en="Double-click the subtitle on the canvas to edit its text.">برای ویرایشِ متن، روی خودِ زیرنویس در صفحه دوبار کلیک کنید.</p>
+    <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Design">طرح</legend><div id="subPresets" class="grid grid-cols-3 gap-2"></div></fieldset>
+    <div class="grid grid-cols-2 gap-2"><select id="subFont" class="select select-sm"><option value="Vazirmatn">Vazirmatn</option><option value="Noto Sans">Noto Sans</option></select><select id="subWeight" class="select select-sm"><option value="900">سیاه</option><option value="700">پررنگ</option><option value="500">معمولی</option></select></div>
+    <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Size">اندازه</legend><input id="subSize" type="range" data-unit="px" min="20" max="90" value="46" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full"></fieldset>
+    <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Position">جایگاه</legend><div class="join w-full"><input class="join-item btn btn-sm flex-1 border-base-content/15 bg-base-100 checked:bg-primary checked:text-primary-content" type="radio" name="sp" value="top" aria-label="بالا"><input class="join-item btn btn-sm flex-1 border-base-content/15 bg-base-100 checked:bg-primary checked:text-primary-content" type="radio" name="sp" value="middle" aria-label="وسط"><input class="join-item btn btn-sm flex-1 border-base-content/15 bg-base-100 checked:bg-primary checked:text-primary-content" type="radio" name="sp" value="bottom" aria-label="پایین" checked></div></fieldset>
+    <div class="flex items-center gap-2"><span class="text-xs font-medium text-base-content/70" data-en="Text">نوشته</span><div id="subTextColors" class="ms-auto flex gap-1.5"></div></div>
+    <div class="flex items-center gap-2"><span class="text-xs font-medium text-base-content/70" data-en="Highlight">برجسته</span><div id="subHiColors" class="ms-auto flex gap-1.5"></div></div>
+    <div class="divider my-1"></div>
+    <label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span class="font-semibold" data-en="Background">پس‌زمینه</span><input id="subBgOn" type="checkbox" class="toggle toggle-sm toggle-primary"></label>
+    <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Background opacity">شفافیتِ پس‌زمینه</legend><input id="subBgOp" type="range" data-unit="%" min="0" max="100" value="55" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full"></fieldset>
+    <label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span class="font-semibold" data-en="Outline">خطِ دور</span><input id="subOutline" type="checkbox" class="toggle toggle-sm toggle-primary"></label>
+    <div class="divider my-1"></div>
+    <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Animation">انیمیشن</legend><select id="subAnim" class="select select-sm w-full"><option value="none">بدون انیمیشن</option><option value="fade">محو شدن</option><option value="pop">پریدن</option><option value="rise">بالا آمدن</option><option value="word">برجسته شدنِ واژه‌به‌واژه</option><option value="type">تایپ واژه‌به‌واژه</option></select></fieldset>
+    <label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span data-en="Speaker's name">نامِ گوینده</span><input id="subSpk" type="checkbox" class="toggle toggle-sm toggle-primary"></label>
+    <label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span data-en="Follow the timeline">همراهِ تایم‌لاین</span><input id="subFollow" type="checkbox" class="toggle toggle-sm toggle-primary"></label>
+    <button class="btn btn-sm w-full gap-1.5 border-base-content/15 bg-base-100" onclick="resyncSubs()"><svg class="size-4"><use href="#i-refresh-cw"/></svg><span data-en="Re-sync with the speech">همگام‌سازیِ دوباره با گفتار</span></button>
+  </div></div>
+<div id="iv-xform" class="border-t border-base-300 hidden border-b border-base-300 px-4 pt-3 pb-4">
+          <div class="mb-2 flex items-center justify-between"><span class="text-sm font-bold" data-en="Size and position">اندازه و جایگاه</span>
+            <button id="lockBtn" class="btn btn-ghost btn-xs gap-1 text-primary" onclick="toggleLock()"><svg class="size-3.5"><use href="#i-link"/></svg><span data-en="Fixed ratio">نسبتِ ثابت</span></button></div>
+          <div class="grid grid-cols-2 gap-2" dir="ltr">
+            <label class="input input-sm"><span class="label">X</span><input id="xfX" type="number" class="tabular-nums" onchange="xfApply()"></label>
+            <label class="input input-sm"><span class="label">Y</span><input id="xfY" type="number" class="tabular-nums" onchange="xfApply()"></label>
+            <label class="input input-sm"><span class="label">W</span><input id="xfW" type="number" class="tabular-nums" onchange="xfApply('w')"></label>
+            <label class="input input-sm"><span class="label">H</span><input id="xfH" type="number" class="tabular-nums" onchange="xfApply('h')"></label>
+            <label class="input input-sm col-span-2"><svg class="size-3.5 opacity-60"><use href="#i-rotate-cw"/></svg><input id="xfR" type="number" class="tabular-nums" onchange="xfApply()"><span class="label">°</span></label>
+          </div>
+          <p class="mt-2 text-xs leading-relaxed text-base-content/60" data-en="Handles scale with a fixed ratio; hold Shift for a free ratio, Alt to scale from the centre. Shift while rotating snaps to 15°. Arrows nudge, Delete removes.">دستگیره‌ها با نسبتِ ثابت بزرگ و کوچک می‌کنند؛ Shift نسبت را آزاد می‌کند و Alt از مرکز. Shift هنگامِ چرخاندن، گام‌های ۱۵ درجه. کلیدهای جهت جابه‌جا می‌کنند و Delete حذف.</p>
+        </div>
+</div>
       <div role="tablist" class="tabs tabs-border px-2 pt-1">
         <a role="tab" class="tab hidden" id="it-line" onclick="showInsp('line', true)" data-en="This line">این خط</a>
         <a role="tab" class="tab tab-active" id="it-proj" onclick="showInsp('proj', true)" data-en="Project">پروژه</a>
@@ -138,16 +351,15 @@
           <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Mood">حال و احساس</legend><select id="lnState" class="select select-sm w-full" onchange="setLineOpt('gState', this.value)"></select></fieldset>
           </div>
         </div>
-        <div id="insp-proj" class="space-y-3 p-4">
-          <div class="flex items-center gap-2"><span class="text-sm font-bold" id="projTitle" data-en="Project">پروژه</span></div>
-          <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Engine">موتور</legend><select id="pEngine" class="select select-sm w-full" onchange="setProj('engine', this.value)"></select></fieldset>
-          <div id="spkSec" class="space-y-2 rounded-box border border-base-300 p-2.5"><div class="flex items-center justify-between"><span class="text-xs font-semibold" data-en="Speakers">گوینده‌ها</span><button class="btn btn-xs border-base-content/15 bg-base-100" onclick="addSpeaker()" data-en="Add speaker">افزودنِ گوینده</button></div>
-            <div id="spkList" class="space-y-1.5"></div>
-            <p class="text-xs leading-relaxed text-base-content/60" data-en="A line that starts with «Name:» is read in that speaker's voice, without saying the name; an unnamed line continues the previous speaker. Any number of speakers, each with its own engine.">خطی که با «نام:» شروع شود با صدای همان گوینده خوانده می‌شود و خودِ نام خوانده نمی‌شود؛ خطِ بی‌نام ادامهٔ گویندهٔ قبلی است. تعداد گوینده‌ها محدود نیست و هر کدام می‌تواند موتورِ خودش را داشته باشد.</p></div>
+        <div id="insp-proj">
+          <div class="flex items-center gap-2 px-4 pb-1 pt-3"><span class="text-sm font-bold" id="projTitle" data-en="Project">پروژه</span></div>
+          <div class="collapse collapse-arrow rounded-none border-b border-base-300"><input type="checkbox" checked aria-label="صدای پروژه"><div class="collapse-title flex items-center gap-2 font-semibold"><svg class="size-4"><use href="#i-mic"/></svg><span data-en="Project voice">صدای پروژه</span></div><div class="collapse-content space-y-3">
+<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Engine">موتور</legend><select id="pEngine" class="select select-sm w-full" onchange="setProj('engine', this.value)"></select></fieldset>
+          
           <div id="engGoogle" class="space-y-3">
           <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Model">مدل</legend><select id="pModel" class="select select-sm w-full" onchange="setProj('g_model', this.value)"></select></fieldset>
           <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Voice">صدا</legend><select id="pVoice" class="select select-sm w-full" data-recent="gvoice" onchange="setProj('g_voice', this.value)"></select>
-            <div class="g38only mt-1.5 flex flex-wrap gap-1.5"><button class="btn btn-xs border-base-content/15 bg-base-100" onclick="openLib('proj')" data-en="Voice library…">کتابخانهٔ صداها…</button><button class="btn btn-xs border-base-content/15 bg-base-100" onclick="$('designDlg').showModal()" data-en="Design a voice…">طراحیِ صدا…</button><button class="btn btn-xs border-base-content/15 bg-base-100" onclick="openClone()" data-en="Clone a voice…">شبیه‌سازی…</button></div></fieldset>
+            </fieldset>
           <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Reading style">سبکِ خواندن</legend><select id="pPreset" class="select select-sm w-full" onchange="setProj('g_preset', this.value)"></select>
             <input id="pCustom" class="input input-sm mt-1.5 hidden w-full" dir="auto" placeholder="سبکِ دلخواه، فارسی یا انگلیسی؛ مثلاً «آرام و شمرده، مثل گویندهٔ مستند»" onchange="setProj('g_style', this.value)"></fieldset>
             
@@ -168,15 +380,21 @@
             <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Fish Audio key">کلیدِ Fish Audio</legend><div class="join w-full"><input id="fishKey" type="password" class="input input-sm join-item flex-1" dir="ltr" placeholder="Fish Audio key" onchange="saveFishKey(this.value)"><button class="btn btn-sm join-item border-base-content/15 bg-base-100" onclick="probeFish()" data-en="Test">آزمایش</button></div></fieldset>
             <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Model">مدل</legend><select id="fishModel" class="select select-sm w-full" onchange="setEng('fishModel', this.value)"></select></fieldset><fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Speed and quality">سرعت و کیفیت</legend><select id="fishLatency" class="select select-sm w-full" onchange="setEng('fishLatency', this.value)"><option value="normal">normal — بهترین کیفیت</option><option value="balanced">balanced — میانه</option><option value="low">low — سریع‌ترین</option></select></fieldset>
             <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Voice">صدا</legend><select id="fishVoice" class="select select-sm w-full" onchange="setEng('fishVoice', this.value)"></select>
-            <div class="mt-1.5 flex flex-wrap gap-1.5"><button class="btn btn-xs border-base-content/15 bg-base-100" onclick="openFishLib()" data-en="Fish library…">کتابخانهٔ Fish…</button><button class="btn btn-xs border-base-content/15 bg-base-100" onclick="$('fishCloneDlg').showModal()" data-en="Clone from a file…">شبیه‌سازی از فایل…</button><button class="btn btn-xs border-base-content/15 bg-base-100" onclick="$('fishDesignDlg').showModal()" data-en="Design a voice…">طراحیِ صدا…</button></div></fieldset><fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Reading style">سبکِ خواندن</legend><select id="fishPreset" class="select select-sm w-full" onchange="setEng('fishPreset', this.value)"></select><input id="fishCustom" class="input input-sm mt-1.5 hidden w-full" dir="ltr" placeholder="custom tag (English): e.g. whispers sweetly, tired old sailor" onchange="S.proj.fish.custom = this.value.trim(); markDirty(id => lineEngine(id) === 'fish'); autosave()"></fieldset>
+            </fieldset><fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Reading style">سبکِ خواندن</legend><select id="fishPreset" class="select select-sm w-full" onchange="setEng('fishPreset', this.value)"></select><input id="fishCustom" class="input input-sm mt-1.5 hidden w-full" dir="ltr" placeholder="custom tag (English): e.g. whispers sweetly, tired old sailor" onchange="S.proj.fish.custom = this.value.trim(); markDirty(id => lineEngine(id) === 'fish'); autosave()"></fieldset>
             <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Age">سن</legend><select id="fishAge" class="select select-sm w-full" onchange="setFishOpt('age', this.value)"></select><input id="fishAgeC" class="input input-sm mt-1.5 hidden w-full" dir="auto" onchange="setFishOpt('ageCustom', this.value.trim())"></fieldset>
             <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Mood">حال و احساس</legend><select id="fishState" class="select select-sm w-full" onchange="setFishOpt('state', this.value)"></select><input id="fishStateC" class="input input-sm mt-1.5 hidden w-full" dir="auto" onchange="setFishOpt('stateCustom', this.value.trim())"></fieldset>
             
             <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Speed">سرعت</legend><input id="fishSpeed" type="range" data-unit="×" min="0.5" max="2" step="0.05" value="1" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="setEng('fishSpeed', +this.value)"></fieldset><fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Loudness">بلندی</legend><input id="fishVolume" type="range" data-unit="dB" min="-12" max="12" step="1" value="0" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="setEng('fishVolume', +this.value)"></fieldset><fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Expressiveness (temperature)">شدتِ بیان (temperature)</legend><input id="fishTemp" type="range" data-unit="" min="0" max="1" step="0.05" value="0.7" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="setEng('fishTemp', +this.value)"></fieldset><fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Variety (top-p)">تنوع (top-p)</legend><input id="fishTopP" type="range" data-unit="" min="0" max="1" step="0.05" value="0.7" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="setEng('fishTopP', +this.value)"></fieldset>
             <label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span data-en="Continuity between parts">پیوستگیِ لحن بینِ بخش‌ها</span><input id="fishCont" type="checkbox" class="toggle toggle-sm toggle-primary" checked onchange="setEng('fishCont', this.checked)"></label><label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span data-en="Continuity within a part">پیوستگیِ درونِ هر بخش</span><input id="fishCondPrev" type="checkbox" class="toggle toggle-sm toggle-primary" checked onchange="setEng('fishCondPrev', this.checked)"></label><label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span data-en="Even out loudness">هم‌سطح‌سازیِ بلندی</span><input id="fishNormLoud" type="checkbox" class="toggle toggle-sm toggle-primary" checked onchange="setEng('fishNormLoud', this.checked)"></label><label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span data-en="Normalise text (English/Chinese only)">نرمال‌سازیِ متن (فقط انگلیسی و چینی)</span><input id="fishNormalize" type="checkbox" class="toggle toggle-sm toggle-primary"  onchange="setEng('fishNormalize', this.checked)"></label><label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span data-en="Quality guard">نگهبانِ کیفیت</span><input id="fishQuality" type="checkbox" class="toggle toggle-sm toggle-primary"  onchange="setEng('fishQuality', this.checked)"></label>
           </div>
-          <p class="text-xs text-base-content/60" data-en="Changing the project's engine or voice marks every line that uses it for re-voicing.">عوض کردنِ موتور یا صدای پروژه، همهٔ خط‌هایی را که از آن استفاده می‌کنند برای بازتولید علامت می‌زند.</p>
-        </div>
+          <p class="text-xs text-base-content/60" data-en="Changing the project's engine or voice marks every line that uses it for re-voicing.">عوض کردنِ موتور یا صدای پروژه، همهٔ خط‌هایی را که از آن استفاده می‌کنند برای بازتولید علامت می‌زند.</p></div></div>
+        <div id="spkSec" class="collapse collapse-arrow rounded-none border-b border-base-300">
+            <input type="checkbox" id="spkOpen" aria-label="گوینده‌ها">
+            <div class="collapse-title flex items-center gap-2 font-semibold"><svg class="size-4"><use href="#i-users"/></svg><span data-en="Speakers">گوینده‌ها</span><span id="spkCount" class="badge badge-sm ms-auto">۰</span></div>
+            <div class="collapse-content space-y-2"><ul id="spkList" class="list rounded-box bg-base-100"></ul>
+              <button class="btn btn-sm w-full gap-1.5 border-base-content/15 bg-base-100" onclick="addSpeaker()"><svg class="size-4"><use href="#i-plus"/></svg><span data-en="Add speaker">افزودنِ گوینده</span></button>
+              <p class="text-xs leading-relaxed text-base-content/60" data-en="Pick each line's speaker with the avatar at the start of the line. Any number of speakers, each with its own engine and voice.">گوینده‌ی هر خط را با آواتارِ ابتدای همان خط انتخاب کنید. تعداد گوینده‌ها محدود نیست و هر کدام موتور و صدای خودش را دارد.</p></div></div>
+</div>
         <div id="insp-music" class="hidden space-y-3 p-4">
           <div class="flex items-center gap-2"><svg class="size-4 text-secondary"><use href="#i-music"/></svg><span class="text-sm font-bold" data-en="Background music">موسیقی پس‌زمینه</span></div>
           <p class="text-xs text-base-content/70" id="musicName" dir="auto"></p><p class="text-xs text-base-content/50" id="musicCredit" dir="auto"></p>
@@ -197,8 +415,8 @@
   </footer>
 </div>
 
-<dialog id="libDlg" class="modal" onclose="stopPreview()"><div class="modal-box flex max-h-[85vh] max-w-3xl flex-col gap-3"><form method="dialog"><button class="btn btn-ghost btn-sm btn-circle absolute end-3 top-3" aria-label="close">✕</button></form>
-  <h3 class="text-base font-bold" data-en="Google's voice library">کتابخانهٔ صداهای گوگل</h3><p class="text-xs text-base-content/60" data-en="Over 2,000 ready-made voices. Pick one for the project, the line or a character.">بیش از ۲٬۰۰۰ صدای آماده؛ برای پروژه، خط یا یک شخصیت انتخاب کنید.</p>
+<dialog id="libDlg" class="modal" onclose="stopPreview()"><div class="modal-box ui flex max-h-[85vh] max-w-3xl flex-col gap-3 p-6" dir="rtl"><div class="flex items-center justify-between gap-3"><h3 class="text-lg font-bold" data-en="Google's voice library">کتابخانهٔ صداهای گوگل</h3><form method="dialog"><button class="btn btn-ghost btn-circle" aria-label="close"><svg class="size-5"><use href="#i-x"/></svg></button></form></div>
+  <p class="text-xs text-base-content/60" data-en="Over 2,000 ready-made voices. Pick one for the project, the line or a character.">بیش از ۲٬۰۰۰ صدای آماده؛ برای پروژه، خط یا یک شخصیت انتخاب کنید.</p>
     <div class="flex flex-wrap gap-2"><select id="lbLang" class="select select-sm w-36"><option value="fa-IR,fa">فارسی</option><option value="">همهٔ زبان‌ها</option><option value="en-US,en-GB">انگلیسی</option><option value="ar-EG,ar-SA,ar">عربی</option><option value="tr-TR">ترکی</option></select>
       <select id="lbGender" class="select select-sm w-28"><option value="">هر جنسیتی</option><option value="female">زن</option><option value="male">مرد</option><option value="neutral">خنثی</option></select>
       <select id="lbPitch" class="select select-sm w-28"><option value="">هر زیر و بمی</option><option value="low">بم</option><option value="medium">میانه</option><option value="high">زیر</option></select>
@@ -206,42 +424,36 @@
       <input id="lbSearch" class="input input-sm min-w-32 flex-1" dir="auto" placeholder="جست‌وجو…" onkeydown="if(event.key==='Enter')libSearch()"><button class="btn btn-primary btn-sm" onclick="libSearch()" data-en="Search">جست‌وجو</button></div>
     <p id="lbNote" class="hidden text-xs text-warning"></p><ul id="lbList" class="list min-h-48 flex-1 overflow-y-auto rounded-box border border-base-300"></ul>
     <button id="lbMore" class="btn btn-ghost btn-sm hidden" onclick="libSearch(true)" data-en="More">بیشتر</button></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
-<dialog id="designDlg" class="modal"><div class="modal-box flex max-h-[85vh] max-w-lg flex-col gap-3"><form method="dialog"><button class="btn btn-ghost btn-sm btn-circle absolute end-3 top-3" aria-label="close">✕</button></form>
-  <h3 class="text-base font-bold" data-en="Design a voice">طراحیِ صدا</h3><input id="dsName" class="input input-sm w-full" dir="auto" placeholder="نامِ صدا"><select id="dsGender" class="select select-sm w-40"><option value="">جنسیت: مهم نیست</option><option value="female">زن</option><option value="male">مرد</option></select>
-    <textarea id="dsPrompt" class="textarea textarea-sm w-full" rows="4" dir="auto" placeholder="توضیحِ صدا — مثلاً: مردی میان‌سال با صدای گرم و آرام، مناسبِ کتابِ صوتی"></textarea>
-    <div class="flex justify-end"><button class="btn btn-primary btn-sm" onclick="createDesign()" data-en="Design it">طراحی کن</button></div></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
-<dialog id="cloneDlg" class="modal"><div class="modal-box flex max-h-[85vh] max-w-lg flex-col gap-3"><form method="dialog"><button class="btn btn-ghost btn-sm btn-circle absolute end-3 top-3" aria-label="close">✕</button></form>
-  <h3 class="text-base font-bold" data-en="Clone a voice">شبیه‌سازیِ صدا</h3><div class="alert alert-warning alert-soft text-xs" data-en="Google allows voice cloning only for projects with billing enabled (Tier 1 and up), and not in the EEA for now. Free keys get «Paid Quota Tier 1».">گوگل شبیه‌سازیِ صدا را فقط برای پروژه‌هایی باز کرده که پرداختشان فعال است (سطحِ ۱ به بالا)، و فعلاً در منطقهٔ اقتصادیِ اروپا در دسترس نیست. کلیدهای رایگان پیامِ «Paid Quota Tier 1» می‌گیرند.</div>
-    <input id="clName" class="input input-sm w-full" dir="auto" placeholder="نامِ صدا">
-    <div class="flex flex-wrap items-center gap-2"><button class="btn btn-xs border-base-content/15 bg-base-100" onclick="pickClone('ref')" data-en="Pick the voice sample (about 30 s)…">انتخابِ نمونهٔ صدا (حدودِ ۳۰ ثانیه)…</button><span id="clRef" class="text-xs text-base-content/60"></span></div>
-    <p class="text-xs text-base-content/70" data-en="The voice owner reads this consent sentence aloud:">صاحبِ صدا این جملهٔ رضایت را بلند می‌خواند:</p><p id="clConsent" class="rounded-field bg-base-200 p-2 text-xs" dir="ltr"></p>
-    <div class="flex flex-wrap items-center gap-2"><button class="btn btn-xs border-base-content/15 bg-base-100" onclick="pickClone('consent')" data-en="Pick the consent recording…">انتخابِ ضبطِ رضایت…</button><span id="clCon" class="text-xs text-base-content/60"></span></div>
-    <div class="flex justify-end"><button class="btn btn-primary btn-sm" onclick="createClone()" data-en="Clone">شبیه‌سازی کن</button></div></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
-<dialog id="fishLibDlg" class="modal" onclose="stopPreview()"><div class="modal-box flex max-h-[85vh] max-w-3xl flex-col gap-3"><form method="dialog"><button class="btn btn-ghost btn-sm btn-circle absolute end-3 top-3" aria-label="close">✕</button></form>
-  <h3 class="text-base font-bold" data-en="Fish Audio library">کتابخانهٔ Fish Audio</h3><div class="flex flex-wrap gap-2"><input id="flQuery" class="input input-sm min-w-40 flex-1" dir="auto" placeholder="جست‌وجو…" onkeydown="if(event.key==='Enter')fishSearch(1)">
+<dialog id="designDlg" class="modal"><div class="modal-box ui flex max-h-[88vh] max-w-xl flex-col overflow-y-auto p-6" dir="rtl"><div class="mb-5 flex items-start gap-3"><span class="grid size-10 shrink-0 place-items-center rounded-full bg-primary/15 text-primary"><svg class="size-5"><use href="#i-wand-sparkles"/></svg></span><div class="min-w-0 flex-1"><h3 class="text-lg font-bold" data-en="Design a voice">طراحیِ صدا</h3><p class="text-sm text-base-content/60" data-en="A new voice from a description">صدایی تازه از روی توضیح</p></div><form method="dialog"><button class="btn btn-ghost btn-circle" aria-label="close"><svg class="size-5"><use href="#i-x"/></svg></button></form></div><div class="space-y-4"><div class="grid grid-cols-[1fr_auto] items-end gap-3"><label class="block"><span class="mb-1.5 block text-sm font-semibold" data-en="Voice name">نامِ صدا</span><input id="dsName" autofocus class="input w-full" dir="auto" placeholder="مثلاً: راویِ آرام"></label><label class="block"><span class="mb-1.5 block text-sm font-semibold" data-en="Gender">جنسیت</span><select id="dsGender" class="select w-36"><option value="">مهم نیست</option><option value="female">زن</option><option value="male">مرد</option></select></label></div><div><div class="mb-1.5 text-sm font-semibold" data-en="Describe the voice">توضیحِ صدا</div><textarea id="dsPrompt" class="textarea w-full" rows="4" dir="auto" placeholder="مثلاً: مردی میان‌سال با صدای گرم و آرام، مناسبِ کتابِ صوتی"></textarea><div class="mt-2 flex flex-wrap gap-1.5"><button type="button" class="badge badge-soft badge-primary h-auto cursor-pointer py-1" onclick="dsChip('dsPrompt', this)">گرم و آرام، مناسبِ کتابِ صوتی</button><button type="button" class="badge badge-soft badge-primary h-auto cursor-pointer py-1" onclick="dsChip('dsPrompt', this)">پرانرژی و جوان</button><button type="button" class="badge badge-soft badge-primary h-auto cursor-pointer py-1" onclick="dsChip('dsPrompt', this)">رسمی و خبری</button><button type="button" class="badge badge-soft badge-primary h-auto cursor-pointer py-1" onclick="dsChip('dsPrompt', this)">مهربان و صمیمی</button></div></div></div><div class="modal-action"><form method="dialog"><button class="btn" data-en="Cancel">لغو</button></form><button class="btn btn-primary gap-1.5" onclick="createDesign()"><svg class="size-4"><use href="#i-wand-sparkles"/></svg><span data-en="Design it">طراحی کن</span></button></div></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
+<dialog id="cloneDlg" class="modal"><div class="modal-box ui flex max-h-[88vh] max-w-xl flex-col overflow-y-auto p-6" dir="rtl"><div class="mb-5 flex items-start gap-3"><span class="grid size-10 shrink-0 place-items-center rounded-full bg-primary/15 text-primary"><svg class="size-5"><use href="#i-audio-lines"/></svg></span><div class="min-w-0 flex-1"><h3 class="text-lg font-bold" data-en="Clone a voice">شبیه‌سازیِ صدا</h3><p class="text-sm text-base-content/60" data-en="One person's voice from a sample, with their consent">صدای یک نفر از روی نمونه‌اش، با رضایتِ خودش</p></div><form method="dialog"><button class="btn btn-ghost btn-circle" aria-label="close"><svg class="size-5"><use href="#i-x"/></svg></button></form></div><div role="alert" class="alert alert-warning alert-soft mb-5 items-start text-sm"><svg class="size-5 shrink-0"><use href="#i-triangle-alert"/></svg><span data-en="Google allows voice cloning only for projects with billing enabled (Tier 1 and up), and not in the EEA for now.">گوگل شبیه‌سازی را فقط برای پروژه‌هایی که پرداختشان فعال است (سطحِ ۱ به بالا) باز کرده، و فعلاً در منطقهٔ اقتصادیِ اروپا در دسترس نیست.</span></div><ol class="space-y-5"><li class="flex gap-3"><span class="grid size-7 shrink-0 place-items-center rounded-full bg-base-300 text-sm font-bold">۱</span><div class="min-w-0 flex-1 space-y-2"><div class="text-sm font-semibold" data-en="Voice name">نامِ صدا</div><input id="clName" autofocus class="input w-full" dir="auto" placeholder="مثلاً: صدای پدر"></div></li><li class="flex gap-3"><span class="grid size-7 shrink-0 place-items-center rounded-full bg-base-300 text-sm font-bold">۲</span><div class="min-w-0 flex-1 space-y-2"><div class="text-sm font-semibold" data-en="Voice sample — about 30 s, no background noise">نمونهٔ صدا — حدودِ ۳۰ ثانیه، بی‌صدای پس‌زمینه</div><button type="button" class="flex w-full items-center gap-3 rounded-box border-2 border-dashed border-base-content/20 p-4 text-start transition hover:border-primary hover:bg-primary/5" onclick="pickClone('ref')"><svg class="size-7 shrink-0 text-primary"><use href="#i-file-audio"/></svg><span class="min-w-0"><span class="block font-semibold" data-en="Choose the sample file">انتخابِ فایلِ نمونه</span><span id="clRef" class="block truncate text-xs text-base-content/60">—</span></span></button></div></li><li class="flex gap-3"><span class="grid size-7 shrink-0 place-items-center rounded-full bg-base-300 text-sm font-bold">۳</span><div class="min-w-0 flex-1 space-y-2"><div class="text-sm font-semibold" data-en="Consent">رضایت</div><p class="text-sm text-base-content/70" data-en="The voice owner reads this sentence aloud and records it:">صاحبِ صدا این جمله را بلند می‌خواند و ضبط می‌کند:</p><blockquote id="clConsent" class="rounded-box border-s-4 border-primary bg-base-200 p-3 text-sm" dir="ltr"></blockquote><button type="button" class="flex w-full items-center gap-3 rounded-box border-2 border-dashed border-base-content/20 p-4 text-start transition hover:border-primary hover:bg-primary/5" onclick="pickClone('consent')"><svg class="size-7 shrink-0 text-primary"><use href="#i-mic"/></svg><span class="min-w-0"><span class="block font-semibold" data-en="Choose the consent recording">انتخابِ ضبطِ رضایت</span><span id="clCon" class="block truncate text-xs text-base-content/60">—</span></span></button></div></li></ol><div class="modal-action"><form method="dialog"><button class="btn" data-en="Cancel">لغو</button></form><button class="btn btn-primary" onclick="createClone()" data-en="Clone">شبیه‌سازی کن</button></div></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
+<dialog id="fishLibDlg" class="modal" onclose="stopPreview()"><div class="modal-box ui flex max-h-[85vh] max-w-3xl flex-col gap-3 p-6" dir="rtl"><div class="flex items-center justify-between gap-3"><h3 class="text-lg font-bold" data-en="Fish Audio library">کتابخانهٔ Fish Audio</h3><form method="dialog"><button class="btn btn-ghost btn-circle" aria-label="close"><svg class="size-5"><use href="#i-x"/></svg></button></form></div>
+  <div class="flex flex-wrap gap-2"><input id="flQuery" class="input input-sm min-w-40 flex-1" dir="auto" placeholder="جست‌وجو…" onkeydown="if(event.key==='Enter')fishSearch(1)">
       <select id="flLang" class="select select-sm w-32"><option value="">همهٔ زبان‌ها</option><option value="fa">فارسی</option><option value="en">انگلیسی</option></select>
       <select id="flSort" class="select select-sm w-36"><option value="score">بهترین‌ها</option><option value="task_count">پرکاربردترین</option><option value="created_at">تازه‌ترین</option></select><button class="btn btn-primary btn-sm" onclick="fishSearch(1)" data-en="Search">جست‌وجو</button></div>
     <ul id="flList" class="list min-h-48 flex-1 overflow-y-auto rounded-box border border-base-300"></ul>
     <div id="flPager" class="hidden items-center justify-center gap-2"><button class="btn btn-ghost btn-sm" onclick="fishSearch(flPage - 1)" data-en="Previous">قبلی</button><span id="flPageNo" class="text-sm text-base-content/70"></span><button id="flNext" class="btn btn-ghost btn-sm" onclick="fishSearch(flPage + 1)" data-en="Next">بعدی</button></div></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
-<dialog id="fishCloneDlg" class="modal"><div class="modal-box flex max-h-[85vh] max-w-lg flex-col gap-3"><form method="dialog"><button class="btn btn-ghost btn-sm btn-circle absolute end-3 top-3" aria-label="close">✕</button></form>
-  <h3 class="text-base font-bold" data-en="Clone a voice with Fish Audio">شبیه‌سازیِ صدا با Fish Audio</h3><input id="fcTitle" class="input input-sm w-full" dir="auto" placeholder="نامِ صدا"><textarea id="fcTrans" class="textarea textarea-sm w-full" rows="3" dir="auto" placeholder="متنی که در نمونه گفته شده (اختیاری؛ دقت را بیشتر می‌کند)"></textarea>
-    <label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span data-en="Clean up the sample first">اول نمونه را تمیز کن</span><input id="fcEnh" type="checkbox" class="toggle toggle-sm toggle-primary"></label>
-    <div class="flex justify-end"><button class="btn btn-primary btn-sm" onclick="fishCloneGo()" data-en="Pick the file and clone">انتخابِ فایل و شبیه‌سازی</button></div></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
-<dialog id="fishDesignDlg" class="modal" onclose="stopPreview()"><div class="modal-box flex max-h-[85vh] max-w-lg flex-col gap-3"><form method="dialog"><button class="btn btn-ghost btn-sm btn-circle absolute end-3 top-3" aria-label="close">✕</button></form>
-  <h3 class="text-base font-bold" data-en="Design a voice with Fish Audio">طراحیِ صدا با Fish Audio</h3><textarea id="fdInst" class="textarea textarea-sm w-full" rows="3" dir="auto" placeholder="توضیحِ صدا — مثلاً: زنی جوان با صدای روشن و پرانرژی"></textarea>
-    <input id="fdRef" class="input input-sm w-full" dir="auto" placeholder="جمله‌ای برای نمونه (اختیاری)"><div class="flex justify-end"><button class="btn btn-primary btn-sm" onclick="fishDesignGo()" data-en="Make candidates">ساختنِ نمونه‌ها</button></div>
-    <ul id="fdList" class="list rounded-box border border-base-300"></ul></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
-<dialog id="settingsDlg" class="modal"><div class="modal-box flex max-h-[85vh] max-w-lg flex-col gap-3"><form method="dialog"><button class="btn btn-ghost btn-sm btn-circle absolute end-3 top-3" aria-label="close">✕</button></form>
-  <h3 class="text-base font-bold" data-en="Connection and quota">اتصال و سهمیه</h3><fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Route to Google">مسیرِ اتصال به گوگل</legend><select id="netMode" class="select select-sm w-full" onchange="$('netCustomRow').classList.toggle('hidden', this.value !== 'custom')"><option value="auto">خودکار — مسیرِ کارآمد را خودش پیدا می‌کند</option><option value="system">اول پروکسیِ سیستم</option><option value="custom">اول پروکسیِ دستی</option><option value="direct">اول مستقیم (بدون فیلترشکن، یا فیلترشکن در حالت TUN)</option></select></fieldset>
+<dialog id="fishCloneDlg" class="modal"><div class="modal-box ui flex max-h-[88vh] max-w-xl flex-col overflow-y-auto p-6" dir="rtl"><div class="mb-5 flex items-start gap-3"><span class="grid size-10 shrink-0 place-items-center rounded-full bg-primary/15 text-primary"><svg class="size-5"><use href="#i-audio-lines"/></svg></span><div class="min-w-0 flex-1"><h3 class="text-lg font-bold" data-en="Clone a voice with Fish Audio">شبیه‌سازیِ صدا با Fish Audio</h3><p class="text-sm text-base-content/60" data-en="A clean audio sample; the voice is made in your Fish account">یک نمونهٔ صوتیِ تمیز؛ صدا در حسابِ Fish شما ساخته می‌شود</p></div><form method="dialog"><button class="btn btn-ghost btn-circle" aria-label="close"><svg class="size-5"><use href="#i-x"/></svg></button></form></div><div class="space-y-4"><label class="block"><span class="mb-1.5 block text-sm font-semibold" data-en="Voice name">نامِ صدا</span><input id="fcTitle" autofocus class="input w-full" dir="auto" placeholder="مثلاً: صدای من"></label><label class="block"><span class="mb-1.5 block text-sm font-semibold" data-en="What is said in the sample (optional)">متنِ گفته‌شده در نمونه (اختیاری)</span><textarea id="fcTrans" class="textarea w-full" rows="3" dir="auto"></textarea><span class="mt-1 block text-xs text-base-content/60" data-en="Makes the clone more accurate.">دقتِ شبیه‌سازی را بیشتر می‌کند.</span></label><label class="flex cursor-pointer items-center justify-between gap-3 rounded-box border border-base-300 bg-base-100 p-3"><span><span class="block text-sm font-semibold" data-en="Clean up the sample first">اول نمونه را تمیز کن</span><span class="block text-xs text-base-content/60" data-en="Removes noise and room echo.">نویز و پژواکِ اتاق را می‌گیرد.</span></span><input id="fcEnh" type="checkbox" class="toggle toggle-primary"></label></div><div class="modal-action"><form method="dialog"><button class="btn" data-en="Cancel">لغو</button></form><button class="btn btn-primary gap-1.5" onclick="fishCloneGo()"><svg class="size-4"><use href="#i-file-audio"/></svg><span data-en="Choose the file and clone">انتخابِ فایل و شبیه‌سازی</span></button></div></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
+<dialog id="fishDesignDlg" class="modal" onclose="stopPreview()"><div class="modal-box ui flex max-h-[88vh] max-w-xl flex-col overflow-y-auto p-6" dir="rtl"><div class="mb-5 flex items-start gap-3"><span class="grid size-10 shrink-0 place-items-center rounded-full bg-primary/15 text-primary"><svg class="size-5"><use href="#i-wand-sparkles"/></svg></span><div class="min-w-0 flex-1"><h3 class="text-lg font-bold" data-en="Design a voice with Fish Audio">طراحیِ صدا با Fish Audio</h3><p class="text-sm text-base-content/60" data-en="Make candidates from a description and keep the best">از روی توضیح چند نمونه بسازید و بهترین را نگه دارید</p></div><form method="dialog"><button class="btn btn-ghost btn-circle" aria-label="close"><svg class="size-5"><use href="#i-x"/></svg></button></form></div><div class="space-y-4"><div><div class="mb-1.5 text-sm font-semibold" data-en="Describe the voice">توضیحِ صدا</div><textarea id="fdInst" autofocus class="textarea w-full" rows="3" dir="auto" placeholder="مثلاً: زنی جوان با صدای روشن و پرانرژی"></textarea><div class="mt-2 flex flex-wrap gap-1.5"><button type="button" class="badge badge-soft badge-primary h-auto cursor-pointer py-1" onclick="dsChip('fdInst', this)">گرم و آرام، مناسبِ کتابِ صوتی</button><button type="button" class="badge badge-soft badge-primary h-auto cursor-pointer py-1" onclick="dsChip('fdInst', this)">پرانرژی و جوان</button><button type="button" class="badge badge-soft badge-primary h-auto cursor-pointer py-1" onclick="dsChip('fdInst', this)">رسمی و خبری</button><button type="button" class="badge badge-soft badge-primary h-auto cursor-pointer py-1" onclick="dsChip('fdInst', this)">مهربان و صمیمی</button></div></div><label class="block"><span class="mb-1.5 block text-sm font-semibold" data-en="A sentence for the samples (optional)">جمله‌ای برای نمونه‌ها (اختیاری)</span><input id="fdRef" class="input w-full" dir="auto"></label><div class="flex justify-end"><button class="btn btn-primary gap-1.5" onclick="fishDesignGo()"><svg class="size-4"><use href="#i-wand-sparkles"/></svg><span data-en="Make candidates">ساختنِ نمونه‌ها</span></button></div><ul id="fdList" class="list rounded-box border border-base-300 empty:hidden"></ul></div></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
+<dialog id="settingsDlg" class="modal"><div class="modal-box ui flex max-h-[85vh] max-w-lg flex-col gap-3 p-6" dir="rtl"><div class="flex items-center justify-between gap-3"><h3 class="text-lg font-bold" data-en="Connection and quota">اتصال و سهمیه</h3><form method="dialog"><button class="btn btn-ghost btn-circle" aria-label="close"><svg class="size-5"><use href="#i-x"/></svg></button></form></div>
+  <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Route to Google">مسیرِ اتصال به گوگل</legend><select id="netMode" class="select select-sm w-full" onchange="$('netCustomRow').classList.toggle('hidden', this.value !== 'custom')"><option value="auto">خودکار — مسیرِ کارآمد را خودش پیدا می‌کند</option><option value="system">اول پروکسیِ سیستم</option><option value="custom">اول پروکسیِ دستی</option><option value="direct">اول مستقیم (بدون فیلترشکن، یا فیلترشکن در حالت TUN)</option></select></fieldset>
     <div id="netCustomRow" class="hidden"><input id="netCustom" class="input input-sm w-full" dir="ltr" placeholder="socks5://127.0.0.1:1080"></div>
     <div class="flex flex-wrap items-center gap-2"><button class="btn btn-xs border-base-content/15 bg-base-100" onclick="netTest()" data-en="Test">آزمایش</button><button class="btn btn-primary btn-xs" onclick="netSave()" data-en="Save">ذخیره</button><span id="netRoute" class="text-xs text-base-content/60"></span></div>
     <pre id="netReport" class="hidden max-h-40 overflow-auto whitespace-pre-wrap rounded-field bg-base-200 p-2 text-xs" dir="auto"></pre>
     <div class="divider my-0"></div><div class="text-sm" id="quotaLine"></div><div class="divider my-0"></div><div class="space-y-1.5"><div class="text-sm font-semibold" data-en="Voice samples">نمونهٔ صداها</div><p class="text-xs leading-relaxed text-base-content/60" data-en="Make every built-in voice say «پایَنده ایران، جاوید شاه!» once, with this machine's keys and models; put the folder in the repository as ui/previews and every build ships with them.">همهٔ صداهای آماده یک بار «پایَنده ایران، جاوید شاه!» را می‌گویند، با کلیدها و مدل‌های همین دستگاه؛ پوشهٔ ساخته‌شده را با نامِ previews کنارِ پوشهٔ ui در مخزن بگذارید تا همهٔ نسخه‌ها همراهشان ساخته شوند.</p><button class="btn btn-sm w-full border-base-content/15 bg-base-100" onclick="buildPreviews()" data-en="Make all voice samples…">ساختنِ همهٔ نمونه‌صداها…</button></div></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
-<dialog id="vexpDlg" class="modal"><div class="modal-box max-w-md space-y-3"><form method="dialog"><button class="btn btn-ghost btn-sm btn-circle absolute end-3 top-3" aria-label="close">✕</button></form>
-<h3 class="text-base font-bold" data-en="Export the video">ساختنِ فایلِ ویدیو</h3>
+<dialog id="vexpDlg" class="modal"><div class="modal-box ui max-w-md space-y-3 p-6" dir="rtl"><div class="flex items-center justify-between gap-3"><h3 class="text-lg font-bold" data-en="Export the video">ساختنِ فایلِ ویدیو</h3><form method="dialog"><button class="btn btn-ghost btn-circle" aria-label="close"><svg class="size-5"><use href="#i-x"/></svg></button></form></div>
+
 <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Resolution">کیفیت</legend><select id="vxRes" class="select select-sm w-full" onchange="vxProbe()"><option value="1080p">1080p</option><option value="2k">2K (پیش‌فرض)</option><option value="4k">4K</option></select></fieldset><fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Frame rate">نرخِ فریم</legend><select id="vxFps" class="select select-sm w-full" onchange="vxProbe()"><option value="30">۳۰ فریم در ثانیه (پیش‌فرض)</option><option value="60">۶۰ فریم در ثانیه</option></select></fieldset><fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Audio">صدا</legend><select id="vxMusic" class="select select-sm w-full"><option value="music">با موسیقی (پیش‌فرض)</option><option value="voice">فقط گفتار</option></select></fieldset><p id="vxInfo" class="text-xs text-base-content/70" dir="auto"></p><div id="vxProgRow" class="hidden"><progress id="vxProg" class="progress progress-primary w-full" value="0" max="100"></progress></div>
 <div class="flex justify-end gap-2"><button class="btn btn-sm border-base-content/15 bg-base-100" onclick="if (vExp) vExp.cancel = true; else $('vexpDlg').close()" data-en="Cancel">لغو</button><button id="vxGo" class="btn btn-primary btn-sm" onclick="exportVideo()" data-en="Export">ساختن</button></div></div>
 <form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
+<dialog id="askDlg" class="modal"><div class="modal-box ui max-w-md p-6" dir="rtl"><div class="mb-4 flex items-center justify-between gap-3"><h3 id="askTitle" class="text-lg font-bold"></h3><form method="dialog"><button class="btn btn-ghost btn-circle" aria-label="close"><svg class="size-5"><use href="#i-x"/></svg></button></form></div>
+<p id="askHint" class="mb-3 text-sm text-base-content/70"></p><input id="askInput" class="input w-full" dir="auto" onkeydown="if (event.key === 'Enter') askDone(this.value)">
+<div class="modal-action"><button class="btn" onclick="askDone(null)" data-en="Cancel">لغو</button><button class="btn btn-primary" onclick="askDone($('askInput').value)" data-en="Insert">درج</button></div></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
+<ul id="objBar" class="menu menu-horizontal menu-sm fixed z-[1000] hidden gap-0.5 rounded-box border border-base-300 bg-base-200 p-1 shadow-xl">
+            <li><a onclick="openAnim()" class="gap-1"><svg class="size-4"><use href="#i-wand-sparkles"/></svg><span class="ui" data-en="Animation">انیمیشن</span></a></li>
+            <li><a onclick="vDuplicate()" class="tooltip" data-tip="تکثیر"><svg class="size-4"><use href="#i-copy"/></svg></a></li>
+            <li><a onclick="vForward()" class="tooltip" data-tip="آوردن به جلو"><svg class="size-4"><use href="#i-bring-to-front"/></svg></a></li>
+            <li><a onclick="vDelete()" class="tooltip" data-tip="حذف"><svg class="size-4"><use href="#i-trash-2"/></svg></a></li>
+          </ul>
 <!-- object toolbars and menus: always the top layer -->
 <ul id="clipBar" class="menu menu-horizontal menu-xs fixed z-[1000] hidden gap-0.5 rounded-box border border-base-300 bg-base-200 p-1 shadow-xl"></ul>
 <ul id="trackMenu" class="menu menu-sm fixed z-[1100] hidden w-56 rounded-box border border-base-300 bg-base-200 p-1.5 shadow-xl" dir="rtl"></ul>
@@ -249,9 +461,9 @@
 
 <!-- ============ KEYS ============ -->
 <dialog id="keysDlg" class="modal">
-  <div class="modal-box ui max-w-xl" dir="rtl">
-    <form method="dialog"><button class="btn btn-sm btn-circle btn-ghost absolute top-3 end-3" aria-label="بستن"><svg class="size-4"><use href="#i-x"/></svg></button></form>
-    <h3 class="text-lg font-bold" data-en="Google keys">کلیدهای گوگل</h3>
+  <div class="modal-box ui max-w-xl p-6" dir="rtl"><div class="flex items-center justify-between gap-3"><h3 class="text-lg font-bold" data-en="Google keys">کلیدهای گوگل</h3><form method="dialog"><button class="btn btn-ghost btn-circle" aria-label="close"><svg class="size-5"><use href="#i-x"/></svg></button></form></div>
+    
+    
     <p class="mt-1 text-xs text-base-content/70" data-en="These keys serve both Google speech and diacritization. When one key's daily quota runs out, the app moves to the next.">این کلیدها هم برای گفتارِ گوگل استفاده می‌شوند، هم برای حرکت‌گذاری. هر وقت سهمیهٔ روزانهٔ یک کلید تمام شود، برنامه سراغِ کلیدِ بعدی می‌رود.</p>
     <ul id="keyList" class="list mt-3 max-h-52 overflow-y-auto rounded-box border border-base-300"></ul>
     <textarea id="keyNew" class="textarea textarea-sm mt-3 w-full" rows="3" dir="ltr" placeholder="AIza… (one key per line)"></textarea>
@@ -265,8 +477,8 @@
 
 <!-- ============ HELP: the app's own manual ============ -->
 <dialog id="helpDlg" class="modal">
-  <div class="modal-box flex h-[85vh] max-w-4xl flex-col gap-3 px-4 pb-4 pt-12">
-    <form method="dialog"><button class="btn btn-sm btn-circle btn-ghost absolute top-3 end-3 z-10" aria-label="بستن"><svg class="size-4"><use href="#i-x"/></svg></button></form>
+  <div class="modal-box ui flex h-[85vh] max-w-4xl flex-col gap-3 px-4 pb-4 pt-12" dir="rtl">
+    <form method="dialog"><button class="btn btn-ghost btn-circle absolute end-4 top-4 z-10" aria-label="close"><svg class="size-5"><use href="#i-x"/></svg></button></form>
     <iframe id="helpFrame" class="min-h-0 w-full flex-1 rounded-box" title="راهنما"></iframe>
   </div>
   <form method="dialog" class="modal-backdrop"><button>بستن</button></form>
@@ -274,9 +486,9 @@
 
 <!-- ============ MUSIC: the app's music library ============ -->
 <dialog id="musicDlg" class="modal" onclose="stopPreview()">
-  <div class="modal-box flex h-[80vh] max-w-3xl flex-col gap-3">
-    <form method="dialog"><button class="btn btn-ghost btn-sm btn-circle absolute end-3 top-3" aria-label="close">✕</button></form>
-    <h3 class="text-base font-bold" data-en="Music">موسیقی</h3>
+  <div class="modal-box ui flex h-[80vh] max-w-3xl flex-col gap-3 p-6" dir="rtl"><div class="flex items-center justify-between gap-3"><h3 class="text-lg font-bold" data-en="Music">موسیقی</h3><form method="dialog"><button class="btn btn-ghost btn-circle" aria-label="close"><svg class="size-5"><use href="#i-x"/></svg></button></form></div>
+    
+    
     <div id="mTabs" role="tablist" class="tabs tabs-box tabs-sm w-fit"></div>
     <div id="mSearchRow" class="flex flex-wrap items-center gap-2"><input id="mQuery" class="input input-sm min-w-48 flex-1" dir="auto" placeholder="جست‌وجو — مثلاً: ambient piano" onkeydown="if(event.key==='Enter')searchMusic(1)"><button class="btn btn-primary btn-sm" onclick="searchMusic(1)" data-en="Search">جست‌وجو</button></div>
     <div id="mStyles" class="flex flex-wrap gap-1.5"></div>

@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist
 ======================================================================
-This zip is the COMPLETE application source as of update 163.
+This zip is the COMPLETE application source as of update 168.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,114 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 168 (on top of 167)
+  · THE SIGNED-OFF PALETTE IS THE APP'S THEME (build-editor.py now reads input12p.css: both themes + the badge tuning).
+    Dark: black page, charcoal panels, orange primary, peach secondary. Light: cream page, near-white panels, orange,
+    navy. Badges: a slightly transparent tint of their colour with a stroke of the same hue and text in a clear tone
+    of it; status badges in warm semantic hues (edited amber, voiced olive, trimmed brick, one clip dusty indigo,
+    not voiced a neutral outline); regular tags (tone, sound tags) one theme style; every tag and badge one size
+    (22 px). The badge colours switch on daisyUI's own theme-controller rules, so the theme toggle drives them.
+    The old blue/teal accents follow the variant's substitutions; the swatches are renamed to match (هلویی, نارنجی).
+  · Badge text: line height back to 1.5 (1.6 for a speaker's clipped name) — Persian letters reach well below the
+    baseline, so text is centred and nothing is cut.
+  · SPEAKER COLOURS come from the theme: 8 warm-leaning colours (orange, olive, coral-brick, dusty indigo, amber,
+    terracotta, plum, sage), light and dark tones, as CSS variables (--spk1..8, -ink, -on). No inline hex.
+  · SPEAKER PHOTOS: click a speaker's avatar in the project inspector to add a photo (cropped square to 256 px, saved
+    with the project). With a photo, hovering the avatar shows change and delete; without, a small camera hint.
+    The photo appears in the speaker's line chips and menus, and is that speaker's avatar in the podcast video
+    (inside the orb for the glass and water designs), found by the speaker, not by position — preview and export
+    (export waits for photos to load). Adding a photo marks no line for re-voicing; undo restores it.
+  · ROUND SWATCHES: every colour picker is a circle (no square swatch in a rounded frame); the podcast design presets
+    are round gradient swatches with their icon, name beneath, a ring on the active one — no box around them.
+  · The playhead's mirror caret in the text is the primary orange (was the secondary colour), with an orange glow.
+  · Manuals: speaker photos (section 8, both languages).
+  Tests: t13 (15 checks: palette, one size, no clipping, light mode via the real toggle, photos in the inspector,
+  chips and podcast — bars and glass — round pickers and presets); t8's sticker check now compares against the
+  sticker's own colour. All suites + engine 146–160 pass.
+
+WHAT CHANGED IN 167 (on top of 166) — a visual verification pass over the founder's review of 163
+  Found broken despite earlier "fixed" claims, now fixed and covered by checks of what is VISIBLE:
+  · Playhead label: the clamp took the MINIMUM with the left bound, so when the timeline was scrolled the label
+    stuck to the left edge, detached from the line. Now centred on the line, held inside the visible ruler
+    (t9 #17 measures the label centre against the line: ±2 px).
+  · Styles: build-editor.py scanned only editor.src.html + editor.js, so every Tailwind class used only in
+    video.js (since 161) or speakers.js (since 162) was missing (speaker chips stacked and untinted, menus, panels).
+    All four sources are scanned; the build asserts key classes exist (t9 #24 checks the chip is inline-flex).
+  · Menu side buttons (▶ preview, pin, delete, remove-from-recent) were squeezed by the menu's row styling — the
+    ▶ icon was 2 px wide. They are .ddb buttons with fixed 14 px icons (t9 #23 measures the icon).
+  · Icons chosen at runtime (eye, eye-off, clapperboard, volume-x, …) were not in the sprite; the build lists them.
+  · Voice library / design / cloning: the row of truncated buttons under the voice menu is gone; they are actions
+    pinned at the bottom of the voice menu (Google 3.8 and Fish).
+  · The diacritization tool shows its short name in the toolbar (full names inside its menu).
+  From the mock: the mode tabs use the mock's icons again (audio-waveform, film), not mic/video.
+  Palette variant (not applied): the mock with COLOURS ONLY — the mock's radii and title restored (a diff proves
+    every other byte equals the mock); dark is the default, cream on the toggle.
+  Tests: t9 (strict visual checks) + t4/t5/t6/t7/t8/t10/t11/t12/t1f/t2r/t3r + engine 146–160 — all pass.
+
+WHAT CHANGED IN 166 (on top of 165) — music clips, dialogs, inspector, manuals
+  · MUSIC CLIPS: trim handles (a clip may run past the source's end — the music loops), drag along the timeline,
+    split at the playhead, duplicate, delete one (the music goes only with its last clip). Once edited, your clips
+    are kept (S.music.manual) instead of being stretched to the speech. Playback schedules every clip at its
+    place; both exports send the clips and the engine builds the bed from them (engines.mix_music_clips: source
+    [in:out] at each clip, fade-in on the first, fade-out on the last, 30 ms at inner edges, same level and ducking).
+  · DIALOGS: one pattern everywhere — a header row (text-lg title, a 40 px icon close button), p-6, right-to-left,
+    click-outside to close; focus goes to the first field. Cloning (Google) and voice design (Google, Fish) and
+    Fish cloning REDESIGNED: icon header with a one-line explanation, the paid-tier/EEA warning as an alert,
+    numbered steps, dashed drop-zone cards for the sample and the consent recording, example chips for
+    descriptions, standard Cancel / primary actions. All ids and handlers kept.
+  · PROJECT INSPECTOR: the mock's collapsible sections — «صدای پروژه» (open) then «گوینده‌ها», full-width.
+  · Nothing to speak: a run of blank lines sends nothing; a tag-only line is sent to Google (where <long pause>
+    means something) and skipped for the other engines (it used to fail with «چیزی برای خواندن نیست»).
+  · Manuals: video (format bar, one timeline with layers, subtitle designs, object bar), voice samples (only the
+    missing ones are made; stops when the keys run out), and a new «ویرایش / Editing» section.
+  Tests: t11 (music clips, plus the engine bed with real signals), t12 (dialogs, inspector, nothing-to-speak)
+    + t10/t9/t7/t4/t5/t6/t8/t1f/t2r/t3r + engine 146–160 — all pass.
+
+WHAT CHANGED IN 165 (on top of 164) — the video tab rebuilt from the mock (ava-editor-10)
+  · The mock's video inspector transplanted VERBATIM (iv-proj, iv-text, iv-sticker, iv-pod, iv-pip, iv-anim, iv-xform)
+    and bound to the real document: POD is an alias of V.pod, so the mock's own inline handlers (POD.glow=…,
+    setBg, pipSet, xfApply, toggleLock, objRotate, openAnim/closeAnim) drive the renderer. Size and position sit
+    BELOW each panel; the podcast has no timing panel; text is edited on the canvas only (no text box).
+    Additions in the mock's style: a subtitles panel (6 designs, font, size, position, colours, highlight,
+    background, outline, animation incl. word highlight and typing, speaker's name, follow/re-sync) and an emoji
+    picker in the sticker panel. Sliders show their values (rangeLabels). The keyframe button is left out
+    (no keyframe system behind it).
+  · The mock's format bar above the stage (Reels/Shorts/TikTok, YouTube, Instagram, square, YouTube 4K, custom)
+    replaces the voice toolbar; the mock's floating object bar (animation, duplicate, bring forward, delete).
+  · The SAME timeline in both modes (as in the mock): video tracks are subtitles (top, fixed, re-sync), object
+    and background layers (drag the grip to restack — the track order IS the stacking order; drag clips between
+    layers of one kind; an occupied layer opens a new one above), the audio as one track (bottom, fixed;
+    double-click → audio). Each track has its + menu (the mock's ADD table). Layers can be hidden.
+    The separate layer timeline of 161–163 is removed. Double presses are detected in the lanes (they redraw
+    between clicks, so the browser's dblclick never fired).
+  · Subtitles are selectable on the canvas (their drawn box is hit-tested) and edited there by double-click.
+  · Palette variant of the mock (NOT applied): /outputs/ava-editor-11-palette.html (cream/orange/navy light,
+    black/orange dark, pill radii) — from the founder's reference image.
+  Tests: t10 (18) + t6/t8/t9/t7/t4/t5/t1f/t2r/t3r + engine 146–160 — all pass.
+
+WHAT CHANGED IN 164 (on top of 163) — the founder's review of 163
+  · Playhead: the ruler is as wide as the lanes and aligned to the pixel (alignRuler); the label is clamped to the
+    visible ruler; dragging it past an edge scrolls the timeline (scrubbing auto-scroll).
+  · Dropdowns: one chevron (the select's own), names wrap; menus open INSIDE an open dialog (they were behind its
+    top layer); ▶ only on voice menus (never the engine menu); recent rows have a remove button.
+  · Delete only on cloned voices, your own samples and recent items: bundled Chatterbox voices, designed voices,
+    Google's built-ins and the music library are not deletable.
+  · Speakers: speaker and tone are LINE PROPERTIES shown as chips at the start of the line (the mock); every line
+    has an avatar button → speaker menu; sound tags / backchannels / IPA are pills (raw text kept, offsets exact);
+    paste turns «Name:»/«{tone}» into chips and creates a script's speakers; unnamed lines keep the speaker.
+    The Speakers panel is the mock's list, its own collapsible section after the voice settings.
+  · Fish voice list: the classic nested view restored (bundled clips grouped «نمونه: …» by voice).
+  · Delete of a clip removes its lines in the same step (keyboard focus was left in the text); one undo.
+  · Clips drag between voice tracks (the drop used the lit lane); one colour for every voice track.
+  · Track header: mute button + a volume overlay. Thin, subtle scrollbars. Crown 32 px, optically aligned.
+    Mode tabs centred. No voice toolbar in the video tab. Esc deselects a line. IPA/overlap/subtitle text use the
+    app's dialog (askText). Export is never blocked by edited lines. The app always opens empty.
+  · File menu (new / open / save project / save text); the export menu only exports and reopens after a choice.
+  · Voice samples: the founder's 54 are bundled in ui/previews; previews_build makes only missing ones, copies
+    bundled ones into the folder, stops when the keys run out. Library paging: fallback tokens drop the filter.
+  Tests: t9 (22) + t4/t5/t6/t7/t8/t1f/t2r/t3r + engine 146–160 — all pass (outdated checks updated: logo size,
+    tone as text, speaker markup, autosave removed by request, drag snap tolerance, preview now bundled).
 
 WHAT CHANGED IN 163 (on top of 162) — the video tab, completed (checkpoint)
   · ANIMATIONS from the mock, in the shared renderer (preview == export): in (type word by word / fade /
@@ -1513,6 +1621,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۶۳»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۶۸»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

@@ -51,7 +51,7 @@ let SESSION = null, saveTimer = null;
 function snapshot(){ return JSON.parse(JSON.stringify({ lines: S.lines, tracks: S.tracks.map(t => ({ ...t, clips: t.clips.map(({ _ti, _track, ...c }) => c) })), proj: S.proj, music: S.music })); }
 const MUSIC0 = { level_db: -16, fade_in: 1.5, fade_out: 1.5, duck: true, duck_db: 12, file: null, name: null, credit: '' };
 function restoreSnap(sn){ S.lines = sn.lines; S.tracks = sn.tracks; const base = JSON.parse(JSON.stringify(S.proj)); S.proj = Object.assign(base, sn.proj || {}); ['cbx', 'light', 'fish', 'duo'].forEach(k => S.proj[k] = Object.assign({}, base[k], (sn.proj || {})[k] || {})); S.music = Object.assign({}, MUSIC0, sn.music || {}); }   // replace, never merge: a missing key means 'none'
-function autosave(){ if (typeof VVER !== 'undefined') VVER++; clearTimeout(saveTimer); saveTimer = setTimeout(() => { try { API().settings_set({ ed_doc: snapshot(), ed_session: SESSION }); } catch (e) {} }, 800); }
+function autosave(){ if (typeof VVER !== 'undefined') VVER++; clearTimeout(saveTimer); saveTimer = setTimeout(() => { /* 164: no autosaved document — projects are saved as .ava files */ }, 800); }
 
 // ---------------- undo / redo: snapshots; parts referenced by history are kept in memory ----------------
 const hist = { past: [], future: [] };
@@ -115,7 +115,7 @@ function fillInspector(){
   [['cbxSpeed', c.speed], ['cbxExag', c.exag], ['cbxCfg', c.cfg], ['cbxTemp', c.temp], ['lightSpeed', l.speed], ['lightNoise', l.noise], ['lightNoiseW', l.noisew],
    ['fishSpeed', f.speed], ['fishVolume', f.volume], ['fishTemp', f.temp], ['fishTopP', f.top_p]].forEach(([id, v]) => setRange(id, v));
   [['fishCont', f.cont], ['fishCondPrev', f.condPrev], ['fishNormLoud', f.normLoud], ['fishNormalize', f.normalize], ['fishQuality', f.quality]].forEach(([id, v]) => $(id).checked = !!v);
-  $('cbxVoice').innerHTML = optList([['default', T('پیش‌فرض', 'Default')]].concat(CBX_VOICES.map(v => [v.id || v.name || v, v.name || v.title || v.id || v])), c.voice);
+  $('cbxVoice').innerHTML = cbxOptions(c.voice);   // 164: bundled voices grouped by voice (never deletable), your samples deletable
   $('fishModel').innerHTML = optList((DIRECTOR.fish_models || []).map(([k, lab]) => [k, lab]), f.model || ((DIRECTOR.fish_models || [])[0] || [''])[0]);
   if (!f.model && (DIRECTOR.fish_models || []).length) f.model = DIRECTOR.fish_models[0][0];
   $('fishLatency').value = f.latency;
@@ -188,8 +188,7 @@ function trimmedHtml(text, c){
   const tip = T('این بخش از صدا با کوتاه‌کردنِ کلیپ حذف شده', 'trimmed out of the clip');
   return (a ? `<span class="${TRIM_CLS}" title="${tip}">${escapeHtml(text.slice(0, a))}</span>` : '') + escapeHtml(text.slice(a, b)) + (b < text.length ? `<span class="${TRIM_CLS}" title="${tip}">${escapeHtml(text.slice(b))}</span>` : '');
 }
-function renderScript(){
-  const clips = scriptOrder(), ed = $('editor'); let html = '', n = 0, i = 0;
+function renderScript(){ Object.values(S.lines).forEach(normLine); const clips = scriptOrder(), ed = $('editor'); let html = '', n = 0, i = 0;
   while (i < clips.length){
     let j = i;                                          // consecutive clips overlapping in time share a bracket
     while (j + 1 < clips.length && clips[j + 1].at < clips[j].at + dur(clips[j]) - 0.01 && clips[j + 1]._ti !== clips[j]._ti) j++;
@@ -197,20 +196,20 @@ function renderScript(){
     html += j > i ? `<div class="relative"><span class="pointer-events-none absolute -start-2 top-2 bottom-2 w-2.5 rounded-s-md border-y-2 border-s-2 border-accent"></span>${rows}</div>` : rows;
     i = j + 1;
   }
-  ed.innerHTML = html + '<div id="pcaret" class="pointer-events-none absolute z-10 hidden w-0.5 rounded-full bg-secondary shadow-[0_0_6px] shadow-secondary/60"></div>';
+  ed.innerHTML = html + '<div id="pcaret" class="pointer-events-none absolute z-10 hidden w-0.5 rounded-full bg-primary shadow-[0_0_6px] shadow-primary/60"></div>';
   wireLines(); paintSel(); updatePCaret(); renderTimeline();
 }
 function lineRow(id, n, c){
   const L = S.lines[id]; if (!L) return '';
   const badge = (cls, icon, text, tip) => `<span class="badge ${cls} badge-xs gap-1 align-middle ${tip ? 'tooltip' : ''}" ${tip ? `data-tip="${tip}"` : ''} contenteditable="false">${icon ? `<svg class="size-2.5"><use href="#i-${icon}"/></svg>` : ''}${text}</span>`;
-  const extra = (L.dirty ? badge('badge-warning', 'pencil', T('تغییر کرده', 'edited'), T('متن یا صدای این خط عوض شده و هنوز دوباره ساخته نشده', 'changed, not re-voiced yet')) : '')
+  const extra = (L.dirty ? badge('badge-soft badge-warning', 'pencil', T('تغییر کرده', 'edited'), T('متن یا صدای این خط عوض شده و هنوز دوباره ساخته نشده', 'changed, not re-voiced yet')) : '')
     + (c.unvoiced && (L.text || '').trim() ? badge('badge-ghost', '', T('ساخته نشده', 'not voiced')) : '')
-    + (c.lines.length > 1 && c.lines[0] === id ? badge('badge-ghost', 'layers', T('یک کلیپ', 'one clip'), T('این خط‌ها یک کلیپ‌اند: نقشهٔ خط برای این بخش ساخته نشد', 'these lines are one clip: no line map for this part')) : '')
+    + (c.lines.length > 1 && c.lines[0] === id ? badge('badge-soft badge-info', 'layers', T('یک کلیپ', 'one clip'), T('این خط‌ها یک کلیپ‌اند: نقشهٔ خط برای این بخش ساخته نشد', 'these lines are one clip: no line map for this part')) : '')
     + (c.lines.length === 1 && (c.trimIn > 0.05 || c.trimOut > 0.05) ? badge('badge-error badge-soft', 'scissors', T('کوتاه شده', 'trimmed')) : '');
   return `<div class="ln group relative flex items-start gap-1.5 px-2" data-id="${id}">
     <span class="grip mt-1.5 grid size-6 shrink-0 cursor-grab place-items-center rounded text-base-content/40 opacity-0 hover:bg-base-300 group-hover:opacity-100" title="${T('بکشید تا جابه‌جا شود', 'drag to reorder')}"><svg class="size-4"><use href="#i-grip-vertical"/></svg></span>
     <span class="mt-1.5 w-6 shrink-0 text-end text-xs tabular-nums text-base-content/40">${num(n)}</span>
-    <div class="min-w-0 flex-1 py-0.5"><p><span class="lt outline-none" contenteditable="true" spellcheck="false" data-ph="${T('متن را این‌جا بنویسید یا بچسبانید…', 'Type or paste the text here…')}">${trimmedHtml(L.text || '', c)}</span> ${extra}</p><div class="lnbar"></div></div>
+    <div class="min-w-0 flex-1 py-0.5"><p>${spkChip(id)}${toneChip(id)}<span class="lt outline-none" contenteditable="true" spellcheck="false" data-ph="${T('متن را این‌جا بنویسید یا بچسبانید…', 'Type or paste the text here…')}">${pills(trimmedHtml(L.text || '', c))}</span> ${extra}</p><div class="lnbar"></div></div>
   </div>`;
 }
 function lineBar(){
@@ -222,7 +221,7 @@ function lineBar(){
     <button class="btn btn-xs join-item btn-square border-base-content/15 bg-base-100" onclick="diacritize(true)" data-tip="حرکت‌گذاریِ همین خط" data-tip-en="Diacritize this line" aria-label="diacritize"><svg class="size-3.5"><use href="#i-wand-sparkles"/></svg></button>
     <button class="btn btn-xs join-item btn-square border-base-content/15 bg-base-100" onclick="deleteLine()" aria-label="delete"><svg class="size-3.5"><use href="#i-trash-2"/></svg></button></div></div>`;
 }
-function paintSel(){
+function paintSel(){ sel.forEach(id => { if (!S.lines[id]) sel.delete(id); });
   if (sel.size === 1) lastLine = [...sel][0];
   const selKey = [...sel].sort().join(',');
   queueMicrotask(() => { lastSelKey = selKey; });
@@ -236,9 +235,9 @@ function paintSel(){
   if (sel.size === 1){
     const id = [...sel][0], L = S.lines[id], [, c] = clipOfLine(id);
     $('lineTitle').textContent = T(`خطِ ${FA(orderedLines().indexOf(id) + 1)}`, `Line ${orderedLines().indexOf(id) + 1}`);
-    $('lineState').innerHTML = L.dirty ? `<span class="badge badge-warning badge-sm gap-1"><svg class="size-3"><use href="#i-pencil"/></svg>${T('تغییر کرده', 'edited')}</span>`
+    $('lineState').innerHTML = L.dirty ? `<span class="badge badge-soft badge-warning badge-sm gap-1"><svg class="size-3"><use href="#i-pencil"/></svg>${T('تغییر کرده', 'edited')}</span>`
       : c && c.unvoiced ? `<span class="badge badge-ghost badge-sm">${T('ساخته نشده', 'not voiced')}</span>`
-      : c ? `<span class="badge badge-soft badge-secondary badge-sm gap-1"><svg class="size-3"><use href="#i-check"/></svg>${T('ساخته‌شده', 'voiced')}، ${num(dur(c).toFixed(1))} ${T('ثانیه', 's')}</span>` : '';
+      : c ? `<span class="badge badge-soft badge-success badge-sm gap-1"><svg class="size-3"><use href="#i-check"/></svg>${T('ساخته‌شده', 'voiced')}، ${num(dur(c).toFixed(1))} ${T('ثانیه', 's')}</span>` : '';
     fillLineInspector(id);
     if (selKey !== lastSelKey) showInsp('line');            // only a NEW selection moves the inspector
   } else if (!$('insp-music').classList.contains('hidden') && selClip && String(selClip).startsWith('mu')){ /* keep the music panel */ }
@@ -305,8 +304,7 @@ function wireLines(){
       if (parts.length < 2){ document.execCommand('insertText', false, text); return; }
       remember();
       document.execCommand('insertText', false, parts.shift() || '');
-      S.lines[id].text = lt.textContent; let [t, prev] = clipOfLine(id); let last = id;
-      parts.forEach(p => { const nid = ++uid; S.lines[nid] = { text: p, dirty: false, voice: null }; prev = placeholderAfter(t, prev, [nid]); last = nid; });
+      S.lines[id].text = lt.textContent; let [t, prev] = clipOfLine(id); let last = id; const made = pasteParts([S.lines[id].text, ...parts]); Object.assign(S.lines[id], { text: made[0].text, spk: made[0].spk, tone: made[0].tone }); made.slice(1).forEach(L => { const nid = ++uid; S.lines[nid] = L; const p = L.text; prev = placeholderAfter(t, prev, [nid]); last = nid; });
       if (prev && prev.unvoiced) resizeClip(clipOfLine(id)[1], estDur(S.lines[id].text));
       sel = new Set([last]); renderScript(); focusLine(last, true); autosave();
     });
@@ -322,7 +320,7 @@ function splitLine(id, at){
   }
   const before = L.text.slice(0, at).trim(), after = L.text.slice(at).trim(), nid = ++uid;
   L.text = before; if (c && !c.unvoiced) L.dirty = true;
-  S.lines[nid] = { text: after, dirty: false, voice: L.voice ? { ...L.voice } : null };
+  S.lines[nid] = { spk: L.spk, text: after, dirty: false, voice: L.voice ? { ...L.voice } : null };
   if (c && c.unvoiced) resizeClip(c, estDur(before));
   placeholderAfter(t, c, [nid]); sel = new Set([nid]); renderScript(); focusLine(nid); autosave();
 }
@@ -408,7 +406,7 @@ function insertTag(tag){
 }
 function setTone(tone){
   const ids = sel.size ? [...sel] : (lastLine ? [lastLine] : []); if (!ids.length || !isG38()) return; remember();
-  ids.forEach(id => { const L = S.lines[id]; L.text = `{${tone}} ` + L.text.replace(/^\s*\{[^{}\n]{1,60}\}\s*/, ''); const [, c] = clipOfLine(id); if (c && !c.unvoiced) L.dirty = true; });
+  ids.forEach(id => { const L = S.lines[id]; normLine(L); L.tone = tone || ''; const [, c] = clipOfLine(id); if (c && !c.unvoiced) L.dirty = true; });   // 164: the tone is the line's own chip, always first
   renderScript(); autosave();
 }
 async function diacritize(){
@@ -458,7 +456,7 @@ function renderTimeline(){
       <svg class="size-3.5 shrink-0 opacity-70"><use href="#i-${ICON[t.kind]}"/></svg>
       <span class="ui flex-1 truncate font-semibold">${T(t.name, t.en)}</span>
       ${t.kind === 'speech' ? `<label class="flex cursor-pointer items-center" data-tip="${T('بدونِ فاصله', 'gapless')}"><input type="checkbox" class="checkbox checkbox-xs" ${t.gapless ? 'checked' : ''} onchange="setGapless(${i}, this.checked)"></label>` : ''}
-      <button class="btn btn-ghost btn-xs btn-square ${t.muted ? 'text-error' : ''}" onclick="toggleMute(${i})" aria-label="mute"><svg class="size-3.5"><use href="#i-${t.muted ? 'volume-x' : 'volume-2'}"/></svg></button><input type="range" min="0" max="2" step="0.05" value="${t.volume ?? 1}" class="range range-xs w-14 text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:10px]" data-tip="${T('بلندیِ ترک', 'Track volume')}: ${Math.round((t.volume ?? 1) * 100)}٪" oninput="setTrackVolume(${i}, +this.value, this)">
+      <button class="btn btn-ghost btn-xs btn-square ${t.muted ? 'text-error' : ''}" onclick="toggleMute(${i})" aria-label="mute"><svg class="size-3.5"><use href="#i-${t.muted ? 'volume-x' : 'volume-2'}"/></svg></button><button class="btn btn-ghost btn-xs btn-square ${(t.volume ?? 1) !== 1 ? 'text-primary' : ''}" onclick="openVolPop(event, ${i})" data-tip="${T('بلندیِ ترک', 'Track volume')}: ${Math.round((t.volume ?? 1) * 100)}٪" aria-label="volume"><svg class="size-3.5"><use href="#i-sliders-horizontal"/></svg></button>
       <button class="btn btn-ghost btn-xs btn-square" aria-label="add" onclick="openTrackMenu(event, ${i})"><svg class="size-4"><use href="#i-plus"/></svg></button>
     </div></div>`).join('');
   const step = pps < 16 ? 10 : 5, dot = step / (step === 5 ? 5 : 4); let ticks = '';
@@ -475,7 +473,7 @@ function renderTimeline(){
       const pos = c.hi ? 'top-1 bottom-[52%]' : c.lo ? 'top-[52%] bottom-1' : 'top-1.5 bottom-1.5';
       let look, label;
       if (t.kind === 'music'){ look = 'bg-secondary/15 text-secondary outline-secondary/50'; label = c.name || T('موسیقی', 'Music'); }
-      else { const L = S.lines[c.lines[0]] || { text: '' }; look = c.unvoiced ? 'border border-dashed border-base-content/30 bg-transparent text-base-content/50 outline-transparent' : (ti % 2 ? 'bg-secondary/15 text-secondary outline-secondary/50' : 'bg-primary/15 text-primary outline-primary/50');
+      else { const L = S.lines[c.lines[0]] || { text: '' }; look = c.unvoiced ? 'border border-dashed border-base-content/30 bg-transparent text-base-content/50 outline-transparent' : 'bg-primary/15 text-primary outline-primary/50';
         label = `${num(order.indexOf(c.lines[0]) + 1)}${c.lines.length > 1 ? '–' + num(order.indexOf(c.lines[c.lines.length - 1]) + 1) : ''} ${escapeHtml((c.file ? '♪ ' : '') + (L.text || '').slice(0, 28))}…`; }
       const dirty = c.lines && c.lines.some(id => S.lines[id] && S.lines[id].dirty);
       clips += `<div class="clip absolute overflow-hidden rounded-field outline outline-1 ${look} ${pos} ${isSel ? 'outline-2 outline-primary!' : ''} cursor-grab" style="left:${PAD + c.at * pps}px;width:${w}px" data-cid="${c.id}" data-ti="${ti}">
@@ -485,7 +483,7 @@ function renderTimeline(){
         ${(c.trimIn > 0.05 || c.trimOut > 0.05) ? `<span class="badge badge-error badge-xs pointer-events-none absolute bottom-1 ${dirty ? 'left-6' : 'left-1'}"><svg class="size-2.5"><use href="#i-scissors"/></svg></span>` : ''}
         ${selClip === c.id && w > 130 ? `<span class="pointer-events-none absolute bottom-1 right-6 rounded-md bg-black/60 px-1.5 text-[10px] font-semibold tabular-nums text-white">${num(dur(c).toFixed(1))}${T('ث', 's')}</span>` : ''}
       </div>`;
-      if (selClip === c.id && t.kind === 'speech' && !c.unvoiced){
+      if (selClip === c.id && ((t.kind === 'speech' && !c.unvoiced) || t.kind === 'music')){
         const xl = PAD + c.at * pps, xr = xl + w;
         const hdl = (x, edge) => `<span class="trimh absolute z-20 w-[18px] cursor-ew-resize ${pos}" style="left:${x}px" data-edge="${edge}" data-cid="${c.id}" data-ti="${ti}"><span class="pointer-events-none absolute top-1/2 h-[55%] w-[3px] -translate-y-1/2 rounded-full bg-white shadow-[0_0_4px_rgba(0,0,0,.55)] ${edge === 'l' ? 'left-[10px]' : 'left-[5px]'}"></span></span>`;
         clips += hdl(xl - 5, 'l') + hdl(xr - 13, 'r');
@@ -508,7 +506,16 @@ function wireTimeline(){
   $('lanes').onpointerdown = ev => { if (ev.target.id === 'lanes' || ev.target.classList.contains('lane')){ selClip = null; sel = new Set(); paintSel(); renderTimeline(); } };
 }
 function seekFromX(cx){ const r = $('lanes').getBoundingClientRect(); seek(Math.max(0, (cx - r.left - PAD) / zoom)); }
-function scrubbing(){ const mv = e => seekFromX(e.clientX), up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); }; addEventListener('pointermove', mv); addEventListener('pointerup', up); }
+function scrubbing(){
+  const sc = $('tlScroll'); let lastX = null, raf = 0;
+  const edges = () => { const r = sc.getBoundingClientRect(), hw = $('heads').offsetWidth || 0; return [r.left + hw + 4, r.right - 28]; };
+  const step = () => { raf = 0; if (lastX === null) return; const [L, Rr] = edges(); let d = 0;
+    if (lastX > Rr) d = Math.min(26, (lastX - Rr) / 2 + 3); else if (lastX < L && sc.scrollLeft > 0) d = -Math.min(26, (L - lastX) / 2 + 3);
+    if (d){ const before = sc.scrollLeft; sc.scrollLeft = Math.max(0, before + d); seekFromX(Math.min(Math.max(lastX, L), Rr)); if (sc.scrollLeft !== before) raf = requestAnimationFrame(step); } };
+  const mv = e => { lastX = e.clientX; const [L, Rr] = edges(); seekFromX(Math.min(Math.max(e.clientX, L), Rr)); if (!raf) raf = requestAnimationFrame(step); };
+  const up = () => { lastX = null; if (raf) cancelAnimationFrame(raf); raf = 0; removeEventListener('pointermove', mv); removeEventListener('pointerup', up); };
+  addEventListener('pointermove', mv); addEventListener('pointerup', up);
+}
 function findClip(cid){ for (const t of S.tracks) { const c = t.clips.find(x => x.id === cid); if (c) return [t, c]; } return [null, null]; }
 function snapT(t, c){ if (!snapOn) return t; const edges = [0, playhead]; speechClips().concat(S.tracks.find(x => x.kind === 'music').clips).forEach(o => { if (o !== c){ edges.push(o.at, o.at + dur(o)); } });
   for (const e of edges){ if (Math.abs((t - e) * zoom) < SNAP_PX) return e; if (Math.abs((t + dur(c) - e) * zoom) < SNAP_PX) return e - dur(c); } return t; }
@@ -520,14 +527,19 @@ function placeOn(ti, c){
 }
 function cleanupTracks(){ S.tracks = S.tracks.filter((t, k) => t.kind !== 'speech' || t.clips.length || t.id === 's1'); }
 function startClipDrag(ev, el){
-  ev.stopPropagation(); const [t, c] = findClip(el.dataset.cid); if (!c) return;
-  selClip = c.id; if (t.kind === 'music'){ showMusicInspector(); renderTimeline(); return; }
+  ev.stopPropagation(); if (document.activeElement && document.activeElement.isContentEditable) document.activeElement.blur(); getSelection().removeAllRanges(); const [t, c] = findClip(el.dataset.cid); if (!c) return;
+  selClip = c.id; if (t.kind === 'music'){ showMusicInspector(); const x0 = ev.clientX, at0 = c.at; let moved = false; remember();   // 166: music clips move
+ const mv = e => { if (Math.abs(e.clientX - x0) > 3) moved = true; if (!moved) return; c.at = Math.max(0, at0 + (e.clientX - x0) / zoom); el.style.left = (PAD + c.at * zoom) + 'px'; };
+ const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); if (!moved){ hist.past.pop(); renderTimeline(); return; } S.music.manual = true; t.clips.sort((a, b) => a.at - b.at); renderTimeline(); autosave(); };
+ addEventListener('pointermove', mv); addEventListener('pointerup', up); return; }
   sel = new Set(c.lines); const x0 = ev.clientX, at0 = c.at; let moved = false; remember();
-  const mv = e => { const dx = (e.clientX - x0) / zoom; if (Math.abs(e.clientX - x0) > 3) moved = true; if (!moved) return;
-    c.at = Math.max(0, snapT(at0 + dx, c)); el.style.left = (PAD + c.at * zoom) + 'px'; };
-  const up = e => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up);
-    if (!moved){ hist.past.pop(); paintSel(); renderTimeline(); return; }
-    const lane = document.elementFromPoint(e.clientX, e.clientY); const li = lane && lane.closest('.lane') ? +lane.closest('.lane').dataset.ti : null;
+  const y0 = ev.clientY; let hot = null;
+ const mv = e => { const dx = (e.clientX - x0) / zoom; if (Math.abs(e.clientX - x0) > 3 || Math.abs(e.clientY - y0) > 6) moved = true; if (!moved) return;
+ c.at = Math.max(0, snapT(at0 + dx, c)); el.style.left = (PAD + c.at * zoom) + 'px'; el.style.pointerEvents = 'none'; el.style.zIndex = 30; el.style.transform = `translateY(${e.clientY - y0}px)`;
+ const ln = document.elementFromPoint(e.clientX, e.clientY), lane = ln && ln.closest('.lane'); if (hot && hot !== lane) hot.classList.remove('lane-hot'); hot = lane && S.tracks[+lane.dataset.ti] && S.tracks[+lane.dataset.ti].kind === 'speech' ? lane : null; if (hot) hot.classList.add('lane-hot'); };
+  const up = e => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); const hotTi = hot ? +hot.dataset.ti : null; if (hot) hot.classList.remove('lane-hot'); el.style.transform = ''; el.style.pointerEvents = ''; el.style.zIndex = '';
+ if (!moved){ hist.past.pop(); paintSel(); renderTimeline(); return; }
+    const li = hotTi;   // 164: the lane that was lit during the drag
     t.clips = t.clips.filter(x => x !== c);
     let ti = li !== null && S.tracks[li] && S.tracks[li].kind === 'speech' ? li : S.tracks.indexOf(t);
     if (ti < 0) ti = 0; placeOn(ti, c); cleanupTracks(); if (S.tracks[ti] && S.tracks[ti].gapless) pack(S.tracks[ti]);
@@ -535,8 +547,7 @@ function startClipDrag(ev, el){
   addEventListener('pointermove', mv); addEventListener('pointerup', up);
 }
 function startTrim(ev, el){
-  ev.stopPropagation(); ev.preventDefault(); const [t, c] = findClip(el.dataset.cid); if (!c) return; remember();
-  const edge = el.dataset.edge, x0 = ev.clientX, in0 = c.in, out0 = c.out, at0 = c.at, src = c.src || [c.in - (c.trimIn || 0), c.out + (c.trimOut || 0)];
+  ev.stopPropagation(); ev.preventDefault(); const [t, c] = findClip(el.dataset.cid); if (!c) return; remember(); if (t.kind === 'music'){ if (!c.src) c.src = [0, 1e9]; S.music.manual = true; } const edge = el.dataset.edge, x0 = ev.clientX, in0 = c.in, out0 = c.out, at0 = c.at, src = c.src || [c.in - (c.trimIn || 0), c.out + (c.trimOut || 0)];
   c.src = src;
   const mv = e => { const d = (e.clientX - x0) / zoom;
     if (edge === 'l'){ const ni = Math.min(out0 - 0.2, Math.max(src[0], in0 + d)); c.at = at0 + (ni - in0); c.in = ni; c.trimIn = ni - src[0]; }
@@ -564,8 +575,7 @@ function placeClipBar(){
   const bar = $('clipBar'), el = selClip && document.querySelector(`#lanes .clip[data-cid="${selClip}"]`);
   if (!el){ bar.classList.add('hidden'); return; }
   const [t, c] = findClip(selClip), b = (icon, tip, fn, txt) => `<li><a onclick="${fn}" class="gap-1 " ${txt ? '' : `data-tip="${tip}"`}><svg class="size-3.5"><use href="#i-${icon}"/></svg>${txt ? `<span class="ui">${txt}</span>` : ''}</a></li>`;
-  bar.innerHTML = t.kind === 'music' ? b('trash-2', T('حذف', 'delete'), 'removeMusic()')
-    : (c.unvoiced || c.file ? '' : b('refresh-cw', '', 'revoiceClip()', T('بازتولید', 'Re-voice')))
+  bar.innerHTML = t.kind === 'music' ? b('scissors', T('برش در جای پلی‌هد', 'split at the playhead'), 'splitMusic()') + b('copy', T('تکثیر', 'duplicate'), 'dupMusic()') + b('trash-2', T('حذف', 'delete'), 'delMusicClip()') : (c.unvoiced || c.file ? '' : b('refresh-cw', '', 'revoiceClip()', T('بازتولید', 'Re-voice')))
       + (c.lines.length === 1 && !c.unvoiced ? b('scissors', T('برش در جای پلی‌هد', 'split at the playhead'), 'splitClip()') : '')
       + b('copy', T('تکثیر', 'duplicate'), 'dupClip()') + b('trash-2', T('حذف', 'delete'), 'delClip()');
   const r = el.getBoundingClientRect(), sc = $('tlScroll').getBoundingClientRect(), left0 = sc.left + $('heads').offsetWidth;
@@ -586,7 +596,7 @@ function dupClip(){
   const n = { ...JSON.parse(JSON.stringify(c)), id: 'c' + (++uid), lines: ids, at: c.at + dur(c) + GAP };
   shiftAfter(t, n.at, dur(n) + GAP, null); t.clips.push(n); t.clips.sort((a, b) => a.at - b.at); selClip = n.id; renderScript(); autosave();
 }
-function delClip(){ const [t, c] = findClip(selClip); if (!c) return; remember(); c.lines.forEach(id => delete S.lines[id]); t.clips = t.clips.filter(x => x !== c); if (t.gapless) pack(t); cleanupTracks(); selClip = null; ensureOneLine(); renderScript(); autosave(); }
+function delClip(){ const [t, c] = findClip(selClip); if (!c) return; remember(); c.lines.forEach(id => { delete S.lines[id]; sel.delete(id); }); t.clips = t.clips.filter(x => x !== c); if (t.gapless) pack(t); cleanupTracks(); selClip = null; ensureOneLine(); renderScript(); autosave(); }
 function openTrackMenu(ev, ti){
   ev.stopPropagation(); const m = $('trackMenu'), t = S.tracks[ti], r = ev.currentTarget.getBoundingClientRect();
   const items = t.kind === 'speech' ? [['line', T('خطِ تازه در جای پلی‌هد', 'New line at the playhead')], ['silence', T('یک ثانیه سکوت در جای پلی‌هد', 'One second of silence at the playhead')], ['file', T('فایلِ صوتی…', 'Audio file…')]]
@@ -694,8 +704,8 @@ async function generateAll(){
   finally { setBusy(false); renderScript(); autosave(); }
 }
 async function voiceRun(run){
-  const ids = run.clips.flatMap(c => c.lines.filter(id => (S.lines[id].text || '').trim()));
-  const text = ids.map(id => spoken(id)).join('\n');
+  const ids = run.clips.flatMap(c => c.lines.filter(id => speakableLine(id))); if (!ids.length) return;   // 166: nothing to speak → nothing is sent
+ const text = ids.map(id => spoken(id)).join('\n');
   const r = await API().generate_gulp(payloadFor(lineVoice(ids[0]), text));
   if (!r.ok) throw new Error(r.error || T('خطای ناشناخته', 'Unknown error'));
   await storeAudio(r.gulp, r.b64);
@@ -775,16 +785,15 @@ function schedule(){
     const end = c.at + dur(c); if (end <= playFrom) return;
     const off = Math.max(0, playFrom - c.at), src = ctx.createBufferSource(); src.buffer = a.buf; src.connect(gainFor(t));
     src.start(base + c.at + off, c.in + off, dur(c) - off); nodes.push(src); if (!t.muted) speech.push([c.at, end]); }); });
-  const mt = S.tracks.find(t => t.kind === 'music');
-  if (musicBuf && mt && mt.clips.length){
-    const end = speechEnd(); if (end <= playFrom) return;
-    const g = ctx.createGain(), src = ctx.createBufferSource(), lvl = Math.pow(10, S.music.level_db / 20), duck = lvl * Math.pow(10, -(S.music.duck_db ?? 12) / 20);
-    src.buffer = musicBuf; src.loop = true; src.connect(g); g.connect(gainFor(mt));
-    const at = tt => base + tt, P = g.gain; P.setValueAtTime(0, ctx.currentTime);
-    const level = tt => { let v = lvl; if ((S.music.duck_db ?? 12) > 0 && speech.some(([s, e]) => tt >= s - 0.3 && tt <= e + 0.3)) v = duck;
-      if (tt < S.music.fade_in) v *= tt / Math.max(0.01, S.music.fade_in); if (tt > end - S.music.fade_out) v *= Math.max(0, (end - tt) / Math.max(0.01, S.music.fade_out)); return v; };
-    for (let tt = playFrom; tt <= end; tt += 0.1) P.linearRampToValueAtTime(level(tt), Math.max(ctx.currentTime, at(tt)));
-    src.start(Math.max(ctx.currentTime, at(playFrom)), playFrom % musicBuf.duration); src.stop(at(end) + 0.05); nodes.push(src);
+  const mt = S.tracks.find(t => t.kind === 'music'); if (musicBuf && mt && mt.clips.length && !mt.muted){   // 166: every music clip at its place
+    const lvl = Math.pow(10, S.music.level_db / 20), duckF = Math.pow(10, -(S.music.duck_db ?? 12) / 20), D = musicBuf.duration, ducking = (S.music.duck ?? true) && (S.music.duck_db ?? 12) > 0;
+    const inSpeech = tt => speech.some(([a, b]) => tt >= a - 0.15 && tt < b + 0.6), cl = [...mt.clips].sort((a, b) => a.at - b.at), first = cl[0].at, last = Math.max(...cl.map(c => c.at + c.out - c.in));
+    cl.forEach(c => { const len = c.out - c.in, s0 = Math.max(c.at, playFrom), e0 = c.at + len; if (e0 <= playFrom || len <= 0.05) return;
+      const g = ctx.createGain(), src = ctx.createBufferSource(); src.buffer = musicBuf; src.loop = true; src.connect(g); g.connect(gainFor(mt));
+      const at = tt => base + tt, P = g.gain, fi = c.at === first ? (S.music.fade_in || 0) : 0.03, fo = Math.abs(e0 - last) < 1e-6 ? (S.music.fade_out || 0) : 0.03;
+      const level = tt => { let l = ducking && inSpeech(tt) ? lvl * duckF : lvl; if (fi > 0 && tt - c.at < fi) l *= Math.max(0, (tt - c.at) / fi); if (fo > 0 && e0 - tt < fo) l *= Math.max(0, (e0 - tt) / fo); return l; };
+      P.setValueAtTime(level(s0), Math.max(ctx.currentTime, at(s0))); for (let tt = s0; tt <= e0; tt += 0.1) P.linearRampToValueAtTime(level(tt), Math.max(ctx.currentTime, at(tt)));
+      src.start(Math.max(ctx.currentTime, at(s0)), (c.in + (s0 - c.at)) % D); src.stop(at(e0) + 0.02); nodes.push(src); });
   }
 }
 function tick(){
@@ -824,7 +833,7 @@ function pending(){ return Object.entries(S.lines).filter(([id, L]) => { const [
 function timelineSpec(){ return { clips: S.tracks.filter(t => t.kind === 'speech' && !t.muted).flatMap(t => t.clips.filter(c => !c.unvoiced && c.gulp !== null).map(c => ({ gulp: c.gulp, in: c.in, out: c.out, at: c.at, gain: 1 }))) }; }
 async function exportAudio(withMusic){
   document.activeElement && document.activeElement.blur();
-  if (pending()){ say(T(`${FA(pending())} خط هنوز ساخته یا به‌روز نشده؛ اول «تبدیل به گفتار» را بزنید.`, `${pending()} lines are not voiced or updated yet; press "Voice it" first.`), 'err'); return; }
+  if (pending()) say(T(`${FA(pending())} خط تغییر کرده و دوباره ساخته نشده؛ تایم‌لاین همان‌طور که پخش می‌شود ذخیره می‌شود.`, `${pending()} lines are edited and not re-voiced; the timeline is exported as it plays.`), 'ok');
   if (withMusic && !S.music.file){ say(T('موسیقی‌ای انتخاب نشده؛ از دکمهٔ + روی ترکِ موسیقی یکی انتخاب کنید.', 'No music chosen; pick one with + on the music track.'), 'err'); return; }
   if (busy) return; setBusy(true);
   try {
@@ -863,7 +872,7 @@ async function setMusicTrack(b64, file, name){
   try { musicBuf = await ac().decodeAudioData(u8.buffer.slice(0)); } catch (e) { musicBuf = null; }
   S.music.file = file; S.music.name = name; layoutMusic(); sel = new Set(); selClip = 'mu1'; renderScript(); showMusicInspector(); autosave();
 }
-function layoutMusic(){ const mt = S.tracks.find(t => t.kind === 'music'); mt.clips = S.music.file ? [{ id: 'mu1', name: S.music.name, at: 0, in: 0, out: Math.max(2, speechEnd()) }] : []; }
+function layoutMusic(){ const mt = S.tracks.find(t => t.kind === 'music'); if (!S.music.file){ mt.clips = []; S.music.manual = false; return; } if (!S.music.manual || !mt.clips.length) mt.clips = [{ id: 'mu1', name: S.music.name, at: 0, in: 0, out: Math.max(2, speechEnd()) }]; }   // 166: once edited, your clips are kept
 function removeMusic(){ remember(); S.music.file = null; S.music.name = null; musicBuf = null; layoutMusic(); selClip = null; showInsp('proj'); renderScript(); autosave(); }
 function setMusic(k, v){ S.music[k] = v; autosave(); if (playing){ const t = playhead; stopPlay(); seekVisual(t); startPlay(); } }
 function showMusicInspector(){ ['line', 'proj'].forEach(k => $('insp-' + k).classList.add('hidden')); $('insp-music').classList.remove('hidden');
@@ -916,8 +925,8 @@ async function init(){
   BUILD_N = ses.build || ''; showBuild();
   document.querySelectorAll('.xlink').forEach(a => a.onclick = e => { e.preventDefault(); API().open_url('https://x.com/kamangir31'); });   // as in the classic interface CAST = (st && st.g38_cast) || [];
   if (st && st.default_g_model) S.proj.g_model = st.default_g_model;
-  if (st && st.ed_doc){
-    restoreSnap(st.ed_doc);
+  if (st && st.ed_doc) API().settings_set({ ed_doc: null });   // 164: the app always opens empty
+  if (false){ restoreSnap(st.ed_doc);
     if (st.ed_session !== SESSION){             // a new app session: parts are no longer in memory
       S.tracks.forEach(t => t.clips.forEach(c => { if (t.kind === 'speech'){ c.gulp = null; c.unvoiced = true; c.in = 0; c.out = c.lines.reduce((s, id) => s + estDur(S.lines[id] && S.lines[id].text), 0); c.trimIn = c.trimOut = 0; delete c.src; } }));
       Object.values(S.lines).forEach(L => L.dirty = false); S.tracks = S.tracks.filter(t => t.kind !== 'speech' || t.id === 's1' || t.clips.length);
@@ -946,8 +955,10 @@ addEventListener('keydown', e => {
   if (mod && !inText && (k === 'z' || k === 'y')){
     e.preventDefault(); e.stopPropagation(); typingSnap = false; if (k === 'y' || e.shiftKey) redo(); else undo(); return;
   }
+  if (e.key === 'Escape' && !document.querySelector('dialog[open]') && $('ddMenu').classList.contains('hidden') && !(typeof mode !== 'undefined' && mode === 'video')){
+    if (t.isContentEditable) t.blur(); getSelection().removeAllRanges(); if (sel.size || selClip){ sel = new Set(); selClip = null; paintSel(); renderTimeline(); } return; }
   if ((e.key === 'Delete' || e.key === 'Backspace') && !inText && !t.isContentEditable && !(typeof mode !== 'undefined' && mode === 'video')){
-    if (selClip){ e.preventDefault(); const [tr] = findClip(selClip); if (tr && tr.kind === 'music') removeMusic(); else delClip(); return; }
+    if (selClip){ e.preventDefault(); const [tr] = findClip(selClip); if (tr && tr.kind === 'music') delMusicClip(); else delClip(); return; }
     if (sel.size){ e.preventDefault(); deleteLine(); }
   }
 }, true);
@@ -976,7 +987,7 @@ function noteRecent(key, v){ if (!key || !v) return; const a = (RECENT[key] || [
 function enh(sel){
   if (sel._btn) return refreshEnh(sel);
   const b = document.createElement('button'); b.type = 'button';
-  b.className = sel.className.replace(/\bhidden\b/g, '') + ' justify-between gap-2 text-start';
+  b.className = sel.className.replace(/\bhidden\b/g, '') + (sel.dataset.compact !== undefined ? ' justify-between gap-2 text-start' : ' ddtrig justify-between gap-2 text-start');
   b.setAttribute('dir', sel.closest('[dir]') ? sel.closest('[dir]').getAttribute('dir') : 'rtl');
   b.onclick = ev => { ev.stopPropagation(); openDD(sel, b); };
   sel.insertAdjacentElement('afterend', b); sel._btn = b; sel.classList.add('hidden');
@@ -984,24 +995,24 @@ function enh(sel){
   sel.addEventListener('change', () => { refreshEnh(sel); noteRecent(sel.dataset.recent, sel.value); });
   refreshEnh(sel);
 }
-function refreshEnh(sel){ if (!sel._btn) return; const o = sel.options[sel.selectedIndex]; sel._btn.innerHTML = `<span class="truncate">${o ? escapeHtml(o.text) : ''}</span><svg class="size-3.5 shrink-0 opacity-60"><use href="#i-chevron-down"/></svg>`; }
+function refreshEnh(sel){ if (!sel._btn) return; const o = sel.options[sel.selectedIndex]; sel._btn.innerHTML = sel.dataset.compact !== undefined ? `<span class="min-w-0 flex-1 truncate" dir="auto">${o ? escapeHtml(o.text.split(' — ')[0]) : ''}</span>` : `<span class="ddlbl min-w-0 flex-1">${o ? escapeHtml(o.text) : ''}</span>`; }
 function closeDD(){ const m = $('ddMenu'); m.classList.add('hidden'); m._sel = null; }
 function openDD(sel, b){
-  const m = $('ddMenu'); if (m._sel === sel && !m.classList.contains('hidden')) return closeDD();
-  m._sel = sel; m.dir = b.getAttribute('dir') || 'rtl';
+  const m = $('ddMenu'); if (m._sel === sel && !m.classList.contains('hidden')) return closeDD(); const host = b.closest('dialog[open]') || document.body; if (m.parentElement !== host) host.appendChild(m); m._sel = sel; m.dir = b.getAttribute('dir') || 'rtl';
   const opts = [...sel.options], recent = (RECENT[sel.dataset.recent] || []).map(v => opts.find(o => o.value === v && !o.disabled)).filter(Boolean);
-  const row = o => `<li class="flex flex-row items-center gap-0.5" data-v="${escapeHtml(o.value)}"><a class="min-w-0 flex-1 ${o.selected ? 'menu-active' : ''}" data-pick="${escapeHtml(o.value)}"><span class="truncate">${escapeHtml(o.text)}</span></a>`
-    + (sel.dataset.preview !== undefined && o.value !== '' ? `<button class="btn btn-ghost btn-xs btn-square opacity-70 hover:opacity-100" data-pv="${escapeHtml(o.value)}" data-tip="شنیدنِ صدا" data-tip-en="Hear the voice"><svg class="size-3.5"><use href="#i-play"/></svg></button>` : '')
-    + (o.dataset.pin !== undefined ? `<button class="btn btn-ghost btn-xs btn-square ${o.dataset.pinned !== undefined ? 'text-primary' : 'opacity-50'}" data-pin="${escapeHtml(o.value)}" data-tip="${o.dataset.pinned !== undefined ? 'پیش‌فرض' : 'پیش‌فرض کن'}" data-tip-en="${o.dataset.pinned !== undefined ? 'Default' : 'Make default'}"><svg class="size-3.5"><use href="#i-${o.dataset.pinned !== undefined ? 'pin' : 'pin-off'}"/></svg></button>` : '')
-    + (o.dataset.del !== undefined ? `<button class="btn btn-ghost btn-xs btn-square opacity-60 hover:text-error" data-del="${escapeHtml(o.value)}" data-tip="حذف" data-tip-en="Delete"><svg class="size-3.5"><use href="#i-trash-2"/></svg></button>` : '') + '</li>';
+  const row = o => `<li class="flex flex-row items-center gap-0.5" data-v="${escapeHtml(o.value)}"><a class="min-w-0 flex-1 ${o.selected ? 'menu-active' : ''}" data-pick="${escapeHtml(o.value)}"><span class="whitespace-normal break-words">${escapeHtml(o.text)}</span></a>`
+    + (sel.dataset.preview !== undefined && o.value !== '' ? `<button class="ddb opacity-80 hover:opacity-100" data-pv="${escapeHtml(o.value)}" data-tip="شنیدنِ صدا" data-tip-en="Hear the voice"><svg class="size-3.5"><use href="#i-play"/></svg></button>` : '')
+    + (o.dataset.pin !== undefined ? `<button class="ddb ${o.dataset.pinned !== undefined ? 'text-primary' : 'opacity-50'}" data-pin="${escapeHtml(o.value)}" data-tip="${o.dataset.pinned !== undefined ? 'پیش‌فرض' : 'پیش‌فرض کن'}" data-tip-en="${o.dataset.pinned !== undefined ? 'Default' : 'Make default'}"><svg class="size-3.5"><use href="#i-${o.dataset.pinned !== undefined ? 'pin' : 'pin-off'}"/></svg></button>` : '')
+    + (o.dataset.del !== undefined ? `<button class="ddb opacity-60 hover:text-error" data-del="${escapeHtml(o.value)}" data-tip="حذف" data-tip-en="Delete"><svg class="size-3.5"><use href="#i-trash-2"/></svg></button>` : '') + '</li>';
   const body = [];
-  if (recent.length) body.push(`<li class="menu-title">${T('اخیراً', 'Recent')}</li>`, ...recent.map(row));
+  if (recent.length) body.push(`<li class="menu-title">${T('اخیراً', 'Recent')}</li>`, ...recent.map(o => row(o).replace('</li>', `<button class="ddb opacity-60 hover:text-error" data-unrecent="${escapeHtml(o.value)}" data-tip="حذف از اخیراً" data-tip-en="Remove from recent"><svg class="size-3.5"><use href="#i-x"/></svg></button></li>`)));
   let group = null;
   opts.forEach(o => { const g = o.parentElement.tagName === 'OPTGROUP' ? o.parentElement.label : null;
     if (g !== group){ group = g; if (g) body.push(`<li class="menu-title">${escapeHtml(g)}</li>`); }
     body.push(o.disabled ? `<li class="menu-title">${escapeHtml(o.text)}</li>` : row(o)); });
-  const search = opts.length > 12 ? `<div class="sticky top-0 z-10 bg-base-200 p-1"><input class="input input-sm w-full" dir="auto" placeholder="${T('جست‌وجو…', 'Search…')}" oninput="filterDD(this.value)"></div>` : '';
-  m.innerHTML = search + `<ul class="menu menu-sm w-full p-1">${body.join('')}</ul>`;
+  const acts = (sel._actions || []).map(([icon, fa, en], k) => `<li class="${k ? '' : 'mt-1 border-t border-base-300 pt-1'}"><a data-act="${k}" class="gap-2"><svg class="size-4"><use href="#i-${icon}"/></svg>${T(fa, en)}</a></li>`).join(''); 
+ const search = opts.length > 12 ? `<div class="sticky top-0 z-10 bg-base-200 p-1"><input class="input input-sm w-full" dir="auto" placeholder="${T('جست‌وجو…', 'Search…')}" oninput="filterDD(this.value)"></div>` : '';
+  m.innerHTML = search + `<ul class="menu menu-sm w-full p-1">${body.join('')}</ul>` + (acts ? `<div class="sticky bottom-0 z-10 border-t border-base-300 bg-base-200 p-1"><ul class="menu menu-sm w-full p-0">${acts.replace(/mt-1 border-t border-base-300 pt-1/, '')}</ul></div>` : '');   // 167: the actions stay in view
   m.classList.remove('hidden');
   const r = b.getBoundingClientRect(), w = Math.min(Math.max(r.width, 260), 460, innerWidth - 16);
   m.style.width = w + 'px'; m.style.maxHeight = Math.min(380, Math.max(160, Math.max(innerHeight - r.bottom, r.top) - 16)) + 'px';
@@ -1011,6 +1022,8 @@ function openDD(sel, b){
   const s0 = m.querySelector('input'); if (s0) setTimeout(() => s0.focus(), 0);
   m.onclick = ev => {
     const p = ev.target.closest('[data-pick]'), pin = ev.target.closest('[data-pin]'), del = ev.target.closest('[data-del]');
+    const act = ev.target.closest('[data-act]'); if (act){ ev.stopPropagation(); const f = (sel._actions || [])[+act.dataset.act]; closeDD(); if (f) f[3](); return; }
+ const ur = ev.target.closest('[data-unrecent]'); if (ur){ ev.stopPropagation(); const k = sel.dataset.recent; RECENT[k] = (RECENT[k] || []).filter(x => x !== ur.dataset.unrecent); try { API().settings_set({ ed_recent: RECENT }); } catch (e) {} openDD(sel, sel._btn); openDD(sel, sel._btn); return; }
     const pv = ev.target.closest('[data-pv]'); if (pv){ ev.stopPropagation(); if (sel._preview) sel._preview(pv.dataset.pv); return; }
     if (pin){ ev.stopPropagation(); if (sel._onPin) sel._onPin(pin.dataset.pin); closeDD(); return; }
     if (del){ ev.stopPropagation(); if (sel._onDel) sel._onDel(del.dataset.del); closeDD(); return; }
@@ -1066,7 +1079,7 @@ async function loadMusicLib(){
 function musicRow(key, title, meta, onPrev, onUse, onDel){
   return `<li class="list-row items-center py-2"><button class="btn btn-ghost btn-sm btn-circle" data-prev="${key}" onclick="${onPrev}" aria-label="preview"><svg class="size-4"><use href="#i-play"/></svg></button>
     <div class="min-w-0"><div class="truncate text-sm" dir="auto">${escapeHtml(title || '')}</div><div class="truncate text-xs text-base-content/60" dir="auto">${escapeHtml(meta.filter(Boolean).join(' · '))}</div></div>
-    <div class="flex gap-1">${onDel ? `<button class="btn btn-ghost btn-sm btn-square opacity-60 hover:text-error" onclick="${onDel}" data-tip="حذف از کتابخانه" data-tip-en="Delete from library"><svg class="size-4"><use href="#i-trash-2"/></svg></button>` : ''}<button class="btn btn-sm border-base-content/15 bg-base-100" onclick="${onUse}">${T('استفاده', 'Use')}</button></div></li>`;
+    <div class="flex gap-1">${onDel ? `` : ''}<button class="btn btn-sm border-base-content/15 bg-base-100" onclick="${onUse}">${T('استفاده', 'Use')}</button></div></li>`;
 }
 async function musicPreviewLib(k){ const it = MUSIC_LIB[k]; if (prevKey === 'lib' + k && !PREV.paused) return stopPreview(); const r = await API().music_load(it.file); if (r && r.ok && r.b64) togglePreview('lib' + k, URL.createObjectURL(b64Blob(r.b64, 'audio/mpeg'))); }
 async function useLib(k){ const it = MUSIC_LIB[k], r = await API().music_load(it.file); if (!r || !r.ok) return say((r && r.error) || '', 'err'); S.music.credit = it.credit || ''; await setMusicTrack(r.b64, it.file, it.title || it.file); $('musicDlg').close(); focusMusic(); }
@@ -1188,7 +1201,7 @@ function voiceOptions(cur, withProj){
   html += `<optgroup label="${T('صداهای آمادهٔ گوگل', "Google's prebuilt voices")}">` + G_VOICES.map(([v, l]) => o(v, `${v} — ${l}`)).join('') + '</optgroup>';
   if (is38()){
     if (LIBV.length) html += `<optgroup label="${T('از کتابخانه', 'From the library')}">` + LIBV.map(v => o('lib:' + v.id, v.name, 'data-del')).join('') + '</optgroup>';
-    if (DESIGNS.length) html += `<optgroup label="${T('طراحی‌شده', 'Designed')}">` + DESIGNS.map(d => o('design:' + d.id, d.name, 'data-del')).join('') + '</optgroup>';
+    if (DESIGNS.length) html += `<optgroup label="${T('طراحی‌شده', 'Designed')}">` + DESIGNS.map(d => o('design:' + d.id, d.name)).join('') + '</optgroup>';
     if (CLONES.length) html += `<optgroup label="${T('شبیه‌سازی‌شده', 'Cloned')}">` + CLONES.map(c => o('clone:' + c.id, c.name, 'data-del')).join('') + '</optgroup>';
   }
   return html;
@@ -1208,14 +1221,11 @@ function fillExtras(){
   [...$('pModel').options].forEach(o => { o.dataset.pin = ''; if (o.value === DEFAULTS.model) o.dataset.pinned = ''; else delete o.dataset.pinned; });
   $('pModel')._onPin = async v => { DEFAULTS.model = v; try { await API().settings_set({ default_g_model: v }); } catch (e) {} say(T('مدلِ پیش‌فرضِ گوگل: ', 'Default Google model: ') + v, 'ok'); fillInspector(); };
   // Chatterbox samples you added can be deleted
-  const cv = $('cbxVoice'); [...cv.options].forEach(o => { if (o.value !== 'default') o.dataset.del = ''; });
+  const cv = $('cbxVoice'); /* 164: bundled voices are never deletable — only your samples carry data-del (cbxOptions) */
   cv._onDel = async id => { const r = await API().cbx_voice_delete(id); if (r && r.ok){ if (S.proj.cbx.voice === id) S.proj.cbx.voice = 'default'; await loadEngineLists(); fillInspector(); } else say((r && r.error) || '', 'err'); };
   // Fish voices: default + yours + recently used + designed (the classic groups)
   const f = S.proj.fish, fo = (v, l, d) => `<option value="${escapeHtml(v)}" ${v === f.voice ? 'selected' : ''} ${d ? 'data-del' : ''}>${escapeHtml(l)}</option>`;
-  $('fishVoice').innerHTML = fo('default', T('پیش‌فرض Fish Audio', 'Fish Audio default'))
-    + (FISH_VOICES.length ? `<optgroup label="${T('صداهای من', 'My voices')}">` + FISH_VOICES.map(v => fo(v._id || v.id, v.title || v._id || v.id, true)).join('') + '</optgroup>' : '')
-    + (FISH_USED.length ? `<optgroup label="${T('اخیراً استفاده‌شده', 'Recently used')}">` + FISH_USED.map(v => fo(v.id, v.title || v.id, true)).join('') + '</optgroup>' : '')
-    + (FISH_DESIGNED.length ? `<optgroup label="${T('طراحی‌شده', 'Designed')}">` + FISH_DESIGNED.map(v => fo(v.id, v.title || v.id, true)).join('') + '</optgroup>' : '');
+  $('fishVoice').innerHTML = fishOptions(f.voice);   // 164: the classic nested view, restored
   $('fishVoice')._onDel = async id => {
     if (FISH_VOICES.some(v => (v._id || v.id) === id)){ const r = await API().fish_delete_voice(id); if (!(r && r.ok)) return say((r && r.error) || '', 'err'); await loadEngineLists(); }
     FISH_USED = FISH_USED.filter(v => v.id !== id); FISH_DESIGNED = FISH_DESIGNED.filter(v => v.id !== id);
@@ -1352,7 +1362,8 @@ function seekVisual(t){
   playhead = Math.min(maxPlayT() || Infinity, Math.max(0, t)); const x = PAD + playhead * zoom;
   const ph = $('ph'); if (ph) ph.style.left = x + 'px';
   const pl = $('phLabel'); if (pl){ pl.textContent = num(fmt(playhead)); const host = pl.parentElement, hw = host ? host.scrollWidth || host.clientWidth : 1e6, lw = pl.offsetWidth || 44;
-    pl.style.left = Math.min(Math.max(0, hw - lw - 2), Math.max(2, x - lw / 2)) + 'px'; }
+    const rv = $('rulerView'), mL = parseFloat($('ruler').style.marginLeft) || 0, visL = rv ? rv.scrollLeft - mL : 0, visR = rv ? visL + rv.clientWidth : hw;
+ pl.style.left = Math.max(visL + 2, Math.min(x - lw / 2, Math.min(visR, hw) - lw - 2)) + 'px'; }   /* 167: centred on the line, held inside the visible ruler */
   const st = $('phStem'); if (st) st.style.left = x + 'px';
   const tb = $('tBtn'); if (tb) tb.textContent = num(fmt(playhead));
   const sc = $('tlScroll'); if (playing && sc && (x > sc.scrollLeft + sc.clientWidth - 70 || x < sc.scrollLeft)) sc.scrollLeft = Math.max(0, x - sc.clientWidth * 0.3);
@@ -1380,11 +1391,11 @@ async function exportAudio(withMusic){
   document.activeElement && document.activeElement.blur();
   if (withMusic === undefined) withMusic = !!S.music.file || !!S.music.name;          // the default: with music when there is music
   const mt = musicTrack(), mVol = mt ? (mt.volume ?? 1) : 1; if (mt && (mt.muted || mVol <= 0)) withMusic = false;
-  if (pending()){ say(T(`${FA(pending())} خط هنوز ساخته یا به‌روز نشده؛ اول «تبدیل به گفتار» را بزنید.`, `${pending()} lines are not voiced or updated yet; press "Voice it" first.`), 'err'); return; }
+  if (pending()) say(T(`${FA(pending())} خط تغییر کرده و دوباره ساخته نشده؛ تایم‌لاین همان‌طور که پخش می‌شود ذخیره می‌شود.`, `${pending()} lines are edited and not re-voiced; the timeline is exported as it plays.`), 'ok');
   if (!timelineSpec().clips.length){ say(T('همهٔ ترک‌های گفتار بی‌صدا هستند یا چیزی ساخته نشده.', 'All voice tracks are muted, or nothing is voiced.'), 'err'); return; }
   if (busy) return; setBusy(true);
   try {
-    const cfg = withMusic ? { on: true, file: S.music.file, level_db: S.music.level_db + 20 * Math.log10(Math.max(0.01, mVol)), duck: (S.music.duck_db ?? 12) > 0, duck_db: S.music.duck_db ?? 12, fade_in: S.music.fade_in, fade_out: S.music.fade_out } : null;
+    const cfg = withMusic ? { on: true, clips: musicClipsSpec(), file: S.music.file, level_db: S.music.level_db + 20 * Math.log10(Math.max(0.01, mVol)), duck: (S.music.duck_db ?? 12) > 0, duck_db: S.music.duck_db ?? 12, fade_in: S.music.fade_in, fade_out: S.music.fade_out } : null;
     const r = await API().timeline_files(timelineSpec(), cfg); if (!r.ok) throw new Error(r.error || T('خطای ناشناخته', 'Unknown error'));
     const sv = await API().save_mp3(withMusic ? r.b64_music : r.b64, withMusic ? 'music' : '');
     if (sv.ok) say(T('ذخیره شد: ', 'Saved: ') + sv.path + ' — ' + num(r.seconds) + T(' ثانیه', ' s') + (withMusic ? T(' — با موسیقی', ' — with music') : T(' — فقط گفتار', ' — voice only')), 'ok');
@@ -1410,10 +1421,10 @@ function trimSpan(text, c){
 }
 // ---- 3.8: IPA pronunciation and overlapping reactions
 function caretLine(){ const id = sel.size === 1 ? [...sel][0] : lastLine; return id && S.lines[id] ? id : null; }
-function insertIPA(){ const id = caretLine(); if (!id) return say(T('اول در یک خط، کنارِ واژه کلیک کنید.', 'Click next to the word first.'), 'err');
-  const ipa = prompt(T('تلفظِ واژه به الفبای آوایی بین‌المللی (IPA)، بدونِ اسلش:', 'The word\'s pronunciation in IPA, without slashes:')); if (ipa && ipa.trim()) insertTag('/' + ipa.trim() + '/'); }
-function insertOverlap(){ const id = caretLine(); if (!id) return say(T('اول در یک خط کلیک کنید.', 'Click in a line first.'), 'err');
-  const r = prompt(T('واکنشِ شنونده (مثلاً: آره، واقعاً؟):', 'The listener\'s reaction (e.g. oh really?):')); if (r && r.trim()) insertTag('|' + r.trim() + '|'); }
+async function insertIPA(){ const id = caretLine(); if (!id) return say(T('اول در یک خط، کنارِ واژه کلیک کنید.', 'Click next to the word first.'), 'err');
+  const ipa = await askText(T('تلفظِ واژه به الفبای آوایی بین‌المللی (IPA)، بدونِ اسلش:', 'The word\'s pronunciation in IPA, without slashes:')); if (ipa && ipa.trim()) insertTag('/' + ipa.trim() + '/'); }
+async function insertOverlap(){ const id = caretLine(); if (!id) return say(T('اول در یک خط کلیک کنید.', 'Click in a line first.'), 'err');
+  const r = await askText(T('واکنشِ شنونده (مثلاً: آره، واقعاً؟):', 'The listener\'s reaction (e.g. oh really?):')); if (r && r.trim()) insertTag('|' + r.trim() + '|'); }
 // ---- Google 3.1 two speakers; Fish custom style, age, state and speakers
 function setDuo(path, v){ remember(); const [a, b] = path.split('.'); if (b) S.proj.duo[a][b] = v; else S.proj.duo[a] = v; markDirty(() => true); fillExtras2(); renderScript(); autosave(); }
 function setFishOpt(k, v){ remember(); S.proj.fish[k] = v; markDirty(id => lineEngine(id) === 'fish'); fillExtras2(); renderScript(); autosave(); }
@@ -1513,5 +1524,80 @@ function reflowSentences(...a){ const r = reflowSentences0(...a); return typeof 
 function previewHooks(){
   const set = (id, eng) => { const el = $(id); if (!el) return; el.dataset.preview = eng; el._preview = v => previewVoice(eng, v || null); };
   set('pVoice', 'google'); set('lnVoice', 'google'); set('fishVoice', 'fish'); set('cbxVoice', 'chatterbox');
-  const pe = $('pEngine'); if (pe){ pe.dataset.preview = 'engine'; pe._preview = v => previewVoice(v, v === 'google' ? S.proj.g_voice : v === 'fish' ? S.proj.fish.voice : v === 'chatterbox' ? S.proj.cbx.voice : null); }
 }
+
+
+// ===================================================================================
+// 164 · fixes from the founder's review of 163
+// ===================================================================================
+function menuDo(fn, ...a){ if (document.activeElement) document.activeElement.blur(); setTimeout(() => fn(...a), 0); }   // a menu reopens after a choice
+let ASK = null;
+function askText(title, hint, initial){ return new Promise(res => { if (ASK) ASK(null); ASK = res; $('askTitle').textContent = title || ''; $('askHint').textContent = hint || ''; $('askInput').value = initial || ''; $('askDlg').showModal(); setTimeout(() => $('askInput').focus(), 30); }); }
+function askDone(v){ const r = ASK; ASK = null; if ($('askDlg').open) $('askDlg').close(); if (r) r(v === null ? null : String(v)); }
+document.addEventListener('DOMContentLoaded', () => { const d = $('askDlg'); if (d) d.addEventListener('close', () => { if (ASK) askDone(null); }); });
+// the ruler is exactly as wide as the lanes and starts at the same pixel, so the label and the line never part
+function alignRuler(){
+  const r = $('ruler'), l = $('lanes'), rv = $('rulerView'), sc = $('tlScroll'); if (!r || !l) return;
+  r.style.width = Math.max(l.scrollWidth, l.offsetWidth) + 'px'; const cur = parseFloat(r.style.marginLeft) || 0;
+  const d = Math.round(l.getBoundingClientRect().left - (r.getBoundingClientRect().left - cur) - (rv && sc ? sc.scrollLeft - rv.scrollLeft : 0));
+  if (Math.abs(d - cur) > 0.5) r.style.marginLeft = d + 'px'; if (rv && sc) rv.scrollLeft = sc.scrollLeft;
+}
+const _renderTimeline163 = renderTimeline;
+renderTimeline = function(){ _renderTimeline163(); requestAnimationFrame(() => { alignRuler(); seekVisual(playhead); }); };
+addEventListener('resize', () => requestAnimationFrame(alignRuler));
+// the volume overlay
+function openVolPop(ev, i){
+  ev.stopPropagation(); let p = $('volPop'); if (!p){ p = document.createElement('div'); p.id = 'volPop'; p.className = 'ui fixed z-[1500] w-56 rounded-box border border-base-300 bg-base-200 p-3 shadow-xl'; document.body.appendChild(p);
+    document.addEventListener('pointerdown', e => { if (!e.target.closest('#volPop')) p.classList.add('hidden'); }, true); }
+  const t = S.tracks[i], v = t.volume ?? 1, r = ev.currentTarget.getBoundingClientRect();
+  p.innerHTML = `<div class="mb-2 flex items-center justify-between text-xs font-semibold"><span>${T('بلندیِ', 'Volume of')} ${escapeHtml(T(t.name, t.en))}</span><span id="volVal" class="tabular-nums text-base-content/70" dir="ltr">${Math.round(v * 100)}%</span></div>
+    <div class="flex items-center gap-2"><input type="range" min="0" max="2" step="0.05" value="${v}" class="range range-xs flex-1 text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="setTrackVolume(${i}, +this.value, this); $('volVal').textContent = Math.round(this.value * 100) + '%'">
+    <button class="btn btn-ghost btn-xs btn-square" onclick="setTrackVolume(${i}, 1, null); openVolPop({ stopPropagation(){}, currentTarget: document.querySelector('[data-ti=&quot;${i}&quot;] [aria-label=volume]') || this }, ${i})" data-tip="بازنشانی به ۱۰۰٪" data-tip-en="Reset to 100%"><svg class="size-3.5"><use href="#i-rotate-ccw"/></svg></button></div>`;
+  p.classList.remove('hidden'); p.style.top = Math.min(innerHeight - 110, r.bottom + 6) + 'px'; p.style.left = Math.max(8, Math.min(innerWidth - 232, r.left - 100)) + 'px';
+}
+
+// 164 · voice lists as the classic interface had them; delete only on cloned voices, your samples and recent items
+function cbxGroups(list, selVal, delSamples){
+  const groups = new Map(), mine = [];
+  (list || []).forEach(v => { if (typeof v === 'string') v = { id: v, name: v, builtin: true }; if (v.builtin === false || v.mine || v.user){ mine.push(v); return; }
+    const g = T('نمونه: ', 'Sample: ') + (v.voice || v.name || v.id); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(v); });
+  const op = (v, label, del) => `<option value="${escapeHtml(v.id || v.name)}" ${(v.id || v.name) === selVal ? 'selected' : ''} ${del ? 'data-del' : ''}>${escapeHtml(label)}</option>`;
+  return [...groups.entries()].map(([g, vs]) => `<optgroup label="${escapeHtml(g)}">` + vs.map(v => op(v, v.style || v.title || v.name || v.id, false)).join('') + '</optgroup>').join('')
+    + (mine.length ? `<optgroup label="${T('نمونه‌های من', 'My samples')}">` + mine.map(v => op(v, v.name || v.title || v.id, delSamples)).join('') + '</optgroup>' : '');
+}
+function cbxOptions(cur){ return `<option value="default" ${cur === 'default' || !cur ? 'selected' : ''}>${T('پیش‌فرض', 'Default')}</option>` + cbxGroups(CBX_VOICES, cur, true); }
+function fishOptions(cur){
+  const fo = (v, l, d) => `<option value="${escapeHtml(v)}" ${v === cur ? 'selected' : ''} ${d ? 'data-del' : ''}>${escapeHtml(l)}</option>`;
+  return fo('default', T('پیش‌فرض Fish Audio', 'Fish Audio default'))
+    + (FISH_VOICES.length ? `<optgroup label="${T('صداهای من در Fish Audio', 'My Fish Audio voices')}">` + FISH_VOICES.map(v => fo(v._id || v.id, v.title || v._id || v.id, true)).join('') + '</optgroup>' : '')
+    + (FISH_USED.length ? `<optgroup label="${T('استفاده‌شده‌های قبلی', 'Used before')}">` + FISH_USED.map(v => fo(v.id, v.title || v.id, true)).join('') + '</optgroup>' : '')
+    + (FISH_DESIGNED.length ? `<optgroup label="${T('طراحی‌شده‌ها', 'Designed')}">` + FISH_DESIGNED.map(v => fo(v.id, v.title || v.id, false)).join('') + '</optgroup>' : '')
+    + cbxGroups(CBX_VOICES, cur, true);
+}
+
+// 166 · music clips: split, duplicate, delete one (the music itself goes only with its last clip); quick trim visual for music
+const musicClipsSpec = () => ((S.tracks.find(t => t.kind === 'music') || {}).clips || []).map(c => ({ in: c.in, out: c.out, at: c.at }));
+function splitMusic(){ const [t, c] = findClip(selClip); if (!c || t.kind !== 'music') return; const cut = playhead - c.at;
+  if (cut <= 0.1 || cut >= c.out - c.in - 0.1) return say(T('پلی‌هد را روی کلیپِ موسیقی بگذارید.', 'Put the playhead over the music clip.'), 'err');
+  remember(); const n = { ...c, id: 'mu' + (++uid), at: c.at + cut, in: c.in + cut }; c.out = c.in + cut; t.clips.push(n); t.clips.sort((a, b) => a.at - b.at); S.music.manual = true; selClip = n.id; renderTimeline(); autosave(); }
+function dupMusic(){ const [t, c] = findClip(selClip); if (!c || t.kind !== 'music') return; remember(); const len = c.out - c.in, end = Math.max(...t.clips.map(x => x.at + x.out - x.in));
+  const free = !t.clips.some(x => x !== c && x.at < c.at + 2 * len && x.at + x.out - x.in > c.at + len);
+  const n = { ...c, id: 'mu' + (++uid), at: free ? c.at + len : end }; t.clips.push(n); t.clips.sort((a, b) => a.at - b.at); S.music.manual = true; selClip = n.id; renderTimeline(); autosave(); }
+function delMusicClip(){ const [t, c] = findClip(selClip); if (!c || t.kind !== 'music') return; if (t.clips.length <= 1) return removeMusic(); remember(); t.clips = t.clips.filter(x => x !== c); S.music.manual = true; selClip = null; renderTimeline(); autosave(); }
+const _quickTrimVisual165 = quickTrimVisual;
+quickTrimVisual = function(c){ if (!c.lines) return renderTimeline(); return _quickTrimVisual165(c); };
+
+// 166 · example chips in the voice-design dialogs add to the description
+function dsChip(id, el){ const t = $(id); if (!t) return; t.value = (t.value.trim() ? t.value.trim() + '، ' : '') + el.textContent.trim(); t.focus(); }
+
+// 166 · a line is sent only when it has something to say: for Google a tag alone counts (<long pause>), for the others it needs words
+function speakableLine(id){ const L = S.lines[id]; if (!L || !(L.text || '').trim()) return false; if (lineVoice(id).engine === 'google') return true;
+  return /[\p{L}\p{N}]/u.test(spoken(id).replace(/<[^>]*>|\|[^|]*\||\{[^}]*\}|\/[^/\s][^/]*\//g, '')); }
+
+// 167 · voice library / design / cloning live at the bottom of the voice menu (no more row of truncated buttons)
+const _previewHooks166 = previewHooks;
+previewHooks = function(){ _previewHooks166();
+  const g = is38() ? [['library-big', 'کتابخانهٔ صداهای گوگل…', 'Google voice library…', null], ['wand-sparkles', 'طراحیِ صدا…', 'Design a voice…', () => $('designDlg').showModal()], ['audio-lines', 'شبیه‌سازیِ صدا…', 'Clone a voice…', () => openClone()]] : [];
+  ['pVoice', 'lnVoice'].forEach(id => { if ($(id)) $(id)._actions = g.map(a => a[3] ? a : [a[0], a[1], a[2], () => openLib(id === 'pVoice' ? 'proj' : 'line')]); });
+  if ($('fishVoice')) $('fishVoice')._actions = [['library-big', 'کتابخانهٔ Fish Audio…', 'Fish Audio library…', () => openFishLib()], ['audio-lines', 'شبیه‌سازیِ صدا…', 'Clone a voice…', () => $('fishCloneDlg').showModal()], ['wand-sparkles', 'طراحیِ صدا…', 'Design a voice…', () => $('fishDesignDlg').showModal()]];
+};

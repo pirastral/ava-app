@@ -16,7 +16,7 @@ const TEXT0 = () => ({ type: 'text', text: T('عنوانِ قسمت', 'Episode t
 const MEDIA0 = (type, asset, aw, ah) => { const r = aw && ah ? aw / ah : 16 / 9, w = 0.28, h = w * outSize()[0] / outSize()[1] / r;
   return { type, asset, x: 0.68, y: 0.06, w, h: Math.min(0.5, h), rot: 0, fit: 'cover', radius: 0.02, opacity: 1, mute: true, volume: 1, loop: true, trimIn: 0, anim: {},
     stroke: { on: false, color: '#ffffff', style: 'solid', width: 0.004, opacity: 1 }, shadow: { on: true, color: '#000000', opacity: 0.45, angle: 90, distance: 0.008, blur: 0.02, spread: 0 }, start: 0, end: null }; };
-const STICKER0 = () => { const [W, H] = outSize(); return { type: 'sticker', emoji: '👑', x: 0.84, y: 0.08, w: 0.09, h: 0.09 * W / H, rot: 6, bg: { on: true, color: '#22c4b5' }, start: 0, end: null, opacity: 1, anim: { loop: 'breathe', speed: 5 } }; };
+const STICKER0 = () => { const [W, H] = outSize(); return { type: 'sticker', emoji: '👑', x: 0.84, y: 0.08, w: 0.09, h: 0.09 * W / H, rot: 6, bg: { on: true, color: '#e6a483' }, start: 0, end: null, opacity: 1, anim: { loop: 'breathe', speed: 5 } }; };
 const V0 = () => ({ ratio: '16:9', res: '2k', fps: 30, bg: '#0c1230', pod: POD0(), subs: SUBS0(),
   objects: [{ id: 'pod', type: 'pod', x: 0.06, y: 0.26, w: 0.88, h: 0.52, rot: 0, start: 0, end: null, opacity: 1 }, { id: 'title', ...TEXT0() }] });
 let V = V0();
@@ -117,7 +117,7 @@ function animAt(o, t){
   if (a.out === 'fade') alpha *= ease(pout); else if (a.out === 'down'){ alpha *= ease(pout); dy += (1 - ease(pout)) * 0.06; } else if (a.out === 'shrink') sc *= Math.max(0.01, ease(pout));
   const w = 2 * Math.PI * (t - st) * (0.25 + sp * 0.06);
   if (a.loop === 'breathe') sc *= 1 + 0.025 * Math.sin(w); else if (a.loop === 'wave') rot += 2.5 * Math.sin(w);
-  if (a.bgIn && a.bgIn !== 'none') bg = ease(pin);
+  if (a.bgIn && a.bgIn !== 'none') bg = ease(Math.min(1, Math.max(0, (t - st - (a.bgDelay || 0)) / d)));
   return { alpha, dy, sc, rot, type, bg, bgMode: a.bgIn || 'none', shine: a.loop === 'shine' ? ((t - st) * (0.25 + sp * 0.06)) % 1.6 - 0.3 : null };
 }
 function withXform(ctx, o, W, H, fn){
@@ -157,18 +157,28 @@ function cleanCue(text){ return (text || '').replace(SPK_RE, '').replace(/<[^>]*
 function cuesNow(){ if (!V.subs.follow && V.subs.cues.length) return V.subs.cues;
   return scriptOrder().filter(c => !c.unvoiced).flatMap(c => c.lines.length === 1 ? [{ at: c.at, dur: dur(c), text: cleanCue(S.lines[c.lines[0]].text) }]
     : c.lines.map((id, k) => ({ at: c.at + dur(c) * k / c.lines.length, dur: dur(c) / c.lines.length, text: cleanCue(S.lines[id].text) }))).filter(q => q.text); }
+// 168: a speaker's photo is that speaker's avatar in the podcast (found by the speaker, not by position)
+const PHOTO_CACHE = new Map();
+function photoEl(url){ let im = PHOTO_CACHE.get(url); if (!im){ im = new Image(); im.decoding = 'async'; im.onload = () => { if (typeof VVER !== 'undefined') VVER++; }; im.src = url; PHOTO_CACHE.set(url, im); } return im; }
+function spkPhotoImg(name){ const sp = typeof spkByName === 'function' ? spkByName(name) : null; if (!sp || !sp.photo) return null; const im = photoEl(sp.photo); return im.complete && im.naturalWidth ? im : null; }
+function preloadPhotos(){ return Promise.all(spkList().filter(s => s.photo).map(s => new Promise(res => { const im = photoEl(s.photo); if (im.complete) return res(); im.addEventListener('load', res, { once: true }); im.addEventListener('error', res, { once: true }); }))); }
+function drawPhotoCircle(ctx, im, cx, cy, r){
+  ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.closePath(); ctx.clip();
+  const s = Math.max(2 * r / im.naturalWidth, 2 * r / im.naturalHeight), w = im.naturalWidth * s, h = im.naturalHeight * s; ctx.drawImage(im, cx - w / 2, cy - h / 2, w, h); ctx.restore();
+  ctx.save(); ctx.strokeStyle = rgba('#ffffff', 0.75); ctx.lineWidth = Math.max(1, r * 0.06); ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); }
 function drawPodLayer(ctx, o, W, H, t, orbs){
   const P = V.pod, orb = P.wave === 'glass' || P.wave === 'water';
   if ((V.pod.layout === 'quote')){ const q = cuesNow().find(c => t >= c.at && t < c.at + c.dur); if (q){ const fake = { ...o, text: '«' + q.text + '»', size: 0.05, weight: 900, color: '#fff', align: 'center', bg: { on: false } }; drawText(ctx, fake, W, H); } }
   orbs.forEach(ob => { const cx = ob.cx * W, cy = ob.cy * H, R = ob.r * H;
-    if (!orb){ ctx.save(); ctx.fillStyle = rgba('#ffffff', 0.12); ctx.beginPath(); ctx.arc(cx, cy, R * 0.55, 0, Math.PI * 2); ctx.fill();
-      ctx.font = FONT(800, R * 0.32); ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.direction = 'rtl'; ctx.fillText(ob.spk.slice(0, 2), cx, cy);
+    if (!orb){ ctx.save(); const ph = spkPhotoImg(ob.spk); if (ph) drawPhotoCircle(ctx, ph, cx, cy, R * 0.55); else { ctx.fillStyle = rgba('#ffffff', 0.12); ctx.beginPath(); ctx.arc(cx, cy, R * 0.55, 0, Math.PI * 2); ctx.fill();
+      ctx.font = FONT(800, R * 0.32); ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.direction = 'rtl'; ctx.fillText(ob.spk.slice(0, 2), cx, cy); }
       const lv = ob.level, bars = 36; ctx.fillStyle = rgba('#ffffff', 0.85);
       if (P.wave === 'circle'){ for (let i = 0; i < 48; i++){ const a = i / 48 * Math.PI * 2, len = R * (0.12 + 0.5 * lv * (0.5 + 0.5 * Math.sin(i * 1.7 + t * 9))); ctx.save(); ctx.translate(cx, cy); ctx.rotate(a); rrect(ctx, -R * 0.02, -R * 0.62 - len, R * 0.04, len, R * 0.02); ctx.fill(); ctx.restore(); } }
       else if (P.wave === 'line'){ ctx.strokeStyle = rgba('#ffffff', 0.9); ctx.lineWidth = Math.max(1, H * 0.003); ctx.beginPath(); for (let i = 0; i <= 80; i++){ const x = cx - R * 1.3 + i / 80 * R * 2.6, y = cy + R * 0.95 + Math.sin(i * 0.5 + t * 8) * R * 0.25 * lv; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.stroke(); }
       else { const bw = R * 2.6 / bars; for (let i = 0; i < bars; i++){ const hh = R * 0.5 * Math.max(0.06, lv * (0.35 + 0.65 * Math.abs(Math.sin(i * 1.3 + t * 7)))); const x = cx - R * 1.3 + i * bw;
           if (P.wave === 'mirror') rrect(ctx, x, cy + R * 0.95 - hh / 2, bw * 0.6, hh, bw * 0.3); else rrect(ctx, x, cy + R * 1.2 - hh, bw * 0.6, hh, bw * 0.3); ctx.fill(); } }
       ctx.restore(); }
+ if (orb){ const ph = spkPhotoImg(ob.spk); if (ph) drawPhotoCircle(ctx, ph, cx, cy, R * 0.5); }
     if (P.names !== false && orbs.length){ ctx.save(); ctx.font = FONT(700, Math.max(8, H * 0.024)); ctx.direction = 'rtl'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; const tw = ctx.measureText(ob.spk).width + H * 0.03, ty = cy + R * (orb ? 1.25 : 1.45);
       ctx.fillStyle = rgba('#ffffff', 0.16); rrect(ctx, cx - tw / 2, ty - H * 0.02, tw, H * 0.04, H * 0.02); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillText(ob.spk, cx, ty); ctx.restore(); } });
 }
@@ -181,15 +191,15 @@ function drawSubs(ctx, W, H, t){
 }
 // ---- one frame (preview and export call exactly this)
 async function vFrame(ctx, W, H, t, exporting){
-  RT = t;
+  if (exporting) await preloadPhotos(); RT = t;
   const P = V.pod, pod = V.objects.find(o => o.type === 'pod' && visibleAt(o, t)), orbs = pod ? podLayout(pod, W, H, t) : [];
   const bgEl = (P.bg === 'image' || P.bg === 'video') && P.bgAsset ? await mediaEl(P.bgAsset) : null;
   if (bgEl && bgEl.tagName === 'VIDEO' && exporting) await seekVideo(bgEl, t % (bgEl.duration || 1e9));
   if (GLR){ GLR.draw(W, H, t, (P.wave === 'glass' || P.wave === 'water') ? orbs : [], bgEl); ctx.drawImage(GLR.cv, 0, 0, W, H); } else { ctx.fillStyle = V.bg; ctx.fillRect(0, 0, W, H); }
   if (P.ovOp > 0){ ctx.fillStyle = rgba(P.ovColor, P.ovOp); ctx.fillRect(0, 0, W, H); }
-  if (P.grad && P.gradOp > 0){ const g = P.gradDir === 'to top' ? ctx.createLinearGradient(0, H, 0, 0) : P.gradDir === 'to bottom' ? ctx.createLinearGradient(0, 0, 0, H) : ctx.createLinearGradient(0, 0, W, H);
+  if (P.grad && P.gradOp > 0){ const g = P.gradDir === 'to top' ? ctx.createLinearGradient(0, H, 0, 0) : P.gradDir === 'to bottom' ? ctx.createLinearGradient(0, 0, 0, H) : P.gradDir === 'to left' ? ctx.createLinearGradient(W, 0, 0, 0) : P.gradDir === 'to right' ? ctx.createLinearGradient(0, 0, W, 0) : P.gradDir === 'radial' ? ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7) : ctx.createLinearGradient(0, 0, W, H);
     g.addColorStop(0, rgba(P.gradA, P.gradOp)); g.addColorStop(1, rgba(P.gradB, 0)); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); }
-  for (const o of V.objects){ if (!visibleAt(o, t)) continue;
+  for (const o of zOrder()){ if (!visibleAt(o, t) || layerOf(o.id).hidden) continue;
     if (o.type === 'pod') drawPodLayer(ctx, o, W, H, t, orbs);
     else if (o.type === 'text') drawText(ctx, o, W, H);
     else if (o.type === 'sticker') drawSticker(ctx, o, W, H);
@@ -230,7 +240,7 @@ function syncPreviewVideos(){
 // ---- selection, move, scale, rotate, snap (the mock's interactions, on the real document)
 function hitTest(nx, ny){
   const [W, H] = outSize();
-  for (let i = V.objects.length - 1; i >= 0; i--){ const o = V.objects[i]; if (!visibleAt(o, playhead)) continue;
+  const zo = zOrder(); for (let i = zo.length - 1; i >= 0; i--){ const o = zo[i]; if (!visibleAt(o, playhead) || layerOf(o.id).hidden) continue;
     const cx = (o.x + o.w / 2) * W, cy = (o.y + o.h / 2) * H, a = -(o.rot || 0) * Math.PI / 180, px = nx * W - cx, py = ny * H - cy;
     const rx = px * Math.cos(a) - py * Math.sin(a), ry = px * Math.sin(a) + py * Math.cos(a); if (Math.abs(rx) <= o.w * W / 2 && Math.abs(ry) <= o.h * H / 2) return o.id; }
   return null;
@@ -312,7 +322,7 @@ function fillXformOnly(){ const o = objById(vSel); if (!o) return; const [W, H] 
 function xfApply(k){ const o = objById(vSel); if (!o) return; remember(); const [W, H] = outSize(), ar = o.w * W / (o.h * H);
   o.x = +$('xfX').value / W; o.y = +$('xfY').value / H; const w = +$('xfW').value / W, h = +$('xfH').value / H;
   if (k === 'w'){ o.w = w; if (o.lock !== false) o.h = o.w * W / ar / H; } else if (k === 'h'){ o.h = h; if (o.lock !== false) o.w = o.h * H * ar / W; } o.rot = +$('xfR').value || 0; vChanged(); }
-const TYPE_NAME = { pod: ['طرح پادکست', 'Podcast design'], text: ['متن', 'Text'], image: ['تصویر', 'Picture'], video: ['ویدیو', 'Video'], sticker: ['استیکر', 'Sticker'] };
+const TYPE_NAME = { pod: ['قالبِ پادکست', 'Podcast template'], text: ['متن', 'Text'], image: ['تصویر', 'Picture'], video: ['ویدیو', 'Video'], sticker: ['استیکر', 'Sticker'] };
 function fillVInsp(){
   const box = $('vinsp'); if (!box) return; const o = vSel && objById(vSel), [W, H] = outSize(), P = V.pod; let h = '';
   if (!o){
@@ -368,7 +378,7 @@ function fillVInsp(){
       + vrange('سرعت', 'Speed', a.speed || 5, 1, 10, 1, '', "vsetAnim('speed', +this.value, true)")
       + (o.type === 'text' && o.bg && o.bg.on ? vselect('انیمیشنِ پس‌زمینهٔ متن', "The text background's animation", [['none', T('بدون', 'None')], ['open', T('باز شدن از وسط', 'Open from the centre')], ['stretch', T('کشیده شدن', 'Stretch')], ['fade', T('محو شدن', 'Fade')]], a.bgIn || 'none', "vsetAnim('bgIn', this.value)") : ''); })(), "vreset('anim')");
     if (o.type === 'pod'){
-      h += vsec('طرح‌ها', 'Designs', `<div class="grid grid-cols-3 gap-2">${STYLES.map(([n, st], k) => `<button class="btn h-auto flex-col gap-1 p-1 ${P.style === k ? 'btn-primary' : 'border-base-content/10 bg-base-100'}" onclick="applyVStyle(${k})"><span class="block h-9 w-full rounded-field" style="background:linear-gradient(135deg, ${PALS[st.pal][1]}, ${PALS[st.pal][0]} 45%, ${PALS[st.pal][2]})"></span><span class="text-[11px]">${escapeHtml(n)}</span></button>`).join('')}</div>`, "vreset('pod')");
+      h += vsec('طرح‌ها', 'Designs', `<div class="grid grid-cols-3 gap-2">${STYLES.map(([n, st], k) => `<button class="btn h-auto flex-col gap-1 p-1 ${P.style === k ? 'btn-primary' : 'border-base-content/10 bg-base-100'}" onclick="applyVStyle(${k})"><span class="mx-auto block size-9 rounded-full" style="background:linear-gradient(135deg, ${PALS[st.pal][1]}, ${PALS[st.pal][0]} 45%, ${PALS[st.pal][2]})"></span><span class="text-[11px]">${escapeHtml(n)}</span></button>`).join('')}</div>`, "vreset('pod')");
       h += vsec('چیدمان و موجِ صدا', 'Layout and waveform', vselect('چیدمان', 'Layout', [['auto', T('خودکار — یکی برای هر گوینده', 'Automatic — one per speaker')], ['single', T('فقط گوینده‌ای که حرف می‌زند', 'Only whoever is speaking')], ['quote', T('نقل‌قولِ بزرگ', 'Big quote')]], P.layout, "vset('pod.layout', this.value)")
         + `<div class="grid grid-cols-3 gap-1.5">${WAVES.map(([v, l]) => `<button class="btn btn-xs ${P.wave === v ? 'btn-primary' : 'border-base-content/15 bg-base-100'}" onclick="vset('pod.wave', '${v}'); fillVInsp()">${escapeHtml(l)}</button>`).join('')}</div>`
         + `<p class="text-xs text-base-content/60">${T(`گوینده‌ها: ${speakers().join('، ')}`, `Speakers: ${speakers().join(', ')}`)}</p>` + vtoggle('نامِ گوینده‌ها', "Speakers' names", P.names !== false, "vset('pod.names', this.checked)"));
@@ -426,8 +436,8 @@ function wireVTL(){
     const tr = e.target.closest('.vtrim'), x0 = e.clientX, s0 = o.start || 0, e0 = o.end == null ? projEnd() : o.end; remember();
     const mv = ev => { const d = (ev.clientX - x0) / zoom; if (tr && tr.dataset.e === 's') o.start = Math.max(0, Math.min(e0 - 0.2, s0 + d)); else if (tr) o.end = Math.max(s0 + 0.2, e0 + d); else { o.start = Math.max(0, s0 + d); o.end = o.start + (e0 - s0); } renderVTL(); vDraw(); };
     const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); autosave(); fillVInsp(); }; addEventListener('pointermove', mv); addEventListener('pointerup', up); };
-  lanes.ondblclick = e => { const bar = e.target.closest('.vbar'); if (!bar) return; if (bar.dataset.k === 'audio') return setMode('audio');
-    if (bar.dataset.k === 'subs'){ const ci = +bar.dataset.i; if (V.subs.follow){ V.subs.cues = cuesNow().map(q => ({ ...q })); V.subs.follow = false; } const q = V.subs.cues[ci]; const nt = prompt(T('متنِ زیرنویس:', 'Subtitle text:'), q.text); if (nt !== null){ remember(); q.text = nt.trim(); renderVTL(); vDraw(); autosave(); } } };
+  lanes.ondblclick = async e => { const bar = e.target.closest('.vbar'); if (!bar) return; if (bar.dataset.k === 'audio') return setMode('audio');
+    if (bar.dataset.k === 'subs'){ const ci = +bar.dataset.i; if (V.subs.follow){ V.subs.cues = cuesNow().map(q => ({ ...q })); V.subs.follow = false; } const q = V.subs.cues[ci]; const nt = await askText(T('متنِ زیرنویس', 'Subtitle text'), '', q.text); if (nt !== null){ remember(); q.text = nt.trim(); renderVTL(); vDraw(); autosave(); } } };
   document.querySelectorAll('#vtl [data-row][draggable]').forEach(row => {
     row.ondragstart = e => e.dataTransfer.setData('text/plain', row.dataset.row);
     row.ondragover = e => e.preventDefault();
@@ -469,14 +479,14 @@ async function vxProbe(){ const [W, H] = outSize($('vxRes').value), fps = +$('vx
 const u8b64 = u8 => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
 async function exportVideo(){
   if (vExp) return; const res = $('vxRes').value, fps = +$('vxFps').value, [W, H] = window.__vxSize || outSize(res), dur = projEnd();   // __vxSize: test hook only
-  if (pending()){ say(T(`${FA(pending())} خط هنوز ساخته یا به‌روز نشده؛ اول «تبدیل به گفتار» را بزنید.`, `${pending()} lines are not voiced or updated yet; press "Voice it" first.`), 'err'); return; }
+
   const { vc, ac } = await probeCodecs(W, H, fps); if (!vc) return vxProbe();
   vExp = { cancel: false }; $('vxGo').disabled = true; $('vxProgRow').classList.remove('hidden'); const prog = (p, msg) => { $('vxProg').value = Math.round(p * 1000) / 10; if (msg) $('vxInfo').textContent = msg; };
   let err = null;
   try {
     await document.fonts.ready; prog(0, T('صدای نهایی ساخته می‌شود…', 'Making the final audio…'));
     const mt = musicTrack(), mVol = mt ? (mt.volume ?? 1) : 1, wm = $('vxMusic').value === 'music' && (S.music.file || S.music.name) && !(mt && (mt.muted || mVol <= 0));
-    const cfg = wm ? { on: true, file: S.music.file, level_db: S.music.level_db + 20 * Math.log10(Math.max(0.01, mVol)), duck: (S.music.duck_db ?? 12) > 0, duck_db: S.music.duck_db ?? 12, fade_in: S.music.fade_in, fade_out: S.music.fade_out } : null;
+    const cfg = wm ? { on: true, clips: musicClipsSpec(), file: S.music.file, level_db: S.music.level_db + 20 * Math.log10(Math.max(0.01, mVol)), duck: (S.music.duck_db ?? 12) > 0, duck_db: S.music.duck_db ?? 12, fade_in: S.music.fade_in, fade_out: S.music.fade_out } : null;
     // the audio: the engine's final mix (exactly as the audio export makes it) + every unmuted video clip's own sound
     let base = null;
     if (timelineSpec().clips.length){ const r = await API().timeline_files(timelineSpec(), cfg); if (!r.ok) throw new Error(r.error || '');
@@ -548,6 +558,317 @@ function mp3Frames(u8){
 function vInit(){
   document.body.classList.add('mode-audio');
   const aside = $('vinsp') && $('vinsp').parentElement; if (aside) [...aside.children].forEach(ch => { if (ch.id !== 'vinsp') ch.classList.add('audio-only'); });
+  // 164: the script toolbar (voice it, tags, tones, direction) belongs to the audio tab only
+  const ea = $('editorArea'), gb = $('genBtn'); if (ea && gb){ let el = gb; while (el.parentElement && el.parentElement !== ea.parentElement) el = el.parentElement; if (el !== ea && el.parentElement === ea.parentElement) el.classList.add('audio-only'); }
   if ($('vover')) wireStage();
 }
 vInit();
+
+
+// =====================================================================================
+// 165 · THE VIDEO TAB, REBUILT FROM THE MOCK — its own panels (transplanted verbatim), its toolbar and object
+//       bar, and its timeline: the SAME timeline component with video tracks — subtitles on top, object and
+//       background layers (drag the grip to restack, drag clips between layers), the audio as one track below.
+// =====================================================================================
+Object.defineProperty(window, 'POD', { get: () => V.pod, configurable: true });   // the mock's inline handlers write POD.*
+const VICON = { sub: 'captions', obj: 'layers', vid: 'clapperboard', mix: 'audio-lines' };
+const VADD = { sub: [['subs', 'زیرنویسِ تازه', 'New subtitle']], obj: [['text', 'متن', 'Text'], ['pimage', 'تصویر روی ویدیو', 'Picture on top'], ['pvideo', 'ویدیو روی ویدیو', 'Video on top'], ['sticker', 'استیکر', 'Sticker']],
+  vid: [['podcast', 'قالبِ پادکست', 'Podcast template'], ['video', 'ویدیو', 'Video'], ['image', 'تصویر', 'Image']], mix: [] };
+let vTouchT = null;
+function vTouch(){ if (!vTouchT) remember(); clearTimeout(vTouchT); vTouchT = setTimeout(() => vTouchT = null, 800); VVER++; vDraw(); autosave(); }
+function renderPod(){ vTouch(); renderPodUI(); }
+function paintOverlay(){ vTouch(); }
+// ---- layers: the track order IS the stacking order (top of the list = front)
+function ensureLayers(){
+  if (!Array.isArray(V.layers)) V.layers = [];
+  const known = new Set(V.layers.flatMap(l => l.items));
+  V.objects.forEach(o => { if (known.has(o.id)) return; const kind = o.type === 'pod' || o.full ? 'vid' : 'obj';
+    let L = V.layers.find(l => l.kind === kind && !l.items.some(id => { const x = objById(id); return x && overlap(x, o); }));
+    if (!L){ L = { id: 'L' + (++uid), kind, name: kind === 'vid' ? T('پس‌زمینه', 'Background') : T('لایه', 'Layer'), en: kind === 'vid' ? 'Background' : 'Layer', items: [] }; if (kind === 'obj') V.layers.unshift(L); else V.layers.push(L); }
+    L.items.push(o.id); });
+  V.layers.forEach(l => l.items = l.items.filter(id => objById(id))); V.layers = V.layers.filter(l => l.items.length || l.keep);
+  V.layers.sort((a, b) => (a.kind === 'vid') - (b.kind === 'vid'));
+}
+const overlap = (a, b) => (a.start || 0) < (b.end == null ? projEnd() : b.end) && (b.start || 0) < (a.end == null ? projEnd() : a.end);
+function layerOf(id){ ensureLayers(); return V.layers.find(l => l.items.includes(id)) || {}; }
+function zOrder(){ ensureLayers(); return [...V.layers].reverse().flatMap(l => l.items.map(objById).filter(Boolean)); }
+function vTracks(){ ensureLayers(); return [{ kind: 'sub', id: 'SUB', name: 'زیرنویس', en: 'Subtitles' }, ...V.layers, { kind: 'mix', id: 'MIX', name: 'صدا', en: 'Audio' }]; }
+// ---- the timeline in video mode (same component, same ruler and playhead)
+const _rtAudio = renderTimeline;
+renderTimeline = function(){ if (mode !== 'video') return _rtAudio(); renderVideoTimeline(); requestAnimationFrame(() => { alignRuler(); seekVisual(playhead); }); };
+function renderVTL(){ if (mode === 'video') renderTimeline(); }
+function vBars(n, seed){ let s = seed, out = ''; for (let i = 0; i < n; i++){ s = (s * 9301 + 49297) % 233280; out += `<i class="block flex-1 rounded-[1px] bg-current opacity-40" style="height:${20 + Math.round(s / 233280 * 60)}%"></i>`; } return out; }
+function renderVideoTimeline(){
+  const TR = vTracks(), pps = zoom, end = projEnd(), sc = $('tlScroll'), span = Math.max(end, (((sc.clientWidth - $('heads').offsetWidth) || 0) - PAD - 1) / pps), W = PAD + span * pps + tailPx();
+  $('heads').innerHTML = TR.map((t, i) => { const layer = t.kind === 'obj' || t.kind === 'vid';
+    return `<div class="flex h-14 items-center pe-2" data-ti="${i}"><div class="flex h-11 w-full items-center gap-1 rounded-box bg-base-100/50 px-1.5 text-xs">
+      ${layer ? `<span class="tgrip grid size-6 cursor-grab place-items-center rounded text-base-content/40 hover:bg-base-300" data-tip="بکشید تا ترتیبِ لایه‌ها عوض شود" data-tip-en="Drag to restack the layers"><svg class="size-4"><use href="#i-grip-horizontal"/></svg></span>`
+        : `<span class="grid size-6 cursor-not-allowed place-items-center rounded text-base-content/15" data-tip="${t.kind === 'sub' ? 'زیرنویس همیشه بالای همهٔ لایه‌هاست' : 'صدا زیرِ لایه‌های تصویر می‌ماند'}" data-tip-en="${t.kind === 'sub' ? 'Subtitles always stay on top' : 'Audio stays below the picture layers'}"><svg class="size-4"><use href="#i-grip-horizontal"/></svg></span>`}
+      <svg class="size-3.5 shrink-0 opacity-70"><use href="#i-${VICON[t.kind]}"/></svg><span class="ui flex-1 truncate font-semibold">${escapeHtml(T(t.name, t.en))}</span>
+      ${t.kind === 'sub' ? `<button class="btn btn-ghost btn-xs btn-square" onclick="resyncSubs()" data-tip="همگام‌سازیِ دوباره با گفتار" data-tip-en="Re-sync with the speech" aria-label="re-sync"><svg class="size-3.5"><use href="#i-refresh-cw"/></svg></button>` : ''}
+      ${layer || t.kind === 'sub' ? `<button class="btn btn-ghost btn-xs btn-square ${(t.kind === 'sub' ? !V.subs.on : t.hidden) ? 'text-error' : ''}" onclick="vToggleTrack(${i})" data-tip="نمایش / پنهان" data-tip-en="Show / hide" aria-label="visibility"><svg class="size-3.5"><use href="#i-${(t.kind === 'sub' ? !V.subs.on : t.hidden) ? 'eye-off' : 'eye'}"/></svg></button>` : `<button class="btn btn-ghost btn-xs btn-square" onclick="setMode('audio')" data-tip="ویرایشِ صدا" data-tip-en="Edit the audio" aria-label="audio"><svg class="size-3.5"><use href="#i-pencil"/></svg></button>`}
+      ${VADD[t.kind].length ? `<button class="btn btn-ghost btn-xs btn-square" onclick="openVTrackMenu(event, ${i})" aria-label="add"><svg class="size-4"><use href="#i-plus"/></svg></button>` : ''}</div></div>`; }).join('');
+  const step = pps < 16 ? 10 : 5, dot = step / (step === 5 ? 5 : 4); let ticks = '';
+  for (let k = 0; k * dot <= span; k++){ const tt = k * dot, x = PAD + tt * pps; ticks += Math.abs(tt % step) < 1e-6 ? `<span class="absolute top-1 text-[11px] leading-none tabular-nums text-base-content/55" style="left:${x}px">${num(Math.floor(tt / 60))}:${num(String(Math.round(tt % 60)).padStart(2, '0'))}</span>` : `<span class="absolute top-[11px] size-[3px] -translate-x-1/2 rounded-full bg-base-content/30" style="left:${x}px"></span>`; }
+  $('ruler').style.width = W + 'px';
+  $('ruler').innerHTML = ticks + `<span id="phStem" class="pointer-events-none absolute bottom-0 top-3 w-0.5 bg-secondary" style="left:${PAD + playhead * pps}px"></span><span id="phLabel" class="absolute top-0 z-10 cursor-ew-resize rounded-sm bg-secondary px-1 text-[10px] font-bold tabular-nums text-secondary-content" style="left:${PAD + playhead * pps - 22}px">${num(fmt(playhead))}</span>`;
+  const clipEl = (cls, left, w, data, label, trims, extra = '') => `<div class="clip vclip absolute top-1.5 bottom-1.5 cursor-grab overflow-hidden rounded-field px-2 text-[11px] leading-[2.6] outline outline-1 ${cls}" style="left:${left}px;width:${Math.max(8, w)}px" ${data}><span class="ui pointer-events-none relative z-[1] block truncate font-semibold">${escapeHtml(label)}</span>${extra}${trims ? '<span class="trimh vtrim absolute inset-y-0 left-0 w-2 cursor-ew-resize" data-e="s"></span><span class="trimh vtrim absolute inset-y-0 right-0 w-2 cursor-ew-resize" data-e="e"></span>' : ''}</div>`;
+  const lanes = TR.map((t, i) => { let c = '';
+    if (t.kind === 'sub') cuesNow().forEach((q, k) => { const on = vSel === 'SUB' && V.subSel === k; c += clipEl(`bg-accent/15 text-accent ${on ? 'outline-2 outline-accent' : 'outline-accent/40'}`, PAD + q.at * pps, q.dur * pps - 2, `data-k="sub" data-i="${k}"`, q.text, true); });
+    else if (t.kind === 'mix') c += clipEl('bg-base-content/5 text-base-content/60 outline-base-content/15', PAD, speechEnd() * pps, 'data-k="mix"', T('صدا — دوبار کلیک برای ویرایش', 'Audio — double-click to edit'), false, `<span class="pointer-events-none absolute inset-x-2 bottom-1 top-6 flex items-end gap-px">${vBars(Math.max(20, Math.round(speechEnd() * pps / 6)), 7)}</span>`);
+    else t.items.map(objById).filter(Boolean).forEach(o => { const s0 = o.start || 0, e0 = o.end == null ? projEnd() : o.end, on = vSel === o.id;
+      const look = t.kind === 'vid' ? 'bg-secondary/15 text-secondary' : 'bg-primary/15 text-primary';
+      c += clipEl(`${look} ${on ? 'outline-2 outline-primary!' : 'outline-current/40'} ${t.hidden ? 'opacity-40' : ''}`, PAD + s0 * pps, (e0 - s0) * pps - 2, `data-k="obj" data-id="${o.id}"`, T((TYPE_NAME[o.type] || [o.type])[0], (TYPE_NAME[o.type] || [0, o.type])[1]) + (o.type === 'text' ? ' · ' + (o.text || '') : o.type === 'sticker' ? ' · ' + (o.emoji || '') : ''), true); });
+    return `<div class="lane relative h-14 border-b border-base-300/40" data-ti="${i}">${c}</div>`; }).join('');
+  $('lanes').style.width = W + 'px';
+  $('lanes').innerHTML = lanes + `<div id="ph" class="pointer-events-none absolute inset-y-0 z-20 w-0.5 bg-secondary" style="left:${PAD + playhead * pps}px"></div>`;
+  wireVideoTimeline(TR);
+}
+function vToggleTrack(i){ const t = vTracks()[i]; remember(); if (t.kind === 'sub') V.subs.on = !V.subs.on; else t.hidden = !t.hidden; renderTimeline(); vDraw(); autosave(); }
+let LASTDOWN = { el: null, t: 0 };
+function wireVideoTimeline(TR){
+  $('ruler').onpointerdown = ev => { seekFromX(ev.clientX); scrubbing(); };
+  $('phLabel').onpointerdown = ev => { ev.stopPropagation(); scrubbing(); };
+  const lanes = $('lanes');
+  lanes.onpointerdown = ev => {
+    const el = ev.target.closest('.vclip'), r = lanes.getBoundingClientRect(), t = Math.max(0, (ev.clientX - r.left - PAD) / zoom);
+    if (!el){ selectV(null); seek(t); return; }
+    const k = el.dataset.k, now = performance.now(), dbl = LASTDOWN.el === (el.dataset.id || el.dataset.i || k) && now - LASTDOWN.t < 420; LASTDOWN = { el: el.dataset.id || el.dataset.i || k, t: dbl ? 0 : now };
+    if (k === 'mix'){ if (dbl) return setMode('audio'); seek(t); return; }   // two quick presses (the lanes redraw between clicks, so the browser's dblclick never fires)
+    if (k === 'sub' && dbl){ ev.stopPropagation(); const q = (V.subs.follow ? cuesNow() : V.subs.cues)[+el.dataset.i]; if (q){ askText(T('متنِ زیرنویس', 'Subtitle text'), '', q.text).then(nt => { if (nt === null) return; remember(); if (V.subs.follow){ V.subs.cues = cuesNow().map(x => ({ ...x })); V.subs.follow = false; } V.subs.cues[+el.dataset.i].text = nt.trim(); renderTimeline(); vDraw(); autosave(); }); } return; }
+    ev.stopPropagation(); remember(); const trim = ev.target.closest('.vtrim'), x0 = ev.clientX, y0 = ev.clientY; let moved = false, hot = null;
+    if (k === 'sub'){ const ci = +el.dataset.i; if (V.subs.follow){ V.subs.cues = cuesNow().map(q => ({ ...q })); V.subs.follow = false; }
+      V.subSel = ci; vSel = 'SUB'; showVPanels(); placeSelBox(); const q = V.subs.cues[ci], a0 = q.at, d0 = q.dur;
+      const mv = e => { const d = (e.clientX - x0) / zoom; if (Math.abs(e.clientX - x0) > 2) moved = true; if (!moved) return;
+        if (trim && trim.dataset.e === 's'){ q.at = Math.max(0, Math.min(a0 + d0 - 0.2, a0 + d)); q.dur = a0 + d0 - q.at; } else if (trim) q.dur = Math.max(0.2, d0 + d); else q.at = Math.max(0, a0 + d);
+        el.style.left = (PAD + q.at * zoom) + 'px'; el.style.width = (q.dur * zoom - 2) + 'px'; };
+      const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); if (!moved) hist.past.pop(); renderTimeline(); vDraw(); autosave(); };
+      addEventListener('pointermove', mv); addEventListener('pointerup', up); return; }
+    const o = objById(el.dataset.id); if (!o) return; if (vSel !== o.id) selectV(o.id);
+    const s0 = o.start || 0, e0 = o.end == null ? projEnd() : o.end, from = layerOf(o.id);
+    const mv = e => { const d = (e.clientX - x0) / zoom; if (Math.abs(e.clientX - x0) > 2 || Math.abs(e.clientY - y0) > 6) moved = true; if (!moved) return;
+      if (trim && trim.dataset.e === 's'){ o.start = Math.max(0, Math.min(e0 - 0.2, s0 + d)); } else if (trim){ o.end = Math.max(s0 + 0.2, e0 + d); } else { o.start = Math.max(0, s0 + d); o.end = o.start + (e0 - s0); }
+      el.style.left = (PAD + (o.start || 0) * zoom) + 'px'; el.style.width = (((o.end == null ? projEnd() : o.end) - (o.start || 0)) * zoom - 2) + 'px';
+      if (!trim){ el.style.pointerEvents = 'none'; el.style.zIndex = 30; el.style.transform = `translateY(${e.clientY - y0}px)`; const ln = document.elementFromPoint(e.clientX, e.clientY), lane = ln && ln.closest('.lane');
+        if (hot && hot !== lane) hot.classList.remove('lane-hot'); const tt = lane && TR[+lane.dataset.ti]; hot = tt && tt.kind === from.kind ? lane : null; if (hot) hot.classList.add('lane-hot'); } };
+    const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); const tgt = hot ? TR[+hot.dataset.ti] : null; if (hot) hot.classList.remove('lane-hot');
+      if (!moved){ hist.past.pop(); return; }
+      if (tgt && tgt !== from){ from.items = from.items.filter(id => id !== o.id);
+        if (tgt.items.some(id => { const x = objById(id); return x && x !== o && overlap(x, o); })){ const nl = { id: 'L' + (++uid), kind: tgt.kind, name: tgt.name, en: tgt.en, items: [o.id] }; V.layers.splice(V.layers.indexOf(tgt), 0, nl); }   // occupied → a new layer on top of it
+        else tgt.items.push(o.id); }
+      ensureLayers(); renderTimeline(); vDraw(); autosave(); showVPanels(); };
+    addEventListener('pointermove', mv); addEventListener('pointerup', up);
+  };
+  lanes.ondblclick = async e => { const hit = document.elementFromPoint(e.clientX, e.clientY), el = e.target.closest('.vclip') || (hit && hit.closest('.vclip')); if (!el) return;   // the first click may have redrawn the lanes if (el.dataset.k === 'mix') return setMode('audio');
+    if (el.dataset.k === 'sub'){ const q = V.subs.cues[+el.dataset.i]; if (!q) return; const nt = await askText(T('متنِ زیرنویس', 'Subtitle text'), '', q.text); if (nt !== null){ remember(); q.text = nt.trim(); renderTimeline(); vDraw(); autosave(); } } };
+  document.querySelectorAll('#heads .tgrip').forEach(g => g.onpointerdown = ev => {   // restack layers by their grip
+    ev.preventDefault(); const row = g.closest('[data-ti]'), i0 = +row.dataset.ti, t0 = TR[i0]; let tgt = i0;
+    const mv = e => { const el = document.elementFromPoint(e.clientX, e.clientY), r2 = el && el.closest('#heads [data-ti]'); document.querySelectorAll('#heads [data-ti]').forEach(x => x.classList.remove('lane-hot'));
+      if (r2 && (TR[+r2.dataset.ti].kind === t0.kind)){ tgt = +r2.dataset.ti; r2.classList.add('lane-hot'); } };
+    const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); document.querySelectorAll('#heads [data-ti]').forEach(x => x.classList.remove('lane-hot'));
+      if (tgt !== i0){ remember(); const a = V.layers.indexOf(t0), b = V.layers.indexOf(TR[tgt]); V.layers.splice(a, 1); V.layers.splice(b, 0, t0); renderTimeline(); vDraw(); autosave(); } };
+    addEventListener('pointermove', mv); addEventListener('pointerup', up); });
+}
+function openVTrackMenu(ev, i){
+  ev.stopPropagation(); const t = vTracks()[i];
+  lineMenu(ev.currentTarget, `<ul class="menu menu-sm w-full p-1">${VADD[t.kind].map(([k, fa, en]) => `<li><a data-vadd="${k}">${T(fa, en)}</a></li>`).join('')}</ul>`, e => {
+    const a = e.target.closest('[data-vadd]'); if (!a) return; closeDD(); vAdd(a.dataset.vadd, t); });
+}
+function vAdd(kind, layer){
+  const put = o => { o.start = playhead; o.end = Math.min(projEnd(), playhead + 5) > playhead + 0.5 ? Math.min(projEnd(), playhead + 5) : playhead + 5; remember(); V.objects.push(o); ensureLayers();
+    const L = layerOf(o.id); if (layer && layer.items && L !== layer && layer.kind === L.kind && !layer.items.some(id => overlap(objById(id), o))){ L.items = L.items.filter(x => x !== o.id); layer.items.push(o.id); ensureLayers(); }
+    selectV(o.id); vChanged(); };
+  if (kind === 'subs'){ remember(); if (V.subs.follow){ V.subs.cues = cuesNow().map(q => ({ ...q })); V.subs.follow = false; } V.subs.cues.push({ at: playhead, dur: 2, text: T('زیرنویسِ تازه', 'New subtitle') }); V.subs.cues.sort((a, b) => a.at - b.at); V.subSel = V.subs.cues.findIndex(q => q.at === playhead); vSel = 'SUB'; renderTimeline(); showVPanels(); vDraw(); autosave(); return; }
+  if (kind === 'text') return put({ id: 'o' + (++uid), ...TEXT0(), y: 0.2 });
+  if (kind === 'sticker') return put({ id: 'o' + (++uid), ...STICKER0() });
+  if (kind === 'podcast') return put({ id: 'o' + (++uid), type: 'pod', x: 0.06, y: 0.26, w: 0.88, h: 0.52, rot: 0, opacity: 1 });
+  pickVMedia(kind === 'pimage' || kind === 'image' ? 'image' : 'video', false, kind === 'image' || kind === 'video');
+}
+// a full-frame background picture/video (the "video" layers) vs a picture-on-top
+const _pickVMedia164 = pickVMedia;
+pickVMedia = function(kind, replace, full){
+  if (!full) return _pickVMedia164(kind, replace);
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = kind === 'video' ? 'video/*' : 'image/*';
+  inp.onchange = async () => { const f = inp.files && inp.files[0]; if (!f) return; setBusy(true);
+    try { const id = await addAsset(f); await mediaEl(id); remember(); const o = { id: 'o' + (++uid), ...MEDIA0(kind, id), full: true, x: 0, y: 0, w: 1, h: 1, radius: 0, shadow: { on: false, color: '#000000', opacity: 0, angle: 90, distance: 0, blur: 0, spread: 0 }, start: playhead, end: null };
+      V.objects.push(o); ensureLayers(); selectV(o.id); vChanged(); } catch (e) { say(e.message || String(e), 'err'); } finally { setBusy(false); } };
+  inp.click();
+}
+// ---- the inspector: the mock's panels, shown and filled
+const PANEL_OF = { text: 'iv-text', sticker: 'iv-sticker', pod: 'iv-pod', image: 'iv-pip', video: 'iv-pip' };
+function fillVInsp(){ showVPanels(); }
+function showVPanels(anim){
+  if (!$('iv-proj')) return; const o = vSel && vSel !== 'SUB' ? objById(vSel) : null;
+  ['iv-proj', 'iv-text', 'iv-sticker', 'iv-pod', 'iv-pip', 'iv-anim', 'iv-sub', 'iv-xform'].forEach(id => $(id) && $(id).classList.add('hidden'));
+  if (anim && o){ $('iv-anim').classList.remove('hidden'); fillAnim(o); return; }
+  if (vSel === 'SUB'){ $('iv-sub').classList.remove('hidden'); fillSub(); return; }
+  if (!o){ $('iv-proj').classList.remove('hidden'); fillProj(); return; }
+  $(PANEL_OF[o.type]).classList.remove('hidden'); $('iv-xform').classList.remove('hidden');
+  if (o.type === 'text') fillText(o); else if (o.type === 'sticker') fillSticker(o); else if (o.type === 'pod') renderPodUI(); else fillPip(o);
+  fillXformOnly(); const lk = $('lockBtn'); if (lk) lk.classList.toggle('btn-active', o.lock !== false);
+  posObjBar();
+}
+const radios = name => [...document.querySelectorAll(`#vinsp input[type=radio][name="${name}"]`)];
+function bindRadios(name, values, cur, set){ radios(name).forEach((r, k) => { r.checked = values[k] === cur; r.onchange = () => { if (r.checked) set(values[k]); }; }); }
+function bindRange(el, val, set){ if (!el) return; el.value = val; el.oninput = () => set(+el.value); el.dispatchEvent(new Event('rangeset')); }
+function fillProj(){
+  const p = $('iv-proj'), fps = p.querySelector('select'); [...fps.options].forEach((op, k) => op.value = ['30', '24', '60'][k]); fps.value = String(V.fps); fps.onchange = () => { vset('fps', +fps.value); }; enh(fps);
+  bindRadios('vb', ['#0c1230', '#000000', '#ffffff'], V.bg, c => vset('bg', c));
+}
+function fillText(o){
+  const p = $('iv-text'), [font, weight] = p.querySelectorAll('select'), size = p.querySelectorAll('input[type=range]')[0], pad = p.querySelectorAll('input[type=range]')[1];
+  const badge = p.querySelector('.badge'); if (badge) badge.textContent = `${fmt(o.start || 0)} → ${o.end == null ? fmt(projEnd()) : fmt(o.end)}`;
+  [...font.options].forEach(op => op.value = op.text); font.value = o.font || 'Vazirmatn'; font.onchange = () => vset('sel.font', font.value); enh(font);
+  [...weight.options].forEach((op, k) => op.value = ['900', '700', '400'][k]); weight.value = String(o.weight || 900); weight.onchange = () => vset('sel.weight', +weight.value); enh(weight);
+  bindRange(size, Math.round(o.size * 1080), v => vset('sel.size', v / 1080, true));
+  bindRadios('ta', ['right', 'center', 'left'], o.align, v => vset('sel.align', v));
+  bindRadios('tc', ['#ffffff', '#f2b233', '#e6a483'], o.color, v => vset('sel.color', v));
+  const bg = $('bgOn'); bg.checked = !!(o.bg && o.bg.on); bg.onchange = () => vset('sel.bg.on', bg.checked);
+  bindRadios('bs', ['round', 'capsule', 'brush'], o.bg.shape, v => vset('sel.bg.shape', v));
+  bindRadios('bc', ['#f2b233', '#e9603b', '#000000'], o.bg.color, v => vset('sel.bg.color', v));
+  bindRange(pad, Math.round((o.bg.pad || 0) * 1080), v => vset('sel.bg.pad', v / 1080, true));
+}
+function fillSticker(o){ const [W, H] = outSize(), r = $('iv-sticker').querySelectorAll('input[type=range]');
+  bindRange(r[0], Math.round(o.w / 0.1125 * 100), v => { const oo = objById(vSel); const cx = oo.x + oo.w / 2, cy = oo.y + oo.h / 2; oo.w = 0.1125 * v / 100; oo.h = oo.w * W / H; oo.x = cx - oo.w / 2; oo.y = cy - oo.h / 2; vTouch(); placeSelBox(); fillXformOnly(); });
+  bindRange($('stkRot'), o.rot || 0, v => objRotate('sticker', v)); }
+function objRotate(kind, v){ const o = objById(vSel); if (!o) return; o.rot = v; vTouch(); placeSelBox(); fillXformOnly(); }
+function toggleLock(){ const o = objById(vSel); if (!o) return; o.lock = o.lock === false; showVPanels(); }
+function fillPip(o){
+  const t = $('pipTitle'); if (t) t.textContent = o.type === 'video' ? T('ویدیو روی ویدیو', 'Video on top') : T('تصویر روی ویدیو', 'Picture on top');
+  const st = o.stroke || {}, sh = o.shadow || {}; $('pipSize').value = Math.round(o.w * 100); $('pipRad').value = Math.round((o.radius || 0) * 1080);
+  $('pipBorder').checked = !!st.on; $('pipSC').value = st.color || '#ffffff'; $('pipSW').value = Math.max(1, Math.round((st.width || 0) * 1080)); $('pipSO').value = Math.round((st.opacity ?? 1) * 100);
+  radios('pipSS').length ? null : null; document.querySelectorAll('#iv-pip input[type=radio][onchange*="sStyle"]').forEach(r => { r.checked = (r.getAttribute('onchange') || '').includes(`'${st.style || 'solid'}'`); });
+  $('pipShadow').checked = !!sh.on; $('pipHC').value = sh.color || '#000000'; $('pipHO').value = Math.round((sh.opacity ?? 0.5) * 100); $('pipHA').value = sh.angle ?? 135; $('pipHD').value = Math.round((sh.distance || 0) * 1080); $('pipHB').value = Math.round((sh.blur || 0) * 1080); $('pipHS').value = Math.round((sh.spread || 0) * 1080);
+  $('pipStrokeOpts') && $('pipStrokeOpts').classList.toggle('hidden', !st.on); $('pipShadowOpts') && $('pipShadowOpts').classList.toggle('hidden', !sh.on);
+  const vid = $('pipVideo'); if (vid) vid.classList.toggle('hidden', o.type !== 'video'); if ($('pipMute')) $('pipMute').checked = o.mute !== false; if ($('pipLoop')) $('pipLoop').checked = !!o.loop;
+  const g = $('pipPos'); if (g) g.innerHTML = [-1, 0, 1].flatMap(y => [-1, 0, 1].map(x => `<input class="btn btn-xs btn-square border-base-content/15 bg-base-100 checked:bg-primary" type="radio" name="pipPosR" aria-label="·" onchange="pipSet('pos', [${x}, ${y}])">`)).join('');
+  document.querySelectorAll('#iv-pip input[type=range]').forEach(r => r.dispatchEvent(new Event('rangeset')));
+}
+function pipSet(k, val){
+  const o = objById(vSel); if (!o) return; const st = o.stroke = o.stroke || {}, sh = o.shadow = o.shadow || {};
+  if (k === 'size'){ const r = o.h / o.w, cx = o.x + o.w / 2, cy = o.y + o.h / 2; o.w = val / 100; o.h = o.w * r; o.x = cx - o.w / 2; o.y = cy - o.h / 2; }
+  else if (k === 'pos'){ placeOnGrid(val[0], val[1]); return; }
+  else if (k === 'radius') o.radius = val / 1080; else if (k === 'border') st.on = val; else if (k === 'sColor') st.color = val; else if (k === 'sStyle') st.style = val; else if (k === 'sWidth') st.width = val / 1080; else if (k === 'sOpacity') st.opacity = val / 100;
+  else if (k === 'shadow') sh.on = val; else if (k === 'hColor') sh.color = val; else if (k === 'hOpacity') sh.opacity = val / 100; else if (k === 'hAngle') sh.angle = val; else if (k === 'hDist') sh.distance = val / 1080; else if (k === 'hBlur') sh.blur = val / 1080; else if (k === 'hSpread') sh.spread = val / 1080;
+  else if (k === 'mute') o.mute = val; else if (k === 'loop') o.loop = val;
+  if (k === 'border' || k === 'shadow'){ $('pipStrokeOpts') && $('pipStrokeOpts').classList.toggle('hidden', !st.on); $('pipShadowOpts') && $('pipShadowOpts').classList.toggle('hidden', !sh.on); }
+  vTouch(); placeSelBox(); fillXformOnly();
+}
+function setBg(kind){ V.pod.bg = kind; vTouch(); renderPodUI(); if ((kind === 'image' || kind === 'video') && !V.pod.bgAsset) pickVMedia('bg-' + kind); }
+function renderPodUI(){
+  if (!$('styleGrid')) return; const P = V.pod, grad = k => `linear-gradient(135deg, ${PALS[k][1]}, ${PALS[k][0]} 45%, ${PALS[k][2]})`;
+  $('styleGrid').innerHTML = STYLES.map(([n, st], k) => `<button class="flex flex-col items-center gap-1 rounded-box p-1 text-base-content/75 hover:bg-base-content/5 ${P.style === k ? 'font-semibold text-base-content' : ''}" onclick="applyVStyle(${k})"><span class="relative grid size-11 place-items-center overflow-hidden rounded-full ring-offset-2 ring-offset-base-200 ${P.style === k ? 'ring-2 ring-primary' : ''}" style="background:${grad(st.pal)}">${st.wave === 'glass' || st.wave === 'water' ? `<span class="size-7 rounded-full border border-white/50 bg-white/10 shadow-[inset_0_0_10px_rgba(255,255,255,.6)]"></span>` : `<svg class="size-5 text-white/90"><use href="#i-${st.wave === 'line' ? 'audio-waveform' : st.wave === 'circle' ? 'podcast' : 'audio-lines'}"/></svg>`}</span><span class="text-[11px]">${escapeHtml(n)}</span></button>`).join('');
+  $('waveGrid').innerHTML = WAVES.map(([k, n]) => `<input class="btn btn-sm text-xs border-base-content/15 bg-base-100 checked:bg-primary checked:text-primary-content" type="radio" name="wave" aria-label="${escapeHtml(n)}" ${P.wave === k ? 'checked' : ''} onchange="POD.wave='${k}'; renderPod()">`).join('');
+  $('palGrid').innerHTML = Object.keys(PALS).map(k => `<button class="size-7 rounded-full border-2 ${P.pal === k ? 'border-primary' : 'border-transparent'}" style="background:${grad(k)}" onclick="POD.pal='${k}'; renderPod()" aria-label="${k}"></button>`).join('');
+  $('posGrid').innerHTML = [-1, 0, 1].flatMap(y => [-1, 0, 1].map(x => `<input class="btn btn-xs btn-square border-base-content/15 bg-base-100 checked:bg-primary" type="radio" name="pos" aria-label="·" ${P.pos[0] === x && P.pos[1] === y ? 'checked' : ''} onchange="POD.pos=[${x},${y}]; renderPod()">`)).join('');
+  const lay = $('pLayout'); if (lay){ [...lay.options].forEach((op, k) => { op.value = ['auto', 'single', 'quote'][k]; if (k === 0) op.text = T('همهٔ گوینده‌ها', 'Every speaker'); }); lay.value = P.layout || 'auto'; enh(lay); }
+  const pod = $('iv-pod'); const set = (sel, v) => { const el = pod.querySelector(sel); if (el) el.value = v; };
+  pod.querySelectorAll('input[type=range]').forEach(r => { const h = r.getAttribute('oninput') || ''; const m = /POD\.(\w+)\s*=\s*this\.value\s*\/\s*100/.exec(h); if (m && P[m[1]] != null) r.value = Math.round(P[m[1]] * 100); r.dispatchEvent(new Event('rangeset')); });
+  pod.querySelectorAll('input[type=color]').forEach(c => { const m = /POD\.(\w+)\s*=/.exec(c.getAttribute('oninput') || ''); if (m && P[m[1]]) c.value = P[m[1]]; });
+  pod.querySelectorAll('input[type=radio][onchange*="setBg"]').forEach(r => { r.checked = (r.getAttribute('onchange') || '').includes(`'${P.bg}'`); });
+  const gd = [...pod.querySelectorAll('select')].find(s => (s.getAttribute('onchange') || '').includes('gradDir')); if (gd){ [...gd.options].forEach((op, k) => op.value = ['to top', 'to bottom', 'to left', 'to right', 'radial'][k]); gd.value = P.gradDir; enh(gd); }
+  const bm = $('bgMesh'), bmd = $('bgMedia'); if (bm) bm.classList.toggle('hidden', P.bg !== 'mesh'); if (bmd) bmd.classList.toggle('hidden', !(P.bg === 'image' || P.bg === 'video'));
+  const mp = $('mediaPick'); if (mp){ mp.onclick = () => pickVMedia('bg-' + (P.bg === 'video' ? 'video' : 'image')); }
+}
+function fillAnim(o){
+  const p = $('iv-anim'), a = o.anim || {}, sels = p.querySelectorAll('select'), sp = p.querySelector('input[type=range]'); $('animTarget').textContent = T((TYPE_NAME[o.type] || [o.type])[0], (TYPE_NAME[o.type] || [0, o.type])[1]);
+  const maps = [['in', ['none', 'type', 'fade', 'rise', 'pop']], ['out', ['none', 'fade', 'down', 'shrink']], ['loop', ['none', 'breathe', 'wave', 'shine']], ['bgIn', ['open', 'stretch', 'fade']], ['bgDelay', [0, -0.2, 0.2]]];
+  sels.forEach((s, k) => { const [key, vals] = maps[k] || []; if (!key) return; if ((key === 'in' || key === 'out') && s.options[0].value !== 'none'){ const op = document.createElement('option'); op.textContent = T('بدون', 'None'); s.insertBefore(op, s.options[0]); }
+    if (key === 'in') [...s.options].forEach(op => { if (op.text === 'تایپ واژه‌به‌واژه') op.hidden = o.type !== 'text'; });
+    [...s.options].forEach((op, i) => op.value = String(vals[i])); s.value = String(a[key] ?? vals[0]); s.onchange = () => vsetAnim(key, key === 'bgDelay' ? +s.value : s.value); enh(s); });
+  bindRange(sp, a.speed || 5, v => vsetAnim('speed', v, true)); $('animBg').classList.toggle('hidden', !(o.type === 'text' && o.bg && o.bg.on));
+}
+function openAnim(){ $('objBar').classList.add('hidden'); showVPanels(true); }
+function closeAnim(){ showVPanels(); }
+// ---- the floating object bar (the mock): animation, duplicate, bring forward, delete
+// the object bar sits below the selection box (or well above it) — never over the rotation handle
+function posObjBar(){ const b = $('objBar'), o = vSel && vSel !== 'SUB' ? objById(vSel) : null; if (!b) return; if (!o || mode !== 'video'){ b.classList.add('hidden'); return; }
+  const sb = $('selbox').getBoundingClientRect(), st = $('stage').getBoundingClientRect(); b.classList.remove('hidden');
+  b.style.top = (sb.bottom + 54 < st.bottom ? sb.bottom + 12 : Math.max(8, sb.top - 92)) + 'px'; b.style.left = Math.max(8, Math.min(innerWidth - b.offsetWidth - 8, sb.left + sb.width / 2 - b.offsetWidth / 2)) + 'px'; }
+function vDuplicate(){ const o = objById(vSel); if (!o) return; remember(); const c = JSON.parse(JSON.stringify(o)); c.id = 'o' + (++uid); c.x = Math.min(0.95 - c.w, c.x + 0.03); c.y = Math.min(0.95 - c.h, c.y + 0.03); V.objects.push(c); const L = layerOf(o.id); ensureLayers(); const L2 = layerOf(c.id); if (L2 !== L && !L.items.some(id => overlap(objById(id), c))){ L2.items = L2.items.filter(x => x !== c.id); L.items.push(c.id); ensureLayers(); } selectV(c.id); vChanged(); }
+function vForward(){ const L = layerOf(vSel); const i = V.layers.indexOf(L); if (i > 0 && V.layers[i - 1].kind === L.kind){ remember(); V.layers.splice(i, 1); V.layers.splice(i - 1, 0, L); vChanged(); } }
+function vDelete(){ const o = objById(vSel); if (!o) return; remember(); V.objects = V.objects.filter(x => x !== o); selectV(null); vChanged(); }
+// ---- selection: objects or the subtitle (double-click edits either on the canvas)
+function selectV(id){ vSel = id; placeSelBox(); showVPanels(); renderTimeline(); }
+const _placeSelBox164 = placeSelBox;
+placeSelBox = function(){
+  const sb = $('selbox'); if (!sb) return;
+  if (vSel === 'SUB' && SUBRECT && mode === 'video'){ sb.classList.remove('hidden'); Object.assign(sb.style, { left: SUBRECT.x * frameW + 'px', top: SUBRECT.y * frameH + 'px', width: SUBRECT.w * frameW + 'px', height: SUBRECT.h * frameH + 'px', transform: '' }); sb.querySelectorAll('[data-h], #vrot').forEach(x => x.classList.add('hidden')); $('objBar') && $('objBar').classList.add('hidden'); return; }
+  sb.querySelectorAll('[data-h], #vrot').forEach(x => x.classList.remove('hidden')); _placeSelBox164(); posObjBar();
+}
+let SUBRECT = null;
+const _hitTest164 = hitTest;
+hitTest = function(nx, ny){ if (SUBRECT && V.subs.on && nx >= SUBRECT.x && nx <= SUBRECT.x + SUBRECT.w && ny >= SUBRECT.y && ny <= SUBRECT.y + SUBRECT.h){ const q = cuesNow().findIndex(c => playhead >= c.at && playhead < c.at + c.dur); if (q >= 0){ V.subSel = q; return 'SUB'; } } return _hitTest164(nx, ny); }
+function editTextInPlace(){
+  const ed = $('vtextEd'); if (vSel === 'SUB'){ if (!SUBRECT) return; if (V.subs.follow){ V.subs.cues = cuesNow().map(q => ({ ...q })); V.subs.follow = false; } const q = V.subs.cues[V.subSel]; if (!q) return;
+    ed.classList.remove('hidden'); ed.innerText = q.text; Object.assign(ed.style, { left: SUBRECT.x * frameW + 'px', top: SUBRECT.y * frameH + 'px', width: SUBRECT.w * frameW + 'px', minHeight: SUBRECT.h * frameH + 'px', fontSize: (V.subs.sizePx || 46) / 1080 * frameH + 'px', fontWeight: V.subs.weight || 700, color: '#fff', textAlign: 'center', transform: '' });
+    ed.focus(); document.getSelection().selectAllChildren(ed); ed.onblur = () => { remember(); q.text = ed.innerText.trim(); ed.classList.add('hidden'); renderTimeline(); vDraw(); autosave(); }; return; }
+  const o = objById(vSel); if (!o || o.type !== 'text') return; ed.classList.remove('hidden'); ed.innerText = o.text;
+  Object.assign(ed.style, { left: o.x * frameW + 'px', top: o.y * frameH + 'px', width: o.w * frameW + 'px', minHeight: o.h * frameH + 'px', fontSize: o.size * frameH + 'px', fontWeight: o.weight, color: o.color, textAlign: o.align, transform: `rotate(${o.rot || 0}deg)` });
+  ed.focus(); document.getSelection().selectAllChildren(ed); ed.onblur = () => { remember(); o.text = ed.innerText.trim(); ed.classList.add('hidden'); vChanged(); };
+}
+// ---- subtitles: designs, animation, word highlight, speaker name — drawn by the same renderer as everything else
+const SUB_PRESETS = [
+  ['classic', 'کلاسیک', 'Classic', { font: 'Vazirmatn', weight: 700, sizePx: 46, color: '#ffffff', hi: '#f2b233', bgOn: true, bgOp: 0.55, outline: false, anim: 'fade' }],
+  ['bold', 'برجسته', 'Bold', { font: 'Vazirmatn', weight: 900, sizePx: 58, color: '#f2b233', hi: '#ffffff', bgOn: false, bgOp: 0, outline: true, anim: 'pop' }],
+  ['karaoke', 'کاراوکه', 'Karaoke', { font: 'Vazirmatn', weight: 900, sizePx: 52, color: '#ffffff', hi: '#e6a483', bgOn: false, bgOp: 0, outline: true, anim: 'word' }],
+  ['minimal', 'مینیمال', 'Minimal', { font: 'Vazirmatn', weight: 500, sizePx: 40, color: '#ffffff', hi: '#ffffff', bgOn: false, bgOp: 0, outline: true, anim: 'fade' }],
+  ['capsule', 'کپسولی', 'Capsule', { font: 'Vazirmatn', weight: 700, sizePx: 44, color: '#ffffff', hi: '#f2b233', bgOn: true, bgOp: 0.9, outline: false, anim: 'rise', capsule: true }],
+  ['typewriter', 'تایپی', 'Typewriter', { font: 'Vazirmatn', weight: 700, sizePx: 46, color: '#ffffff', hi: '#f2b233', bgOn: true, bgOp: 0.4, outline: false, anim: 'type' }]];
+const SUB_COLORS = ['#ffffff', '#f2b233', '#e6a483', '#e9603b', '#000000'];
+function fillSub(){
+  const s = V.subs, q = cuesNow()[V.subSel]; $('subTime').textContent = q ? `${fmt(q.at)} → ${fmt(q.at + q.dur)}` : '';
+  $('subPresets').innerHTML = SUB_PRESETS.map(([k, fa, en, p]) => `<button class="btn h-auto flex-col gap-1 p-1 ${s.preset === k ? 'btn-primary' : 'border-base-content/10 bg-base-100'}" onclick="subPreset('${k}')"><span class="grid h-9 w-full place-items-center rounded-field bg-[#0c1230]"><span class="rounded px-1 text-[11px] leading-tight" style="font-weight:${p.weight};color:${p.color};${p.bgOn ? `background:rgba(0,0,0,${p.capsule ? 0 : p.bgOp})` : ''};${p.capsule ? 'background:var(--color-primary);border-radius:999px;padding:0 .5em' : ''};${p.outline ? 'text-shadow:0 0 2px #000,0 0 2px #000' : ''}">${p.anim === 'word' ? 'سلام <b style="color:' + p.hi + '">دوست</b>' : 'سلام دوست'}</span></span><span class="text-[11px]">${T(fa, en)}</span></button>`).join('');
+  const sw = (box, key) => { $(box).innerHTML = SUB_COLORS.map(c => `<input type="radio" name="${box}" class="radio radio-sm border-0 checked:border-0" style="background:${c}" ${s[key] === c ? 'checked' : ''} onchange="subSet('${key}', '${c}')" aria-label="${c}">`).join(''); };
+  sw('subTextColors', 'color'); sw('subHiColors', 'hi');
+  const font = $('subFont'), wt = $('subWeight'), an = $('subAnim'); font.value = s.font || 'Vazirmatn'; wt.value = String(s.weight || 700); an.value = s.anim || 'fade';
+  font.onchange = () => subSet('font', font.value); wt.onchange = () => subSet('weight', +wt.value); an.onchange = () => subSet('anim', an.value); [font, wt, an].forEach(enh);
+  bindRange($('subSize'), s.sizePx || 46, v => subSet('sizePx', v, true)); bindRange($('subBgOp'), Math.round((s.bgOp ?? 0.55) * 100), v => subSet('bgOp', v / 100, true));
+  bindRadios('sp', ['top', 'middle', 'bottom'], s.place || 'bottom', v => subSet('place', v));
+  [['subBgOn', 'bgOn'], ['subOutline', 'outline'], ['subSpk', 'spk'], ['subFollow', 'follow']].forEach(([id, key]) => { const el = $(id); el.checked = !!s[key]; el.onchange = () => { subSet(key, el.checked); if (key === 'follow' && el.checked) resyncSubs(); }; });
+}
+function subPreset(k){ const p = SUB_PRESETS.find(x => x[0] === k); if (!p) return; remember(); Object.assign(V.subs, p[3], { preset: k }); VVER++; fillSub(); vDraw(); autosave(); }
+function subSet(key, val, live){ if (!live) remember(); V.subs[key] = val; if (!live) V.subs.preset = V.subs.preset; vDraw(); autosave(); if (!live) fillSub(); }
+function cueWords(q){ const ws = q.text.split(/\s+/).filter(Boolean), tot = ws.reduce((a, w) => a + w.length + 1, 0); let acc = 0; return ws.map(w => { const a = q.at + q.dur * acc / tot; acc += w.length + 1; return { w, t0: a, t1: q.at + q.dur * acc / tot }; }); }
+function drawSubs(ctx, W, H, t){
+  const s = V.subs; SUBRECT = null; if (!s.on) return; const qi = cuesNow().findIndex(c => t >= c.at && t < c.at + c.dur); if (qi < 0) return; const q = cuesNow()[qi];
+  const px = (s.sizePx || Math.round((s.size || 0.042) * 1080)) / 1080 * H, an = s.anim || 'fade', k = Math.min(1, (t - q.at) / 0.25);
+  ctx.save(); ctx.font = FONT(s.weight || 700, px).replace('Vazirmatn', s.font || 'Vazirmatn'); ctx.direction = 'rtl'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const words = cueWords(q), shownN = an === 'type' ? words.filter(w => w.t0 <= t).length : words.length, curW = words.findIndex(w => t >= w.t0 && t < w.t1);
+  const spk = s.spk ? (() => { const L = Object.values(S.lines).find(x => cleanCue(x.text) === q.text); const sp = L && L.spk && spkList().find(z => z.id === L.spk); return sp ? sp.name + ': ' : ''; })() : '';
+  const text = (spk + words.slice(0, Math.max(1, shownN)).map(w => w.w).join(' ')).trim(), lines = wrapLines(ctx, text, W * 0.84), lh = px * 1.45;
+  const yC = (s.place === 'top' ? 0.12 : s.place === 'middle' ? 0.5 : (s.pos || 0.88)) * H, y0 = yC - (lines.length - 1) * lh / 2;
+  if (an === 'fade') ctx.globalAlpha *= k; const dy = an === 'rise' ? (1 - k) * px * 0.6 : 0, sc = an === 'pop' ? 0.85 + 0.15 * (1 - Math.pow(1 - k, 3)) + (k < 1 ? 0.06 * Math.sin(k * Math.PI) : 0) : 1;
+  ctx.translate(W / 2, y0 + dy); ctx.scale(sc, sc); let maxW = 0;
+  lines.forEach((l, i) => { const tw = ctx.measureText(l).width, y = i * lh; maxW = Math.max(maxW, tw);
+    if (s.bgOn){ ctx.fillStyle = s.capsule ? (getComputedStyle(document.documentElement).getPropertyValue('--color-primary') || '#e9603b') : rgba('#000000', s.bgOp ?? 0.55); rrect(ctx, -tw / 2 - px * 0.45, y - lh / 2, tw + px * 0.9, lh, s.capsule ? lh / 2 : px * 0.25); ctx.fill(); }
+    if (s.outline){ ctx.lineWidth = Math.max(2, px * 0.12); ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.lineJoin = 'round'; ctx.strokeText(l, 0, y); }
+    ctx.fillStyle = s.color || '#ffffff'; ctx.fillText(l, 0, y);
+    if (an === 'word' && curW >= 0){ const cw = words[curW].w; const idx = l.indexOf(cw); if (idx >= 0){ ctx.save(); ctx.textAlign = 'right'; const right = tw / 2 - ctx.measureText(l.slice(0, idx)).width; ctx.fillStyle = s.hi || '#f2b233'; if (s.outline) ctx.strokeText(cw, right, y); ctx.fillText(cw, right, y); ctx.restore(); } }
+    if (spk && i === 0){ ctx.save(); ctx.textAlign = 'right'; ctx.fillStyle = s.hi || '#f2b233'; ctx.fillText(spk.trim(), tw / 2, y); ctx.restore(); } });
+  ctx.restore();
+  const bw = (maxW + px * 0.9) * sc, bh = lines.length * lh * sc; SUBRECT = { x: (W / 2 - bw / 2) / W, y: (y0 + dy - lh / 2 * sc) / H, w: bw / W, h: bh / H };
+}
+// ---- the mock's toolbar above the stage: the format
+function wireVideoBar(){
+  const r = $('res'); if (!r || r._wired) return; r._wired = true;
+  const map = [['9:16', null], ['16:9', null], ['4:5', null], ['1:1', null], ['16:9', '4k']];
+  r.onchange = async () => { const k = r.selectedIndex; if (r.value === 'custom'){ const v = await askText(T('نسبتِ تصویر', 'Aspect ratio'), T('مثلاً ۲۱:۹', 'e.g. 21:9'), '21:9'); const m = v && /(\d+)\s*[:/×x]\s*(\d+)/.exec(v.replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))); if (m){ RATIOS[`${m[1]}:${m[2]}`] = [+m[1], +m[2]]; vset('ratio', `${m[1]}:${m[2]}`); } }
+    else { vset('ratio', map[k][0]); if (map[k][1]) vset('res', map[k][1]); } fitFrame(); vDraw(); placeSelBox(); };
+  const idx = map.findIndex(([ra, rs]) => ra === V.ratio && (!rs || rs === V.res)); r.selectedIndex = idx >= 0 ? idx : 1; enh(r);
+}
+// ---- mode switch: the same timeline, the mock's panels, the mock's bar
+const _setMode164 = setMode;
+setMode = function(m){ _setMode164(m); $('objBar') && $('objBar').classList.add('hidden'); if (m === 'video'){ wireVideoBar(); requestAnimationFrame(() => { renderTimeline(); showVPanels(); }); } else renderTimeline(); }
+addEventListener('scroll', () => posObjBar(), true);
+
+// 165 · the mock's sliders show their value beside the label; the sticker panel gets an emoji picker in the same style
+function rangeLabels(root){ (root || document).querySelectorAll('#vinsp input[type=range]').forEach(r => { const lg = r.closest('fieldset') && r.closest('fieldset').querySelector('legend'); if (!lg) return;
+  let sp = lg.querySelector('.rv'); if (!sp){ sp = document.createElement('span'); sp.className = 'rv ms-auto tabular-nums text-base-content/60'; sp.dir = 'ltr'; lg.classList.add('flex', 'w-full'); lg.appendChild(sp); }
+  const show = () => sp.textContent = r.value + (r.dataset.unit || ''); show(); if (!r._rl){ r._rl = true; r.addEventListener('input', show); r.addEventListener('rangeset', show); } }); }
+const _showVPanels165 = showVPanels;
+showVPanels = function(anim){ _showVPanels165(anim); rangeLabels(); const o = vSel && vSel !== 'SUB' ? objById(vSel) : null; if (o && o.type === 'sticker') fillEmoji(o); };
+function fillEmoji(o){ const box = $('stkEmoji'); if (!box) return; box.innerHTML = ['👑', '🎙️', '🎧', '❤️', '⭐', '🔥', '👍', '😂', '🎵', '☀️', '🦁', '📌'].map(e => `<input type="radio" name="stkE" class="btn btn-sm btn-square border-base-content/15 bg-base-100 text-lg checked:bg-primary" aria-label="${e}" ${o.emoji === e ? 'checked' : ''} onchange="vset('sel.emoji', '${e}')">`).join('');
+  const any = $('stkAny'); if (any){ any.value = o.emoji || ''; any.onchange = () => vset('sel.emoji', any.value.trim() || '👑'); }
+  const bg = $('stkBgOn'); if (bg){ bg.checked = !!(o.bg && o.bg.on); bg.onchange = () => vset('sel.bg.on', bg.checked); }
+  const col = $('stkBgC'); if (col){ col.value = (o.bg && o.bg.color) || '#e6a483'; col.oninput = () => vset('sel.bg.color', col.value, true); } }

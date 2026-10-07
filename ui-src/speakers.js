@@ -15,32 +15,18 @@ function migrateSpeakers(){
 }
 function spkList(){ if (!Array.isArray(S.proj.speakers)) S.proj.speakers = migrateSpeakers(); return S.proj.speakers; }
 const spkByName = n => spkList().find(s => s.name && s.name === String(n || '').trim());
-function speakerOfLine(id){
-  const ord = orderedLines(); for (let k = ord.indexOf(+id); k >= 0; k--){ const m = SPK_LINE.exec((S.lines[ord[k]] || {}).text || ''); if (m) return spkByName(m[2]) || null; }
-  return null;
-}
+
 function spkVoice(id){
   const sp = speakerOfLine(id); if (!sp) return {}; const v = {};
   if (sp.engine) v.engine = sp.engine; ['gVoice', 'gPreset', 'gState', 'fishVoice', 'cbxVoice'].forEach(k => { if (sp[k]) v[k] = sp[k]; });
   return v;
 }
 // what is actually sent: the line without a KNOWN speaker's name (a line tone {…} stays); shift maps word offsets back
-function spokenInfo(id){
-  const t = (S.lines[id] || {}).text || '', m = SPK_LINE.exec(t);
-  if (!m || !spkByName(m[2])){ return { s: t.trim(), shift: t.length - t.trimStart().length }; }
-  const tone = m[1].trim(), rest = t.slice(m[0].length).trim(), s = tone ? tone + ' ' + rest : rest;
-  return { s, shift: t.indexOf(rest, m[0].length) - (tone ? tone.length + 1 : 0) };
-}
+
 const spoken = id => spokenInfo(id).s;
-const shiftWords = (W, off) => W ? W.map(w => ({ ...w, c0: w.c0 + off, c1: w.c1 + off })) : null;
-function setSpk(i, k, v){ remember(); const sp = spkList()[i], before = sp.name; sp[k] = v;
-  markDirty(id => { const s2 = speakerOfLine(id); return (s2 && s2.id === sp.id) || (k === 'name' && SPK_LINE.test(S.lines[id].text || '') && SPK_LINE.exec(S.lines[id].text)[2].trim() === before); });
-  renderSpeakers(); renderScript(); autosave(); if (typeof VVER !== 'undefined') VVER++; }
-function addSpeaker(){ remember(); const n = spkList().length + 1; spkList().push(SPK0(T(`گوینده ${FA(n)}`, `Speaker ${n}`))); renderSpeakers(); autosave(); }
-function delSpeaker(i){ remember(); const sp = spkList()[i]; spkList().splice(i, 1); markDirty(id => SPK_LINE.test(S.lines[id].text || '') && SPK_LINE.exec(S.lines[id].text)[2].trim() === sp.name); renderSpeakers(); renderScript(); autosave(); }
-function putSpeaker(i){ const sp = spkList()[i]; if (!sp || !sp.name) return; const ids = sel.size ? [...sel] : (lastLine ? [lastLine] : []); if (!ids.length) return say(T('اول خطی را انتخاب کنید.', 'Select a line first.'), 'err');
-  remember(); ids.forEach(id => { const L = S.lines[id], m = SPK_LINE.exec(L.text || ''); L.text = (m ? m[1] + L.text.slice(m[0].length) : L.text).replace(/^(\s*(?:\{[^}]*\}\s*)?)/, `$1${sp.name}: `); const [, c] = clipOfLine(id); if (c && !c.unvoiced) L.dirty = true; });
-  renderScript(); autosave(); }
+const shiftWords = (W, off) => W ? W.map(w => ({ ...w, c0: w.c0 + off, c1: w.c1 + off })).filter(w => w.c1 > 0) : null;   // words inside the unsent tone prefix are dropped
+
+
 function spkEngine(sp){ return sp.engine || S.proj.engine; }
 function spkVoiceOptions(sp){
   const e = spkEngine(sp);
@@ -50,20 +36,7 @@ function spkVoiceOptions(sp){
   return null;                                                                                        // a light voice IS its engine
 }
 const SPK_VKEY = { google: 'gVoice', fish: 'fishVoice', chatterbox: 'cbxVoice' };
-function renderSpeakers(){
-  const box = $('spkList'); if (!box) return; const L = spkList();
-  box.innerHTML = L.map((sp, i) => { const e = spkEngine(sp), vo = spkVoiceOptions(sp), vk = SPK_VKEY[e];
-    return `<div class="space-y-1.5 rounded-field border border-base-300 p-1.5" data-si="${i}">
-      <div class="flex items-center gap-1.5"><input class="input input-xs min-w-0 flex-1" dir="auto" value="${escapeHtml(sp.name)}" placeholder="${T('نام', 'Name')}" onchange="setSpk(${i}, 'name', this.value.trim())">
-        <button class="btn btn-ghost btn-xs btn-square" onclick="previewSpeaker(${i})" data-tip="شنیدنِ صدا" data-tip-en="Hear the voice"><svg class="size-3.5"><use href="#i-play"/></svg></button>
-        <button class="btn btn-ghost btn-xs btn-square" onclick="putSpeaker(${i})" data-tip="گذاشتنِ این نام سرِ خطِ انتخاب‌شده" data-tip-en="Put this name at the start of the selected line"><svg class="size-3.5"><use href="#i-corner-down-left"/></svg></button>
-        <button class="btn btn-ghost btn-xs btn-square hover:text-error" onclick="delSpeaker(${i})" data-tip="حذفِ گوینده" data-tip-en="Remove speaker"><svg class="size-3.5"><use href="#i-trash-2"/></svg></button></div>
-      <div class="grid grid-cols-2 gap-1.5"><select class="select select-xs" data-spk-engine="${i}" onchange="setSpk(${i}, 'engine', this.value)"><option value="">${T('— موتورِ پروژه —', "— project's engine —")}</option>${ENGINES.map(([v, l]) => `<option value="${v}" ${v === sp.engine ? 'selected' : ''}>${escapeHtml(l.split(' — ')[0])}</option>`).join('')}</select>
-        ${vo ? `<select class="select select-xs" data-spk-voice="${i}" data-preview="${e}" onchange="setSpk(${i}, '${vk}', this.value)">${vo}</select>` : `<span class="self-center text-xs text-base-content/60">${T('صدای خودِ موتور', "the engine's own voice")}</span>`}</div>
-      ${e === 'google' || e === 'fish' ? `<select class="select select-xs w-full" onchange="setSpk(${i}, 'gPreset', this.value)"><option value="">${T('— سبکِ پروژه —', "— project's style —")}</option>${G_PRESETS.map(p => `<option value="${escapeHtml(p[0])}" ${p[0] === sp.gPreset ? 'selected' : ''}>${escapeHtml(p[1])}</option>`).join('')}</select>` : ''}</div>`; }).join('')
-    || `<p class="text-xs text-base-content/50">${T('هنوز گوینده‌ای نیست؛ همهٔ خط‌ها با صدای پروژه خوانده می‌شوند.', "No speakers yet; every line uses the project's voice.")}</p>`;
-  box.querySelectorAll('select').forEach(el => { enh(el); if (el.dataset.spkVoice !== undefined){ const i = +el.dataset.spkVoice; el._preview = v => previewVoice(spkEngine(spkList()[i]), v || null); } });
-}
+
 // =====================================================================================
 // 162 · VOICE PREVIEWS — «پایَنده ایران، جاوید شاه!»: from the app package when bundled,
 //       otherwise made once on first play (and cached by the engine)
@@ -94,8 +67,107 @@ async function buildPreviews(){
   MODELS.forEach(([model]) => G_VOICES.forEach(([v]) => { const p = previewPayload('google', v); p.g_model = model; jobs.push({ rel: `google/${model}/${v}.mp3`, payload: p }); }));
   LIGHT_ENGINES.forEach(e => jobs.push({ rel: `light/${e}.mp3`, payload: previewPayload(e, null) }));
   jobs.push({ rel: 'chatterbox/default.mp3', payload: previewPayload('chatterbox', 'default') }, { rel: 'fish/default.mp3', payload: previewPayload('fish', 'default') });
-  if (!confirm(T(`${FA(jobs.length)} نمونه‌صدا ساخته می‌شود (یک بار، با کلیدها و مدل‌های همین دستگاه). پوشه‌ای انتخاب کنید؛ بعد آن را با نامِ previews کنارِ پوشهٔ ui در مخزن بگذارید تا در برنامه بسته‌بندی شود.`, `${jobs.length} voice samples will be made (once, with this machine's keys and models). Pick a folder; then put it in the repository as ui/previews so it ships inside the app.`))) return;
+  if (!confirm(T(`فقط نمونه‌هایی که در برنامه نیستند ساخته می‌شوند (با کلیدها و مدل‌های همین دستگاه) و بقیه از نسخهٔ برنامه کپی می‌شوند. پوشه‌ای انتخاب کنید؛ بعد آن را با نامِ previews کنارِ پوشهٔ ui در مخزن بگذارید تا در برنامه بسته‌بندی شود.`, `Only the samples the app doesn't have are made (with this machine's keys and models); the rest are copied from the app. Pick a folder; then put it in the repository as ui/previews so it ships inside the app.`))) return;
   setBusy(true); try { const r = await API().previews_build(jobs); if (!r.ok){ if (r.error !== 'cancelled') say(r.error || '', 'err'); return; }
-    say(T(`${FA(r.made)} نمونه در ${r.folder} ساخته شد` + (r.failed.length ? ` — ${FA(r.failed.length)} ساخته نشد` : ''), `${r.made} samples made in ${r.folder}` + (r.failed.length ? ` — ${r.failed.length} failed` : '')), r.failed.length ? 'err' : 'ok'); }
+    const parts = T(`${FA(r.made)} ساخته شد، ${FA(r.copied || 0)} از نسخهٔ برنامه کپی شد، ${FA(r.kept || 0)} از قبل بود`, `${r.made} made, ${r.copied || 0} copied from the app, ${r.kept || 0} already there`);
+    say(r.stopped ? T(`کلیدها تمام شد؛ ${parts}. ${FA(r.failed.length)} نمونه مانده — بعداً دوباره بزنید، فقط مانده‌ها ساخته می‌شوند. پوشه: ${r.folder}`, `The keys ran out; ${parts}. ${r.failed.length} left — run it again later and only those are made. Folder: ${r.folder}`)
+      : T(`${parts}${r.failed.length ? ` — ${FA(r.failed.length)} ساخته نشد` : ''}. پوشه: ${r.folder}`, `${parts}${r.failed.length ? ` — ${r.failed.length} failed` : ''}. Folder: ${r.folder}`), r.stopped || r.failed.length ? 'err' : 'ok'); }
   finally { setBusy(false); }
+}
+
+// =====================================================================================
+// 164 · speaker and tone are LINE PROPERTIES shown as chips at the start of each line (as in the mock);
+//       every line has an avatar button that opens a speaker menu. Sound tags show as pills.
+// =====================================================================================
+const SPK_COLORS = ['#5b7cff', '#22c4b5', '#f2b233', '#e5677e', '#9b7bff', '#4cc38a', '#ff8a4c', '#3fb6e8'];
+const spkColor = k => SPK_COLORS[((k % SPK_COLORS.length) + SPK_COLORS.length) % SPK_COLORS.length];
+const initials = n => { const w = String(n || '').trim().split(/\s+/).filter(Boolean); return (w.length > 1 ? w[0][0] + w[1][0] : (w[0] || '?').slice(0, 2)).toUpperCase(); };
+function speakerOfLine(id){ const L = S.lines[id]; return (L && L.spk && spkList().find(s => s.id === L.spk)) || null; }
+// what is sent: the line tone first (3.8 reads it), then the text; shift maps word offsets back onto the editor text
+function spokenInfo(id){ const L = S.lines[id] || {}, t = L.text || '', pre = L.tone ? `{${L.tone}} ` : '', body = t.trim();
+  return { s: pre + body, shift: (t.length - t.trimStart().length) - pre.length }; }
+// old documents and pasted scripts: a leading {tone} becomes the tone; a leading «Name:» of a known speaker becomes the speaker
+function normLine(L){
+  if (!L || typeof L.text !== 'string') return; let t = L.text, m;
+  if ((m = /^\s*\{([^{}\n]{1,40})\}\s*/.exec(t))){ L.tone = m[1].trim(); t = t.slice(m[0].length); }
+  if ((m = SPK_LINE.exec(t)) && spkByName(m[2])){ L.spk = spkByName(m[2]).id; t = t.slice(m[0].length); if (m[1] && /\{([^{}]+)\}/.test(m[1])) L.tone = /\{([^{}]+)\}/.exec(m[1])[1].trim(); }
+  if ((m = /^\s*\{([^{}\n]{1,40})\}\s*/.exec(t))){ L.tone = m[1].trim(); t = t.slice(m[0].length); }   // a tone written after the name
+  L.text = t;
+}
+function spkSummary(sp){ const e = spkEngine(sp), en = (ENGINES.find(x => x[0] === e) || [e, e])[1].split(' — ')[0];
+  const voice = e === 'google' ? (sp.gVoice || S.proj.g_voice) : e === 'fish' ? (((([...($('fishVoice') || { options: [] }).options].find(o => o.value === (sp.fishVoice || S.proj.fish.voice))) || {}).text) || sp.fishVoice || T('صدای پروژه', "project's voice")) : e === 'chatterbox' ? (sp.cbxVoice || S.proj.cbx.voice) : '';
+  const style = sp.gPreset ? ((G_PRESETS.find(p => p[0] === sp.gPreset) || [0, sp.gPreset])[1]) : ''; return [en, voice, style].filter(Boolean).join(' · '); }
+function setSpk(i, k, v){ remember(); const sp = spkList()[i]; sp[k] = v; markDirty(id => (S.lines[id] || {}).spk === sp.id); renderSpeakers(); renderScript(); autosave(); if (typeof VVER !== 'undefined') VVER++; }
+function delSpeaker(i){ remember(); const sp = spkList()[i]; spkList().splice(i, 1); Object.values(S.lines).forEach(L => { if (L.spk === sp.id){ L.spk = undefined; L.dirty = true; } }); SPK_OPEN = null; renderSpeakers(); renderScript(); autosave(); }
+let SPK_OPEN = null;
+function toggleSpkEdit(id){ SPK_OPEN = SPK_OPEN === id ? null : id; renderSpeakers(); }
+function addSpeaker(){ remember(); const n = spkList().length + 1, sp = SPK0(T(`گوینده ${FA(n)}`, `Speaker ${n}`)); spkList().push(sp); SPK_OPEN = sp.id; renderSpeakers(); autosave();
+  const box = $('spkOpen'); if (box) box.checked = true; setTimeout(() => { const el = document.querySelector(`#spkList [data-edit="${sp.id}"] input`); if (el){ el.focus(); el.select(); } }, 30); }
+function openSpeakers(addNew){ showInsp('proj', true); const box = $('spkOpen'); if (box) box.checked = true; if (addNew) addSpeaker(); }
+// 168: speaker colours come from the theme (8 warm-leaning colours, light and dark tones); a speaker may carry a photo
+const spkN = k => ((k % 8) + 8) % 8 + 1;
+const spkBg = k => `background:var(--spk${spkN(k)});color:var(--spk${spkN(k)}-on)`;
+const spkVars = k => `--sc:var(--spk${spkN(k)});--si:var(--spk${spkN(k)}-ink);--so:var(--spk${spkN(k)}-on)`;
+const spkFace = sp => sp && sp.photo ? `<img src="${sp.photo}" alt="" class="size-full rounded-full object-cover">` : escapeHtml(initials((sp && sp.name) || ''));
+function pickSpkPhoto(i){
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*';
+  inp.onchange = () => { const f = inp.files && inp.files[0]; if (!f) return; const rd = new FileReader();
+    rd.onload = () => { const im = new Image(); im.onload = () => { const N = 256, c = document.createElement('canvas'); c.width = c.height = N; const g = c.getContext('2d'), s = Math.max(N / im.width, N / im.height);
+      g.drawImage(im, (N - im.width * s) / 2, (N - im.height * s) / 2, im.width * s, im.height * s); setSpkPhoto(i, c.toDataURL('image/jpeg', 0.86)); }; im.src = rd.result; };
+    rd.readAsDataURL(f); };
+  inp.click(); }
+// the photo is not a voice change: no line is marked for re-voicing
+function setSpkPhoto(i, url){ const sp = spkList()[i]; if (!sp) return; remember(); if (url) sp.photo = url; else delete sp.photo; renderSpeakers(); renderScript(); autosave(); if (typeof VVER !== 'undefined') VVER++; }
+function renderSpeakers(){
+  const box = $('spkList'); if (!box) return; const L = spkList(); if ($('spkCount')) $('spkCount').textContent = FA(L.length);
+  box.innerHTML = L.map((sp, i) => { const e = spkEngine(sp), vo = spkVoiceOptions(sp), vk = SPK_VKEY[e], open = SPK_OPEN === sp.id;
+    return `<li class="list-row items-center gap-3 py-2">
+        <div class="group/av relative shrink-0"><button class="grid size-10 place-items-center overflow-hidden rounded-full text-sm font-bold" style="${spkBg(i)}" onclick="pickSpkPhoto(${i})" data-tip="${sp.photo ? 'عوض کردنِ عکس' : 'افزودنِ عکس'}" data-tip-en="${sp.photo ? 'Change photo' : 'Add a photo'}" aria-label="photo">${spkFace(sp)}</button>${sp.photo ? `<div class="spkph-act pointer-events-none absolute inset-0 flex items-center justify-center gap-0.5 rounded-full bg-black/55 opacity-0 transition-opacity group-hover/av:pointer-events-auto group-hover/av:opacity-100"><button class="grid size-5 place-items-center rounded-full text-white hover:bg-white/25" onclick="pickSpkPhoto(${i})" data-tip="عوض کردنِ عکس" data-tip-en="Change photo" aria-label="change photo"><svg class="size-3"><use href="#i-refresh-cw"/></svg></button><button class="grid size-5 place-items-center rounded-full text-white hover:bg-white/25" onclick="setSpkPhoto(${i}, null)" data-tip="حذفِ عکس" data-tip-en="Remove photo" aria-label="remove photo"><svg class="size-3"><use href="#i-trash-2"/></svg></button></div>` : `<span class="pointer-events-none absolute -bottom-0.5 -end-0.5 grid size-4 place-items-center rounded-full bg-base-100 text-base-content/70 opacity-0 shadow-sm transition-opacity group-hover/av:opacity-100"><svg class="size-2.5"><use href="#i-camera"/></svg></span>`}</div>
+        <button class="min-w-0 cursor-pointer text-start" onclick="toggleSpkEdit('${sp.id}')"><div class="truncate text-sm font-semibold">${escapeHtml(sp.name || T('بی‌نام', 'Unnamed'))}</div><div class="truncate text-xs text-base-content/60">${escapeHtml(spkSummary(sp))}</div></button>
+        <button class="btn btn-ghost btn-sm btn-circle" onclick="previewSpeaker(${i})" data-tip="شنیدنِ صدا" data-tip-en="Hear the voice" aria-label="play"><svg class="size-4"><use href="#i-play"/></svg></button>
+      </li>${open ? `<li class="space-y-2 border-t border-base-300 px-3 pb-3 pt-2" data-edit="${sp.id}">
+        <input class="input input-sm w-full" dir="auto" value="${escapeHtml(sp.name)}" placeholder="${T('نام', 'Name')}" onchange="setSpk(${i}, 'name', this.value.trim())">
+        <select class="select select-sm w-full" onchange="setSpk(${i}, 'engine', this.value)"><option value="">${T('موتورِ پروژه', "The project's engine")}</option>${ENGINES.map(([v, l]) => `<option value="${v}" ${v === sp.engine ? 'selected' : ''}>${escapeHtml(l)}</option>`).join('')}</select>
+        ${vo ? `<select class="select select-sm w-full" data-spk-voice="${i}" data-preview="${e}" onchange="setSpk(${i}, '${vk}', this.value)">${vo}</select>` : ''}
+        ${e === 'google' || e === 'fish' ? `<select class="select select-sm w-full" onchange="setSpk(${i}, 'gPreset', this.value)"><option value="">${T('سبکِ پروژه', "The project's style")}</option>${G_PRESETS.map(p => `<option value="${escapeHtml(p[0])}" ${p[0] === sp.gPreset ? 'selected' : ''}>${escapeHtml(p[1])}</option>`).join('')}</select>` : ''}
+        <div class="flex justify-end"><button class="btn btn-ghost btn-sm gap-1.5 text-error" onclick="delSpeaker(${i})"><svg class="size-4"><use href="#i-trash-2"/></svg>${T('حذفِ گوینده', 'Remove speaker')}</button></div></li>` : ''}`; }).join('')
+    || `<li class="px-3 py-3 text-xs text-base-content/60">${T('هنوز گوینده‌ای نیست؛ همهٔ خط‌ها با صدای پروژه خوانده می‌شوند.', "No speakers yet; every line uses the project's voice.")}</li>`;
+  box.querySelectorAll('select').forEach(el => { enh(el); if (el.dataset.spkVoice !== undefined){ const i = +el.dataset.spkVoice; el._preview = v => previewVoice(spkEngine(spkList()[i]), v || null); } });
+}
+// the chips at the start of a line
+function spkChip(id){ const L = S.lines[id], sp = speakerOfLine(id), k = sp ? spkList().indexOf(sp) : -1;
+  return sp ? `<button class="spkchip me-1 inline-flex max-w-[12rem] items-center border gap-1.5 rounded-full py-0.5 pe-2.5 ps-0.5 align-middle text-xs font-semibold" style="${spkVars(k)}" contenteditable="false" onmousedown="event.preventDefault()" onclick="openSpkMenu(event, ${id})"><span class="spkav grid size-5 shrink-0 place-items-center overflow-hidden rounded-full text-[10px] font-bold">${spkFace(sp)}</span><span class="truncate">${escapeHtml(sp.name)}</span></button>`
+    : `<button class="spkchip spkph me-1 inline-grid size-6 place-items-center rounded-full border border-dashed border-base-content/30 align-middle text-base-content/45 hover:border-primary hover:text-primary" contenteditable="false" onmousedown="event.preventDefault()" onclick="openSpkMenu(event, ${id})" data-tip="گوینده‌ی این خط" data-tip-en="This line's speaker"><svg class="size-3.5"><use href="#i-user-round-plus"/></svg></button>`; }
+function toneChip(id){ const L = S.lines[id]; return L && L.tone ? `<button class="badge badge-soft badge-accent badge-sm me-1 gap-1 align-middle" contenteditable="false" onmousedown="event.preventDefault()" onclick="openToneMenu(event, ${id})"><svg class="size-3"><use href="#i-smile"/></svg>${escapeHtml(L.tone)}</button>` : ''; }
+// sound tags <…>, backchannels |…| and IPA /…/ as pills — the raw characters stay in the text (hidden), so offsets never move
+function pills(html){
+  return html.split(/(<[^>]+>)/).map(part => part.startsWith('<') ? part : part
+    .replace(/&lt;([^&]{1,40}?)&gt;/g, '<span class="tagpill"><span class="tp-x">&lt;</span>$1<span class="tp-x">&gt;</span></span>')
+    .replace(/\|([^|]{1,60}?)\|/g, '<span class="tagpill pipe"><span class="tp-x">|</span>$1<span class="tp-x">|</span></span>')
+    .replace(/(^|\s)\/([^/\s][^/]{0,60}?)\//g, '$1<span class="tagpill ipa"><span class="tp-x">/</span>$2<span class="tp-x">/</span></span>')).join('');
+}
+function placeMenu(m, b, w){ const r = b.getBoundingClientRect(); m.style.width = Math.min(w, innerWidth - 16) + 'px'; m.style.maxHeight = Math.min(380, Math.max(160, Math.max(innerHeight - r.bottom, r.top) - 16)) + 'px';
+  m.style.left = Math.max(8, Math.min(innerWidth - Math.min(w, innerWidth - 16) - 8, r.right - Math.min(w, innerWidth - 16))) + 'px';
+  const below = innerHeight - r.bottom > 220 || innerHeight - r.bottom > r.top; m.style.top = below ? (r.bottom + 4) + 'px' : ''; m.style.bottom = below ? '' : (innerHeight - r.top + 4) + 'px'; }
+function lineMenu(b, html, onPick){ const m = $('ddMenu'); if (m.parentElement !== document.body) document.body.appendChild(m); m._sel = null; m.dir = 'rtl'; m.innerHTML = html; m.classList.remove('hidden'); placeMenu(m, b, 280); m.onclick = e => onPick(e); }
+function linesFor(id){ return sel.has(+id) && sel.size > 1 ? [...sel] : [+id]; }
+function openSpkMenu(ev, id){
+  ev.stopPropagation(); const L = spkList(), cur = (S.lines[id] || {}).spk || '';
+  const row = (sp, k) => `<li><a data-spk="${sp ? sp.id : ''}" class="gap-2 ${cur === (sp ? sp.id : '') ? 'menu-active' : ''}">${sp ? `<span class="grid size-6 shrink-0 place-items-center overflow-hidden rounded-full text-[10px] font-bold" style="${spkBg(k)}">${spkFace(sp)}</span><span class="min-w-0 flex-1"><span class="block font-semibold">${escapeHtml(sp.name)}</span><span class="block truncate text-xs text-base-content/60">${escapeHtml(spkSummary(sp))}</span></span>` : `<span class="size-6 shrink-0 rounded-full border border-dashed border-base-content/30"></span><span class="flex-1">${T('بدونِ گوینده — صدای پروژه', "No speaker — the project's voice")}</span>`}</a></li>`;
+  lineMenu(ev.currentTarget, `<ul class="menu menu-sm w-full p-1">${L.map(row).join('')}${row(null)}<li class="mt-1 border-t border-base-300 pt-1"><a data-spk-add class="gap-2"><svg class="size-4"><use href="#i-plus"/></svg>${T('افزودنِ گوینده…', 'Add a speaker…')}</a></li></ul>`, e => {
+    const a = e.target.closest('[data-spk]'), add = e.target.closest('[data-spk-add]'); if (add){ closeDD(); openSpeakers(true); return; } if (!a) return;
+    remember(); linesFor(id).forEach(x => { const LL = S.lines[x]; if (!LL) return; const was = LL.spk || ''; LL.spk = a.dataset.spk || undefined; if (was !== (a.dataset.spk || '')){ const [, c] = clipOfLine(x); if (c && !c.unvoiced) LL.dirty = true; } });
+    closeDD(); renderScript(); autosave(); if (typeof VVER !== 'undefined') VVER++; });
+}
+function toneList(){ const el = $('toneMenu'); const v = el ? [...el.querySelectorAll('[data-tone]')].map(a => a.dataset.tone).filter(Boolean) : []; return v.length ? v : ['شاد', 'آرام', 'غمگین', 'سوگوار']; }
+function openToneMenu(ev, id){ ev.stopPropagation(); const cur = (S.lines[id] || {}).tone || '';
+  lineMenu(ev.currentTarget, `<ul class="menu menu-sm w-full p-1">${toneList().map(t => `<li><a data-tone-pick="${escapeHtml(t)}" class="${t === cur ? 'menu-active' : ''}">${escapeHtml(t)}</a></li>`).join('')}<li class="mt-1 border-t border-base-300 pt-1"><a data-tone-pick="">${T('— لحنِ پروژه —', "— the project's tone —")}</a></li></ul>`, e => {
+    const a = e.target.closest('[data-tone-pick]'); if (!a) return; sel = new Set(linesFor(id)); closeDD(); setTone(a.dataset.tonePick); });
+}
+// paste: «Name:» and «{tone}» become chips; a script whose names recur gets its speakers; unnamed lines keep the previous speaker
+function pasteParts(parts){
+  const names = parts.map(p => { const m = SPK_LINE.exec(p.replace(/^\s*\{[^{}\n]{1,40}\}\s*/, '')); return m ? m[2].trim() : null; }).filter(Boolean);
+  const counts = names.reduce((a, n) => (a[n] = (a[n] || 0) + 1, a), {}), distinct = Object.keys(counts);
+  if (distinct.length >= 2 || Object.values(counts).some(c => c >= 2)) distinct.forEach(n => { if (!spkByName(n)) spkList().push(SPK0(n)); });
+  let last; return parts.map(p => { const L = { text: p, dirty: false, voice: null }; normLine(L); if (L.spk) last = L.spk; else if (last) L.spk = last; return L; });
 }

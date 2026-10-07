@@ -94,8 +94,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 163
-BUILD_FA = "\u06f1\u06f6\u06f3"
+BUILD = 168
+BUILD_FA = "\u06f1\u06f6\u06f8"
 
 
 def _diag(tag, **kv):
@@ -7545,7 +7545,9 @@ def timeline_files(spec, music_cfg, status):
         if _MUSIC["pcm"] is None:
             raise RuntimeError("موسیقی‌ای انتخاب نشده؛ از منبع بالا یکی را انتخاب کنید یا از «موسیقی‌های قبلی» بردارید.")
         status("دارم موسیقی را زیر صدا می‌گذارم…")
-        mixed = mix_music(pcm, sr, _MUSIC["pcm"], _MUSIC["sr"],
+        mixed = mix_music_clips(pcm, sr, _MUSIC["pcm"], _MUSIC["sr"], music_cfg["clips"],
+            level_db=float(music_cfg.get("level_db", -16)), duck=float(music_cfg.get("duck_db", 12)) > 0 and bool(music_cfg.get("duck", True)),
+            duck_db=float(music_cfg.get("duck_db", 12)), fade_in=float(music_cfg.get("fade_in", 1.5)), fade_out=float(music_cfg.get("fade_out", 1.5))) if music_cfg.get("clips") else mix_music(pcm, sr, _MUSIC["pcm"], _MUSIC["sr"],
                           level_db=float(music_cfg.get("level_db", -16)), duck=float(music_cfg.get("duck_db", 12)) > 0 and bool(music_cfg.get("duck", True)),
                           duck_db=float(music_cfg.get("duck_db", 12)),
                           fade_out=float(music_cfg.get("fade_out", music_cfg.get("fade", 1.5))), fade_in=float(music_cfg.get("fade_in", 1.5)))
@@ -7693,6 +7695,9 @@ def gulp_lines(gid):
     return spans
 
 
+_G38_FALLBACK_TOKENS = set()
+
+
 def g38_voice_page(filters=None, page_token="", status=lambda *a, **k: None):
     """The Extended Voice Library (2,000+ voices), one page at a time, with Google's filters
     (language_code, gender, pitch, contexts, search, type). When a language filter finds
@@ -7715,8 +7720,10 @@ def g38_voice_page(filters=None, page_token="", status=lambda *a, **k: None):
     if f.get("search"):
         params.append(("search", f["search"]))
     if page_token:
+        if page_token in _G38_FALLBACK_TOKENS:          # 164: a token from the whole-library fallback must not carry the language filter
+            params = [p for p in params if p[0] != "language_code"]
         params.append(("page_token", page_token))
-    data = fetch(params); fell_back = False
+    data = fetch(params); fell_back = page_token in _G38_FALLBACK_TOKENS
     if not data.get("voices") and f.get("language_code") and not page_token:
         _diag("g38_library_fallback", language=str(f.get("language_code"))[:30])
         data = fetch([p for p in params if p[0] != "language_code"]); fell_back = True
@@ -7726,6 +7733,9 @@ def g38_voice_page(filters=None, page_token="", status=lambda *a, **k: None):
                        "description": v.get("description", ""), "language": v.get("language_code") or v.get("languageCode", ""),
                        "accent": v.get("accent", ""), "gender": v.get("gender", ""), "pitch": v.get("pitch", ""),
                        "persona": v.get("persona", ""), "contexts": v.get("contexts") or v.get("context") or [], "type": v.get("type", "")})
+    _tok = data.get("nextPageToken") or data.get("next_page_token")
+    if fell_back and _tok:
+        _G38_FALLBACK_TOKENS.add(_tok)
     _diag("g38_voice_page", count=len(voices), fell_back=fell_back)
     return {"voices": voices, "next": data.get("next_page_token") or data.get("nextPageToken") or "", "fell_back": fell_back}
 
@@ -8021,22 +8031,36 @@ def voice_preview(payload, status=lambda *a, **k: None):
     return mp3
 
 
-def previews_build(jobs, out_dir, status=lambda *a, **k: None):
-    """Make the bundled previews: jobs = [{"rel": "google/<model>/<voice>.mp3", "payload": {...}}]."""
-    import pathlib as _pl
-    root = _pl.Path(out_dir); made, failed = 0, []
-    for i, j in enumerate(jobs, 1):
+def previews_build(jobs, out_dir, status=lambda *a, **k: None, bundled_dir=None):
+    """Make ONLY the missing previews (164): a sample already bundled in the app, or already in the
+    chosen folder, is not made again (bundled ones are copied in, so the folder ends up complete);
+    when the keys run out it stops at once instead of failing every remaining voice."""
+    import pathlib as _pl, shutil as _sh
+    root = _pl.Path(out_dir); made, copied, kept, failed, stopped = 0, 0, 0, [], None
+    bundled = _pl.Path(bundled_dir) if bundled_dir else None
+    todo = []
+    for j in jobs:
         rel = str(j.get("rel", "")).replace("\\", "/").lstrip("/")
         if not rel.endswith(".mp3") or ".." in rel:
             continue
-        status(f"نمونهٔ صدا {i} از {len(jobs)}: {rel}")
+        dst = root / rel
+        if dst.exists() and dst.stat().st_size > 1000:
+            kept += 1; continue
+        if bundled and (bundled / rel).exists() and (bundled / rel).stat().st_size > 1000:
+            dst.parent.mkdir(parents=True, exist_ok=True); _sh.copyfile(bundled / rel, dst); copied += 1; continue
+        todo.append((rel, j))
+    for i, (rel, j) in enumerate(todo, 1):
+        status(f"نمونهٔ صدا {i} از {len(todo)}: {rel}")
         try:
             data = voice_preview(j.get("payload") or {}, status)
             dst = root / rel; dst.parent.mkdir(parents=True, exist_ok=True); dst.write_bytes(data); made += 1
         except Exception as e:
-            failed.append({"rel": rel, "error": str(e)[:160]})
-    _diag("previews_build", made=made, failed=len(failed))
-    return {"made": made, "failed": failed, "folder": str(root)}
+            msg = str(e)
+            if any(k in msg.lower() for k in ("quota", "429", "exceeded", "resource_exhausted", "rate limit")):
+                stopped = msg[:160]; failed.extend({"rel": r, "error": "not attempted: keys ran out"} for r, _ in todo[i - 1:]); break
+            failed.append({"rel": rel, "error": msg[:160]})
+    _diag("previews_build", made=made, copied=copied, kept=kept, failed=len(failed), stopped=bool(stopped))
+    return {"made": made, "copied": copied, "kept": kept, "failed": failed, "stopped": stopped, "folder": str(root)}
 
 
 # ===========================================================================
@@ -8061,3 +8085,46 @@ def mp3_end(job):
     data = enc.encode(bytes(j["pcm"])) + enc.flush()
     _diag("mp3_for_video", seconds=round(len(j["pcm"]) / 2 / j["ch"] / j["sr"], 1), bytes=len(data))
     return _b64m.b64encode(data).decode("ascii")
+
+
+# ===========================================================================
+# 166 · the music bed from the timeline's MUSIC CLIPS (trimmed, split, duplicated, moved): each clip plays
+#   source[in:out] at its place (the source loops when a clip runs past its end); the fade-in on the first
+#   clip, the fade-out on the last, 30 ms at every inner edge; the same level and ducking as mix_music.
+# ===========================================================================
+def mix_music_clips(voice, vsr, music, msr, clips, level_db=-16.0, duck=True, duck_db=12.0, fade_in=1.5, fade_out=1.5):
+    if msr != vsr:
+        music = _resample(music, msr, vsr)
+    v = voice.astype(np.float32); m = music.astype(np.float32)
+    if not len(m):
+        return voice
+    spans = []
+    for c in clips or []:
+        a = max(0, int(float(c.get("in", 0)) * vsr)); b = int(float(c.get("out", 0)) * vsr); at = max(0, int(float(c.get("at", 0)) * vsr))
+        if b - a > int(vsr * 0.05):
+            spans.append((a, b, at))
+    if not spans:
+        return voice
+    total = max(len(v), max(at + (b - a) for a, b, at in spans))
+    bed = np.zeros(total, dtype=np.float32)
+    first = min(at for a, b, at in spans); last = max(at + b - a for a, b, at in spans); edge = int(vsr * 0.03)
+    for a, b, at in spans:
+        n = b - a; seg = m[np.arange(a, b) % len(m)].copy()
+        fi = min(int(vsr * fade_in) if at == first else edge, n // 2); fo = min(int(vsr * fade_out) if at + n == last else edge, n // 2)
+        if fi > 0:
+            seg[:fi] *= np.linspace(0, 1, fi)
+        if fo > 0:
+            seg[n - fo:] *= np.linspace(1, 0, fo)
+        bed[at:at + n] += seg
+    vr = float(np.sqrt(np.mean(v * v))) or 1.0
+    nz = bed[np.abs(bed) > 1e-3]; mr = float(np.sqrt(np.mean(nz * nz))) if len(nz) else 1.0
+    bed *= (vr / mr) * (10 ** (level_db / 20.0))
+    if duck and len(v):
+        env = _envelope(v / 32768.0, vsr); gate = np.clip(env / 0.6, 0.0, 1.0); g = 1.0 - (1.0 - 10 ** (-duck_db / 20.0)) * gate
+        n = min(len(v), len(g)); bed[:n] *= g[:n]
+    out = bed.copy(); out[:len(v)] += v
+    pk = float(np.abs(out).max()) or 1.0
+    if pk > 32000:
+        out *= 32000 / pk
+    _diag("mix_music_clips", clips=len(spans), seconds=round(total / vsr, 1))
+    return out.astype(np.int16)
