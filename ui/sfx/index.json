@@ -1,0 +1,2010 @@
+{
+"families": {
+"whoosh": {
+"fa": "وووش و حرکت",
+"en": "Whooshes and motion"
+},
+"hit": {
+"fa": "ضربه و برخورد",
+"en": "Hits and impacts"
+},
+"ui": {
+"fa": "بلیپ و کلیک",
+"en": "Blips and clicks"
+},
+"bell": {
+"fa": "زنگ و چایم",
+"en": "Bells and chimes"
+},
+"glitch": {
+"fa": "گلیچ و دیجیتال",
+"en": "Glitch and digital"
+},
+"nature": {
+"fa": "طبیعت و فضا",
+"en": "Nature and ambience"
+},
+"trans": {
+"fa": "همراهِ گذارها",
+"en": "For the transitions"
+},
+"foley": {
+"fa": "فولی و واکنش",
+"en": "Foley and reactions"
+},
+"music": {
+"fa": "نت و آکوردِ کوتاه",
+"en": "Musical stingers"
+}
+},
+"items": [
+{
+"fam": "whoosh",
+"key": "whoosh_1",
+"fa": "وووشِ کلاسیک",
+"en": "Classic whoosh",
+"sec": 0.7,
+"file": "sfx/whoosh/whoosh_1.mp3"
+},
+{
+"fam": "whoosh",
+"key": "whoosh_2",
+"fa": "وووشِ کوتاه",
+"en": "Short whoosh",
+"sec": 0.4,
+"file": "sfx/whoosh/whoosh_2.mp3"
+},
+{
+"fam": "whoosh",
+"key": "whoosh_3",
+"fa": "وووشِ بلند",
+"en": "Long whoosh",
+"sec": 1.1,
+"file": "sfx/whoosh/whoosh_3.mp3"
+},
+{
+"fam": "whoosh",
+"key": "whoosh_4",
+"fa": "وووشِ رو به پایین",
+"en": "Downward whoosh",
+"sec": 0.6,
+"file": "sfx/whoosh/whoosh_4.mp3"
+},
+{
+"fam": "whoosh",
+"key": "whoosh_5",
+"fa": "وووشِ رو به بالا",
+"en": "Upward whoosh",
+"sec": 0.6,
+"file": "sfx/whoosh/whoosh_5.mp3"
+},
+{
+"fam": "whoosh",
+"key": "whoosh_6",
+"fa": "وووشِ تاریک",
+"en": "Dark whoosh",
+"sec": 0.8,
+"file": "sfx/whoosh/whoosh_6.mp3"
+},
+{
+"fam": "whoosh",
+"key": "whoosh_7",
+"fa": "وووشِ هوایی",
+"en": "Airy whoosh",
+"sec": 0.5,
+"file": "sfx/whoosh/whoosh_7.mp3"
+},
+{
+"fam": "whoosh",
+"key": "riser_1",
+"fa": "رایزرِ کوتاه",
+"en": "Riser short",
+"sec": 0.8,
+"file": "sfx/whoosh/riser_1.mp3"
+},
+{
+"fam": "whoosh",
+"key": "riser_2",
+"fa": "رایزرِ میانه",
+"en": "Riser medium",
+"sec": 1.6,
+"file": "sfx/whoosh/riser_2.mp3"
+},
+{
+"fam": "whoosh",
+"key": "riser_3",
+"fa": "رایزرِ بلند",
+"en": "Riser long",
+"sec": 2.4,
+"file": "sfx/whoosh/riser_3.mp3"
+},
+{
+"fam": "whoosh",
+"key": "riser_4",
+"fa": "رایزرِ خیلی بلند",
+"en": "Riser very long",
+"sec": 3.2,
+"file": "sfx/whoosh/riser_4.mp3"
+},
+{
+"fam": "whoosh",
+"key": "fall_1",
+"fa": "سقوطِ کوتاه",
+"en": "Downsweep short",
+"sec": 0.6,
+"file": "sfx/whoosh/fall_1.mp3"
+},
+{
+"fam": "whoosh",
+"key": "fall_2",
+"fa": "سقوطِ میانه",
+"en": "Downsweep medium",
+"sec": 1.0,
+"file": "sfx/whoosh/fall_2.mp3"
+},
+{
+"fam": "whoosh",
+"key": "fall_3",
+"fa": "سقوطِ بلند",
+"en": "Downsweep long",
+"sec": 1.8,
+"file": "sfx/whoosh/fall_3.mp3"
+},
+{
+"fam": "whoosh",
+"key": "swell_1",
+"fa": "سوئلِ نرم",
+"en": "Swell soft",
+"sec": 2.0,
+"file": "sfx/whoosh/swell_1.mp3"
+},
+{
+"fam": "whoosh",
+"key": "swell_2",
+"fa": "سوئلِ عمیق",
+"en": "Swell deep",
+"sec": 3.0,
+"file": "sfx/whoosh/swell_2.mp3"
+},
+{
+"fam": "whoosh",
+"key": "swell_3",
+"fa": "سوئلِ روشن",
+"en": "Swell bright",
+"sec": 1.4,
+"file": "sfx/whoosh/swell_3.mp3"
+},
+{
+"fam": "whoosh",
+"key": "reverse_whoosh",
+"fa": "وووشِ وارونه",
+"en": "Reverse whoosh",
+"sec": 0.8,
+"file": "sfx/whoosh/reverse_whoosh.mp3"
+},
+{
+"fam": "whoosh",
+"key": "double_whoosh",
+"fa": "دو وووش",
+"en": "Double whoosh",
+"sec": 0.77,
+"file": "sfx/whoosh/double_whoosh.mp3"
+},
+{
+"fam": "whoosh",
+"key": "flutter",
+"fa": "بال‌زدن",
+"en": "Flutter",
+"sec": 0.9,
+"file": "sfx/whoosh/flutter.mp3"
+},
+{
+"fam": "whoosh",
+"key": "wind_gust",
+"fa": "وزشِ باد",
+"en": "Wind gust",
+"sec": 1.6,
+"file": "sfx/whoosh/wind_gust.mp3"
+},
+{
+"fam": "whoosh",
+"key": "jet_pass",
+"fa": "عبورِ جت",
+"en": "Jet pass",
+"sec": 2.2,
+"file": "sfx/whoosh/jet_pass.mp3"
+},
+{
+"fam": "whoosh",
+"key": "swish",
+"fa": "سوییش",
+"en": "Swish",
+"sec": 0.25,
+"file": "sfx/whoosh/swish.mp3"
+},
+{
+"fam": "whoosh",
+"key": "rocket",
+"fa": "موشک",
+"en": "Rocket",
+"sec": 1.7,
+"file": "sfx/whoosh/rocket.mp3"
+},
+{
+"fam": "whoosh",
+"key": "warp",
+"fa": "وارپ",
+"en": "Warp",
+"sec": 1.0,
+"file": "sfx/whoosh/warp.mp3"
+},
+{
+"fam": "hit",
+"key": "boom_1",
+"fa": "بومِ سینمایی",
+"en": "Boom cinematic",
+"sec": 1.4,
+"file": "sfx/hit/boom_1.mp3"
+},
+{
+"fam": "hit",
+"key": "boom_2",
+"fa": "بومِ عمیق",
+"en": "Boom deep",
+"sec": 2.2,
+"file": "sfx/hit/boom_2.mp3"
+},
+{
+"fam": "hit",
+"key": "boom_3",
+"fa": "بومِ کوتاه",
+"en": "Boom short",
+"sec": 0.9,
+"file": "sfx/hit/boom_3.mp3"
+},
+{
+"fam": "hit",
+"key": "thud",
+"fa": "تاپ",
+"en": "Thud",
+"sec": 0.6,
+"file": "sfx/hit/thud.mp3"
+},
+{
+"fam": "hit",
+"key": "kick_1",
+"fa": "کیکِ معمولی",
+"en": "Kick standard",
+"sec": 0.6,
+"file": "sfx/hit/kick_1.mp3"
+},
+{
+"fam": "hit",
+"key": "kick_2",
+"fa": "کیکِ خشک",
+"en": "Kick tight",
+"sec": 0.6,
+"file": "sfx/hit/kick_2.mp3"
+},
+{
+"fam": "hit",
+"key": "kick_3",
+"fa": "کیکِ بلند",
+"en": "Kick long",
+"sec": 0.6,
+"file": "sfx/hit/kick_3.mp3"
+},
+{
+"fam": "hit",
+"key": "snare_1",
+"fa": "اسنیر",
+"en": "Snare",
+"sec": 0.45,
+"file": "sfx/hit/snare_1.mp3"
+},
+{
+"fam": "hit",
+"key": "snare_2",
+"fa": "اسنیرِ کوتاه",
+"en": "Tight snare",
+"sec": 0.45,
+"file": "sfx/hit/snare_2.mp3"
+},
+{
+"fam": "hit",
+"key": "hat_closed",
+"fa": "های‌هتِ بسته",
+"en": "Closed hat",
+"sec": 0.2,
+"file": "sfx/hit/hat_closed.mp3"
+},
+{
+"fam": "hit",
+"key": "hat_open",
+"fa": "های‌هتِ باز",
+"en": "Open hat",
+"sec": 0.2,
+"file": "sfx/hit/hat_open.mp3"
+},
+{
+"fam": "hit",
+"key": "clap",
+"fa": "کف‌زدن",
+"en": "Clap",
+"sec": 0.3,
+"file": "sfx/hit/clap.mp3"
+},
+{
+"fam": "hit",
+"key": "slam",
+"fa": "کوبیدن",
+"en": "Slam",
+"sec": 0.6,
+"file": "sfx/hit/slam.mp3"
+},
+{
+"fam": "hit",
+"key": "punch",
+"fa": "مشت",
+"en": "Punch",
+"sec": 0.6,
+"file": "sfx/hit/punch.mp3"
+},
+{
+"fam": "hit",
+"key": "sub_drop",
+"fa": "سابِ افتان",
+"en": "Sub drop",
+"sec": 2.0,
+"file": "sfx/hit/sub_drop.mp3"
+},
+{
+"fam": "hit",
+"key": "cine_hit_1",
+"fa": "ضربهٔ سینماییِ کوتاه",
+"en": "Cinematic hit short",
+"sec": 1.8,
+"file": "sfx/hit/cine_hit_1.mp3"
+},
+{
+"fam": "hit",
+"key": "cine_hit_2",
+"fa": "ضربهٔ سینماییِ میانه",
+"en": "Cinematic hit medium",
+"sec": 2.8,
+"file": "sfx/hit/cine_hit_2.mp3"
+},
+{
+"fam": "hit",
+"key": "cine_hit_3",
+"fa": "ضربهٔ سینماییِ بلند",
+"en": "Cinematic hit long",
+"sec": 4.0,
+"file": "sfx/hit/cine_hit_3.mp3"
+},
+{
+"fam": "hit",
+"key": "knock_1",
+"fa": "در زدن",
+"en": "Knock",
+"sec": 0.78,
+"file": "sfx/hit/knock_1.mp3"
+},
+{
+"fam": "hit",
+"key": "knock_2",
+"fa": "دو تقه",
+"en": "Two knocks",
+"sec": 0.51,
+"file": "sfx/hit/knock_2.mp3"
+},
+{
+"fam": "hit",
+"key": "stomp",
+"fa": "پاکوب",
+"en": "Stomp",
+"sec": 0.6,
+"file": "sfx/hit/stomp.mp3"
+},
+{
+"fam": "hit",
+"key": "metal_hit",
+"fa": "ضربهٔ فلزی",
+"en": "Metal hit",
+"sec": 1.2,
+"file": "sfx/hit/metal_hit.mp3"
+},
+{
+"fam": "hit",
+"key": "anvil",
+"fa": "سندان",
+"en": "Anvil",
+"sec": 2.7,
+"file": "sfx/hit/anvil.mp3"
+},
+{
+"fam": "hit",
+"key": "wood_block",
+"fa": "بلوکِ چوبی",
+"en": "Wood block",
+"sec": 0.18,
+"file": "sfx/hit/wood_block.mp3"
+},
+{
+"fam": "hit",
+"key": "tom",
+"fa": "تام",
+"en": "Tom",
+"sec": 0.6,
+"file": "sfx/hit/tom.mp3"
+},
+{
+"fam": "hit",
+"key": "crash",
+"fa": "کرش",
+"en": "Crash",
+"sec": 1.6,
+"file": "sfx/hit/crash.mp3"
+},
+{
+"fam": "hit",
+"key": "ride",
+"fa": "راید",
+"en": "Ride",
+"sec": 0.8,
+"file": "sfx/hit/ride.mp3"
+},
+{
+"fam": "ui",
+"key": "pop_1",
+"fa": "پاپِ معمولی",
+"en": "Pop standard",
+"sec": 0.09,
+"file": "sfx/ui/pop_1.mp3"
+},
+{
+"fam": "ui",
+"key": "pop_2",
+"fa": "پاپِ بم",
+"en": "Pop low",
+"sec": 0.09,
+"file": "sfx/ui/pop_2.mp3"
+},
+{
+"fam": "ui",
+"key": "pop_3",
+"fa": "پاپِ زیر",
+"en": "Pop high",
+"sec": 0.09,
+"file": "sfx/ui/pop_3.mp3"
+},
+{
+"fam": "ui",
+"key": "pop_4",
+"fa": "پاپِ خیلی بم",
+"en": "Pop very low",
+"sec": 0.09,
+"file": "sfx/ui/pop_4.mp3"
+},
+{
+"fam": "ui",
+"key": "click_1",
+"fa": "کلیکِ معمولی",
+"en": "Click standard",
+"sec": 0.18,
+"file": "sfx/ui/click_1.mp3"
+},
+{
+"fam": "ui",
+"key": "click_2",
+"fa": "کلیکِ نرم",
+"en": "Click soft",
+"sec": 0.18,
+"file": "sfx/ui/click_2.mp3"
+},
+{
+"fam": "ui",
+"key": "click_3",
+"fa": "کلیکِ تیز",
+"en": "Click sharp",
+"sec": 0.18,
+"file": "sfx/ui/click_3.mp3"
+},
+{
+"fam": "ui",
+"key": "click_4",
+"fa": "کلیکِ ریز",
+"en": "Click tiny",
+"sec": 0.18,
+"file": "sfx/ui/click_4.mp3"
+},
+{
+"fam": "ui",
+"key": "tick",
+"fa": "تیک",
+"en": "Tick",
+"sec": 0.03,
+"file": "sfx/ui/tick.mp3"
+},
+{
+"fam": "ui",
+"key": "blip_up",
+"fa": "بلیپِ بالا",
+"en": "Blip up",
+"sec": 0.12,
+"file": "sfx/ui/blip_up.mp3"
+},
+{
+"fam": "ui",
+"key": "blip_down",
+"fa": "بلیپِ پایین",
+"en": "Blip down",
+"sec": 0.12,
+"file": "sfx/ui/blip_down.mp3"
+},
+{
+"fam": "ui",
+"key": "blip_double",
+"fa": "بلیپِ دوتایی",
+"en": "Double blip",
+"sec": 0.18,
+"file": "sfx/ui/blip_double.mp3"
+},
+{
+"fam": "ui",
+"key": "confirm",
+"fa": "تأیید",
+"en": "Confirm",
+"sec": 0.35,
+"file": "sfx/ui/confirm.mp3"
+},
+{
+"fam": "ui",
+"key": "cancel",
+"fa": "لغو",
+"en": "Cancel",
+"sec": 0.35,
+"file": "sfx/ui/cancel.mp3"
+},
+{
+"fam": "ui",
+"key": "error",
+"fa": "خطا",
+"en": "Error",
+"sec": 0.34,
+"file": "sfx/ui/error.mp3"
+},
+{
+"fam": "ui",
+"key": "notify_1",
+"fa": "اعلانِ ۱",
+"en": "Notification 1",
+"sec": 0.5,
+"file": "sfx/ui/notify_1.mp3"
+},
+{
+"fam": "ui",
+"key": "notify_2",
+"fa": "اعلانِ ۲",
+"en": "Notification 2",
+"sec": 3.6,
+"file": "sfx/ui/notify_2.mp3"
+},
+{
+"fam": "ui",
+"key": "notify_3",
+"fa": "اعلانِ ۳",
+"en": "Notification 3",
+"sec": 0.56,
+"file": "sfx/ui/notify_3.mp3"
+},
+{
+"fam": "ui",
+"key": "toggle_on",
+"fa": "روشن",
+"en": "Toggle on",
+"sec": 0.06,
+"file": "sfx/ui/toggle_on.mp3"
+},
+{
+"fam": "ui",
+"key": "toggle_off",
+"fa": "خاموش",
+"en": "Toggle off",
+"sec": 0.06,
+"file": "sfx/ui/toggle_off.mp3"
+},
+{
+"fam": "ui",
+"key": "hover",
+"fa": "هاور",
+"en": "Hover",
+"sec": 0.05,
+"file": "sfx/ui/hover.mp3"
+},
+{
+"fam": "ui",
+"key": "select",
+"fa": "انتخاب",
+"en": "Select",
+"sec": 0.18,
+"file": "sfx/ui/select.mp3"
+},
+{
+"fam": "ui",
+"key": "key_1",
+"fa": "کلیدِ تایپ 1",
+"en": "Keyboard key 1",
+"sec": 0.18,
+"file": "sfx/ui/key_1.mp3"
+},
+{
+"fam": "ui",
+"key": "key_2",
+"fa": "کلیدِ تایپ 2",
+"en": "Keyboard key 2",
+"sec": 0.18,
+"file": "sfx/ui/key_2.mp3"
+},
+{
+"fam": "ui",
+"key": "key_3",
+"fa": "کلیدِ تایپ 3",
+"en": "Keyboard key 3",
+"sec": 0.18,
+"file": "sfx/ui/key_3.mp3"
+},
+{
+"fam": "ui",
+"key": "typing",
+"fa": "تایپ‌کردن",
+"en": "Typing",
+"sec": 2.06,
+"file": "sfx/ui/typing.mp3"
+},
+{
+"fam": "ui",
+"key": "shutter",
+"fa": "شاترِ دوربین",
+"en": "Camera shutter",
+"sec": 0.37,
+"file": "sfx/ui/shutter.mp3"
+},
+{
+"fam": "ui",
+"key": "page_flip",
+"fa": "ورق‌زدن",
+"en": "Page flip",
+"sec": 0.35,
+"file": "sfx/ui/page_flip.mp3"
+},
+{
+"fam": "ui",
+"key": "swipe",
+"fa": "سوایپ",
+"en": "Swipe",
+"sec": 0.2,
+"file": "sfx/ui/swipe.mp3"
+},
+{
+"fam": "ui",
+"key": "unlock",
+"fa": "بازشدن",
+"en": "Unlock",
+"sec": 0.43,
+"file": "sfx/ui/unlock.mp3"
+},
+{
+"fam": "ui",
+"key": "lock",
+"fa": "قفل",
+"en": "Lock",
+"sec": 0.43,
+"file": "sfx/ui/lock.mp3"
+},
+{
+"fam": "ui",
+"key": "coin",
+"fa": "سکه",
+"en": "Coin",
+"sec": 0.47,
+"file": "sfx/ui/coin.mp3"
+},
+{
+"fam": "ui",
+"key": "level_up",
+"fa": "ارتقا",
+"en": "Level up",
+"sec": 0.34,
+"file": "sfx/ui/level_up.mp3"
+},
+{
+"fam": "ui",
+"key": "countdown_tick",
+"fa": "تیکِ شمارش",
+"en": "Countdown tick",
+"sec": 0.08,
+"file": "sfx/ui/countdown_tick.mp3"
+},
+{
+"fam": "ui",
+"key": "countdown_go",
+"fa": "شروع",
+"en": "Countdown go",
+"sec": 0.5,
+"file": "sfx/ui/countdown_go.mp3"
+},
+{
+"fam": "ui",
+"key": "message_sent",
+"fa": "پیام رفت",
+"en": "Message sent",
+"sec": 0.25,
+"file": "sfx/ui/message_sent.mp3"
+},
+{
+"fam": "ui",
+"key": "message_in",
+"fa": "پیام آمد",
+"en": "Message received",
+"sec": 0.16,
+"file": "sfx/ui/message_in.mp3"
+},
+{
+"fam": "ui",
+"key": "radar",
+"fa": "رادار",
+"en": "Radar ping",
+"sec": 0.95,
+"file": "sfx/ui/radar.mp3"
+},
+{
+"fam": "ui",
+"key": "scan",
+"fa": "اسکن",
+"en": "Scan",
+"sec": 0.9,
+"file": "sfx/ui/scan.mp3"
+},
+{
+"fam": "bell",
+"key": "bell_1",
+"fa": "زنگِ نتِ دو",
+"en": "Bell note 1",
+"sec": 4.2,
+"file": "sfx/bell/bell_1.mp3"
+},
+{
+"fam": "bell",
+"key": "bell_2",
+"fa": "زنگِ نتِ می",
+"en": "Bell note 2",
+"sec": 4.2,
+"file": "sfx/bell/bell_2.mp3"
+},
+{
+"fam": "bell",
+"key": "bell_3",
+"fa": "زنگِ نتِ سل",
+"en": "Bell note 3",
+"sec": 4.2,
+"file": "sfx/bell/bell_3.mp3"
+},
+{
+"fam": "bell",
+"key": "bell_4",
+"fa": "زنگِ نتِ دو́",
+"en": "Bell note 4",
+"sec": 4.2,
+"file": "sfx/bell/bell_4.mp3"
+},
+{
+"fam": "bell",
+"key": "bell_5",
+"fa": "زنگِ نتِ می́",
+"en": "Bell note 5",
+"sec": 4.2,
+"file": "sfx/bell/bell_5.mp3"
+},
+{
+"fam": "bell",
+"key": "bell_6",
+"fa": "زنگِ نتِ سل́",
+"en": "Bell note 6",
+"sec": 4.2,
+"file": "sfx/bell/bell_6.mp3"
+},
+{
+"fam": "bell",
+"key": "bell_7",
+"fa": "زنگِ نتِ سی́",
+"en": "Bell note 7",
+"sec": 4.2,
+"file": "sfx/bell/bell_7.mp3"
+},
+{
+"fam": "bell",
+"key": "bell_8",
+"fa": "زنگِ نتِ می́",
+"en": "Bell note 8",
+"sec": 4.2,
+"file": "sfx/bell/bell_8.mp3"
+},
+{
+"fam": "bell",
+"key": "chime",
+"fa": "چایم",
+"en": "Chime",
+"sec": 4.2,
+"file": "sfx/bell/chime.mp3"
+},
+{
+"fam": "bell",
+"key": "chime_low",
+"fa": "چایمِ بم",
+"en": "Low chime",
+"sec": 6.0,
+"file": "sfx/bell/chime_low.mp3"
+},
+{
+"fam": "bell",
+"key": "chime_double",
+"fa": "چایمِ دوتایی",
+"en": "Double chime",
+"sec": 4.5,
+"file": "sfx/bell/chime_double.mp3"
+},
+{
+"fam": "bell",
+"key": "sparkle",
+"fa": "جرقه",
+"en": "Sparkle",
+"sec": 2.55,
+"file": "sfx/bell/sparkle.mp3"
+},
+{
+"fam": "bell",
+"key": "sparkle_long",
+"fa": "جرقهٔ بلند",
+"en": "Long sparkle",
+"sec": 3.77,
+"file": "sfx/bell/sparkle_long.mp3"
+},
+{
+"fam": "bell",
+"key": "sparkle_down",
+"fa": "جرقهٔ فرودی",
+"en": "Falling sparkle",
+"sec": 2.55,
+"file": "sfx/bell/sparkle_down.mp3"
+},
+{
+"fam": "bell",
+"key": "glass_1",
+"fa": "دینگِ شیشه‌ایِ بم",
+"en": "Glass ding low",
+"sec": 2.7,
+"file": "sfx/bell/glass_1.mp3"
+},
+{
+"fam": "bell",
+"key": "glass_2",
+"fa": "دینگِ شیشه‌ایِ میانه",
+"en": "Glass ding mid",
+"sec": 2.7,
+"file": "sfx/bell/glass_2.mp3"
+},
+{
+"fam": "bell",
+"key": "glass_3",
+"fa": "دینگِ شیشه‌ایِ زیر",
+"en": "Glass ding high",
+"sec": 2.7,
+"file": "sfx/bell/glass_3.mp3"
+},
+{
+"fam": "bell",
+"key": "arpeggio_major",
+"fa": "آرپژِ ماژور",
+"en": "Major arpeggio",
+"sec": 3.96,
+"file": "sfx/bell/arpeggio_major.mp3"
+},
+{
+"fam": "bell",
+"key": "arpeggio_minor",
+"fa": "آرپژِ مینور",
+"en": "Minor arpeggio",
+"sec": 3.96,
+"file": "sfx/bell/arpeggio_minor.mp3"
+},
+{
+"fam": "bell",
+"key": "arpeggio_down",
+"fa": "آرپژِ فرودی",
+"en": "Falling arpeggio",
+"sec": 3.96,
+"file": "sfx/bell/arpeggio_down.mp3"
+},
+{
+"fam": "bell",
+"key": "music_box_1",
+"fa": "جعبهٔ موسیقی ۱",
+"en": "Music box 1",
+"sec": 4.1,
+"file": "sfx/bell/music_box_1.mp3"
+},
+{
+"fam": "bell",
+"key": "music_box_2",
+"fa": "جعبهٔ موسیقی ۲",
+"en": "Music box 2",
+"sec": 4.2,
+"file": "sfx/bell/music_box_2.mp3"
+},
+{
+"fam": "bell",
+"key": "triangle_1",
+"fa": "مثلث",
+"en": "Triangle",
+"sec": 5.4,
+"file": "sfx/bell/triangle_1.mp3"
+},
+{
+"fam": "bell",
+"key": "triangle_2",
+"fa": "مثلثِ کوتاه",
+"en": "Short triangle",
+"sec": 1.2,
+"file": "sfx/bell/triangle_2.mp3"
+},
+{
+"fam": "bell",
+"key": "gong",
+"fa": "گانگ",
+"en": "Gong",
+"sec": 10.5,
+"file": "sfx/bell/gong.mp3"
+},
+{
+"fam": "bell",
+"key": "tubular",
+"fa": "زنگِ لوله‌ای",
+"en": "Tubular bell",
+"sec": 7.5,
+"file": "sfx/bell/tubular.mp3"
+},
+{
+"fam": "bell",
+"key": "wind_chime",
+"fa": "زنگِ بادی",
+"en": "Wind chime",
+"sec": 5.8,
+"file": "sfx/bell/wind_chime.mp3"
+},
+{
+"fam": "glitch",
+"key": "glitch_1",
+"fa": "گلیچِ کلاسیک",
+"en": "Glitch classic",
+"sec": 0.56,
+"file": "sfx/glitch/glitch_1.mp3"
+},
+{
+"fam": "glitch",
+"key": "glitch_2",
+"fa": "گلیچِ تند",
+"en": "Glitch fast",
+"sec": 0.53,
+"file": "sfx/glitch/glitch_2.mp3"
+},
+{
+"fam": "glitch",
+"key": "glitch_3",
+"fa": "گلیچِ کُند",
+"en": "Glitch slow",
+"sec": 0.53,
+"file": "sfx/glitch/glitch_3.mp3"
+},
+{
+"fam": "glitch",
+"key": "glitch_4",
+"fa": "گلیچِ ریز",
+"en": "Glitch fine",
+"sec": 0.49,
+"file": "sfx/glitch/glitch_4.mp3"
+},
+{
+"fam": "glitch",
+"key": "static_1",
+"fa": "نویزِ کوتاه",
+"en": "Static short",
+"sec": 0.15,
+"file": "sfx/glitch/static_1.mp3"
+},
+{
+"fam": "glitch",
+"key": "static_2",
+"fa": "نویزِ میانه",
+"en": "Static medium",
+"sec": 0.4,
+"file": "sfx/glitch/static_2.mp3"
+},
+{
+"fam": "glitch",
+"key": "static_3",
+"fa": "نویزِ بلند",
+"en": "Static long",
+"sec": 0.9,
+"file": "sfx/glitch/static_3.mp3"
+},
+{
+"fam": "glitch",
+"key": "data_1",
+"fa": "داده ۱",
+"en": "Data 1",
+"sec": 0.68,
+"file": "sfx/glitch/data_1.mp3"
+},
+{
+"fam": "glitch",
+"key": "data_2",
+"fa": "داده ۲",
+"en": "Data 2",
+"sec": 0.73,
+"file": "sfx/glitch/data_2.mp3"
+},
+{
+"fam": "glitch",
+"key": "data_3",
+"fa": "داده ۳",
+"en": "Data 3",
+"sec": 0.57,
+"file": "sfx/glitch/data_3.mp3"
+},
+{
+"fam": "glitch",
+"key": "beep_1",
+"fa": "بیپ",
+"en": "Beep",
+"sec": 0.15,
+"file": "sfx/glitch/beep_1.mp3"
+},
+{
+"fam": "glitch",
+"key": "beep_2",
+"fa": "بیپِ دوتایی",
+"en": "Double beep",
+"sec": 0.28,
+"file": "sfx/glitch/beep_2.mp3"
+},
+{
+"fam": "glitch",
+"key": "beep_3",
+"fa": "بیپِ بالارونده",
+"en": "Rising beeps",
+"sec": 0.47,
+"file": "sfx/glitch/beep_3.mp3"
+},
+{
+"fam": "glitch",
+"key": "modem",
+"fa": "مودم",
+"en": "Modem",
+"sec": 1.24,
+"file": "sfx/glitch/modem.mp3"
+},
+{
+"fam": "glitch",
+"key": "robot_1",
+"fa": "ربات ۱",
+"en": "Robot 1",
+"sec": 0.57,
+"file": "sfx/glitch/robot_1.mp3"
+},
+{
+"fam": "glitch",
+"key": "robot_2",
+"fa": "ربات ۲",
+"en": "Robot 2",
+"sec": 0.6,
+"file": "sfx/glitch/robot_2.mp3"
+},
+{
+"fam": "glitch",
+"key": "tape_stop",
+"fa": "توقفِ نوار",
+"en": "Tape stop",
+"sec": 0.9,
+"file": "sfx/glitch/tape_stop.mp3"
+},
+{
+"fam": "glitch",
+"key": "tape_start",
+"fa": "راه‌افتادنِ نوار",
+"en": "Tape start",
+"sec": 0.7,
+"file": "sfx/glitch/tape_start.mp3"
+},
+{
+"fam": "glitch",
+"key": "bitcrush",
+"fa": "بیت‌کراش",
+"en": "Bitcrush",
+"sec": 0.5,
+"file": "sfx/glitch/bitcrush.mp3"
+},
+{
+"fam": "glitch",
+"key": "stutter",
+"fa": "لکنت",
+"en": "Stutter",
+"sec": 0.67,
+"file": "sfx/glitch/stutter.mp3"
+},
+{
+"fam": "nature",
+"key": "drop_1",
+"fa": "قطرهٔ آبِ معمولی",
+"en": "Water drop standard",
+"sec": 0.25,
+"file": "sfx/nature/drop_1.mp3"
+},
+{
+"fam": "nature",
+"key": "drop_2",
+"fa": "قطرهٔ آبِ بم",
+"en": "Water drop low",
+"sec": 0.25,
+"file": "sfx/nature/drop_2.mp3"
+},
+{
+"fam": "nature",
+"key": "drop_3",
+"fa": "قطرهٔ آبِ زیر",
+"en": "Water drop high",
+"sec": 0.25,
+"file": "sfx/nature/drop_3.mp3"
+},
+{
+"fam": "nature",
+"key": "drop_4",
+"fa": "قطرهٔ آبِ بزرگ",
+"en": "Water drop big",
+"sec": 0.25,
+"file": "sfx/nature/drop_4.mp3"
+},
+{
+"fam": "nature",
+"key": "drips",
+"fa": "چکه‌ها",
+"en": "Drips",
+"sec": 1.8,
+"file": "sfx/nature/drips.mp3"
+},
+{
+"fam": "nature",
+"key": "rain_light",
+"fa": "بارانِ نرم",
+"en": "Light rain",
+"sec": 3.0,
+"file": "sfx/nature/rain_light.mp3"
+},
+{
+"fam": "nature",
+"key": "rain_heavy",
+"fa": "بارانِ تند",
+"en": "Heavy rain",
+"sec": 3.0,
+"file": "sfx/nature/rain_heavy.mp3"
+},
+{
+"fam": "nature",
+"key": "wind_1",
+"fa": "باد",
+"en": "Wind",
+"sec": 3.0,
+"file": "sfx/nature/wind_1.mp3"
+},
+{
+"fam": "nature",
+"key": "wind_2",
+"fa": "بادِ سرد",
+"en": "Cold wind",
+"sec": 3.0,
+"file": "sfx/nature/wind_2.mp3"
+},
+{
+"fam": "nature",
+"key": "wind_3",
+"fa": "طوفان",
+"en": "Storm wind",
+"sec": 3.0,
+"file": "sfx/nature/wind_3.mp3"
+},
+{
+"fam": "nature",
+"key": "ocean_1",
+"fa": "موجِ دریا",
+"en": "Ocean wave",
+"sec": 4.0,
+"file": "sfx/nature/ocean_1.mp3"
+},
+{
+"fam": "nature",
+"key": "ocean_2",
+"fa": "ساحل",
+"en": "Shore",
+"sec": 4.0,
+"file": "sfx/nature/ocean_2.mp3"
+},
+{
+"fam": "nature",
+"key": "fire_1",
+"fa": "آتش",
+"en": "Fire",
+"sec": 3.0,
+"file": "sfx/nature/fire_1.mp3"
+},
+{
+"fam": "nature",
+"key": "fire_2",
+"fa": "ترق‌تروقِ آتش",
+"en": "Fire crackle",
+"sec": 2.51,
+"file": "sfx/nature/fire_2.mp3"
+},
+{
+"fam": "nature",
+"key": "birds_1",
+"fa": "پرنده‌ها",
+"en": "Birds",
+"sec": 1.61,
+"file": "sfx/nature/birds_1.mp3"
+},
+{
+"fam": "nature",
+"key": "birds_2",
+"fa": "چهچهه",
+"en": "Birdsong",
+"sec": 2.28,
+"file": "sfx/nature/birds_2.mp3"
+},
+{
+"fam": "nature",
+"key": "thunder_1",
+"fa": "رعد",
+"en": "Thunder",
+"sec": 3.5,
+"file": "sfx/nature/thunder_1.mp3"
+},
+{
+"fam": "nature",
+"key": "thunder_2",
+"fa": "رعدِ دور",
+"en": "Distant thunder",
+"sec": 4.0,
+"file": "sfx/nature/thunder_2.mp3"
+},
+{
+"fam": "nature",
+"key": "stream",
+"fa": "جویبار",
+"en": "Stream",
+"sec": 3.0,
+"file": "sfx/nature/stream.mp3"
+},
+{
+"fam": "nature",
+"key": "forest",
+"fa": "جنگل",
+"en": "Forest",
+"sec": 4.0,
+"file": "sfx/nature/forest.mp3"
+},
+{
+"fam": "nature",
+"key": "crickets",
+"fa": "جیرجیرک",
+"en": "Crickets",
+"sec": 4.0,
+"file": "sfx/nature/crickets.mp3"
+},
+{
+"fam": "nature",
+"key": "heartbeat",
+"fa": "ضربانِ قلب",
+"en": "Heartbeat",
+"sec": 4.96,
+"file": "sfx/nature/heartbeat.mp3"
+},
+{
+"fam": "nature",
+"key": "bubbles",
+"fa": "حباب‌ها",
+"en": "Bubbles",
+"sec": 1.92,
+"file": "sfx/nature/bubbles.mp3"
+},
+{
+"fam": "nature",
+"key": "splash",
+"fa": "شلپ",
+"en": "Splash",
+"sec": 0.5,
+"file": "sfx/nature/splash.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_liquid",
+"fa": "قطره و موج",
+"en": "Drop and ripple",
+"sec": 1.15,
+"file": "sfx/trans/tr_liquid.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_glass",
+"fa": "شیشه‌ای که می‌لغزد",
+"en": "Sliding glass",
+"sec": 3.3,
+"file": "sfx/trans/tr_glass.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_frosted",
+"fa": "یخ‌زده",
+"en": "Frosted",
+"sec": 1.4,
+"file": "sfx/trans/tr_frosted.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_reeded",
+"fa": "شیارها",
+"en": "Reeded",
+"sec": 1.2,
+"file": "sfx/trans/tr_reeded.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_stained",
+"fa": "شیشهٔ رنگی",
+"en": "Stained glass",
+"sec": 4.8,
+"file": "sfx/trans/tr_stained.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_ink",
+"fa": "جوهر",
+"en": "Ink",
+"sec": 1.3,
+"file": "sfx/trans/tr_ink.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_burn",
+"fa": "سوختن",
+"en": "Burn",
+"sec": 1.4,
+"file": "sfx/trans/tr_burn.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_whip",
+"fa": "شلاق",
+"en": "Whip",
+"sec": 0.4,
+"file": "sfx/trans/tr_whip.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_glitch",
+"fa": "گلیچ",
+"en": "Glitch",
+"sec": 0.58,
+"file": "sfx/trans/tr_glitch.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_zoom",
+"fa": "زوم",
+"en": "Zoom",
+"sec": 0.9,
+"file": "sfx/trans/tr_zoom.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_mosaic",
+"fa": "موزاییک",
+"en": "Mosaic",
+"sec": 0.9,
+"file": "sfx/trans/tr_mosaic.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_halftone",
+"fa": "هاف‌تون",
+"en": "Halftone",
+"sec": 1.0,
+"file": "sfx/trans/tr_halftone.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_chrome",
+"fa": "کروم",
+"en": "Chrome",
+"sec": 3.6,
+"file": "sfx/trans/tr_chrome.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_cube",
+"fa": "مکعب",
+"en": "Cube",
+"sec": 1.45,
+"file": "sfx/trans/tr_cube.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_flip",
+"fa": "ورق",
+"en": "Flip",
+"sec": 0.78,
+"file": "sfx/trans/tr_flip.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_camera",
+"fa": "دوربین",
+"en": "Camera",
+"sec": 0.37,
+"file": "sfx/trans/tr_camera.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_mesh",
+"fa": "مش",
+"en": "Mesh",
+"sec": 4.5,
+"file": "sfx/trans/tr_mesh.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_lens",
+"fa": "لنز",
+"en": "Lens",
+"sec": 3.2,
+"file": "sfx/trans/tr_lens.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_leak",
+"fa": "نشتِ نور",
+"en": "Light leak",
+"sec": 1.6,
+"file": "sfx/trans/tr_leak.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_melt",
+"fa": "ذوب",
+"en": "Melt",
+"sec": 1.4,
+"file": "sfx/trans/tr_melt.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_smear",
+"fa": "کشیده",
+"en": "Smear",
+"sec": 1.2,
+"file": "sfx/trans/tr_smear.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_orb",
+"fa": "گوی",
+"en": "Orb",
+"sec": 5.4,
+"file": "sfx/trans/tr_orb.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_water",
+"fa": "آب",
+"en": "Water",
+"sec": 1.2,
+"file": "sfx/trans/tr_water.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_pool",
+"fa": "استخر",
+"en": "Pool",
+"sec": 1.6,
+"file": "sfx/trans/tr_pool.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_rays",
+"fa": "پرتوها",
+"en": "Rays",
+"sec": 2.8,
+"file": "sfx/trans/tr_rays.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_barrel",
+"fa": "بشکه",
+"en": "Barrel",
+"sec": 1.0,
+"file": "sfx/trans/tr_barrel.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_drops",
+"fa": "قطره‌ها",
+"en": "Drops",
+"sec": 1.37,
+"file": "sfx/trans/tr_drops.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_grade",
+"fa": "رنگ‌بندی",
+"en": "Grade",
+"sec": 1.2,
+"file": "sfx/trans/tr_grade.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_push",
+"fa": "هُل",
+"en": "Push",
+"sec": 0.8,
+"file": "sfx/trans/tr_push.mp3"
+},
+{
+"fam": "trans",
+"key": "tr_scene_chrome",
+"fa": "کرومِ صحنه",
+"en": "Scene chrome",
+"sec": 4.8,
+"file": "sfx/trans/tr_scene_chrome.mp3"
+},
+{
+"fam": "foley",
+"key": "applause_1",
+"fa": "تشویق",
+"en": "Applause",
+"sec": 2.8,
+"file": "sfx/foley/applause_1.mp3"
+},
+{
+"fam": "foley",
+"key": "applause_2",
+"fa": "تشویقِ کوتاه",
+"en": "Short applause",
+"sec": 1.35,
+"file": "sfx/foley/applause_2.mp3"
+},
+{
+"fam": "foley",
+"key": "crowd",
+"fa": "همهمه",
+"en": "Crowd murmur",
+"sec": 3.0,
+"file": "sfx/foley/crowd.mp3"
+},
+{
+"fam": "foley",
+"key": "cheer",
+"fa": "هورا",
+"en": "Cheer",
+"sec": 1.8,
+"file": "sfx/foley/cheer.mp3"
+},
+{
+"fam": "foley",
+"key": "scratch_1",
+"fa": "اسکرچِ صفحه",
+"en": "Record scratch",
+"sec": 0.35,
+"file": "sfx/foley/scratch_1.mp3"
+},
+{
+"fam": "foley",
+"key": "scratch_2",
+"fa": "اسکرچِ دوتایی",
+"en": "Double scratch",
+"sec": 0.63,
+"file": "sfx/foley/scratch_2.mp3"
+},
+{
+"fam": "foley",
+"key": "vinyl",
+"fa": "خش‌خشِ وینیل",
+"en": "Vinyl crackle",
+"sec": 3.0,
+"file": "sfx/foley/vinyl.mp3"
+},
+{
+"fam": "foley",
+"key": "boing_1",
+"fa": "بویینگِ کارتونی",
+"en": "Boing cartoon",
+"sec": 0.9,
+"file": "sfx/foley/boing_1.mp3"
+},
+{
+"fam": "foley",
+"key": "boing_2",
+"fa": "بویینگِ بم",
+"en": "Boing low",
+"sec": 0.9,
+"file": "sfx/foley/boing_2.mp3"
+},
+{
+"fam": "foley",
+"key": "boing_3",
+"fa": "بویینگِ زیر",
+"en": "Boing high",
+"sec": 0.9,
+"file": "sfx/foley/boing_3.mp3"
+},
+{
+"fam": "foley",
+"key": "slide_up",
+"fa": "سوتِ کشویی بالا",
+"en": "Slide whistle up",
+"sec": 0.7,
+"file": "sfx/foley/slide_up.mp3"
+},
+{
+"fam": "foley",
+"key": "slide_down",
+"fa": "سوتِ کشویی پایین",
+"en": "Slide whistle down",
+"sec": 0.7,
+"file": "sfx/foley/slide_down.mp3"
+},
+{
+"fam": "foley",
+"key": "cymbal_swell",
+"fa": "سوئلِ سنج",
+"en": "Cymbal swell",
+"sec": 2.2,
+"file": "sfx/foley/cymbal_swell.mp3"
+},
+{
+"fam": "foley",
+"key": "cymbal_hit",
+"fa": "ضربهٔ سنج",
+"en": "Cymbal hit",
+"sec": 2.0,
+"file": "sfx/foley/cymbal_hit.mp3"
+},
+{
+"fam": "foley",
+"key": "door",
+"fa": "در",
+"en": "Door",
+"sec": 0.6,
+"file": "sfx/foley/door.mp3"
+},
+{
+"fam": "foley",
+"key": "footsteps",
+"fa": "قدم‌ها",
+"en": "Footsteps",
+"sec": 4.68,
+"file": "sfx/foley/footsteps.mp3"
+},
+{
+"fam": "foley",
+"key": "paper",
+"fa": "کاغذ",
+"en": "Paper rustle",
+"sec": 0.7,
+"file": "sfx/foley/paper.mp3"
+},
+{
+"fam": "foley",
+"key": "zipper",
+"fa": "زیپ",
+"en": "Zipper",
+"sec": 0.4,
+"file": "sfx/foley/zipper.mp3"
+},
+{
+"fam": "foley",
+"key": "pour",
+"fa": "ریختنِ آب",
+"en": "Pouring water",
+"sec": 1.6,
+"file": "sfx/foley/pour.mp3"
+},
+{
+"fam": "foley",
+"key": "clock",
+"fa": "تیک‌تاکِ ساعت",
+"en": "Clock ticking",
+"sec": 2.73,
+"file": "sfx/foley/clock.mp3"
+},
+{
+"fam": "foley",
+"key": "phone",
+"fa": "زنگِ تلفن",
+"en": "Phone ring",
+"sec": 1.05,
+"file": "sfx/foley/phone.mp3"
+},
+{
+"fam": "foley",
+"key": "alarm",
+"fa": "آژیر",
+"en": "Alarm",
+"sec": 1.6,
+"file": "sfx/foley/alarm.mp3"
+},
+{
+"fam": "foley",
+"key": "laugh_track",
+"fa": "خندهٔ جمع",
+"en": "Laughter",
+"sec": 1.9,
+"file": "sfx/foley/laugh_track.mp3"
+},
+{
+"fam": "music",
+"key": "ep_major",
+"fa": "آکوردِ major (پیانوی برقی)",
+"en": "major chord (electric piano)",
+"sec": 2.6,
+"file": "sfx/music/ep_major.mp3"
+},
+{
+"fam": "music",
+"key": "ep_minor",
+"fa": "آکوردِ minor (پیانوی برقی)",
+"en": "minor chord (electric piano)",
+"sec": 2.6,
+"file": "sfx/music/ep_minor.mp3"
+},
+{
+"fam": "music",
+"key": "ep_sus",
+"fa": "آکوردِ sus (پیانوی برقی)",
+"en": "sus chord (electric piano)",
+"sec": 2.6,
+"file": "sfx/music/ep_sus.mp3"
+},
+{
+"fam": "music",
+"key": "ep_maj7",
+"fa": "آکوردِ maj7 (پیانوی برقی)",
+"en": "maj7 chord (electric piano)",
+"sec": 2.6,
+"file": "sfx/music/ep_maj7.mp3"
+},
+{
+"fam": "music",
+"key": "ep_min7",
+"fa": "آکوردِ min7 (پیانوی برقی)",
+"en": "min7 chord (electric piano)",
+"sec": 2.6,
+"file": "sfx/music/ep_min7.mp3"
+},
+{
+"fam": "music",
+"key": "ep_dim",
+"fa": "آکوردِ dim (پیانوی برقی)",
+"en": "dim chord (electric piano)",
+"sec": 2.6,
+"file": "sfx/music/ep_dim.mp3"
+},
+{
+"fam": "music",
+"key": "note_1",
+"fa": "نتِ پیانوی برقی 1",
+"en": "Electric piano note 1",
+"sec": 2.2,
+"file": "sfx/music/note_1.mp3"
+},
+{
+"fam": "music",
+"key": "note_2",
+"fa": "نتِ پیانوی برقی 2",
+"en": "Electric piano note 2",
+"sec": 2.2,
+"file": "sfx/music/note_2.mp3"
+},
+{
+"fam": "music",
+"key": "note_3",
+"fa": "نتِ پیانوی برقی 3",
+"en": "Electric piano note 3",
+"sec": 2.2,
+"file": "sfx/music/note_3.mp3"
+},
+{
+"fam": "music",
+"key": "note_4",
+"fa": "نتِ پیانوی برقی 4",
+"en": "Electric piano note 4",
+"sec": 2.2,
+"file": "sfx/music/note_4.mp3"
+},
+{
+"fam": "music",
+"key": "note_5",
+"fa": "نتِ پیانوی برقی 5",
+"en": "Electric piano note 5",
+"sec": 2.2,
+"file": "sfx/music/note_5.mp3"
+},
+{
+"fam": "music",
+"key": "note_6",
+"fa": "نتِ پیانوی برقی 6",
+"en": "Electric piano note 6",
+"sec": 2.2,
+"file": "sfx/music/note_6.mp3"
+},
+{
+"fam": "music",
+"key": "pad_1",
+"fa": "پدِ گرم",
+"en": "Warm pad",
+"sec": 3.0,
+"file": "sfx/music/pad_1.mp3"
+},
+{
+"fam": "music",
+"key": "pad_2",
+"fa": "پدِ تاریک",
+"en": "Dark pad",
+"sec": 3.0,
+"file": "sfx/music/pad_2.mp3"
+},
+{
+"fam": "music",
+"key": "pad_3",
+"fa": "پدِ روشن",
+"en": "Bright pad",
+"sec": 3.0,
+"file": "sfx/music/pad_3.mp3"
+},
+{
+"fam": "music",
+"key": "pad_4",
+"fa": "پدِ عمیق",
+"en": "Deep pad",
+"sec": 3.0,
+"file": "sfx/music/pad_4.mp3"
+},
+{
+"fam": "music",
+"key": "bass_drop_1",
+"fa": "بیس‌دراپِ کلاسیک",
+"en": "Bass drop classic",
+"sec": 1.8,
+"file": "sfx/music/bass_drop_1.mp3"
+},
+{
+"fam": "music",
+"key": "bass_drop_2",
+"fa": "بیس‌دراپِ عمیق",
+"en": "Bass drop deep",
+"sec": 1.8,
+"file": "sfx/music/bass_drop_2.mp3"
+},
+{
+"fam": "music",
+"key": "bass_drop_3",
+"fa": "بیس‌دراپِ کوتاه",
+"en": "Bass drop short",
+"sec": 1.8,
+"file": "sfx/music/bass_drop_3.mp3"
+},
+{
+"fam": "music",
+"key": "fill_1",
+"fa": "فیلِ درام ۱",
+"en": "Drum fill 1",
+"sec": 4.32,
+"file": "sfx/music/fill_1.mp3"
+},
+{
+"fam": "music",
+"key": "fill_2",
+"fa": "فیلِ درام ۲",
+"en": "Drum fill 2",
+"sec": 5.0,
+"file": "sfx/music/fill_2.mp3"
+},
+{
+"fam": "music",
+"key": "fill_3",
+"fa": "فیلِ تام",
+"en": "Tom fill",
+"sec": 2.76,
+"file": "sfx/music/fill_3.mp3"
+},
+{
+"fam": "music",
+"key": "strum_major",
+"fa": "استرامِ ماژور",
+"en": "Major strum",
+"sec": 2.95,
+"file": "sfx/music/strum_major.mp3"
+},
+{
+"fam": "music",
+"key": "strum_minor",
+"fa": "استرامِ مینور",
+"en": "Minor strum",
+"sec": 2.95,
+"file": "sfx/music/strum_minor.mp3"
+},
+{
+"fam": "music",
+"key": "intro_sting",
+"fa": "استینگِ آغاز",
+"en": "Intro sting",
+"sec": 3.75,
+"file": "sfx/music/intro_sting.mp3"
+},
+{
+"fam": "music",
+"key": "outro_sting",
+"fa": "استینگِ پایان",
+"en": "Outro sting",
+"sec": 3.4,
+"file": "sfx/music/outro_sting.mp3"
+},
+{
+"fam": "music",
+"key": "logo_1",
+"fa": "لوگوی صوتی ۱",
+"en": "Sonic logo 1",
+"sec": 5.7,
+"file": "sfx/music/logo_1.mp3"
+},
+{
+"fam": "music",
+"key": "logo_2",
+"fa": "لوگوی صوتی ۲",
+"en": "Sonic logo 2",
+"sec": 4.15,
+"file": "sfx/music/logo_2.mp3"
+},
+{
+"fam": "music",
+"key": "question",
+"fa": "پرسش",
+"en": "Question",
+"sec": 2.8,
+"file": "sfx/music/question.mp3"
+},
+{
+"fam": "music",
+"key": "answer",
+"fa": "پاسخ",
+"en": "Answer",
+"sec": 2.8,
+"file": "sfx/music/answer.mp3"
+},
+{
+"fam": "music",
+"key": "suspense",
+"fa": "تعلیق",
+"en": "Suspense",
+"sec": 3.0,
+"file": "sfx/music/suspense.mp3"
+}
+]
+}

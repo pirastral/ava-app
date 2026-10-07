@@ -8,6 +8,7 @@ const $ = id => document.getElementById(id);
 const API = () => window.pywebview.api;
 // 169: a whole music track crosses the bridge in pieces (one multi-megabyte answer stalled the window: «downloading music…» forever)
 async function readBlob(tok, size){ const parts = []; for (let off = 0; off < size; off += 786432){ const r = await API().blob_read(tok, off, 786432); if (!r || !r.ok) throw new Error((r && r.error) || 'blob'); parts.push(r.b64); } return parts.join(''); }
+async function bigResult(r){ if (r && r.ok && r.blob && !r.b64){ r.b64 = await readBlob(r.blob, r.size); delete r.blob; } return r; }   // 170
 function wrapBig(){ const api = window.pywebview && window.pywebview.api; if (!api || api.__big) return;
   ['music_load', 'music_fetch', 'music_import', 'music_generate'].forEach(n => { const f = api[n]; if (typeof f !== 'function') return; api[n] = async (...a) => { const r = await f.apply(api, a); if (r && r.ok && r.blob && !r.b64) r.b64 = await readBlob(r.blob, r.size); return r; }; });
   api.__big = true; }
@@ -66,7 +67,8 @@ function undo(){ if (!hist.past.length) return; hist.future.push(snapshot()); re
 function redo(){ if (!hist.future.length) return; hist.past.push(snapshot()); restoreSnap(hist.future.pop()); afterChange(true); }
 function gcParts(){
   const keep = new Set();
-  [snapshot(), ...hist.past, ...hist.future].forEach(sn => sn.tracks.forEach(t => t.clips.forEach(c => { if (c.gulp !== null && c.gulp !== undefined) keep.add(c.gulp); })));
+  [snapshot(), ...hist.past, ...hist.future].forEach(sn => { sn.tracks.forEach(t => t.clips.forEach(c => { if (c.gulp !== null && c.gulp !== undefined) keep.add(c.gulp); }));
+    Object.values(sn.lines || {}).forEach(L => Object.values(L.ovlA || {}).forEach(g => { if (g !== null && g !== undefined) keep.add(g); })); });   // 170: the overlaps' audio too
   try { API().gc_gulps([...keep]); } catch (e) {}
 }
 function afterChange(noHist){ renderScript(); autosave(); }
@@ -425,13 +427,13 @@ function applyClipOrder(order, moved){
 function buildTagMenus(){
   const m = $('tagMenu'), model = S.proj.g_model, eng = sel.size === 1 ? lineEngine([...sel][0]) : S.proj.engine;
   const item0 = t => `<li><a dir="ltr" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</a></li>`;
-  if (eng === 'fish'){ m.innerHTML = (DIRECTOR.fish_tags || []).map(([g, list]) => `<li class="menu-title">${escapeHtml(g)}</li>` + list.map(item0).join('')).join(''); return buildToneMenu(); }
+  if (eng === 'fish'){ m.innerHTML = (DIRECTOR.fish_tags || []).map(([g, list]) => `<li class="menu-title">${escapeHtml(groupLabel(g))}</li>` + list.map(item0).join('')).join(''); return buildToneMenu(); }
   if (eng !== 'google'){ m.innerHTML = `<li class="menu-title whitespace-normal">${T('این موتور فقط مکث می‌گیرد', 'This engine takes pauses only')}</li>` + ['[مکث]', '[مکث بلند]'].map(item0).join(''); return buildToneMenu(); }
   const item = t => `<li><a dir="ltr" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</a></li>`;
   if (/2\.5/.test(model)) m.innerHTML = `<li class="menu-title whitespace-normal">${T('مدل‌های 2.5 برچسبِ صوتی نمی‌گیرند.', 'The 2.5 models take no sound tags.')}</li>`;
-  else if (isG38()) m.innerHTML = G38_TAGS.map(([g, list]) => `<li class="menu-title">${escapeHtml(g)}</li>` + list.map(item).join('')).join('')
+  else if (isG38()) m.innerHTML = G38_TAGS.map(([g, list]) => `<li class="menu-title">${escapeHtml(groupLabel(g))}</li>` + list.map(item).join('')).join('')
     + `<li class="menu-title">${T('واکنشِ شنونده', 'Listener reactions')}</li>` + G38_BACK.map(item).join('');
-  else m.innerHTML = G_TAGS.map(([g, list]) => `<li class="menu-title">${escapeHtml(g)}</li>` + list.map(item).join('')).join('');
+  else m.innerHTML = G_TAGS.map(([g, list]) => `<li class="menu-title">${escapeHtml(groupLabel(g))}</li>` + list.map(item).join('')).join('');
   buildToneMenu();
 }
 function buildToneMenu(){
@@ -505,11 +507,11 @@ function renderTimeline(){
       <button class="btn btn-ghost btn-xs btn-square" aria-label="add" onclick="openTrackMenu(event, ${i})"><svg class="size-4"><use href="#i-plus"/></svg></button>
     </div></div>`).join('');
   const step = pps < 16 ? 10 : 5, dot = step / (step === 5 ? 5 : 4); let ticks = '';
-  for (let k = 0; k * dot <= span; k++){ const tt = k * dot, x = PAD + tt * pps;
+  for (let k = 0; k * dot <= span + (typeof tailPx === 'function' ? tailPx() / pps : 0); k++){ const tt = k * dot, x = PAD + tt * pps;
     ticks += Math.abs(tt % step) < 1e-6 ? `<span class="absolute top-1 text-[11px] leading-none tabular-nums text-base-content/55" style="left:${x}px">${num(Math.floor(tt / 60))}:${num(String(Math.round(tt % 60)).padStart(2, '0'))}</span>`
       : `<span class="absolute top-[11px] size-[3px] -translate-x-1/2 rounded-full bg-base-content/30" style="left:${x}px"></span>`; }
   $('ruler').style.width = W + 'px';
-  $('ruler').innerHTML = ticks + `<span id="phStem" class="pointer-events-none absolute bottom-0 top-3 w-0.5 bg-secondary" style="left:${PAD + playhead * pps}px"></span><span id="phLabel" class="absolute top-0 z-10 cursor-ew-resize rounded-sm bg-secondary px-1 text-[10px] font-bold tabular-nums text-secondary-content" style="left:${PAD + playhead * pps - 22}px">${num(fmt(playhead))}</span>`;
+  $('ruler').innerHTML = `<div class="tl-empty pointer-events-none absolute inset-y-0 z-0" style="left:${PAD + (typeof compEnd === 'function' ? compEnd() : total()) * pps}px;right:0;background:color-mix(in oklab, var(--color-primary) 7%, transparent)"></div>` + ticks + `<span id="phStem" class="pointer-events-none absolute bottom-0 top-3 w-0.5 bg-secondary" style="left:${PAD + playhead * pps}px"></span><span id="phLabel" class="absolute top-0 z-10 cursor-ew-resize rounded-sm bg-secondary px-1 text-[10px] font-bold tabular-nums text-secondary-content" style="left:${PAD + playhead * pps - 22}px">${num(fmt(playhead))}</span>`;
   const order = orderedLines(); let lanes = '';
   TR.forEach((t, ti) => {
     let clips = '';
@@ -517,7 +519,7 @@ function renderTimeline(){
       const w = Math.max(6, dur(c) * pps - 2), isSel = selClip === c.id || (c.lines && c.lines.some(id => sel.has(id)));
       const pos = c.hi ? 'top-1 bottom-[52%]' : c.lo ? 'top-[52%] bottom-1' : 'top-1.5 bottom-1.5';
       let look, label;
-      if (t.kind === 'music'){ look = 'bg-secondary/15 text-secondary outline-secondary/50'; label = c.name || T('موسیقی', 'Music'); }
+      if (t.kind === 'music'){ look = 'bg-secondary/15 text-secondary outline-secondary/50'; label = c.name || T('موسیقی', 'Music'); } else if (t.kind === 'sfx'){ look = 'bg-accent/15 text-accent outline-accent/50'; label = c.name || T('افکت', 'Effect'); }
       else { const L = S.lines[c.lines[0]] || { text: '' }; look = c.unvoiced ? 'border border-dashed border-base-content/30 bg-transparent text-base-content/50 outline-transparent' : 'bg-primary/15 text-primary outline-primary/50';
         label = `${num(order.indexOf(c.lines[0]) + 1)}${c.lines.length > 1 ? '–' + num(order.indexOf(c.lines[c.lines.length - 1]) + 1) : ''} ${escapeHtml((c.file ? '♪ ' : '') + (L.text || '').slice(0, 28))}…`; }
       const dirty = c.lines && c.lines.some(id => S.lines[id] && S.lines[id].dirty);
@@ -528,7 +530,7 @@ function renderTimeline(){
         ${(c.trimIn > 0.05 || c.trimOut > 0.05) ? `<span class="badge badge-error badge-xs pointer-events-none absolute bottom-1 ${dirty ? 'left-6' : 'left-1'}"><svg class="size-2.5"><use href="#i-scissors"/></svg></span>` : ''}
         ${selClip === c.id && w > 130 ? `<span class="pointer-events-none absolute bottom-1 right-6 rounded-md bg-black/60 px-1.5 text-[10px] font-semibold tabular-nums text-white">${num(dur(c).toFixed(1))}${T('ث', 's')}</span>` : ''}
       </div>`;
-      if (selClip === c.id && ((t.kind === 'speech' && !c.unvoiced) || t.kind === 'music')){
+      if (selClip === c.id && ((t.kind === 'speech' && !c.unvoiced) || t.kind === 'music' || t.kind === 'sfx')){
         const xl = PAD + c.at * pps, xr = xl + w;
         const hdl = (x, edge) => `<span class="trimh absolute z-20 w-[18px] cursor-ew-resize ${pos}" style="left:${x}px" data-edge="${edge}" data-cid="${c.id}" data-ti="${ti}"><span class="pointer-events-none absolute top-1/2 h-[55%] w-[3px] -translate-y-1/2 rounded-full bg-white shadow-[0_0_4px_rgba(0,0,0,.55)] ${edge === 'l' ? 'left-[10px]' : 'left-[5px]'}"></span></span>`;
         clips += hdl(xl - 5, 'l') + hdl(xr - 13, 'r');
@@ -537,7 +539,7 @@ function renderTimeline(){
     lanes += `<div class="lane relative h-14" style="width:${W}px" data-ti="${ti}">${clips}</div>`;
   });
   lanes += `<div id="ph" class="pointer-events-none absolute inset-y-0 z-10 w-0.5 bg-secondary" style="left:${PAD + playhead * pps}px"></div>`;
-  $('lanes').innerHTML = lanes; $('lanes').style.width = (W + tailPx()) + 'px'; syncRuler();
+  $('lanes').innerHTML = `<div class="tl-empty pointer-events-none absolute inset-y-0 z-0" style="left:${PAD + compEnd() * pps}px;right:0;background:color-mix(in oklab, var(--color-primary) 7%, transparent)"></div>` + lanes; $('lanes').style.width = (W + tailPx()) + 'px'; syncRuler();
   $('tTotal').textContent = '/ ' + num(fmt(compEnd()));
   wireTimeline(); placeClipBar();
 }
@@ -575,7 +577,7 @@ function placeOn(ti, c){
 function cleanupTracks(){ S.tracks = S.tracks.filter((t, k) => t.kind !== 'speech' || t.clips.length || t.id === 's1'); }
 function startClipDrag(ev, el){
   ev.stopPropagation(); if (document.activeElement && document.activeElement.isContentEditable) document.activeElement.blur(); getSelection().removeAllRanges(); const [t, c] = findClip(el.dataset.cid); if (!c) return;
-  selClip = c.id; if (t.kind === 'music'){ sel.clear(); paintSel(); showMusicInspector(); const x0 = ev.clientX, at0 = c.at; let moved = false; remember();   // 166: music clips move
+  selClip = c.id; if (t.kind === 'music' || t.kind === 'sfx'){ sel.clear(); paintSel(); if (t.kind === 'music') showMusicInspector(); else showInsp('proj'); const x0 = ev.clientX, at0 = c.at; let moved = false; remember();   // 166: music clips move
  const mv = e => { if (Math.abs(e.clientX - x0) > 3) moved = true; if (!moved) return; c.at = Math.max(0, snapT(at0 + (e.clientX - x0) / zoom, c)); el.style.left = (PAD + c.at * zoom) + 'px'; };   // 169: music snaps too
  const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); if (!moved){ hist.past.pop(); renderTimeline(); return; } S.music.manual = true; t.clips.sort((a, b) => a.at - b.at); renderTimeline(); autosave(); };
  addEventListener('pointermove', mv); addEventListener('pointerup', up); return; }
@@ -622,7 +624,7 @@ function placeClipBar(){
   const bar = $('clipBar'), el = selClip && document.querySelector(`#lanes .clip[data-cid="${selClip}"]`);
   if (!el){ bar.classList.add('hidden'); return; }
   const [t, c] = findClip(selClip), b = (icon, tip, fn, txt) => `<li><a onclick="${fn}" class="gap-1 " ${txt ? '' : `data-tip="${tip}"`}><svg class="size-3.5"><use href="#i-${icon}"/></svg>${txt ? `<span class="ui">${txt}</span>` : ''}</a></li>`;
-  bar.innerHTML = t.kind === 'music' ? b('scissors', T('برش در جای پلی‌هد', 'split at the playhead'), 'splitMusic()') + b('copy', T('تکثیر', 'duplicate'), 'dupMusic()') + b('trash-2', T('حذف', 'delete'), 'delMusicClip()') : (c.unvoiced || c.file ? '' : b('refresh-cw', '', 'revoiceClip()', T('بازتولید', 'Re-voice')))
+  bar.innerHTML = (t.kind === 'music' || t.kind === 'sfx') ? b('scissors', T('برش در جای پلی‌هد', 'split at the playhead'), 'splitMusic()') + b('copy', T('تکثیر', 'duplicate'), 'dupMusic()') + b('trash-2', T('حذف', 'delete'), 'delMusicClip()') : (c.unvoiced || c.file ? '' : b('refresh-cw', '', 'revoiceClip()', T('بازتولید', 'Re-voice')))
       + (c.lines.length === 1 && !c.unvoiced ? b('scissors', T('برش در جای پلی‌هد', 'split at the playhead'), 'splitClip()') : '')
       + b('copy', T('تکثیر', 'duplicate'), 'dupClip()') + b('trash-2', T('حذف', 'delete'), 'delClip()');
   const r = el.getBoundingClientRect(), sc = $('tlScroll').getBoundingClientRect(), left0 = sc.left + $('heads').offsetWidth;
@@ -646,8 +648,8 @@ function dupClip(){
 function delClip(){ const [t, c] = findClip(selClip); if (!c) return; remember(); c.lines.forEach(id => { delete S.lines[id]; sel.delete(id); }); t.clips = t.clips.filter(x => x !== c); if (t.gapless) pack(t); cleanupTracks(); selClip = null; ensureOneLine(); renderScript(); autosave(); }
 function openTrackMenu(ev, ti){
   ev.stopPropagation(); const m = $('trackMenu'), t = S.tracks[ti], r = ev.currentTarget.getBoundingClientRect();
-  const items = t.kind === 'speech' ? [['line', T('خطِ تازه در جای پلی‌هد', 'New line at the playhead')], ['silence', T('یک ثانیه سکوت در جای پلی‌هد', 'One second of silence at the playhead')], ['file', T('فایلِ صوتی…', 'Audio file…')]]
-    : [['music', T('انتخابِ موسیقی…', 'Choose music…')]];
+  const items = t.kind === 'speech' ? [['line', T('خطِ تازه در جای پلی‌هد', 'New line at the playhead')], ['silence', T('یک ثانیه سکوت در جای پلی‌هد', 'One second of silence at the playhead')], ['file', T('فایلِ صوتی…', 'Audio file…')], ['sfx', T('افکتِ صوتی از کتابخانه…', 'A sound effect from the library…')]]
+    : t.kind === 'sfx' ? [['sfx', T('افکتِ صوتی از کتابخانه…', 'A sound effect from the library…')]] : [['music', T('انتخابِ موسیقی…', 'Choose music…')], ['sfx', T('افکتِ صوتی از کتابخانه…', 'A sound effect from the library…')]];
   m.dir = lang === 'fa' ? 'rtl' : 'ltr';
   m.innerHTML = `<li class="menu-title">${T('افزودن', 'Add')}</li>` + items.map(([k, l]) => `<li><a onclick="document.getElementById('trackMenu').classList.add('hidden'); addFromTrack(${ti}, '${k}')">${l}</a></li>`).join('');
   m.classList.remove('hidden'); const h = m.offsetHeight, below = innerHeight - r.bottom - 8;
@@ -656,6 +658,7 @@ function openTrackMenu(ev, ti){
 async function addFromTrack(ti, k){
   const t = S.tracks[ti];
   if (k === 'music') return openMusic();
+  if (k === 'sfx') return openSfxLib();
   remember();
   if (k === 'silence'){ shiftAfter(t, playhead, 1.0, null); renderScript(); autosave(); return; }
   if (k === 'line'){ const nid = ++uid; S.lines[nid] = { text: '', dirty: false, voice: null };
@@ -699,7 +702,7 @@ async function searchMusic(){
   } catch (e) { $('musicResults').innerHTML = `<li class="p-3 text-sm text-error">${escapeHtml(e.message || String(e))}</li>`; }
 }
 async function chooseHit(k){
-  setBusy(true); try { const r = await API().music_fetch($('mProv').value, MUSIC_HITS[k]); if (!r.ok) throw new Error(r.error || '');
+  setBusy(true); try { const r = await bigResult(await API().music_fetch($('mProv').value, MUSIC_HITS[k])); if (!r.ok) throw new Error(r.error || '');
     const e = r.entry || {}; S.music.credit = r.credit || ''; await setMusicTrack(r.b64, e.file, e.title || e.name || MUSIC_HITS[k].title || e.file); $('musicDlg').close(); focusMusic(); }
   catch (e) { say(e.message || String(e), 'err'); } finally { setBusy(false); }
 }
@@ -844,8 +847,9 @@ function schedule(){
     const end = c.at + dur(c); if (end <= playFrom) return;
     const off = Math.max(0, playFrom - c.at), src = ctx.createBufferSource(); src.buffer = a.buf; src.connect(gainFor(t));
     src.start(base + c.at + off, c.in + off, dur(c) - off); nodes.push(src); if (!t.muted) speech.push([c.at, end]);
-    clipOverlays(c).forEach(o => { if (o.at + o.len <= playFrom) return; const oo = Math.max(0, playFrom - o.at), s2 = ctx.createBufferSource(); s2.buffer = AUD.get(o.gulp).buf; s2.connect(gainFor(t)); s2.start(base + o.at + oo, oo, o.len - oo); nodes.push(s2); });   // 169: overlaps over their line
+    clipOverlays(c).forEach(o => { if (o.at + o.len <= playFrom || (S.ovl && S.ovl.muted)) return; const oo = Math.max(0, playFrom - o.at), s2 = ctx.createBufferSource(); s2.buffer = AUD.get(o.gulp).buf; const og = ctx.createGain(); og.gain.value = (S.ovl && S.ovl.volume) ?? 1; og.connect(gainFor(t)); s2.connect(og); s2.start(base + o.at + oo, oo, o.len - oo); nodes.push(s2); });   // 169/170: overlaps over their line, on their own row
   }); });
+  S.tracks.forEach(t => { if (t.kind !== 'sfx') return; t.clips.forEach(c => { const b = SFXB.get(c.file); if (!b){ loadSfx(c.file); return; } const end = c.at + (c.out - c.in); if (end <= playFrom) return; const off = Math.max(0, playFrom - c.at), s3 = ctx.createBufferSource(); s3.buffer = b; const g2 = ctx.createGain(); g2.gain.value = c.gain ?? 1; g2.connect(gainFor(t)); s3.connect(g2); s3.start(base + c.at + off, c.in + off, c.out - c.in - off); nodes.push(s3); }); });   // 170: sound effects
   const mt = S.tracks.find(t => t.kind === 'music'); if (musicBuf && mt && mt.clips.length && !mt.muted){   // 166: every music clip at its place
     const lvl = Math.pow(10, S.music.level_db / 20), duckF = Math.pow(10, -(S.music.duck_db ?? 12) / 20), D = musicBuf.duration, ducking = (S.music.duck ?? true) && (S.music.duck_db ?? 12) > 0;
     const inSpeech = tt => speech.some(([a, b]) => tt >= a - 0.15 && tt < b + 0.6), cl = [...mt.clips].sort((a, b) => a.at - b.at), first = cl[0].at, last = Math.max(...cl.map(c => c.at + c.out - c.in));
@@ -926,8 +930,8 @@ async function openMusic(){
     : `<li class="p-3 text-sm text-base-content/60">${T('هنوز موسیقی‌ای در کتابخانه نیست.', 'No music in the library yet.')}</li>`;
   $('musicList')._items = items; if (!$('mProv').options.length){ $('mProv').innerHTML = optList(MUSIC_PROVIDERS, MUSIC_PROVIDERS[0][0]); } $('musicDlg').showModal();
 }
-async function chooseMusic(k){ const it = $('musicList')._items[k]; const r = await API().music_load(it.file); if (!r.ok){ say(r.error, 'err'); return; } await setMusicTrack(r.b64, it.file, it.title || it.name || it.file); $('musicDlg').close(); }
-async function importMusic(){ const r = await API().music_import(); if (!r.ok){ if (r.error !== 'cancelled') say(r.error, 'err'); return; } const e = r.entry || {}; await setMusicTrack(r.b64, e.file, e.title || e.name || e.file); $('musicDlg').close(); }
+async function chooseMusic(k){ const it = $('musicList')._items[k]; const r = await bigResult(await API().music_load(it.file)); if (!r.ok){ say(r.error, 'err'); return; } await setMusicTrack(r.b64, it.file, it.title || it.name || it.file); $('musicDlg').close(); }
+async function importMusic(){ const r = await bigResult(await API().music_import()); if (!r.ok){ if (r.error !== 'cancelled') say(r.error, 'err'); return; } const e = r.entry || {}; await setMusicTrack(r.b64, e.file, e.title || e.name || e.file); $('musicDlg').close(); }
 async function setMusicTrack(b64, file, name){
   remember(); const bin = atob(b64), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
   try { musicBuf = await ac().decodeAudioData(u8.buffer.slice(0)); } catch (e) { musicBuf = null; }
@@ -993,7 +997,7 @@ async function init(){
       Object.values(S.lines).forEach(L => L.dirty = false); S.tracks = S.tracks.filter(t => t.kind !== 'speech' || t.id === 's1' || t.clips.length);
       if (Object.keys(S.lines).length) say(T('متنِ کارِ قبلی برگشت؛ صداهایش در جلسهٔ قبلیِ برنامه بودند — برای شنیدن دوباره «تبدیل به گفتار» را بزنید.', 'Your text is back; its audio was in the previous session — press "Voice it" to hear it again.'), 'ok');
     }
-    if (S.music.file){ try { const r = await API().music_load(S.music.file); if (r.ok){ const bin = atob(r.b64), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); musicBuf = await ac().decodeAudioData(u8.buffer.slice(0)); } } catch (e) {} }
+    if (S.music.file){ try { const r = await bigResult(await API().music_load(S.music.file)); if (r.ok){ const bin = atob(r.b64), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); musicBuf = await ac().decodeAudioData(u8.buffer.slice(0)); } } catch (e) {} }
   }
   RECENT = (st && st.ed_recent) || {}; LIBV = (st && st.ed_lib_voices) || []; FISH_USED = (st && st.fish_used) || []; FISH_DESIGNED = (st && st.fish_designed) || [];
   DEFAULTS = { engine: st && st.default_engine, model: st && st.default_g_model };
@@ -1067,10 +1071,13 @@ function openDD(sel, b){
     + (o.dataset.del !== undefined ? `<button class="ddb opacity-60 hover:text-error" data-del="${escapeHtml(o.value)}" data-tip="حذف" data-tip-en="Delete"><svg class="size-3.5"><use href="#i-trash-2"/></svg></button>` : '') + '</li>';
   const body = [];
   if (recent.length) body.push(`<li class="menu-title">${T('اخیراً', 'Recent')}</li>`, ...recent.map(o => row(o).replace('</li>', `<button class="ddb opacity-60 hover:text-error" data-unrecent="${escapeHtml(o.value)}" data-tip="حذف از اخیراً" data-tip-en="Remove from recent"><svg class="size-3.5"><use href="#i-x"/></svg></button></li>`)));
-  let group = null;
-  opts.forEach(o => { const g = o.parentElement.tagName === 'OPTGROUP' ? o.parentElement.label : null;
-    if (g !== group){ group = g; if (g) body.push(`<li class="menu-title">${escapeHtml(g)}</li>`); }
-    body.push(o.disabled ? `<li class="menu-title">${escapeHtml(o.text)}</li>` : row(o)); });
+  // 170: the old editor's nesting — groups are collapsible sections; the selected option's group opens; a header shows its count
+  const groups = []; let cur = null;
+  opts.forEach(o => { const g = o.parentElement.tagName === 'OPTGROUP' ? o.parentElement.label : null; if (!cur || cur.g !== g){ cur = { g, items: [] }; groups.push(cur); } cur.items.push(o); });
+  const nested = groups.filter(x => x.g).length >= 2, title = o => `<li class="menu-title">${escapeHtml(o.text)}</li>`;
+  groups.forEach((gr, gi) => { if (!gr.g){ gr.items.forEach(o => body.push(o.disabled ? title(o) : row(o))); return; }
+    const open = !nested || gr.items.some(o => o.selected);
+    body.push(`<li class="ddgrp" data-grp="${gi}"><a class="ddghead flex items-center gap-1 text-xs font-semibold text-base-content/70" data-grp-toggle="${gi}"><svg class="ddchev size-3.5 transition-transform ${open ? '' : (m.dir === 'rtl' ? 'rotate-90' : '-rotate-90')}"><use href="#i-chevron-down"/></svg><span class="min-w-0 flex-1 truncate">${escapeHtml(gr.g)}</span><span class="opacity-60">${num(gr.items.length)}</span></a><ul class="ddgbody ${open ? '' : 'hidden'}">${gr.items.map(o => o.disabled ? title(o) : row(o)).join('')}</ul></li>`); });
   const acts = (sel._actions || []).map(([icon, fa, en], k) => `<li class="${k ? '' : 'mt-1 border-t border-base-300 pt-1'}"><a data-act="${k}" class="gap-2"><svg class="size-4"><use href="#i-${icon}"/></svg>${T(fa, en)}</a></li>`).join(''); 
  const search = opts.length > 12 ? `<div class="sticky top-0 z-10 bg-base-200 p-1"><input class="input input-sm w-full" dir="auto" placeholder="${T('جست‌وجو…', 'Search…')}" oninput="filterDD(this.value)"></div>` : '';
   m.innerHTML = search + `<ul class="menu menu-sm w-full p-1">${body.join('')}</ul>` + (acts ? `<div class="sticky bottom-0 z-10 border-t border-base-300 bg-base-200 p-1"><ul class="menu menu-sm w-full p-0">${acts.replace(/mt-1 border-t border-base-300 pt-1/, '')}</ul></div>` : '');   // 167: the actions stay in view
@@ -1082,6 +1089,7 @@ function openDD(sel, b){
   m.style.top = (below ? r.bottom + 4 : Math.max(8, r.top - 4 - Math.min(m.scrollHeight, parseFloat(m.style.maxHeight)))) + 'px';
   const s0 = m.querySelector('input'); if (s0) setTimeout(() => s0.focus(), 0);
   m.onclick = ev => {
+    const gt = ev.target.closest('[data-grp-toggle]'); if (gt){ ev.stopPropagation(); const li = gt.closest('.ddgrp'), ul = li.querySelector('.ddgbody'), ch = gt.querySelector('.ddchev'); const hid = ul.classList.toggle('hidden'); ch.classList.toggle('rotate-90', hid && m.dir === 'rtl'); ch.classList.toggle('-rotate-90', hid && m.dir !== 'rtl'); return; }
     const p = ev.target.closest('[data-pick]'), pin = ev.target.closest('[data-pin]'), del = ev.target.closest('[data-del]');
     const act = ev.target.closest('[data-act]'); if (act){ ev.stopPropagation(); const f = (sel._actions || [])[+act.dataset.act]; closeDD(); if (f) f[3](); return; }
  const ur = ev.target.closest('[data-unrecent]'); if (ur){ ev.stopPropagation(); const k = sel.dataset.recent; RECENT[k] = (RECENT[k] || []).filter(x => x !== ur.dataset.unrecent); try { API().settings_set({ ed_recent: RECENT }); } catch (e) {} openDD(sel, sel._btn); openDD(sel, sel._btn); return; }
@@ -1097,7 +1105,8 @@ function openDD(sel, b){
     else if (ev.key === 'Enter' && i >= 0){ ev.preventDefault(); items[i].click(); }
   };
 }
-function filterDD(q){ q = q.trim().toLowerCase(); $('ddMenu').querySelectorAll('li[data-v]').forEach(li => li.classList.toggle('hidden', !!q && !li.textContent.toLowerCase().includes(q))); }
+function filterDD(q){ q = q.trim().toLowerCase(); const m = $('ddMenu'); m.querySelectorAll('li[data-v]').forEach(li => li.classList.toggle('hidden', !!q && !li.textContent.toLowerCase().includes(q)));
+  m.querySelectorAll('.ddgrp').forEach(li => { const ul = li.querySelector('.ddgbody'); if (q){ ul.classList.remove('hidden'); li.classList.toggle('hidden', ![...ul.children].some(x => !x.classList.contains('hidden'))); } else li.classList.remove('hidden'); }); }   // 170: a search opens the groups
 document.addEventListener('pointerdown', e => { const m = $('ddMenu'); if (!m.classList.contains('hidden') && !m.contains(e.target) && !(m._sel && m._sel._btn && m._sel._btn.contains(e.target))) closeDD(); });
 
 // =====================================================================================
@@ -1142,8 +1151,8 @@ function musicRow(key, title, meta, onPrev, onUse, onDel){
     <div class="min-w-0"><div class="truncate text-sm" dir="auto">${escapeHtml(title || '')}</div><div class="truncate text-xs text-base-content/60" dir="auto">${escapeHtml(meta.filter(Boolean).join(' · '))}</div></div>
     <div class="flex gap-1">${onDel ? `` : ''}<button class="btn btn-sm border-base-content/15 bg-base-100" onclick="${onUse}">${T('استفاده', 'Use')}</button></div></li>`;
 }
-async function musicPreviewLib(k){ const it = MUSIC_LIB[k]; if (prevKey === 'lib' + k && !PREV.paused) return stopPreview(); const r = await API().music_load(it.file); if (r && r.ok && r.b64) togglePreview('lib' + k, URL.createObjectURL(b64Blob(r.b64, 'audio/mpeg'))); }
-async function useLib(k){ const it = MUSIC_LIB[k], r = await API().music_load(it.file); if (!r || !r.ok) return say((r && r.error) || '', 'err'); S.music.credit = it.credit || ''; await setMusicTrack(r.b64, it.file, it.title || it.file); $('musicDlg').close(); focusMusic(); }
+async function musicPreviewLib(k){ const it = MUSIC_LIB[k]; if (prevKey === 'lib' + k && !PREV.paused) return stopPreview(); const r = await bigResult(await API().music_load(it.file)); if (r && r.ok && r.b64) togglePreview('lib' + k, URL.createObjectURL(b64Blob(r.b64, 'audio/mpeg'))); }
+async function useLib(k){ const it = MUSIC_LIB[k], r = await bigResult(await API().music_load(it.file)); if (!r || !r.ok) return say((r && r.error) || '', 'err'); S.music.credit = it.credit || ''; await setMusicTrack(r.b64, it.file, it.title || it.file); $('musicDlg').close(); focusMusic(); }
 async function delLib(k){ const it = MUSIC_LIB[k]; const r = await API().music_delete(it.file); if (r && r.ok) loadMusicLib(); }
 async function searchMusic(page){
   if (mTab === 'library' || mTab === 'lyria') return; page = Math.max(1, page || 1);
@@ -1159,13 +1168,13 @@ async function searchMusic(page){
 }
 async function chooseHit(k){
   stopPreview(); setBusy(true);
-  try { const r = await API().music_fetch(mTab, MUSIC_HITS[k]); if (!r.ok) throw new Error(r.error || '');
+  try { const r = await bigResult(await API().music_fetch(mTab, MUSIC_HITS[k])); if (!r.ok) throw new Error(r.error || '');
     const e = r.entry || {}; S.music.credit = r.credit || ''; await setMusicTrack(r.b64, e.file, e.title || MUSIC_HITS[k].title || e.file); $('musicDlg').close(); }
   catch (e) { say(e.message || String(e), 'err'); } finally { setBusy(false); }
 }
 async function generateMusic(){
   stopPreview(); setBusy(true); say(T('موسیقی ساخته می‌شود…', 'Making music…'), 'ok');
-  try { const r = await API().music_generate(mStyle, $('mCustom').value.trim(), +$('mSecs').value); if (!r.ok) throw new Error(r.error || '');
+  try { const r = await bigResult(await API().music_generate(mStyle, $('mCustom').value.trim(), +$('mSecs').value)); if (!r.ok) throw new Error(r.error || '');
     S.music.credit = 'Lyria'; await setMusicTrack(r.b64, null, 'Lyria — ' + styleLabel(mStyle)); $('musicDlg').close(); focusMusic(); say(T('موسیقی ساخته شد.', 'Music made.'), 'ok'); }
   catch (e) { say(e.message || String(e), 'err'); } finally { setBusy(false); }
 }
@@ -1177,10 +1186,22 @@ async function generateMusic(){
 function clipWords(c, text){
   if (!(c && c.words && c.words.length && c.lines.length === 1)) return null;
   if (c.words.every(w => text.slice(w.c0, w.c1) === w.w)) return c.words;
-  // diacritics added or cleared: the same words, at new positions — re-locate them by their letters
-  const sk = x => x.replace(/[\u064B-\u0655\u0670\u200c\u200d]/g, ''), toks = [...text.matchAll(/\S+/g)];
-  if (toks.length !== c.words.length) return null;   // 169: an edited word keeps its timing while the count still matches (the spine is the engine's, paid once)
-  return c.words.map((w, i) => ({ ...w, w: toks[i][0], c0: toks[i].index, c1: toks[i].index + toks[i][0].length }));
+  // 170: the engine's words carry no tags; the line's text carries tags, a tone and overlaps. Align by CONTENT, skipping both sides'
+  //      non-spoken tokens, so a tagged line keeps its word timings (the caret fell back to an estimate for every tagged line).
+  const sk = x => x.replace(/[\u064B-\u0655\u0670\u200c\u200d\u064E-\u0652]/g, '').replace(/[\.\,\!\?،؛؟:«»"'\(\)\[\]\-–—…]/g, '').toLowerCase();
+  const isTag = t => /^(<[^>]*>|\[[^\]]*\]|\{[^}]*\}|\|[^|]*\|)$/.test(t) || /^[^\s:：]{1,30}[:：]$/.test(t);
+  const toks = [...text.replace(/\|[^|\n]{1,60}\|/g, m => ' '.repeat(m.length)).matchAll(/\S+/g)].filter(m => !isTag(m[0])), ws = c.words.filter(w => !isTag(w.w));
+  if (!toks.length || !ws.length) return null;
+  const out = []; let i = 0, j = 0;
+  while (i < ws.length && j < toks.length){
+    const a = sk(ws[i].w), b = sk(toks[j][0]);
+    if (a === b || (a && b && (a.includes(b) || b.includes(a)))){ out.push({ ...ws[i], w: toks[j][0], c0: toks[j].index, c1: toks[j].index + toks[j][0].length }); i++; j++; continue; }
+    // a mismatch: skip whichever side re-synchronises sooner (two tokens of look-ahead)
+    const ahead = (x, y) => { for (let d = 1; d <= 2; d++){ if (ws[i + d] && sk(ws[i + d].w) === y) return d; } return 0; }, back = (() => { for (let d = 1; d <= 2; d++){ if (toks[j + d] && sk(toks[j + d][0]) === a) return d; } return 0; })();
+    const fwd = ahead(ws, b);
+    if (back && (!fwd || back <= fwd)) j += back; else if (fwd) i += fwd; else { out.push({ ...ws[i], w: toks[j][0], c0: toks[j].index, c1: toks[j].index + toks[j][0].length }); i++; j++; }
+  }
+  return out.length >= Math.min(3, ws.length) ? out : null;
 }
 function timeToChar(c, text, t){             // t = time inside the gulp
   const W = clipWords(c, text); if (!W){ const D = (c.src ? c.src[1] - c.src[0] : dur(c)), s0 = c.src ? c.src[0] : c.in; return Math.round(Math.min(1, Math.max(0, (t - s0) / D)) * text.length); }
@@ -1444,7 +1465,8 @@ function setTrackVolume(i, v, el){ const t = S.tracks[i]; t.volume = v; const vb
 // ---- export: every unmuted voice track, at its volume; music at its track's volume, off when muted
 function timelineSpec(){
   const clips = [];
-  S.tracks.forEach(t => { if (t.kind !== 'speech' || t.muted) return; t.clips.forEach(c => { if (!c.unvoiced && c.gulp != null){ clips.push({ gulp: c.gulp, in: c.in, out: c.out, at: c.at, gain: t.volume ?? 1 }); clipOverlays(c).forEach(o => clips.push({ gulp: o.gulp, in: 0, out: o.len, at: o.at, gain: t.volume ?? 1 })); } }); });
+  S.tracks.forEach(t => { if (t.kind !== 'speech' || t.muted) return; t.clips.forEach(c => { if (!c.unvoiced && c.gulp != null){ clips.push({ gulp: c.gulp, in: c.in, out: c.out, at: c.at, gain: t.volume ?? 1 }); if (!(S.ovl && S.ovl.muted)) clipOverlays(c).forEach(o => clips.push({ gulp: o.gulp, in: 0, out: o.len, at: o.at, gain: (t.volume ?? 1) * ((S.ovl && S.ovl.volume) ?? 1) })); } }); });
+  S.tracks.forEach(t => { if (t.kind !== 'sfx' || t.muted) return; t.clips.forEach(c => clips.push({ file: c.file, in: c.in, out: c.out, at: c.at, gain: (t.volume ?? 1) * (c.gain ?? 1) })); });   // 170
   return { clips };
 }
 const musicTrack = () => S.tracks.find(t => t.kind === 'music');
@@ -1487,23 +1509,31 @@ function trimSpan(text, c){
 function caretLine(){ const id = sel.size === 1 ? [...sel][0] : lastLine; return id && S.lines[id] ? id : null; }
 async function insertIPA(){ const id = caretLine(); if (!id) return say(T('اول در یک خط، کنارِ واژه کلیک کنید.', 'Click next to the word first.'), 'err');
   const ipa = await askText(T('تلفظِ واژه به الفبای آوایی بین‌المللی (IPA)، بدونِ اسلش:', 'The word\'s pronunciation in IPA, without slashes:')); if (ipa && ipa.trim()) insertTag('/' + ipa.trim() + '/'); }
-async function insertOverlap(){   // 169: a speaker picker; «|Name: text|»; the line itself does not pause
+async function insertOverlap(){   // 169/170: a speaker picker, a mood (3.8), «|Name: {mood} text|»; the line itself does not pause
   const id = caretLine(); if (!id) return say(T('اول در یک خط کلیک کنید.', 'Click in a line first.'), 'err');
-  const own = speakerOfLine(id), res = await askOverlap(own); if (!res || !res.text) return;
-  insertTag('|' + (res.spk ? res.spk.name + ': ' : '') + res.text.replace(/[|]/g, '') + '|'); }
-function askOverlap(own){ return new Promise(done => {
+  const own = speakerOfLine(id), res = await askOverlap(own, null); if (!res || !res.text) return;
+  insertTag(ovlTag(res)); }
+const ovlTag = r => '|' + (r.spk ? r.spk.name + ': ' : '') + (r.mood ? `{${r.mood}} ` : '') + r.text.replace(/[|{}]/g, '') + '|';
+async function editOverlap(id, raw){   // 170: clicking an overlap tag opens its dialog (the ready-made ones have no speaker yet)
+  const L = S.lines[id]; if (!L) return; const o = ovlList(id).find(x => x.raw === raw); if (!o) return;
+  const res = await askOverlap(speakerOfLine(id), o); if (!res) return; remember();
+  L.text = res.remove ? L.text.replace(raw, '').replace(/\s{2,}/g, ' ') : L.text.replace(raw, ovlTag(res)); afterChange(); }
+function askOverlap(own, cur){ return new Promise(done => {
   let d = $('ovlDlg'); if (!d){ d = document.createElement('dialog'); d.id = 'ovlDlg'; d.className = 'modal'; document.body.appendChild(d); }
-  const list = spkList(), dflt = list.find(x => x !== own) || null, PRE = [T('آره', 'Yeah'), T('اوهوم', 'Mm-hmm'), T('واقعاً؟', 'Really?'), T('عجب!', 'Wow!'), T('درسته', 'Right'), T('نه بابا!', 'No way!'), T('خب', 'Well…')];
+  const list = spkList(), dflt = cur && cur.spk ? cur.spk : (list.find(x => x !== own) || null), g38 = S.proj.engine === 'google' && isG38();
+  const PRE = [T('آره', 'Yeah'), T('اوهوم', 'Mm-hmm'), T('واقعاً؟', 'Really?'), T('عجب!', 'Wow!'), T('درسته', 'Right'), T('نه بابا!', 'No way!'), T('خب', 'Well…')];
   d.innerHTML = `<div class="modal-box ui max-w-md p-6" dir="${lang === 'fa' ? 'rtl' : 'ltr'}"><div class="flex items-center justify-between gap-3"><h3 class="text-lg font-bold">${T('واکنشِ هم‌زمان', 'Overlapping reaction')}</h3><button class="btn btn-ghost btn-circle" data-act="no" aria-label="close"><svg class="size-5"><use href="#i-x"/></svg></button></div>
     <p class="mt-1 text-xs text-base-content/70">${T('کسِ دیگری وسطِ همین خط، روی صدای گوینده، واکنش نشان می‌دهد؛ خودِ خط مکث نمی‌کند.', "Someone else reacts in the middle of this line, over the speaker's voice; the line itself does not pause.")}</p>
     <fieldset class="fieldset mt-3"><legend class="fieldset-legend text-xs">${T('چه کسی می‌گوید', 'Who says it')}</legend><select id="ovlSpk" class="select select-sm w-full">${list.length ? list.map((x, k) => `<option value="${k}" ${x === dflt ? 'selected' : ''}>${escapeHtml(x.name)}${x === own ? T(' — گویندهٔ همین خط', " — this line's speaker") : ''}</option>`).join('') : `<option value="">${T('— صدای پروژه —', "— project's voice —")}</option>`}</select></fieldset>
-    <fieldset class="fieldset"><legend class="fieldset-legend text-xs">${T('چه می‌گوید', 'What they say')}</legend><input id="ovlText" class="input input-sm w-full" placeholder="${T('مثلاً: واقعاً؟', 'e.g. really?')}"></fieldset>
+    <fieldset class="fieldset"><legend class="fieldset-legend text-xs">${T('چه می‌گوید', 'What they say')}</legend><input id="ovlText" class="input input-sm w-full" value="${escapeHtml(cur ? cur.text : '')}" placeholder="${T('مثلاً: واقعاً؟', 'e.g. really?')}"></fieldset>
     <div class="mt-2 flex flex-wrap gap-1.5">${PRE.map(x => `<button type="button" class="btn btn-xs rounded-full border-base-content/15 bg-base-100" data-ovl="${escapeHtml(x)}">${escapeHtml(x)}</button>`).join('')}</div>
-    <div class="modal-action mt-4"><button class="btn btn-ghost btn-sm" data-act="no">${T('انصراف', 'Cancel')}</button><button class="btn btn-primary btn-sm" data-act="ok">${T('افزودن', 'Add')}</button></div></div><form method="dialog" class="modal-backdrop"><button>close</button></form>`;
+    ${g38 ? `<fieldset class="fieldset"><legend class="fieldset-legend text-xs">${T('با چه حالی (فقط Gemini 3.8)', 'In what mood (Gemini 3.8 only)')}</legend><select id="ovlMood" class="select select-sm w-full"><option value="">${T('— بی‌حالت —', '— none —')}</option>${G38_TONES.map(t => `<option value="${escapeHtml(t)}" ${cur && cur.mood === t ? 'selected' : ''}>${escapeHtml(toneLabel(t))}</option>`).join('')}</select></fieldset>` : ''}
+    <div class="modal-action mt-4">${cur ? `<button class="btn btn-ghost btn-sm text-error me-auto" data-act="del">${T('حذف', 'Delete')}</button>` : ''}<button class="btn btn-ghost btn-sm" data-act="no">${T('انصراف', 'Cancel')}</button><button class="btn btn-primary btn-sm" data-act="ok">${cur ? T('ذخیره', 'Save') : T('افزودن', 'Add')}</button></div></div><form method="dialog" class="modal-backdrop"><button>close</button></form>`;
   let fin = false; const end = v => { if (fin) return; fin = true; if (d.open) d.close(); done(v); };
   d.querySelectorAll('[data-ovl]').forEach(b => b.onclick = () => { $('ovlText').value = b.dataset.ovl; $('ovlText').focus(); });
   d.querySelectorAll('[data-act=no]').forEach(b => b.onclick = () => end(null));
-  d.querySelector('[data-act=ok]').onclick = () => { const k = $('ovlSpk').value; end({ text: $('ovlText').value.trim(), spk: k === '' ? null : spkList()[+k] }); };
+  const del = d.querySelector('[data-act=del]'); if (del) del.onclick = () => end({ remove: true, text: ' ' });
+  d.querySelector('[data-act=ok]').onclick = () => { const k = $('ovlSpk').value, md = $('ovlMood'); end({ text: $('ovlText').value.trim(), spk: k === '' ? null : spkList()[+k], mood: md ? md.value : '' }); };
   $('ovlText').onkeydown = ev => { if (ev.key === 'Enter'){ ev.preventDefault(); d.querySelector('[data-act=ok]').click(); } };
   d.addEventListener('close', () => end(null), { once: true }); d.showModal(); setTimeout(() => $('ovlText').focus(), 30); }); }
 // ---- Google 3.1 two speakers; Fish custom style, age, state and speakers
@@ -1574,12 +1604,16 @@ document.addEventListener('click', e => {
   if (s2){ e.preventDefault(); remember(); SECTION_RESET[s2.dataset.rstsec](); fillInspector(); renderScript(); autosave(); say(T('تنظیم‌های این موتور به پیش‌فرض برگشت.', "This engine's settings are back to default."), 'ok'); }
 }, true);
 // ---- PROJECT FILES (.ava): save and reopen exactly as it was
-async function projectSave(){
-  const r = await API().project_save(snapshot()); if (r && r.ok) say(T('پروژه ذخیره شد: ', 'Project saved: ') + r.path, 'ok'); else if (r && r.error !== 'cancelled') say((r && r.error) || '', 'err'); }
+async function projectSave(as){   // 170: Save writes over the project's own file; Save As asks for a new one; the status line reports
+  const path = !as && S.projPath ? S.projPath : null, r = await API().project_save(snapshot(), path);
+  if (r && r.ok){ S.projPath = r.path; say(T('پروژه ذخیره شد: ', 'Project saved: ') + r.path, 'ok'); document.title = (r.path.split('/').pop() || '') + ' — آوای جاوید شاه'; }
+  else if (r && r.error !== 'cancelled') say((r && r.error) || '', 'err'); }
+function projectSaveAs(){ return projectSave(true); }
+document.addEventListener('keydown', ev => { if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && ev.key.toLowerCase() === 's'){ ev.preventDefault(); projectSave(ev.shiftKey); } });
 async function projectOpen(){
   const r = await API().project_open(); if (!r || !r.ok){ if (r && r.error !== 'cancelled') say((r && r.error) || '', 'err'); return; }
   remember(); setBusy(true);
-  try { const musicCfg = r.doc.music ? { ...r.doc.music } : null; restoreSnap(r.doc);
+  try { const musicCfg = r.doc.music ? { ...r.doc.music } : null; restoreSnap(r.doc); S.projPath = r.path || null;
     const gids = [...new Set(S.tracks.flatMap(t => t.clips.map(c => c.gulp)).filter(g => g != null))];
     for (const g of gids){ const a = await API().gulp_audio(g); if (a && a.ok) await storeAudio(g, a.b64); }
     if (r.music && r.music.b64){ await setMusicTrack(r.music.b64, null, r.music.name); if (musicCfg) Object.assign(S.music, musicCfg, { file: null }); }
@@ -1658,13 +1692,13 @@ function fishOptions(cur){
 
 // 166 · music clips: split, duplicate, delete one (the music itself goes only with its last clip); quick trim visual for music
 const musicClipsSpec = () => ((S.tracks.find(t => t.kind === 'music') || {}).clips || []).map(c => ({ in: c.in, out: c.out, at: c.at }));
-function splitMusic(){ const [t, c] = findClip(selClip); if (!c || t.kind !== 'music') return; const cut = playhead - c.at;
+function splitMusic(){ const [t, c] = findClip(selClip); if (!c || (t.kind !== 'music' && t.kind !== 'sfx')) return; const cut = playhead - c.at;
   if (cut <= 0.1 || cut >= c.out - c.in - 0.1) return say(T('پلی‌هد را روی کلیپِ موسیقی بگذارید.', 'Put the playhead over the music clip.'), 'err');
   remember(); const n = { ...c, id: 'mu' + (++uid), at: c.at + cut, in: c.in + cut }; c.out = c.in + cut; t.clips.push(n); t.clips.sort((a, b) => a.at - b.at); S.music.manual = true; selClip = n.id; renderTimeline(); autosave(); }
-function dupMusic(){ const [t, c] = findClip(selClip); if (!c || t.kind !== 'music') return; remember(); const len = c.out - c.in, end = Math.max(...t.clips.map(x => x.at + x.out - x.in));
+function dupMusic(){ const [t, c] = findClip(selClip); if (!c || (t.kind !== 'music' && t.kind !== 'sfx')) return; remember(); const len = c.out - c.in, end = Math.max(...t.clips.map(x => x.at + x.out - x.in));
   const free = !t.clips.some(x => x !== c && x.at < c.at + 2 * len && x.at + x.out - x.in > c.at + len);
   const n = { ...c, id: 'mu' + (++uid), at: free ? c.at + len : end }; t.clips.push(n); t.clips.sort((a, b) => a.at - b.at); S.music.manual = true; selClip = n.id; renderTimeline(); autosave(); }
-function delMusicClip(){ const [t, c] = findClip(selClip); if (!c || t.kind !== 'music') return; if (t.clips.length <= 1) return removeMusic(); remember(); t.clips = t.clips.filter(x => x !== c); S.music.manual = true; selClip = null; renderTimeline(); autosave(); }
+function delMusicClip(){ const [t, c] = findClip(selClip); if (!c || (t.kind !== 'music' && t.kind !== 'sfx')) return; if (t.kind === 'sfx'){ remember(); t.clips = t.clips.filter(x => x !== c); selClip = null; renderTimeline(); autosave(); return; } if (t.clips.length <= 1) return removeMusic(); remember(); t.clips = t.clips.filter(x => x !== c); S.music.manual = true; selClip = null; renderTimeline(); autosave(); }
 const _quickTrimVisual165 = quickTrimVisual;
 quickTrimVisual = function(c){ if (!c.lines) return renderTimeline(); return _quickTrimVisual165(c); };
 
@@ -1706,3 +1740,56 @@ document.addEventListener('keydown', ev => { if (ev.key !== 'Escape' || (ev.targ
   if (selClip && String(selClip).startsWith('mu')){ selClip = null; showInsp('proj'); if (typeof placeClipBar === 'function') placeClipBar(); renderTimeline(); } });
 // 169: reveal the app's log file — the engine resolves the folder from the user's home at run time (no fixed path)
 async function openLogFolder(){ try { const r = await API().open_log_folder(); if (!r || !r.ok) say((r && r.error) || T('پوشهٔ گزارش باز نشد.', "Could not open the log's folder."), 'err'); else say(T('پوشهٔ گزارش باز شد: ', "Log folder opened: ") + (r.path || ''), 'ok'); } catch (err) { say(String(err), 'err'); } }
+
+// 170: an overlap tag opens its dialog; a sound tag's × removes it
+document.addEventListener('click', ev => {
+  const x = ev.target.closest('.tpdel'); if (x){ ev.preventDefault(); ev.stopPropagation(); const pill = x.closest('.tagpill'), ln = x.closest('.ln'); if (!pill || !ln) return; const id = +ln.dataset.id, L = S.lines[id]; if (!L) return;
+    const raw = [...pill.childNodes].filter(n => !(n.classList && n.classList.contains('tpdel'))).map(n => n.textContent).join(''); remember(); L.text = L.text.replace(raw, '').replace(/\s{2,}/g, ' '); afterChange(); return; }
+  const ov = ev.target.closest('.tagpill.pipe'); if (ov && ov.closest('#editor')){ const ln = ov.closest('.ln'); if (!ln) return; ev.preventDefault(); const raw = [...ov.childNodes].filter(n => !(n.classList && n.classList.contains('ovav'))).map(n => n.textContent).join(''); editOverlap(+ln.dataset.id, raw); }
+}, true);
+
+// =====================================================================================
+// 170 · SOUND EFFECTS — the house library (ui/sfx, 246 synthesised sounds in nine families), on their own track,
+//       in both modes; the bytes come from the engine, the index is baked into the page.
+// =====================================================================================
+const SFXB = new Map(), SFX_LOADING = new Map();
+function sfxTrack(create){ let t = S.tracks.find(x => x.kind === 'sfx'); if (!t && create){ t = { id: 'fx' + (++uid), name: 'افکت‌ها', en: 'Effects', kind: 'sfx', volume: 1, muted: false, clips: [] }; const mi = S.tracks.findIndex(x => x.kind === 'music'); if (mi >= 0) S.tracks.splice(mi, 0, t); else S.tracks.push(t); } return t || null; }
+async function loadSfx(file){ if (SFXB.has(file)) return SFXB.get(file); if (SFX_LOADING.has(file)) return SFX_LOADING.get(file);
+  const p = (async () => { const r = await API().sfx_read(file); if (!r || !r.ok) throw new Error(r && r.error || 'sfx'); const bin = atob(r.b64), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); const buf = await ac().decodeAudioData(u8.buffer); SFXB.set(file, buf); return buf; })();
+  SFX_LOADING.set(file, p); try { return await p; } finally { SFX_LOADING.delete(file); } }
+const sfxIdx = () => (typeof SFX_INDEX !== 'undefined' ? SFX_INDEX : (window.SFX_INDEX || { families: {}, items: [] })), sfxItems = () => sfxIdx().items || [], sfxFams = () => sfxIdx().families || {};
+let SFX_FAM = 'all', SFX_Q = '', SFX_PREV = null;
+function openSfxLib(){ let d = $('sfxDlg'); if (!d){ d = document.createElement('dialog'); d.id = 'sfxDlg'; d.className = 'modal'; document.body.appendChild(d); } renderSfxLib(d); d.showModal(); }
+function renderSfxLib(d){ d = d || $('sfxDlg'); if (!d) return; const fams = sfxFams(), q = SFX_Q.trim().toLowerCase();
+  const items = sfxItems().filter(it => (SFX_FAM === 'all' || it.fam === SFX_FAM) && (!q || (it.fa + ' ' + it.en + ' ' + it.key).toLowerCase().includes(q)));
+  d.innerHTML = `<div class="modal-box ui flex max-h-[85vh] max-w-2xl flex-col p-0" dir="${lang === 'fa' ? 'rtl' : 'ltr'}">
+    <div class="flex items-center justify-between gap-3 px-5 pt-5"><h3 class="text-lg font-bold">${T('کتابخانهٔ افکت‌های صوتی', 'Sound-effects library')} <span class="text-sm font-normal text-base-content/60">${num(sfxItems().length)}</span></h3><form method="dialog"><button class="btn btn-ghost btn-circle" aria-label="close"><svg class="size-5"><use href="#i-x"/></svg></button></form></div>
+    <div class="px-5 pt-3"><input class="input input-sm w-full" placeholder="${T('جست‌وجو…', 'Search…')}" value="${escapeHtml(SFX_Q)}" oninput="SFX_Q = this.value; renderSfxLib(); this.focus(); this.setSelectionRange(this.value.length, this.value.length)"></div>
+    <div class="flex flex-wrap gap-1.5 px-5 pt-3">${[['all', T('همه', 'All')], ...Object.entries(fams).map(([k, f]) => [k, T(f.fa, f.en)])].map(([k, nm]) => `<button class="btn btn-xs rounded-full ${SFX_FAM === k ? 'btn-primary' : 'border-base-content/15 bg-base-100'}" onclick="SFX_FAM = '${k}'; renderSfxLib()">${escapeHtml(nm)}</button>`).join('')}</div>
+    <div class="min-h-0 flex-1 overflow-auto px-3 py-3"><ul class="menu menu-sm w-full p-0">${items.map(it => `<li class="flex flex-row items-center gap-1"><a class="min-w-0 flex-1 gap-2" onclick="addSfx('${it.file}')"><span class="min-w-0 flex-1"><span class="block truncate font-semibold">${escapeHtml(lang === 'fa' ? it.fa : it.en)}</span><span class="block truncate text-xs text-base-content/55">${escapeHtml(lang === 'fa' ? it.en : it.fa)} · ${num(it.sec)}${T('ث', 's')}</span></span></a><button class="ddb opacity-80 hover:opacity-100" onclick="previewSfx('${it.file}')" data-tip="${T('شنیدن', 'Hear it')}"><svg class="size-3.5"><use href="#i-play"/></svg></button><button class="ddb text-primary" onclick="addSfx('${it.file}')" data-tip="${T('افزودن در جای پلی‌هد', 'Add at the playhead')}"><svg class="size-4"><use href="#i-plus"/></svg></button></li>`).join('') || `<li class="menu-title">${T('چیزی پیدا نشد.', 'Nothing found.')}</li>`}</ul></div>
+    <p class="px-5 pb-4 text-xs text-base-content/55">${T('کلیک روی نام = افزودن در جای پلی‌هد، روی ترکِ «افکت‌ها». همهٔ این صداها ساختهٔ خودِ برنامه‌اند — بدون ضبط، بدون پروانه.', 'Click a name = add at the playhead, on the «Effects» track. Every sound is synthesised by the app itself — no recordings, nothing licensed.')}</p></div><form method="dialog" class="modal-backdrop"><button>close</button></form>`; }
+async function previewSfx(file){ try { const buf = await loadSfx(file); if (SFX_PREV){ try { SFX_PREV.stop(); } catch (err) {} } const s = ac().createBufferSource(); s.buffer = buf; s.connect(ac().destination); s.start(); SFX_PREV = s; } catch (err) { say(err.message || String(err), 'err'); } }
+async function addSfx(file){ const it = sfxItems().find(x => x.file === file); if (!it) return; remember(); const t = sfxTrack(true);
+  const c = { id: 'sx' + (++uid), file, name: lang === 'fa' ? it.fa : it.en, in: 0, out: it.sec, at: playhead, gain: 1 }; t.clips.push(c); t.clips.sort((a, b) => a.at - b.at); selClip = c.id;
+  loadSfx(file).catch(err => say(err.message || String(err), 'err')); renderTimeline(); autosave(); say(T('افکت افزوده شد: ', 'Effect added: ') + c.name, 'ok'); }
+
+// =====================================================================================
+// 170 · THE OVERLAPS ROW — every overlap is separate audio over its line; this row shows each one as a clip
+//       (its speaker's avatar + the reaction), following its line, with its own mute and volume.
+// =====================================================================================
+function ovlClips(){ const out = []; S.tracks.forEach(t => { if (t.kind !== 'speech') return; t.clips.forEach(c => { if (c.unvoiced || !c.lines || c.lines.length !== 1) return; const id = c.lines[0], list = ovlList(id); let k = 0;
+  clipOverlays(c).forEach(o => { const ov = list.filter(x => x.text)[k++]; out.push({ ...o, id, text: ov ? ov.text : '', spk: ov ? ovlSpeaker(id, ov) : null }); }); }); }); return out; }
+function renderOvlRow(){ if (mode === 'video') return; const rows = ovlClips(), heads = $('heads'), lanes = $('lanes'); document.querySelectorAll('[data-ti="ovl"]').forEach(x => x.remove()); if (!rows.length) return;
+  S.ovl = S.ovl || { muted: false, volume: 1 }; const pps = zoom, lastSpeech = S.tracks.map((t, i) => t.kind === 'speech' ? i : -1).filter(i => i >= 0).pop();
+  const head = document.createElement('div'); head.className = 'flex h-14 items-center pe-2'; head.dataset.ti = 'ovl';
+  head.innerHTML = `<div class="flex h-11 w-full items-center gap-1 rounded-box bg-base-100/50 px-2 text-xs"><svg class="size-3.5 shrink-0 opacity-70"><use href="#i-message-circle"/></svg><span class="ui flex-1 truncate font-semibold">${T('واکنش‌ها', 'Reactions')}</span><button class="btn btn-ghost btn-xs btn-square ${S.ovl.muted ? 'bg-error/15 text-error' : ''}" onclick="S.ovl.muted = !S.ovl.muted; renderTimeline(); autosave()" aria-label="mute"><svg class="size-3.5"><use href="#i-volume-x"/></svg></button><button class="btn btn-ghost btn-xs btn-square ${(S.ovl.volume ?? 1) !== 1 ? 'text-primary' : ''}" onclick="ovlVolPop(event)" aria-label="volume"><svg class="size-3.5"><use href="#i-volume-2"/></svg></button></div>`;
+  const lane = document.createElement('div'); lane.className = 'lane relative h-14 border-b border-base-300/40'; lane.dataset.ti = 'ovl';
+  lane.innerHTML = rows.map(o => { const k = o.spk ? spkList().indexOf(o.spk) : -1; return `<div class="clip absolute top-2 bottom-2 flex cursor-pointer items-center gap-1 overflow-hidden rounded-field bg-primary/15 px-1.5 text-[11px] text-primary outline outline-1 outline-primary/40 ${sel.has(o.id) ? 'outline-2' : ''}" style="left:${PAD + o.at * pps}px;width:${Math.max(28, o.len * pps - 2)}px" data-ovl-line="${o.id}" title="${escapeHtml(o.text)}"><span class="grid size-4 shrink-0 place-items-center overflow-hidden rounded-full text-[8px] font-bold" style="${k >= 0 ? spkBg(k) : ''}">${o.spk ? spkFace(o.spk) : ''}</span><span class="ui truncate font-semibold">${escapeHtml(o.text)}</span></div>`; }).join('');
+  lane.querySelectorAll('[data-ovl-line]').forEach(el => el.onpointerdown = ev => { ev.stopPropagation(); sel = new Set([+el.dataset.ovlLine]); selClip = null; paintSel(); renderTimeline(); });
+  const hRef = heads.children[lastSpeech + 1], lRef = lanes.children[lastSpeech + 1 + (lanes.firstElementChild && lanes.firstElementChild.classList.contains('tl-empty') ? 1 : 0)];
+  heads.insertBefore(head, hRef || null); lanes.insertBefore(lane, lRef || null); }
+function ovlVolPop(ev){ ev.stopPropagation(); const m = $('trackMenu'), r = ev.currentTarget.getBoundingClientRect(); S.ovl = S.ovl || { muted: false, volume: 1 }; m.dir = lang === 'fa' ? 'rtl' : 'ltr';
+  m.innerHTML = `<li class="menu-title">${T('بلندیِ واکنش‌ها', 'Reactions volume')}</li><li><div class="flex items-center gap-2"><input type="range" min="0" max="200" value="${Math.round((S.ovl.volume ?? 1) * 100)}" class="range range-xs w-40" oninput="S.ovl.volume = +this.value / 100; this.nextElementSibling.textContent = this.value + '٪'" onchange="renderTimeline(); autosave()"><span class="w-10 text-xs tabular-nums">${Math.round((S.ovl.volume ?? 1) * 100)}٪</span></div></li>`;
+  m.classList.remove('hidden'); m.style.top = (r.bottom + 4) + 'px'; m.style.left = Math.min(innerWidth - m.offsetWidth - 8, Math.max(8, r.left)) + 'px'; }
+const _renderTimeline170 = renderTimeline;
+renderTimeline = function(){ const r = _renderTimeline170.apply(this, arguments); try { renderOvlRow(); } catch (err) { console.warn(err); } return r; };

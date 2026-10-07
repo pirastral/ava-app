@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist
 ======================================================================
-This zip is the COMPLETE application source as of update 169.
+This zip is the COMPLETE application source as of update 170.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,53 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 170 (on top of 169) — the founder's review of 169 + his log + the video-editor list
+  FROM THE LOG (169 session)
+  · EXPORT «بعضی از بخش‌ها دیگر در حافظه نیستند»: gcParts kept only the clips' parts; the overlaps' audio (referenced from
+    the lines) was collected by the engine, so every export with an overlap failed. Kept now.
+  · MUSIC: every download succeeded in the engine (Jamendo 127 s, Openverse 40 s, Freesound 60 s); the chunked hand-off
+    to the window failed because wrapping the bridge's methods did not take on the Mac. bigResult() reads the pieces at
+    each of the 8 call sites.
+  · WORD TIMINGS work (google_words n=… on every take). The caret lag was window-side: clipWords() required the token
+    COUNTS to match, but the engine's words carry no tags while the lines carry tags, a tone and overlaps → the spine was
+    discarded and the caret fell back to an estimate. Now aligned by content (both sides' non-spoken tokens skipped).
+  THE SCRIPT EDITOR
+  · Overlaps: the request is ONE voice (g38_cast=[], no duo — the stray first word); the badge shows initials or photo;
+    «|Name: {mood} text|» with a mood dropdown on Gemini 3.8 (dropped on other engines at regeneration); clicking a tag
+    opens its dialog (ready-made ones included); a «واکنش‌ها» row on the timeline shows each overlap as a clip with its
+    speaker's avatar, following its line, with its own mute and volume (they ARE separate audio: a Chatterbox re-voice
+    keeps the old overlap, exactly as the founder observed).
+  · «حذف» first in the tone and speaker menus; sound tags have an ×; English labels for the tones and the tag groups.
+  · Dropdowns: the old editor's nesting — groups are collapsible sections with counts, the selected option's group open,
+    a search opens them (openDD flattened optgroups into headers — the Chatterbox menu looked flat on screen); the ▶ is a
+    flex box with every menu-grid rule overridden (it was at (10, 0) inside its 24 px circle; now centred).
+  · Primary buttons carry dark text. The ruler's ticks run across the full width; past the composition's end the ruler
+    and lanes are tinted 7 % orange (empty, not exported).
+  · Save writes over the project's own file (⌘S), Save As asks (⇧⌘S); the status line reports; project_open keeps the path.
+  THE VIDEO EDITOR
+  · The object toolbar on the timeline (animate · duplicate · split · delete) and split on the canvas bar; vSplit keeps a
+    video's trim. selectV was defined twice — the second silently undid the 169 deselect rule; one definition now.
+  · Alignment grid left-to-right (RTL mirrored it); size slider to 100 % (capped at 70, so a full-frame video shrank).
+  · Bars snap to every bar, cue, 0 and the playhead. Restack drags: a ghost follows the pointer, a drop line marks the
+    target, lanes light up (the highlight was painted under the row's panel).
+  · Preview at full Retina resolution playing or paused (it dropped to 1× while playing); the GL layer antialiased.
+  · ORB LAB: the founder's orb engine (WebGL2, antialiased) vendored verbatim (ui-src/orblab.js) as two designs,
+    «گویِ امضا» and «کرهٔ شیشه‌ای», with 47 palettes and 12 mesh backdrops; each orb is driven by the lab's drive model
+    stepped at 60 Hz from its speaker's level. Name labels: size, weight, four styles; avatars: size, ring.
+  · TRANSITIONS: the Fox editor's 30 GLSL looks vendored verbatim (ui-src/transitions.js) as objects on a layer, each with
+    its own controls; the finished frame passes through the shader (A = B = the frame) before the captions.
+  · Export formats: MP4 (default), WebM (vp9/vp8/av1 + opus; silent without an AudioEncoder), animated GIF (gifenc,
+    ≤ 640 px, ~12 fps, no audio). webm-muxer and gifenc vendored (ui-src/muxers.js).
+  SOUND EFFECTS
+  · The house library: tools/make_sfx.py synthesises 246 sounds in nine families from the Fox recipes (swept noise, FM
+    bells, kicks, blips, booms, water drops) → ui/sfx/<family>/<key>.mp3 + index.json (baked into the page as SFX_INDEX).
+    An «افکت‌ها» track in both modes (drawn, dragged, trimmed, split, duplicated, deleted like music), a library dialog
+    (families, search, ▶, add at the playhead), bytes from the engine (sfx_read), playback in schedule(), export as file
+    clips (timeline_pcm takes {file, in, out, at, gain}).
+  Tests: t15 (15 checks) + every suite (t4–t14, t1f/t2r/t3r) + engine 146–160.
+  NOT YET: the shaders.com engine (MIT, WebGPU; its 12 progress-driven wipes are the fit); a true A→B transition
+  between two objects.
 
 WHAT CHANGED IN 169 (on top of 168) — the founder's review of 168 + the log
   · EXPORT: «ترکیبِ کامل» is the main export — every unmuted track at its volume, the music clips when there are
@@ -1677,6 +1724,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۶۹»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۷۰»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

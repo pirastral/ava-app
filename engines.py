@@ -94,8 +94,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 169
-BUILD_FA = "\u06f1\u06f6\u06f9"
+BUILD = 170
+BUILD_FA = "\u06f1\u06f7\u06f0"
 
 
 def _diag(tag, **kv):
@@ -7523,11 +7523,16 @@ def timeline_pcm(spec, status=lambda *a, **k: None):
          {"silence": seconds, "at": s}                             room, nothing to mix
     Clips may overlap (two rows speaking at once); they are summed, then kept out of
     clipping by a soft peak limit. Returns (int16 pcm, sr)."""
-    clips = [c for c in (spec or {}).get("clips", []) if c.get("gulp") is not None]
+    clips = [c for c in (spec or {}).get("clips", []) if c.get("gulp") is not None or c.get("file")]
     if not clips:
         raise RuntimeError("روی خطِ زمان چیزی برای ساختن نیست.")
     entries = {}
     for c in clips:
+        if c.get("file"):                                        # 170: a bundled sound effect (ui/sfx/…) or any audio file
+            key = "file:" + str(c["file"])
+            if key not in entries:
+                entries[key] = _sfx_pcm(str(c["file"]))
+            continue
         g = int(c["gulp"])
         if g not in _GULP_PCM:
             raise RuntimeError("بعضی از بخش‌ها دیگر در حافظه نیستند؛ یک بار دیگر «تبدیل به گفتار» را بزنید.")
@@ -7536,6 +7541,7 @@ def timeline_pcm(spec, status=lambda *a, **k: None):
             entries[g] = (_assemble(_GULP_PCM[g]), _GULP_PCM[g]["sr"])
     sr = max(r for _, r in entries.values())
     rendered = {g: (_resample(p, r, sr) if r != sr else p) for g, (p, r) in entries.items()}
+    ckey = lambda c: ("file:" + str(c["file"])) if c.get("file") else int(c["gulp"])
     end = 0.0
     for c in clips:
         dur = max(0.0, float(c.get("out", 0)) - float(c.get("in", 0)))
@@ -7546,7 +7552,7 @@ def timeline_pcm(spec, status=lambda *a, **k: None):
     status("دارم کلیپ‌های خطِ زمان را کنارِ هم می‌گذارم…")
     mix = np.zeros(int(end * sr) + 1, dtype=np.float32)
     for c in clips:
-        src = rendered[int(c["gulp"])]
+        src = rendered[ckey(c)]
         a = max(0, int(float(c.get("in", 0)) * sr)); b = min(len(src), int(float(c.get("out", 0)) * sr))
         if b <= a:
             continue
@@ -8170,3 +8176,20 @@ def gulp_engine(gid):
     """169: which engine made a part (the editor re-voices a line with a changed engine as a fresh take)."""
     e = _GULP_PCM.get(int(gid)) if gid is not None else None
     return (e or {}).get("engine")
+
+
+_SFX_CACHE = {}
+
+
+def _sfx_pcm(file):
+    """170: a bundled sound effect (ui/sfx/<family>/<key>.mp3) or an absolute audio path → (int16 mono, sr), cached."""
+    if file in _SFX_CACHE:
+        return _SFX_CACHE[file]
+    p = Path(file)
+    if not p.is_absolute():
+        p = Path(_res_path(str(Path("ui") / file)))
+    if not p.exists():
+        raise RuntimeError("این افکتِ صوتی روی دستگاه نیست: " + os.path.basename(file))
+    pcm, sr = _decode_audio(p.read_bytes())
+    _SFX_CACHE[file] = (pcm, sr)
+    return _SFX_CACHE[file]

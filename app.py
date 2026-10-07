@@ -355,6 +355,19 @@ class Api:
             _OUTBOX.pop(tok, None)
         return {"ok": True, "b64": base64.b64encode(chunk).decode("ascii")}
 
+    def sfx_read(self, file):
+        """170: the bytes of a bundled sound effect (ui/sfx/<family>/<key>.mp3) — the window decodes them for playback."""
+        try:
+            rel = str(file).replace("\\", "/")
+            if not rel.startswith("sfx/") or ".." in rel:
+                return {"ok": False, "error": "bad path"}
+            p = Path(_res_path(str(Path("ui") / rel)))
+            if not p.exists():
+                return {"ok": False, "error": "missing"}
+            return {"ok": True, "b64": base64.b64encode(p.read_bytes()).decode("ascii")}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     def gulp_info(self, gid):
         try:
             import engines
@@ -564,11 +577,14 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
-    def project_save(self, doc):
-        """160: save the whole project — document, voiced parts, music — as one .ava file."""
+    def project_save(self, doc, path=None):
+        """160: save the whole project — document, voiced parts, music — as one .ava file. 170: with a path, write over it (Save)."""
         try:
             import engines
             data = engines.project_pack(doc or {})
+            if path and str(path).lower().endswith(".ava"):
+                open(path, "wb").write(data)
+                return {"ok": True, "path": str(path)}
             res = self._window.create_file_dialog(_FD('SAVE'), directory=_downloads_dir(), save_filename="project.ava")
             if not res:
                 return {"ok": False, "error": "cancelled"}

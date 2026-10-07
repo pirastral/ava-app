@@ -7,7 +7,7 @@
 <!--FAVICON-->
 <!--FONTS-->
 <!--CSS-->
-<style>dialog [aria-label="close"]:focus{outline:none;box-shadow:none}.ddb{display:inline-grid;place-items:center;width:1.5rem;height:1.5rem;min-width:1.5rem;min-height:0;padding:0!important;box-sizing:border-box;flex:none;border-radius:9999px;cursor:pointer;line-height:0}.ddb:hover{background:color-mix(in oklab,var(--color-base-content) 10%,transparent)}.ddb svg{width:14px!important;height:14px!important;flex:none}*{scrollbar-width:thin;scrollbar-color:color-mix(in oklab,var(--color-base-content) 22%,transparent) transparent}
+<style>dialog [aria-label="close"]:focus{outline:none;box-shadow:none}.ddb,.menu li>.ddb,.menu :where(li)>.ddb{display:flex!important;align-items:center!important;justify-content:center!important;width:1.5rem!important;height:1.5rem!important;min-width:1.5rem;min-height:0!important;padding:0!important;margin:0!important;gap:0!important;grid-template-columns:none!important;grid-auto-columns:auto!important;flex:none;border-radius:9999px;cursor:pointer;line-height:0}.ddb>svg{flex:none;margin:0!important}.ddb:hover{background:color-mix(in oklab,var(--color-base-content) 10%,transparent)}.ddb svg{width:14px!important;height:14px!important;flex:none}*{scrollbar-width:thin;scrollbar-color:color-mix(in oklab,var(--color-base-content) 22%,transparent) transparent}
 ::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}
 ::-webkit-scrollbar-thumb{background:color-mix(in oklab,var(--color-base-content) 20%,transparent);border-radius:9999px;border:2px solid transparent;background-clip:padding-box}
 ::-webkit-scrollbar-thumb:hover{background-color:color-mix(in oklab,var(--color-base-content) 36%,transparent)}
@@ -15,7 +15,7 @@
 .ddtrig .ddlbl{white-space:normal;overflow-wrap:anywhere}
 #ddMenu .menu a{white-space:normal}
 .tp-x{font-size:0}
-.lane.lane-hot{background:color-mix(in oklab,var(--color-primary) 10%,transparent)}
+.lane.lane-hot{background:color-mix(in oklab,var(--color-primary) 14%,transparent)!important;box-shadow:inset 0 0 0 2px color-mix(in oklab,var(--color-primary) 55%,transparent)}#heads [data-ti].lane-hot>div{background:color-mix(in oklab,var(--color-primary) 18%,transparent)}.drag-src{opacity:.35}.drag-ghost{box-shadow:0 12px 30px rgba(0,0,0,.45);border-radius:.75rem;transition:none}.drop-line{position:absolute;left:0;right:0;height:3px;margin-top:-1.5px;border-radius:2px;background:var(--color-primary);z-index:40;opacity:0;pointer-events:none;transition:opacity .12s}.drop-line.on{opacity:1}
 body.mode-video .audio-only{display:none!important}body.mode-audio .video-only{display:none!important}</style>
 </head>
 <body class="h-screen overflow-hidden bg-base-100 text-base-content font-sans antialiased">
@@ -38,7 +38,7 @@ body.mode-video .audio-only{display:none!important}body.mode-audio .video-only{d
       <button id="langBtn" class="btn btn-ghost btn-sm btn-square" aria-label="language"><svg class="size-4"><use href="#i-languages"/></svg></button>
       <label class="swap swap-rotate btn btn-ghost btn-sm btn-square" aria-label="theme"><input type="checkbox" class="theme-controller" value="ava-day" id="themeChk"><svg class="swap-off size-4"><use href="#i-moon"/></svg><svg class="swap-on size-4"><use href="#i-sun"/></svg></label>
       <button class="btn btn-ghost btn-sm btn-square" aria-label="help" onclick="openHelp()"><svg class="size-4"><use href="#i-circle-help"/></svg></button>
-      <div class="dropdown dropdown-end"> <div tabindex="0" role="button" class="btn btn-ghost btn-sm gap-1.5"><svg class="size-4"><use href="#i-folder-open"/></svg><span class="ui" data-en="File">پرونده</span></div> <ul tabindex="0" class="dropdown-content menu menu-sm ui z-40 mt-1 w-56 rounded-box border border-base-300 bg-base-200 p-1.5 shadow-lg" dir="rtl"><li><a onclick="menuDo(newDoc)" data-en="New project">پروژهٔ تازه</a></li><li><a onclick="menuDo(projectOpen)" data-en="Open project…">باز کردنِ پروژه…</a></li><li><a onclick="menuDo(projectSave)" data-en="Save project…">ذخیرهٔ پروژه…</a></li><li><a onclick="menuDo(saveText)" data-en="Save the text…">ذخیرهٔ متن…</a></li></ul></div>
+      <div class="dropdown dropdown-end"> <div tabindex="0" role="button" class="btn btn-ghost btn-sm gap-1.5"><svg class="size-4"><use href="#i-folder-open"/></svg><span class="ui" data-en="File">پرونده</span></div> <ul tabindex="0" class="dropdown-content menu menu-sm ui z-40 mt-1 w-56 rounded-box border border-base-300 bg-base-200 p-1.5 shadow-lg" dir="rtl"><li><a onclick="menuDo(newDoc)" data-en="New project">پروژهٔ تازه</a></li><li><a onclick="menuDo(projectOpen)" data-en="Open project…">باز کردنِ پروژه…</a></li><li><a onclick="menuDo(projectSave)" data-en="Save project…">ذخیرهٔ پروژه…</a></li><li><a onclick="menuDo(projectSaveAs)" data-en="Save as…">ذخیره با نامِ دیگر…</a></li><li><a onclick="menuDo(saveText)" data-en="Save the text…">ذخیرهٔ متن…</a></li></ul></div>
       <div class="dropdown dropdown-end">
         <div tabindex="0" role="button" class="btn btn-outline btn-sm gap-1.5"><svg class="size-4"><use href="#i-download"/></svg><span class="ui" data-en="Export">فایل نهایی</span><svg class="size-3.5 opacity-60"><use href="#i-chevron-down"/></svg></div>
         <ul tabindex="0" class="dropdown-content menu menu-sm ui z-40 mt-1 w-60 rounded-box border border-base-300 bg-base-200 p-1.5 shadow-lg" dir="rtl">
@@ -180,8 +180,10 @@ body.mode-video .audio-only{display:none!important}body.mode-audio .video-only{d
             <div class="collapse-content space-y-3">
               <select id="pLayout" class="select select-sm w-full" onchange="POD.layout=this.value; renderPod()"><option value="two">دو گوینده</option><option value="single">یک گوینده</option><option value="quote">نقل‌قولِ بزرگ</option></select>
               <div class="grid grid-cols-3 gap-1.5" id="waveGrid"></div>
+              <div id="labOpts" class="hidden space-y-2"></div>
             </div>
           </div>
+          <div class="collapse collapse-arrow rounded-none border-b border-base-300"><input type="checkbox" aria-label="نام و آواتارِ گوینده"><div class="collapse-title text-sm font-semibold" data-en="Speaker name and avatar">نام و آواتارِ گوینده</div><div class="collapse-content space-y-2" id="labelOpts"></div></div>
           <div class="collapse collapse-arrow rounded-none border-b border-base-300">
             <input type="checkbox" checked aria-label="واکنش به صدا">
             <div class="collapse-title text-sm font-semibold" data-en="Reacting to the sound">واکنش به صدا</div>
@@ -239,12 +241,13 @@ body.mode-video .audio-only{display:none!important}body.mode-audio .video-only{d
             </div>
           </div>
         </div>
-<div id="iv-pip" class="hidden space-y-3 p-4">
+<div id="iv-fx" class="hidden space-y-3 p-4"></div>
+          <div id="iv-pip" class="hidden space-y-3 p-4">
           <div class="flex items-center gap-2"><svg class="size-4 text-primary"><use href="#i-image"/></svg><span class="text-sm font-bold" id="pipTitle">تصویر روی ویدیو</span></div>
           <button class="btn btn-sm w-full gap-1.5 border-base-content/15 bg-base-100"><svg class="size-4"><use href="#i-folder-open"/></svg><span data-en="Choose a file…">انتخاب فایل…</span></button>
-          <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Size">اندازه</legend><input id="pipSize" type="range" data-unit="%" min="10" max="70" value="34" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full" oninput="pipSet('size', +this.value)"></fieldset>
+          <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Size">اندازه</legend><input id="pipSize" type="range" data-unit="%" min="5" max="100" value="34" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full" oninput="pipSet('size', +this.value)"></fieldset>
           <div class="flex items-start gap-4">
-            <div><div class="mb-1 text-xs font-medium text-base-content/70" data-en="Position">جایگاه</div><div class="grid w-fit grid-cols-3 gap-1" id="pipPos"></div></div>
+            <div><div class="mb-1 text-xs font-medium text-base-content/70" data-en="Position">جایگاه</div><div class="grid w-fit grid-cols-3 gap-1" id="pipPos" dir="ltr"></div></div>
             <div class="flex-1 space-y-1">
               <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Corners">گوشه‌ها</legend><input id="pipRad" type="range" data-unit="px" min="0" max="60" value="12" class="range range-xs text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] w-full" oninput="pipSet('radius', +this.value)"></fieldset>
             </div>
@@ -442,6 +445,7 @@ body.mode-video .audio-only{display:none!important}body.mode-audio .video-only{d
     <div class="divider my-0"></div><div class="text-sm" id="quotaLine"></div><div class="divider my-0"></div><div class="space-y-1.5"><div class="text-sm font-semibold" data-en="Voice samples">نمونهٔ صداها</div><p class="text-xs leading-relaxed text-base-content/60" data-en="Make every built-in voice say «پایَنده ایران، جاوید شاه!» once, with this machine's keys and models; put the folder in the repository as ui/previews and every build ships with them.">همهٔ صداهای آماده یک بار «پایَنده ایران، جاوید شاه!» را می‌گویند، با کلیدها و مدل‌های همین دستگاه؛ پوشهٔ ساخته‌شده را با نامِ previews کنارِ پوشهٔ ui در مخزن بگذارید تا همهٔ نسخه‌ها همراهشان ساخته شوند.</p><button class="btn btn-sm w-full border-base-content/15 bg-base-100" onclick="buildPreviews()" data-en="Make all voice samples…">ساختنِ همهٔ نمونه‌صداها…</button></div><div class="divider my-0"></div><div class="space-y-1.5"><div class="text-sm font-semibold" data-en="App log">گزارشِ برنامه</div><p class="text-xs leading-relaxed text-base-content/60" data-en="Everything the app does is written to ava.log in the AvaModels folder of your home folder. When something goes wrong, send this file.">هر چه برنامه می‌کند در فایلِ ava.log در پوشهٔ AvaModels در پوشهٔ خانگی‌تان نوشته می‌شود؛ وقتی مشکلی پیش آمد، همین فایل را بفرستید.</p><button class="btn btn-sm w-full gap-2 border-base-content/15 bg-base-100" onclick="openLogFolder()" data-en="Open the log's folder"><svg class="size-4"><use href="#i-folder-open"/></svg>بازکردنِ پوشهٔ گزارش</button></div></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
 <dialog id="vexpDlg" class="modal"><div class="modal-box ui max-w-md space-y-3 p-6" dir="rtl"><div class="flex items-center justify-between gap-3"><h3 class="text-lg font-bold" data-en="Export the video">ساختنِ فایلِ ویدیو</h3><form method="dialog"><button class="btn btn-ghost btn-circle" aria-label="close"><svg class="size-5"><use href="#i-x"/></svg></button></form></div>
 
+<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Format">قالب</legend><select id="vxFmt" class="select select-sm w-full"><option value="mp4">MP4 (پیش‌فرض)</option><option value="webm">WebM</option><option value="gif">GIF متحرک (بی‌صدا، تا ۶۴۰ پیکسل)</option></select></fieldset>
 <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Resolution">کیفیت</legend><select id="vxRes" class="select select-sm w-full" onchange="vxProbe()"><option value="1080p">1080p</option><option value="2k">2K (پیش‌فرض)</option><option value="4k">4K</option></select></fieldset><fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Frame rate">نرخِ فریم</legend><select id="vxFps" class="select select-sm w-full" onchange="vxProbe()"><option value="30">۳۰ فریم در ثانیه (پیش‌فرض)</option><option value="60">۶۰ فریم در ثانیه</option></select></fieldset><fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Audio">صدا</legend><select id="vxMusic" class="select select-sm w-full"><option value="music">با موسیقی (پیش‌فرض)</option><option value="voice">فقط گفتار</option></select></fieldset><p id="vxInfo" class="text-xs text-base-content/70" dir="auto"></p><div id="vxProgRow" class="hidden"><progress id="vxProg" class="progress progress-primary w-full" value="0" max="100"></progress></div>
 <div class="flex justify-end gap-2"><button class="btn btn-sm border-base-content/15 bg-base-100" onclick="if (vExp) vExp.cancel = true; else $('vexpDlg').close()" data-en="Cancel">لغو</button><button id="vxGo" class="btn btn-primary btn-sm" onclick="exportVideo()" data-en="Export">ساختن</button></div></div>
 <form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
@@ -450,7 +454,8 @@ body.mode-video .audio-only{display:none!important}body.mode-audio .video-only{d
 <div class="modal-action"><button class="btn" onclick="askDone(null)" data-en="Cancel">لغو</button><button class="btn btn-primary" onclick="askDone($('askInput').value)" data-en="Insert">درج</button></div></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
 <ul id="objBar" class="menu menu-horizontal menu-sm fixed z-[1000] hidden gap-0.5 rounded-box border border-base-300 bg-base-200 p-1 shadow-xl">
             <li><a onclick="openAnim()" class="gap-1"><svg class="size-4"><use href="#i-wand-sparkles"/></svg><span class="ui" data-en="Animation">انیمیشن</span></a></li>
-            <li><a onclick="vDuplicate()" class="tooltip" data-tip="تکثیر"><svg class="size-4"><use href="#i-copy"/></svg></a></li>
+            <li><a onclick="vSplit()" class="tooltip" data-tip="برش در جای پلی‌هد"><svg class="size-4"><use href="#i-scissors"/></svg></a></li>
+          <li><a onclick="vDuplicate()" class="tooltip" data-tip="تکثیر"><svg class="size-4"><use href="#i-copy"/></svg></a></li>
             <li><a onclick="vForward()" class="tooltip" data-tip="آوردن به جلو"><svg class="size-4"><use href="#i-bring-to-front"/></svg></a></li>
             <li><a onclick="vDelete()" class="tooltip" data-tip="حذف"><svg class="size-4"><use href="#i-trash-2"/></svg></a></li>
           </ul>
