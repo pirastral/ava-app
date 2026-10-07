@@ -24,15 +24,16 @@ function spkVoice(id){
 // what is actually sent: the line without a KNOWN speaker's name (a line tone {…} stays); shift maps word offsets back
 
 const spoken = id => spokenInfo(id).s;
-const shiftWords = (W, off) => W ? W.map(w => ({ ...w, c0: w.c0 + off, c1: w.c1 + off })).filter(w => w.c1 > 0) : null;   // words inside the unsent tone prefix are dropped
+const shiftWords = (W, off, cuts) => W ? W.map(w => { const add = p => (cuts || []).reduce((acc, [cp, ln]) => acc + (cp <= p ? ln : 0), 0); return { ...w, c0: w.c0 + off + add(w.c0), c1: w.c1 + off + add(Math.max(w.c0, w.c1 - 1)) }; }).filter(w => w.c1 > 0) : null;
+const shiftWordsFor = (W, id) => { const si = spokenInfo(id); return shiftWords(W, si.shift, si.cuts); };   // words inside the unsent tone prefix are dropped
 
 
 function spkEngine(sp){ return sp.engine || S.proj.engine; }
 function spkVoiceOptions(sp){
   const e = spkEngine(sp);
   if (e === 'google') return voiceOptions(sp.gVoice || '', false).replace('<optgroup', `<option value="" ${sp.gVoice ? '' : 'selected'}>${T('— صدای پروژه —', "— project's voice —")}</option><optgroup`);
-  if (e === 'fish') return `<option value="">${T('— صدای پروژه —', "— project's voice —")}</option>` + [...$('fishVoice').options].map(o => `<option value="${escapeHtml(o.value)}" ${o.value === sp.fishVoice ? 'selected' : ''}>${escapeHtml(o.text)}</option>`).join('');
-  if (e === 'chatterbox') return `<option value="">${T('— صدای پروژه —', "— project's voice —")}</option>` + [...$('cbxVoice').options].map(o => `<option value="${escapeHtml(o.value)}" ${o.value === sp.cbxVoice ? 'selected' : ''}>${escapeHtml(o.text)}</option>`).join('');
+  if (e === 'fish') return `<option value="">${T('— صدای پروژه —', "— project's voice —")}</option>` + fishOptions(sp.fishVoice || '');   // 169: the groups survive (copying .options flattened them)
+  if (e === 'chatterbox') return `<option value="">${T('— صدای پروژه —', "— project's voice —")}</option><option value="default" ${sp.cbxVoice === 'default' ? 'selected' : ''}>${T('پیش‌فرض', 'Default')}</option>` + cbxGroups(CBX_VOICES, sp.cbxVoice, false);
   return null;                                                                                        // a light voice IS its engine
 }
 const SPK_VKEY = { google: 'gVoice', fish: 'fishVoice', chatterbox: 'cbxVoice' };
@@ -84,8 +85,11 @@ const spkColor = k => SPK_COLORS[((k % SPK_COLORS.length) + SPK_COLORS.length) %
 const initials = n => { const w = String(n || '').trim().split(/\s+/).filter(Boolean); return (w.length > 1 ? w[0][0] + w[1][0] : (w[0] || '?').slice(0, 2)).toUpperCase(); };
 function speakerOfLine(id){ const L = S.lines[id]; return (L && L.spk && spkList().find(s => s.id === L.spk)) || null; }
 // what is sent: the line tone first (3.8 reads it), then the text; shift maps word offsets back onto the editor text
+const OVL_RE = /\|([^|\n]{1,60})\|/g;
 function spokenInfo(id){ const L = S.lines[id] || {}, t = L.text || '', pre = L.tone ? `{${L.tone}} ` : '', body = t.trim();
-  return { s: pre + body, shift: (t.length - t.trimStart().length) - pre.length }; }
+  // 169: overlaps |…| are NOT read by the line's voice — each is voiced by its own speaker and laid over the line
+  const cuts = []; let s = '', last = 0; body.replace(new RegExp(OVL_RE.source, 'g'), (m, inner, off) => { s += body.slice(last, off); cuts.push([pre.length + s.length, m.length]); last = off + m.length; return m; }); s += body.slice(last);
+  return { s: pre + s, shift: (t.length - t.trimStart().length) - pre.length, cuts }; }
 // old documents and pasted scripts: a leading {tone} becomes the tone; a leading «Name:» of a known speaker becomes the speaker
 function normLine(L){
   if (!L || typeof L.text !== 'string') return; let t = L.text, m;
@@ -143,7 +147,9 @@ function toneChip(id){ const L = S.lines[id]; return L && L.tone ? `<button clas
 function pills(html){
   return html.split(/(<[^>]+>)/).map(part => part.startsWith('<') ? part : part
     .replace(/&lt;([^&]{1,40}?)&gt;/g, '<span class="tagpill"><span class="tp-x">&lt;</span>$1<span class="tp-x">&gt;</span></span>')
-    .replace(/\|([^|]{1,60}?)\|/g, '<span class="tagpill pipe"><span class="tp-x">|</span>$1<span class="tp-x">|</span></span>')
+    .replace(/\|([^|]{1,60}?)\|/g, (m, inner) => { const mm = /^\s*([^:：|]{1,30})[:：]\s*/.exec(inner), s0 = mm && spkByName(mm[1]), k = s0 ? spkList().indexOf(s0) : -1;   // 169
+      const av = `<span class="ovav" contenteditable="false"${k >= 0 ? ` style="${spkBg(k)}"` : ''}>${k >= 0 && s0.photo ? `<img src="${s0.photo}" alt="">` : (k >= 0 ? '' : '<svg><use href="#i-user"/></svg>')}</span>`;
+      return `<span class="tagpill pipe"><span class="tp-x">|</span>${av}${mm && s0 ? `<span class="tp-x">${mm[0]}</span>${inner.slice(mm[0].length)}` : inner}<span class="tp-x">|</span></span>`; })
     .replace(/(^|\s)\/([^/\s][^/]{0,60}?)\//g, '$1<span class="tagpill ipa"><span class="tp-x">/</span>$2<span class="tp-x">/</span></span>')).join('');
 }
 function placeMenu(m, b, w){ const r = b.getBoundingClientRect(); m.style.width = Math.min(w, innerWidth - 16) + 'px'; m.style.maxHeight = Math.min(380, Math.max(160, Math.max(innerHeight - r.bottom, r.top) - 16)) + 'px';
@@ -171,3 +177,31 @@ function pasteParts(parts){
   if (distinct.length >= 2 || Object.values(counts).some(c => c >= 2)) distinct.forEach(n => { if (!spkByName(n)) spkList().push(SPK0(n)); });
   let last; return parts.map(p => { const L = { text: p, dirty: false, voice: null }; normLine(L); if (L.spk) last = L.spk; else if (last) L.spk = last; return L; });
 }
+
+// =====================================================================================
+// 169 · OVERLAPS |…| — a reaction voiced by its OWN speaker and laid over the line at the point where it sits
+//       (the line's voice never reads it and never pauses). «|مریم: آره|» names the speaker; «|آره|» is the first OTHER speaker.
+// =====================================================================================
+function ovlList(id){ const t = (S.lines[id] || {}).text || '', out = [], re = new RegExp(OVL_RE.source, 'g'); let m;
+  while ((m = re.exec(t))){ const mm = /^\s*([^:：|]{1,30})[:：]\s*/.exec(m[1]), s0 = mm && spkByName(mm[1]); out.push({ pos: m.index, text: (s0 ? m[1].slice(mm[0].length) : m[1]).trim(), spk: s0 || null }); }
+  return out; }
+function ovlSpeaker(id, o){ if (o.spk) return o.spk; const own = speakerOfLine(id); return spkList().find(x => x !== own) || null; }
+function spkVoiceOf(x){ const v = {}; if (!x) return v; if (x.engine) v.engine = x.engine; ['gVoice', 'gPreset', 'gState', 'fishVoice', 'cbxVoice'].forEach(k => { if (x[k]) v[k] = x[k]; }); return v; }
+const ovlVoice = (id, o) => ({ engine: S.proj.engine, gVoice: S.proj.g_voice, gPreset: S.proj.g_preset, gState: S.proj.g_state, ...spkVoiceOf(ovlSpeaker(id, o)) });
+const ovlKey = (id, o) => { const x = ovlSpeaker(id, o); return JSON.stringify([o.text, x ? x.id : '', spkVoiceOf(x)]); };   // the speaker's OWN settings only — project defaults never mark a line
+function ovlSig(id){ return ovlList(id).map(o => ovlKey(id, o)).join('|'); }
+function ovlMissing(id){ const L = S.lines[id] || {}; return ovlList(id).some(o => o.text && !AUD.get((L.ovlA || {})[ovlKey(id, o)])); }
+async function voiceOverlays(ids){
+  for (const id of ids){ const L = S.lines[id]; if (!L) continue; const keep = {};
+    for (const o of ovlList(id)){ if (!o.text) continue; const key = ovlKey(id, o); let g = (L.ovlA || {})[key];
+      if (g === undefined || !AUD.get(g)){ const r = await API().generate_gulp(payloadFor(ovlVoice(id, o), o.text)); if (!r.ok) throw new Error(r.error || T('خطای ناشناخته', 'Unknown error')); await storeAudio(r.gulp, r.b64); g = r.gulp; }
+      keep[key] = g; }
+    L.ovlA = keep; } }
+function charTime(c, text, pos){ const W = clipWords(c, text);
+  if (W && W.length){ for (const w of W){ if (pos <= w.c0) return w.t0; if (pos < w.c1) return w.t0 + (w.t1 - w.t0) * (pos - w.c0) / Math.max(1, w.c1 - w.c0); } return W[W.length - 1].t1; }
+  const [v0, v1] = voicedSpan(c), w = Array.from(text, letterW), tot = w.reduce((s, x) => s + x, 0) || 1, part = w.slice(0, pos).reduce((s, x) => s + x, 0); return v0 + (v1 - v0) * part / tot; }
+function clipOverlays(c){ if (!c || c.unvoiced || !c.lines || c.lines.length !== 1) return []; const id = c.lines[0], L = S.lines[id]; if (!L || !L.ovlA) return [];
+  const out = []; ovlList(id).forEach(o => { const g = L.ovlA[ovlKey(id, o)], a = g !== undefined && AUD.get(g); if (!a || !a.buf) return;
+    const tt = charTime(c, L.text || '', o.pos); if (tt < c.in - 0.01 || tt > c.out + 0.01) return;   // trimmed out of the clip → not heard
+    out.push({ gulp: g, at: c.at + Math.max(0, tt - c.in), len: a.buf.duration }); });
+  return out; }

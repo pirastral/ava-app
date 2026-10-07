@@ -45,6 +45,7 @@ if getattr(sys, "frozen", False):
     sys.stdout = sys.stderr = _logfile
     faulthandler.enable(_logfile)
 
+import subprocess
 import webview
 
 
@@ -86,6 +87,27 @@ def _tr_en(msg):
 def _downloads_dir() -> str:
     d = Path.home() / "Downloads"
     return str(d if d.is_dir() else Path.home())
+
+
+
+def _FD(name):
+    """169: pywebview's current dialog names (FileDialog.OPEN…), the old constants on older versions."""
+    fd = getattr(webview, "FileDialog", None)
+    return getattr(fd, name) if fd is not None and hasattr(fd, name) else getattr(webview, name + "_DIALOG")
+
+
+_OUTBOX = {}
+
+
+def _big(data):
+    """169: large results (a whole music track) cross the bridge in pieces — one multi-megabyte
+    string stalled the window ('downloading music…' forever although the download had finished)."""
+    if len(data) <= 512 * 1024:
+        return {"b64": base64.b64encode(data).decode("ascii")}
+    import uuid
+    tok = uuid.uuid4().hex
+    _OUTBOX[tok] = data
+    return {"blob": tok, "size": len(data)}
 
 
 class Api:
@@ -213,7 +235,7 @@ class Api:
             engines._job_start()
             pcm, sr = engines.lyria_music(preset, custom, float(seconds), self._status)
             mp3 = engines.pcm_to_mp3(pcm, sr)
-            return {"ok": True, "b64": base64.b64encode(mp3).decode("ascii"), "seconds": round(len(pcm) / sr, 1)}
+            return {"ok": True, **_big(mp3), "seconds": round(len(pcm) / sr, 1)}
         except Exception as e:
             if type(e).__name__ != "Cancelled":
                 traceback.print_exc()
@@ -242,7 +264,7 @@ class Api:
         try:
             import engines
             result = self._window.create_file_dialog(
-                webview.OPEN_DIALOG, directory=_downloads_dir(), allow_multiple=False,
+                _FD('OPEN'), directory=_downloads_dir(), allow_multiple=False,
                 file_types=("Audio (*.wav;*.mp3;*.ogg;*.flac;*.m4a;*.aac)",))
             if not result:
                 return {"ok": False, "error": "cancelled"}
@@ -301,7 +323,7 @@ class Api:
         try:
             import engines
             pcm, sr = engines.music_load(file)
-            return {"ok": True, "b64": base64.b64encode(engines.pcm_to_mp3(pcm, sr)).decode("ascii"), "seconds": round(len(pcm) / sr, 1)}
+            return {"ok": True, **_big(engines.pcm_to_mp3(pcm, sr)), "seconds": round(len(pcm) / sr, 1)}
         except Exception as e:
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
@@ -323,12 +345,29 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
+    def blob_read(self, tok, offset=0, size=786432):
+        """169: a piece of a large result (sizes are multiples of 3, so the base64 pieces join)."""
+        data = _OUTBOX.get(tok)
+        if data is None:
+            return {"ok": False, "error": "gone"}
+        chunk = data[int(offset):int(offset) + int(size)]
+        if int(offset) + int(size) >= len(data):
+            _OUTBOX.pop(tok, None)
+        return {"ok": True, "b64": base64.b64encode(chunk).decode("ascii")}
+
+    def gulp_info(self, gid):
+        try:
+            import engines
+            return {"ok": True, "engine": engines.gulp_engine(gid)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     def music_fetch(self, provider, item):
         try:
             import engines
             engines._job_start()
             pcm, sr, entry = engines.music_fetch(provider, item, self._status)
-            return {"ok": True, "b64": base64.b64encode(engines.pcm_to_mp3(pcm, sr)).decode("ascii"),
+            return {"ok": True, **_big(engines.pcm_to_mp3(pcm, sr)),
                     "seconds": round(len(pcm) / sr, 1), "entry": entry, "credit": engines.music_credit(entry)}
         except Exception as e:
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
@@ -337,13 +376,13 @@ class Api:
         try:
             import engines
             result = self._window.create_file_dialog(
-                webview.OPEN_DIALOG, directory=_downloads_dir(), allow_multiple=False,
+                _FD('OPEN'), directory=_downloads_dir(), allow_multiple=False,
                 file_types=("Audio (*.wav;*.mp3;*.ogg;*.flac;*.m4a)",))
             if not result:
                 return {"ok": False, "error": "cancelled"}
             path = result if isinstance(result, str) else result[0]
             pcm, sr, entry = engines.music_import(path, self._status)
-            return {"ok": True, "b64": base64.b64encode(engines.pcm_to_mp3(pcm, sr)).decode("ascii"),
+            return {"ok": True, **_big(engines.pcm_to_mp3(pcm, sr)),
                     "seconds": round(len(pcm) / sr, 1), "entry": entry}
         except Exception as e:
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
@@ -405,7 +444,7 @@ class Api:
         try:
             import engines
             result = self._window.create_file_dialog(
-                webview.OPEN_DIALOG, directory=_downloads_dir(), allow_multiple=False,
+                _FD('OPEN'), directory=_downloads_dir(), allow_multiple=False,
                 file_types=("Audio (*.wav;*.mp3;*.m4a;*.flac)",))
             if not result:
                 return {"ok": False, "error": "cancelled"}
@@ -469,7 +508,7 @@ class Api:
         """Ask where to save the MP4, then accept it in chunks (big files never cross in one piece)."""
         try:
             import engines
-            res = self._window.create_file_dialog(webview.SAVE_DIALOG, directory=_downloads_dir(), save_filename=suggested)
+            res = self._window.create_file_dialog(_FD('SAVE'), directory=_downloads_dir(), save_filename=suggested)
             if not res:
                 return {"ok": False, "error": "cancelled"}
             path = res if isinstance(res, str) else res[0]
@@ -517,7 +556,7 @@ class Api:
         """Build the bundled previews into a folder the founder picks (then commit it as ui/previews)."""
         try:
             import engines
-            res = self._window.create_file_dialog(webview.FOLDER_DIALOG, directory=_downloads_dir())
+            res = self._window.create_file_dialog(_FD('FOLDER'), directory=_downloads_dir())
             if not res:
                 return {"ok": False, "error": "cancelled"}
             folder = res if isinstance(res, str) else res[0]
@@ -530,7 +569,7 @@ class Api:
         try:
             import engines
             data = engines.project_pack(doc or {})
-            res = self._window.create_file_dialog(webview.SAVE_DIALOG, directory=_downloads_dir(), save_filename="project.ava")
+            res = self._window.create_file_dialog(_FD('SAVE'), directory=_downloads_dir(), save_filename="project.ava")
             if not res:
                 return {"ok": False, "error": "cancelled"}
             path = res if isinstance(res, str) else res[0]
@@ -545,7 +584,7 @@ class Api:
         """160: reopen a .ava project exactly as it was saved."""
         try:
             import engines
-            res = self._window.create_file_dialog(webview.OPEN_DIALOG, directory=_downloads_dir(), allow_multiple=False,
+            res = self._window.create_file_dialog(_FD('OPEN'), directory=_downloads_dir(), allow_multiple=False,
                                                   file_types=("Avaye Javid Shah project (*.ava)",))
             if not res:
                 return {"ok": False, "error": "cancelled"}
@@ -614,7 +653,7 @@ class Api:
         """Pick a reference or consent recording from disk."""
         try:
             result = self._window.create_file_dialog(
-                webview.OPEN_DIALOG, directory=_downloads_dir(), allow_multiple=False,
+                _FD('OPEN'), directory=_downloads_dir(), allow_multiple=False,
                 file_types=("Audio (*.wav;*.mp3;*.ogg;*.flac;*.m4a;*.webm)",))
             if not result:
                 return {"ok": False, "error": "cancelled"}
@@ -728,7 +767,7 @@ class Api:
         try:
             name = "ava-" + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "." + ext
             result = self._window.create_file_dialog(
-                webview.SAVE_DIALOG, directory=_downloads_dir(), save_filename=name)
+                _FD('SAVE'), directory=_downloads_dir(), save_filename=name)
             if not result:
                 return {"ok": False, "error": "cancelled"}
             path = result if isinstance(result, str) else result[0]
@@ -774,7 +813,7 @@ class Api:
         try:
             import engines
             result = self._window.create_file_dialog(
-                webview.OPEN_DIALOG, directory=_downloads_dir(), allow_multiple=False,
+                _FD('OPEN'), directory=_downloads_dir(), allow_multiple=False,
                 file_types=("Audio (*.wav;*.mp3;*.m4a;*.flac;*.ogg;*.aac)",))
             if not result:
                 return {"ok": False, "error": "cancelled"}
@@ -817,11 +856,44 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
+    def timeline_export(self, spec, music=None, suffix=""):
+        """169: render the composition and save it in one step — the finished file never crosses the bridge."""
+        try:
+            import engines
+            engines._job_start()
+            files = engines.timeline_files(spec, music, self._status)
+            data = files.get("music") if (music and files.get("music")) else files["clean"]
+            name = "ava-" + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + (("-" + suffix) if suffix else "") + ".mp3"
+            result = self._window.create_file_dialog(_FD('SAVE'), directory=_downloads_dir(), save_filename=name)
+            if not result:
+                return {"ok": False, "error": "cancelled"}
+            path = result if isinstance(result, str) else result[0]
+            Path(path).write_bytes(data)
+            return {"ok": True, "path": str(path), "seconds": files.get("seconds")}
+        except Exception as e:
+            if type(e).__name__ != "Cancelled":
+                traceback.print_exc()
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def open_log_folder(self):
+        """169: reveal ava.log in the user's AvaModels folder — resolved from the home folder at run time, never a fixed path."""
+        try:
+            log = _logdir / "ava.log"
+            if sys.platform == "darwin":
+                subprocess.Popen(["open", "-R", str(log)] if log.exists() else ["open", str(_logdir)])
+            elif sys.platform.startswith("win"):
+                subprocess.Popen(["explorer", "/select," + str(log)] if log.exists() else ["explorer", str(_logdir)])
+            else:
+                subprocess.Popen(["xdg-open", str(_logdir)])
+            return {"ok": True, "path": str(_logdir)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     def save_mp3(self, b64, suffix=""):
         try:
             name = "ava-" + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + (("-" + suffix) if suffix else "") + ".mp3"
             result = self._window.create_file_dialog(
-                webview.SAVE_DIALOG, directory=_downloads_dir(), save_filename=name)
+                _FD('SAVE'), directory=_downloads_dir(), save_filename=name)
             if not result:
                 return {"ok": False, "error": "cancelled"}
             path = result if isinstance(result, str) else result[0]

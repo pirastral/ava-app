@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist
 ======================================================================
-This zip is the COMPLETE application source as of update 168.
+This zip is the COMPLETE application source as of update 169.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -19,6 +19,62 @@ Replace these files in the repo (paths identical):
   voices/           – NOW POPULATED (107): 63 clips + voices.json
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+
+WHAT CHANGED IN 169 (on top of 168) — the founder's review of 168 + the log
+  · EXPORT: «ترکیبِ کامل» is the main export — every unmuted track at its volume, the music clips when there are
+    any, muted tracks silent; nothing is required (the old first item forced music on and the engine stopped
+    with «موسیقی‌ای انتخاب نشده»). Rendered and saved in one step on the engine side (timeline_export): the
+    finished file never crosses the bridge.
+  · WORD TIMINGS (the spine): every timing request answered 400 «Thinking is not enabled for this model» —
+    gemini-3.5-transcribe does not take the Api-Revision header. Sent in Google's documented form, BCP-47 codes
+    (fa-IR), one retry in the other form (google_words_form logs which). The engine's own estimate (used when
+    the transcription is unavailable) now lives in the VOICED part of the span, not its silences. The window
+    keeps the spine's timings for an edited word while the count matches, and estimates over the voiced part of
+    the clip when it must estimate. Nothing in playback calls the API.
+  · CHATTERBOX: re-voicing a line whose engine changed is a FRESH take with the line's engine — the old patch
+    code fell back to the part's engine (Google) for any engine that is not Google/Fish; the engine guards it too
+    (patch mode=engine_switch). Clips remember their engine (c.eng); gulp_info reports it. The old nesting is back
+    in every voice menu: «پیش‌فرض», a group per voice holding its styles, «نمونه‌های من» (the speaker menus
+    copied .options and lost the groups; the group prefix «نمونه:» is Fish's only, as in the old editor).
+  · «این خط»: the line's speaker first, then the fields of the line's OWN engine (Google voice/style/mood; Fish
+    voice/style; Chatterbox voice + speed/expressiveness/faithfulness/variety; light voices' sliders), each
+    starting from the speaker (or the project) with a reset; a change is for THIS line only and reaches the
+    engine (payloadFor takes line overrides for sliders and the Fish style).
+  · «تغییر کرده» = the LINE changed since it was voiced (text, speaker, its own or its speaker's voice settings,
+    its overlaps): a fingerprint at voicing, recomputed when the script is drawn — changing back clears it;
+    project defaults (engine, voice, style, sliders, duo, Fish options) never mark lines. Re-voice works on any
+    selection (it silently did nothing for more than one line); «بازتولیدِ این خط‌ها» when several are selected.
+  · OVERLAPS |…|: voiced by their OWN speaker (|مریم: آره|; a bare |آره| is the first OTHER speaker) and laid over
+    the line at the point where they sit (word timings), in playback and export; the line's voice never reads or
+    pauses for them (they were passed to Gemini's native backchannels, which spoke them in turn with its own
+    voices). A dialog with a speaker picker and ready-made reactions; the tag shows the speaker's avatar (no
+    name) and appears at once; the paste splitter treats |…| as opaque; an overlap-only change keeps the main take.
+  · JAMENDO: the download succeeded (167.7 s in the log) but the whole track came back as one multi-megabyte
+    string and the window stalled. Large results now cross in 786,432-byte pieces (blob_read; music_load/fetch/
+    import/generate), joined on the window side.
+  · SNAPPING: music drags and every trimmed edge snap to every edge on every track, 0 and the playhead.
+  · PLAYHEAD: the ruler is a sticky row INSIDE the scrolling timeline — head, stem and line share one coordinate
+    system (they separated at the end and on a seek during playback); the ruler is as long as the lanes; the total
+    and playback cover the music (it stopped at the speech's end: «/ 00:25.8» under 50 s of music).
+  · SELECTION: one at a time — a music clip (or a video object) deselects lines and clips and shows only its
+    panel; selecting a line brings the line panel back; Esc clears the music selection.
+  · Track header: volume-2 for volume, volume-x for mute (it had sliders/speaker); the highlight follows the
+    value live. The ▶ in menus keeps its 24 px (the menu row's padding pushed it off its circle). Key links back:
+    Google AI Studio (keys dialog), Fish Audio (key field). «trackGain» declared.
+  · CAPTIONS: cues carry the spine's words (real times), phrases chunk by them (words per caption); twelve
+    current styles (minimal, bar, card, bold highlight, karaoke fill, pill, word pop, bounce, neon, gradient,
+    typewriter, cinematic) over a renderer that lays words out one by one: colour/fill/pill/scale on the spoken
+    word, per-word pops, box/bar/card/capsule backgrounds, shadow, glow, gradient, a band; the box hugs the text.
+  · STICKERS: no background by default; shapes (circle, rounded square, pill, star, blob); the emoji is drawn
+    through a ≤128 px bitmap and scaled (colour-emoji fonts have a size ceiling — a big glyph drew nothing, which
+    is why the sticker vanished when the circle was turned off).
+  · pywebview's current dialog names (FileDialog.*) with a fallback.
+  · VOICE SAMPLES: 74 bundled (ui/previews) — every voice of gemini-3.8-flash-tts and gemini-3.8-flash-lite-tts, the
+    3 light voices, Chatterbox and Fish defaults, and 9 of the 30 gemini-3.1-flash-tts-preview voices; the 21 missing
+    3.1-preview samples are made by «ساختنِ همهٔ نمونه‌صداها…» when keys are available (only the missing ones).
+  · «اتصال و سهمیه» has «بازکردنِ پوشهٔ گزارش»: reveals AvaModels/ava.log under the user's home folder, resolved at
+    run time (open -R on macOS; Explorer / xdg-open elsewhere) — no fixed path.
+  Tests: t14 (21 checks) + every suite (t4–t13, t1f/t2r/t3r, 4 checks updated to the new behaviour) + engine 146–160.
 
 WHAT CHANGED IN 168 (on top of 167)
   · THE SIGNED-OFF PALETTE IS THE APP'S THEME (build-editor.py now reads input12p.css: both themes + the badge tuning).
@@ -1621,6 +1677,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۶۸»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۶۹»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

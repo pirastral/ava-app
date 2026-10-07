@@ -16,7 +16,7 @@ const TEXT0 = () => ({ type: 'text', text: T('عنوانِ قسمت', 'Episode t
 const MEDIA0 = (type, asset, aw, ah) => { const r = aw && ah ? aw / ah : 16 / 9, w = 0.28, h = w * outSize()[0] / outSize()[1] / r;
   return { type, asset, x: 0.68, y: 0.06, w, h: Math.min(0.5, h), rot: 0, fit: 'cover', radius: 0.02, opacity: 1, mute: true, volume: 1, loop: true, trimIn: 0, anim: {},
     stroke: { on: false, color: '#ffffff', style: 'solid', width: 0.004, opacity: 1 }, shadow: { on: true, color: '#000000', opacity: 0.45, angle: 90, distance: 0.008, blur: 0.02, spread: 0 }, start: 0, end: null }; };
-const STICKER0 = () => { const [W, H] = outSize(); return { type: 'sticker', emoji: '👑', x: 0.84, y: 0.08, w: 0.09, h: 0.09 * W / H, rot: 6, bg: { on: true, color: '#e6a483' }, start: 0, end: null, opacity: 1, anim: { loop: 'breathe', speed: 5 } }; };
+const STICKER0 = () => { const [W, H] = outSize(); return { type: 'sticker', emoji: '👑', x: 0.84, y: 0.08, w: 0.09, h: 0.09 * W / H, rot: 6, bg: { on: false, shape: 'circle', color: '#e6a483' }, start: 0, end: null, opacity: 1, anim: { loop: 'breathe', speed: 5 } }; };   // 169: no background by default
 const V0 = () => ({ ratio: '16:9', res: '2k', fps: 30, bg: '#0c1230', pod: POD0(), subs: SUBS0(),
   objects: [{ id: 'pod', type: 'pod', x: 0.06, y: 0.26, w: 0.88, h: 0.52, rot: 0, start: 0, end: null, opacity: 1 }, { id: 'title', ...TEXT0() }] });
 let V = V0();
@@ -140,9 +140,23 @@ function drawText(ctx, o, W, H){
     ctx.fillStyle = o.color || '#fff'; ctx.textBaseline = 'middle'; ctx.textAlign = o.align === 'center' ? 'center' : (o.align === 'right' ? 'right' : 'left');
     const ax = o.align === 'center' ? 0 : (o.align === 'right' ? w / 2 : -w / 2); lines.forEach((l, i) => ctx.fillText(l, ax, by + lh * (i + 0.5))); });
 }
+const EMOJI_CACHE = new Map();
+function emojiSprite(emoji, px){   // 169: colour-emoji fonts are bitmap fonts with a size ceiling — draw at ≤128 px and scale (a big glyph drew NOTHING)
+  const base = Math.min(128, Math.max(16, Math.round(px))), key = emoji + '@' + base; let cv = EMOJI_CACHE.get(key);
+  if (!cv){ cv = document.createElement('canvas'); cv.width = cv.height = base * 2; const g = cv.getContext('2d'); g.font = `${base}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(emoji, base, base * 1.06); EMOJI_CACHE.set(key, cv); }
+  return cv; }
+function stickerShape(ctx, shape, r){
+  ctx.beginPath();
+  if (shape === 'square'){ rrect(ctx, -r, -r, 2 * r, 2 * r, r * 0.3); }
+  else if (shape === 'pill'){ rrect(ctx, -r, -r * 0.6, 2 * r, r * 1.2, r * 0.6); }
+  else if (shape === 'star'){ for (let i = 0; i < 24; i++){ const a = i * Math.PI / 12, rr = i % 2 ? r * 0.82 : r; ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a) * rr, Math.sin(a) * rr); } ctx.closePath(); }
+  else if (shape === 'blob'){ for (let i = 0; i <= 48; i++){ const a = i / 48 * Math.PI * 2, rr = r * (0.92 + 0.08 * Math.sin(a * 3 + 0.6) + 0.05 * Math.cos(a * 5)); ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a) * rr, Math.sin(a) * rr); } ctx.closePath(); }
+  else ctx.arc(0, 0, r, 0, Math.PI * 2);
+}
 function drawSticker(ctx, o, W, H){
-  withXform(ctx, o, W, H, (x, y, w, h) => { const r = Math.min(w, h) / 2; if (o.bg && o.bg.on){ ctx.fillStyle = o.bg.color; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill(); }
-    ctx.font = `${Math.round(r * (o.bg && o.bg.on ? 1.05 : 1.6))}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(o.emoji || '👑', 0, r * 0.06); });
+  withXform(ctx, o, W, H, (x, y, w, h) => { const r = Math.min(w, h) / 2, on = !!(o.bg && o.bg.on);
+    if (on){ ctx.fillStyle = o.bg.color || '#e6a483'; stickerShape(ctx, o.bg.shape || 'circle', r); ctx.fill(); }
+    const px = r * (on ? 1.15 : 1.7), sp = emojiSprite(o.emoji || '👑', px); ctx.drawImage(sp, -px, -px, px * 2, px * 2); });
 }
 function drawMedia(ctx, o, W, H, el){
   if (!el) return; const iw = el.videoWidth || el.naturalWidth, ih = el.videoHeight || el.naturalHeight; if (!iw || !ih) return;
@@ -154,9 +168,20 @@ function drawMedia(ctx, o, W, H, el){
       ctx.setLineDash(st.style === 'dashed' ? [lw * 3, lw * 2] : st.style === 'dotted' ? [lw * 0.1, lw * 1.8] : []); ctx.lineCap = st.style === 'dotted' ? 'round' : 'butt'; rrect(ctx, x, y, w, h, r); ctx.stroke(); ctx.restore(); } });
 }
 function cleanCue(text){ return (text || '').replace(SPK_RE, '').replace(/<[^>]*>|\|[^|]*\||\{[^{}]*\}|\[[^\[\]]*\]|\/[^/\s][^/]*\//g, ' ').replace(/\s+/g, ' ').trim(); }
+const SUB_TAG_TOKEN = /^(<[^>]*>|\|[^|]*\||\{[^{}]*\}|\[[^\[\]]*\])$/;
+function cueSpine(c, id){   // 169: the words of a line with their REAL times (the spine paid for at generation), in timeline seconds
+  const L = S.lines[id]; if (!L) return null; const W = typeof clipWords === 'function' ? clipWords(c, L.text || '') : null; if (!W) return null;
+  const toks = cleanCue(L.text).split(/\s+/).filter(Boolean), ws = W.filter(w => !SUB_TAG_TOKEN.test(w.w) && !/^[^:：]{1,30}[:：]$/.test(w.w));
+  if (ws.length !== toks.length) return null;
+  return toks.map((w, i) => ({ w, t0: c.at + Math.max(0, ws[i].t0 - c.in), t1: c.at + Math.max(0, ws[i].t1 - c.in) })); }
+function cueChunks(q){ const n = +(V.subs.chunk || 0); if (!n) return [q]; const ws = cueWords(q); if (ws.length <= n) return [{ ...q, words: ws }]; const out = [];
+  for (let i = 0; i < ws.length; i += n){ const part = ws.slice(i, i + n), at = part[0].t0, end = i + n >= ws.length ? q.at + q.dur : part[part.length - 1].t1;
+    out.push({ at, dur: Math.max(0.1, end - at), text: part.map(x => x.w).join(' '), words: part, spk: q.spk }); }
+  return out; }
 function cuesNow(){ if (!V.subs.follow && V.subs.cues.length) return V.subs.cues;
-  return scriptOrder().filter(c => !c.unvoiced).flatMap(c => c.lines.length === 1 ? [{ at: c.at, dur: dur(c), text: cleanCue(S.lines[c.lines[0]].text) }]
-    : c.lines.map((id, k) => ({ at: c.at + dur(c) * k / c.lines.length, dur: dur(c) / c.lines.length, text: cleanCue(S.lines[id].text) }))).filter(q => q.text); }
+  const base = scriptOrder().filter(c => !c.unvoiced).flatMap(c => c.lines.length === 1 ? [{ at: c.at, dur: dur(c), text: cleanCue(S.lines[c.lines[0]].text), words: cueSpine(c, c.lines[0]), spk: (S.lines[c.lines[0]] || {}).spk }]
+    : c.lines.map((id, k) => ({ at: c.at + dur(c) * k / c.lines.length, dur: dur(c) / c.lines.length, text: cleanCue(S.lines[id].text), spk: (S.lines[id] || {}).spk }))).filter(q => q.text);
+  return base.flatMap(cueChunks); }
 // 168: a speaker's photo is that speaker's avatar in the podcast (found by the speaker, not by position)
 const PHOTO_CACHE = new Map();
 function photoEl(url){ let im = PHOTO_CACHE.get(url); if (!im){ im = new Image(); im.decoding = 'async'; im.onload = () => { if (typeof VVER !== 'undefined') VVER++; }; im.src = url; PHOTO_CACHE.set(url, im); } return im; }
@@ -245,7 +270,8 @@ function hitTest(nx, ny){
     const rx = px * Math.cos(a) - py * Math.sin(a), ry = px * Math.sin(a) + py * Math.cos(a); if (Math.abs(rx) <= o.w * W / 2 && Math.abs(ry) <= o.h * H / 2) return o.id; }
   return null;
 }
-function selectV(id){ vSel = id; placeSelBox(); fillVInsp(); renderVTL(); }
+function selectV(id){ vSel = id; if (id && typeof sel !== 'undefined' && (sel.size || selClip)){ sel.clear(); selClip = null; paintSel(); }   // 169: a non-speech selection deselects everything else
+  placeSelBox(); fillVInsp(); renderVTL(); }
 function placeSelBox(){
   const sb = $('selbox'); if (!sb) return; const o = vSel && objById(vSel); if (!o || mode !== 'video'){ sb.classList.add('hidden'); return; }
   sb.classList.remove('hidden'); sb.style.left = o.x * frameW + 'px'; sb.style.top = o.y * frameH + 'px'; sb.style.width = o.w * frameW + 'px'; sb.style.height = o.h * frameH + 'px'; sb.style.transform = `rotate(${o.rot || 0}deg)`;
@@ -808,13 +834,19 @@ function editTextInPlace(){
   ed.focus(); document.getSelection().selectAllChildren(ed); ed.onblur = () => { remember(); o.text = ed.innerText.trim(); ed.classList.add('hidden'); vChanged(); };
 }
 // ---- subtitles: designs, animation, word highlight, speaker name — drawn by the same renderer as everything else
-const SUB_PRESETS = [
-  ['classic', 'کلاسیک', 'Classic', { font: 'Vazirmatn', weight: 700, sizePx: 46, color: '#ffffff', hi: '#f2b233', bgOn: true, bgOp: 0.55, outline: false, anim: 'fade' }],
-  ['bold', 'برجسته', 'Bold', { font: 'Vazirmatn', weight: 900, sizePx: 58, color: '#f2b233', hi: '#ffffff', bgOn: false, bgOp: 0, outline: true, anim: 'pop' }],
-  ['karaoke', 'کاراوکه', 'Karaoke', { font: 'Vazirmatn', weight: 900, sizePx: 52, color: '#ffffff', hi: '#e6a483', bgOn: false, bgOp: 0, outline: true, anim: 'word' }],
-  ['minimal', 'مینیمال', 'Minimal', { font: 'Vazirmatn', weight: 500, sizePx: 40, color: '#ffffff', hi: '#ffffff', bgOn: false, bgOp: 0, outline: true, anim: 'fade' }],
-  ['capsule', 'کپسولی', 'Capsule', { font: 'Vazirmatn', weight: 700, sizePx: 44, color: '#ffffff', hi: '#f2b233', bgOn: true, bgOp: 0.9, outline: false, anim: 'rise', capsule: true }],
-  ['typewriter', 'تایپی', 'Typewriter', { font: 'Vazirmatn', weight: 700, sizePx: 46, color: '#ffffff', hi: '#f2b233', bgOn: true, bgOp: 0.4, outline: false, anim: 'type' }]];
+const SUB_PRESETS = [   // 169: today's caption styles (word timing from the spine; nothing invented)
+  ['minimal', 'مینیمال', 'Minimal', { font: 'Vazirmatn', weight: 500, sizePx: 42, color: '#ffffff', hi: '#ffffff', bgOn: false, bgMode: 'box', bgOp: 0, outline: false, shadow: true, glow: false, gradient: false, band: false, anim: 'fade', hiMode: 'none', chunk: 0 }],
+  ['bar', 'نوار', 'Bar', { font: 'Vazirmatn', weight: 600, sizePx: 44, color: '#ffffff', hi: '#e9603b', bgOn: true, bgMode: 'bar', bgOp: 0.6, outline: false, shadow: false, glow: false, gradient: false, band: false, anim: 'fade', hiMode: 'color', chunk: 0 }],
+  ['card', 'کارت', 'Card', { font: 'Vazirmatn', weight: 700, sizePx: 44, color: '#161616', hi: '#e9603b', bgOn: true, bgMode: 'card', bgOp: 0.95, outline: false, shadow: true, glow: false, gradient: false, band: false, anim: 'rise', hiMode: 'color', chunk: 0 }],
+  ['bold', 'برجسته', 'Bold highlight', { font: 'Vazirmatn', weight: 900, sizePx: 62, color: '#ffffff', hi: '#ffd60a', bgOn: false, bgMode: 'box', bgOp: 0, outline: true, shadow: true, glow: false, gradient: false, band: false, anim: 'none', hiMode: 'color', chunk: 3 }],
+  ['karaoke', 'کاراوکه', 'Karaoke', { font: 'Vazirmatn', weight: 800, sizePx: 54, color: '#ffffff', hi: '#e9603b', bgOn: false, bgMode: 'box', bgOp: 0, outline: true, shadow: false, glow: false, gradient: false, band: false, anim: 'none', hiMode: 'fill', chunk: 4 }],
+  ['pill', 'پیل', 'Pill', { font: 'Vazirmatn', weight: 800, sizePx: 52, color: '#ffffff', hi: '#e9603b', bgOn: false, bgMode: 'box', bgOp: 0, outline: false, shadow: true, glow: false, gradient: false, band: false, anim: 'none', hiMode: 'pill', chunk: 3 }],
+  ['pop', 'پاپ', 'Word pop', { font: 'Vazirmatn', weight: 900, sizePx: 70, color: '#ffffff', hi: '#ffd60a', bgOn: false, bgMode: 'box', bgOp: 0, outline: true, shadow: false, glow: false, gradient: false, band: false, anim: 'popword', hiMode: 'color', chunk: 1 }],
+  ['bounce', 'پرش', 'Bounce', { font: 'Vazirmatn', weight: 900, sizePx: 58, color: '#ffffff', hi: '#e9603b', bgOn: false, bgMode: 'box', bgOp: 0, outline: true, shadow: true, glow: false, gradient: false, band: false, anim: 'popword', hiMode: 'scale', chunk: 2 }],
+  ['neon', 'نئون', 'Neon', { font: 'Vazirmatn', weight: 800, sizePx: 52, color: '#ffffff', hi: '#e9603b', bgOn: false, bgMode: 'box', bgOp: 0, outline: false, shadow: false, glow: true, gradient: false, band: false, anim: 'fade', hiMode: 'color', chunk: 0 }],
+  ['gradient', 'گرادیان', 'Gradient', { font: 'Vazirmatn', weight: 900, sizePx: 56, color: '#ffffff', hi: '#e9603b', bgOn: false, bgMode: 'box', bgOp: 0, outline: false, shadow: true, glow: false, gradient: true, band: false, anim: 'pop', hiMode: 'none', chunk: 0 }],
+  ['typewriter', 'تایپی', 'Typewriter', { font: 'Vazirmatn', weight: 700, sizePx: 46, color: '#ffffff', hi: '#e9603b', bgOn: true, bgMode: 'box', bgOp: 0.4, outline: false, shadow: false, glow: false, gradient: false, band: false, anim: 'type', hiMode: 'none', chunk: 0 }],
+  ['cinematic', 'سینمایی', 'Cinematic', { font: 'Vazirmatn', weight: 400, sizePx: 38, color: '#f5efe6', hi: '#f5efe6', bgOn: false, bgMode: 'box', bgOp: 0, outline: false, shadow: true, glow: false, gradient: false, band: true, anim: 'fade', hiMode: 'none', chunk: 0 }]];
 const SUB_COLORS = ['#ffffff', '#f2b233', '#e6a483', '#e9603b', '#000000'];
 function fillSub(){
   const s = V.subs, q = cuesNow()[V.subSel]; $('subTime').textContent = q ? `${fmt(q.at)} → ${fmt(q.at + q.dur)}` : '';
@@ -825,29 +857,59 @@ function fillSub(){
   font.onchange = () => subSet('font', font.value); wt.onchange = () => subSet('weight', +wt.value); an.onchange = () => subSet('anim', an.value); [font, wt, an].forEach(enh);
   bindRange($('subSize'), s.sizePx || 46, v => subSet('sizePx', v, true)); bindRange($('subBgOp'), Math.round((s.bgOp ?? 0.55) * 100), v => subSet('bgOp', v / 100, true));
   bindRadios('sp', ['top', 'middle', 'bottom'], s.place || 'bottom', v => subSet('place', v));
-  [['subBgOn', 'bgOn'], ['subOutline', 'outline'], ['subSpk', 'spk'], ['subFollow', 'follow']].forEach(([id, key]) => { const el = $(id); el.checked = !!s[key]; el.onchange = () => { subSet(key, el.checked); if (key === 'follow' && el.checked) resyncSubs(); }; });
+  [['subChunk', 'chunk', 0], ['subHiMode', 'hiMode', 'none'], ['subBgMode', 'bgMode', 'box']].forEach(([id, key, d]) => { const el = $(id); if (!el) return; el.value = String(s[key] ?? d); el.onchange = () => subSet(key, key === 'chunk' ? +el.value : el.value); enh(el); });   // 169
+  [['subBgOn', 'bgOn'], ['subOutline', 'outline'], ['subShadow', 'shadow'], ['subGlow', 'glow'], ['subSpk', 'spk'], ['subFollow', 'follow']].forEach(([id, key]) => { const el = $(id); el.checked = !!s[key]; el.onchange = () => { subSet(key, el.checked); if (key === 'follow' && el.checked) resyncSubs(); }; });
 }
 function subPreset(k){ const p = SUB_PRESETS.find(x => x[0] === k); if (!p) return; remember(); Object.assign(V.subs, p[3], { preset: k }); VVER++; fillSub(); vDraw(); autosave(); }
 function subSet(key, val, live){ if (!live) remember(); V.subs[key] = val; if (!live) V.subs.preset = V.subs.preset; vDraw(); autosave(); if (!live) fillSub(); }
-function cueWords(q){ const ws = q.text.split(/\s+/).filter(Boolean), tot = ws.reduce((a, w) => a + w.length + 1, 0); let acc = 0; return ws.map(w => { const a = q.at + q.dur * acc / tot; acc += w.length + 1; return { w, t0: a, t1: q.at + q.dur * acc / tot }; }); }
+function cueWords(q){ if (q.words && q.words.length) return q.words; const ws = q.text.split(/\s+/).filter(Boolean), tot = ws.reduce((a, w) => a + w.length + 1, 0); let acc = 0; return ws.map(w => { const a = q.at + q.dur * acc / tot; acc += w.length + 1; return { w, t0: a, t1: q.at + q.dur * acc / tot }; }); }   // 169: the spine when there is one
 function drawSubs(ctx, W, H, t){
-  const s = V.subs; SUBRECT = null; if (!s.on) return; const qi = cuesNow().findIndex(c => t >= c.at && t < c.at + c.dur); if (qi < 0) return; const q = cuesNow()[qi];
-  const px = (s.sizePx || Math.round((s.size || 0.042) * 1080)) / 1080 * H, an = s.anim || 'fade', k = Math.min(1, (t - q.at) / 0.25);
-  ctx.save(); ctx.font = FONT(s.weight || 700, px).replace('Vazirmatn', s.font || 'Vazirmatn'); ctx.direction = 'rtl'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  const words = cueWords(q), shownN = an === 'type' ? words.filter(w => w.t0 <= t).length : words.length, curW = words.findIndex(w => t >= w.t0 && t < w.t1);
-  const spk = s.spk ? (() => { const L = Object.values(S.lines).find(x => cleanCue(x.text) === q.text); const sp = L && L.spk && spkList().find(z => z.id === L.spk); return sp ? sp.name + ': ' : ''; })() : '';
-  const text = (spk + words.slice(0, Math.max(1, shownN)).map(w => w.w).join(' ')).trim(), lines = wrapLines(ctx, text, W * 0.84), lh = px * 1.45;
-  const yC = (s.place === 'top' ? 0.12 : s.place === 'middle' ? 0.5 : (s.pos || 0.88)) * H, y0 = yC - (lines.length - 1) * lh / 2;
-  if (an === 'fade') ctx.globalAlpha *= k; const dy = an === 'rise' ? (1 - k) * px * 0.6 : 0, sc = an === 'pop' ? 0.85 + 0.15 * (1 - Math.pow(1 - k, 3)) + (k < 1 ? 0.06 * Math.sin(k * Math.PI) : 0) : 1;
-  ctx.translate(W / 2, y0 + dy); ctx.scale(sc, sc); let maxW = 0;
-  lines.forEach((l, i) => { const tw = ctx.measureText(l).width, y = i * lh; maxW = Math.max(maxW, tw);
-    if (s.bgOn){ ctx.fillStyle = s.capsule ? (getComputedStyle(document.documentElement).getPropertyValue('--color-primary') || '#e9603b') : rgba('#000000', s.bgOp ?? 0.55); rrect(ctx, -tw / 2 - px * 0.45, y - lh / 2, tw + px * 0.9, lh, s.capsule ? lh / 2 : px * 0.25); ctx.fill(); }
-    if (s.outline){ ctx.lineWidth = Math.max(2, px * 0.12); ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.lineJoin = 'round'; ctx.strokeText(l, 0, y); }
-    ctx.fillStyle = s.color || '#ffffff'; ctx.fillText(l, 0, y);
-    if (an === 'word' && curW >= 0){ const cw = words[curW].w; const idx = l.indexOf(cw); if (idx >= 0){ ctx.save(); ctx.textAlign = 'right'; const right = tw / 2 - ctx.measureText(l.slice(0, idx)).width; ctx.fillStyle = s.hi || '#f2b233'; if (s.outline) ctx.strokeText(cw, right, y); ctx.fillText(cw, right, y); ctx.restore(); } }
-    if (spk && i === 0){ ctx.save(); ctx.textAlign = 'right'; ctx.fillStyle = s.hi || '#f2b233'; ctx.fillText(spk.trim(), tw / 2, y); ctx.restore(); } });
+  // 169: the caption renderer — words laid out one by one (right to left) so the spoken word can be coloured, filled,
+  //      pilled, scaled or popped on its REAL time; backgrounds as box / bar / card / capsule; shadow, glow, gradient,
+  //      a cinematic band; the box (SUBRECT) hugs exactly what was drawn.
+  const s = V.subs; SUBRECT = null; if (!s.on) return; const cues = cuesNow(), qi = cues.findIndex(c => t >= c.at && t < c.at + c.dur); if (qi < 0) return; const q = cues[qi];
+  const px = (s.sizePx || Math.round((s.size || 0.042) * 1080)) / 1080 * H, an = s.anim || 'fade', k = Math.min(1, (t - q.at) / 0.25), hiMode = s.hiMode || 'none', prim = s.hi || '#f2b233';
+  ctx.save(); ctx.font = FONT(s.weight || 700, px).replace('Vazirmatn', s.font || 'Vazirmatn'); ctx.direction = 'rtl'; ctx.textBaseline = 'middle';
+  const words = cueWords(q), curW = words.findIndex(w => t >= w.t0 && t < w.t1), shownN = an === 'type' ? Math.max(1, words.filter(w => w.t0 <= t).length) : words.length;
+  const spkName = s.spk ? (() => { const sp = q.spk ? spkList().find(z => z.id === q.spk) : null; return sp ? sp.name + ':' : ''; })() : '';
+  // lay the words out in lines, right to left
+  const sp = ctx.measureText(' ').width, maxW = W * 0.84, items = (spkName ? [{ w: spkName, name: true }] : []).concat(words.slice(0, shownN).map((w, i) => ({ ...w, i })));
+  items.forEach(it => { it.tw = ctx.measureText(it.w).width; });
+  const lines = []; let cur = [], cw = 0;
+  items.forEach(it => { const add = (cur.length ? sp : 0) + it.tw; if (cur.length && cw + add > maxW){ lines.push({ items: cur, w: cw }); cur = [it]; cw = it.tw; } else { cur.push(it); cw += add; } });
+  if (cur.length) lines.push({ items: cur, w: cw });
+  const lh = px * 1.45, padX = px * 0.45, yC = (s.place === 'top' ? 0.12 : s.place === 'middle' ? 0.5 : (s.pos || 0.88)) * H, y0 = yC - (lines.length - 1) * lh / 2;
+  const dy = an === 'rise' ? (1 - k) * px * 0.6 : an === 'bounce' ? -Math.abs(Math.sin(k * Math.PI)) * px * 0.35 : 0, sc = an === 'pop' ? 0.85 + 0.15 * (1 - Math.pow(1 - k, 3)) + (k < 1 ? 0.06 * Math.sin(k * Math.PI) : 0) : 1;
+  if (an === 'fade') ctx.globalAlpha *= k;
+  const wAll = Math.max(...lines.map(l => l.w)), bx = -wAll / 2 - padX, bw = wAll + 2 * padX, by = -lh / 2 - px * 0.1, bh = lines.length * lh + px * 0.2;
+  if (s.band){ ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); const g = ctx.createLinearGradient(0, H * 0.62, 0, H); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.72)'); ctx.fillStyle = g; ctx.fillRect(0, H * 0.62, W, H * 0.38); ctx.restore(); }
+  ctx.translate(W / 2, y0 + dy); ctx.scale(sc, sc);
+  const mode = s.bgOn ? (s.bgMode || 'box') : 'none', primCss = () => getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#e9603b';
+  if (mode === 'bar'){ ctx.fillStyle = rgba('#000000', s.bgOp ?? 0.6); rrect(ctx, -Math.max(bw, W * 0.6) / 2, by, Math.max(bw, W * 0.6), bh, px * 0.2); ctx.fill(); }
+  else if (mode === 'card'){ ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = px * 0.5; ctx.shadowOffsetY = px * 0.12; ctx.fillStyle = rgba('#ffffff', s.bgOp ?? 0.95); rrect(ctx, bx - px * 0.2, by - px * 0.1, bw + px * 0.4, bh + px * 0.2, px * 0.35); ctx.fill(); ctx.restore(); }
+  lines.forEach((l, li) => {
+    const y = li * lh; let x = l.w / 2;                                   // the right edge of the line (centred)
+    if (mode === 'box'){ ctx.fillStyle = rgba('#000000', s.bgOp ?? 0.55); rrect(ctx, -l.w / 2 - padX, y - lh / 2, l.w + 2 * padX, lh, px * 0.25); ctx.fill(); }
+    else if (mode === 'capsule'){ ctx.fillStyle = primCss(); rrect(ctx, -l.w / 2 - padX, y - lh / 2, l.w + 2 * padX, lh, lh / 2); ctx.fill(); }
+    l.items.forEach(it => {
+      const right = x, left = x - it.tw, isCur = !it.name && it.i === curW, said = !it.name && curW >= 0 && it.i < curW;
+      ctx.save(); ctx.textAlign = 'right';
+      let wsc = 1, alpha = 1;
+      if (an === 'popword' && !it.name){ const kk = Math.min(1, Math.max(0, (t - it.t0) / 0.18)); wsc = 0.55 + 0.45 * (1 - Math.pow(1 - kk, 3)) + (kk < 1 ? 0.12 * Math.sin(kk * Math.PI) : 0); alpha = kk; }
+      if (isCur && hiMode === 'scale') wsc *= 1.14;
+      ctx.globalAlpha *= alpha; ctx.translate(right - it.tw / 2, y); ctx.scale(wsc, wsc); ctx.translate(-(right - it.tw / 2), -y);
+      if (isCur && hiMode === 'pill'){ ctx.fillStyle = prim; rrect(ctx, left - px * 0.18, y - lh / 2 + px * 0.12, it.tw + px * 0.36, lh - px * 0.24, px * 0.3); ctx.fill(); }
+      if (s.glow){ ctx.shadowColor = prim; ctx.shadowBlur = px * 0.55; } else if (s.shadow){ ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = px * 0.25; ctx.shadowOffsetY = px * 0.08; }
+      if (s.outline){ ctx.lineWidth = Math.max(2, px * 0.12); ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.lineJoin = 'round'; ctx.strokeText(it.w, right, y); }
+      ctx.shadowColor = s.glow ? prim : (s.shadow ? 'rgba(0,0,0,.6)' : 'transparent');
+      let fill = it.name ? prim : (isCur && (hiMode === 'color' || hiMode === 'scale') ? prim : (isCur && hiMode === 'pill' ? '#ffffff' : (s.color || '#ffffff')));
+      if (s.gradient && !it.name){ const g = ctx.createLinearGradient(0, y - px / 2, 0, y + px / 2); g.addColorStop(0, s.color || '#ffffff'); g.addColorStop(1, prim); fill = g; }
+      ctx.fillStyle = fill; ctx.fillText(it.w, right, y);
+      if (isCur && hiMode === 'fill'){ const f = Math.min(1, Math.max(0, (t - it.t0) / Math.max(0.05, it.t1 - it.t0))); ctx.save(); ctx.beginPath(); ctx.rect(right - it.tw * f, y - lh / 2, it.tw * f, lh); ctx.clip(); ctx.fillStyle = prim; ctx.fillText(it.w, right, y); ctx.restore(); }
+      else if (said && hiMode === 'fill'){ ctx.fillStyle = prim; ctx.fillText(it.w, right, y); }
+      ctx.restore(); x = left - sp; }); });
   ctx.restore();
-  const bw = (maxW + px * 0.9) * sc, bh = lines.length * lh * sc; SUBRECT = { x: (W / 2 - bw / 2) / W, y: (y0 + dy - lh / 2 * sc) / H, w: bw / W, h: bh / H };
+  const rw = Math.max(bw, mode === 'bar' ? W * 0.6 : 0) * sc, rh = bh * sc; SUBRECT = { x: (W / 2 - rw / 2) / W, y: (y0 + dy + by * sc) / H, w: rw / W, h: rh / H };
 }
 // ---- the mock's toolbar above the stage: the format
 function wireVideoBar(){
@@ -871,4 +933,5 @@ showVPanels = function(anim){ _showVPanels165(anim); rangeLabels(); const o = vS
 function fillEmoji(o){ const box = $('stkEmoji'); if (!box) return; box.innerHTML = ['👑', '🎙️', '🎧', '❤️', '⭐', '🔥', '👍', '😂', '🎵', '☀️', '🦁', '📌'].map(e => `<input type="radio" name="stkE" class="btn btn-sm btn-square border-base-content/15 bg-base-100 text-lg checked:bg-primary" aria-label="${e}" ${o.emoji === e ? 'checked' : ''} onchange="vset('sel.emoji', '${e}')">`).join('');
   const any = $('stkAny'); if (any){ any.value = o.emoji || ''; any.onchange = () => vset('sel.emoji', any.value.trim() || '👑'); }
   const bg = $('stkBgOn'); if (bg){ bg.checked = !!(o.bg && o.bg.on); bg.onchange = () => vset('sel.bg.on', bg.checked); }
+  const shp = $('stkShape'); if (shp){ shp.value = (o.bg && o.bg.shape) || 'circle'; shp.onchange = () => { if (!o.bg) o.bg = { on: true, color: '#e6a483' }; vset('sel.bg.shape', shp.value); }; enh(shp); }   // 169
   const col = $('stkBgC'); if (col){ col.value = (o.bg && o.bg.color) || '#e6a483'; col.oninput = () => vset('sel.bg.color', col.value, true); } }

@@ -94,8 +94,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 168
-BUILD_FA = "\u06f1\u06f6\u06f8"
+BUILD = 169
+BUILD_FA = "\u06f1\u06f6\u06f9"
 
 
 def _diag(tag, **kv):
@@ -2816,6 +2816,11 @@ def patch_gulp(gid, new_text, sel_start, sel_end, payload, status):
     if src is None:
         raise RuntimeError("این بخش دیگر در حافظه نیست؛ یک بار دیگر «تبدیل به گفتار» را بزنید.")
     _ensure_valid(src, "پایهٔ ویرایش", status)
+    _pe, _se = (payload or {}).get("engine"), src.get("engine")
+    if _pe and _se and _pe != _se:                # 169: the old code fell back to the part's engine (Chatterbox → Google)
+        _diag("patch", mode="engine_switch", old=_se, new=_pe)
+        mp3, gid2 = generate_gulp({**payload, "text": new_text.strip()}, status)
+        return mp3, -1, "full", gid2
     entry = _fork_entry(src)                      # 140: edit a COPY; the original stays for Undo
     new_gid = next(_gulp_ids)
     new_text = new_text.strip()
@@ -3419,8 +3424,11 @@ class _GoogleHTTP(Exception):
         super().__init__(f"HTTP {code}: {msg}"); self.code = code; self.msg = msg
 
 
-def _google_post(url, body, key, timeout=120):
-    """POST in a helper thread so a cancel can abandon it mid-flight."""
+def _google_post(url, body, key, timeout=120, revision=True):
+    """POST in a helper thread so a cancel can abandon it mid-flight.
+    169: revision=False sends the request exactly as Google documents it (no Api-Revision
+    header) — gemini-3.5-transcribe answered every request with 'Thinking is not enabled
+    for this model' under the revision header, so no word timings came back at all."""
     _check_cancel()
     box = {}
 
@@ -3428,7 +3436,7 @@ def _google_post(url, body, key, timeout=120):
         try:
             box["r"] = requests.post(url, json=body, timeout=timeout,
                                      headers={"x-goog-api-key": key, "Content-Type": "application/json",
-                                              "Api-Revision": "2026-05-20"})
+                                              **({"Api-Revision": "2026-05-20"} if revision else {})})
         except BaseException as e:   # noqa — carried back to the caller's thread
             box["e"] = e
     th = threading.Thread(target=run, daemon=True); th.start()
@@ -5007,6 +5015,18 @@ def transcribe_words(pcm, sr, status, lang=None, text=None, cfg=None):
     return google_words(pcm, sr, status, lang, text)
 
 
+_G_WORDS_FORM = {"revision": False}        # 169: the documented form first; flips once if Google asks
+_BCP47 = {"fa": "fa-IR", "en": "en-US", "ar": "ar-EG", "de": "de-DE", "fr": "fr-FR", "es": "es-419", "tr": "tr-TR", "ru": "ru-RU", "it": "it-IT"}
+
+
+def _bcp47(lang):
+    """Google's transcriber wants BCP-47 codes (fa-IR), not bare ones (fa); unknown → auto-detect."""
+    l = str(lang or "").strip()
+    if not l:
+        return None
+    return l if "-" in l else _BCP47.get(l.lower())
+
+
 def google_words(pcm, sr, status, lang=None, text=None):
     """[(word, start_s, end_s)] for a recording, or None. Cached per recording
     AND per text (127) so an edit can never meet a stale transcript."""
@@ -5022,11 +5042,20 @@ def google_words(pcm, sr, status, lang=None, text=None):
         wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(16000); wf.writeframes(p.tobytes())
     body = {"contents": [{"parts": [{"inlineData": {"mimeType": "audio/wav", "data": base64.b64encode(buf.getvalue()).decode()}}]}],
             "generationConfig": {"audioTranscriptionConfig": {"wordTimestamp": True,
-                                 **({"languageCodes": [lang]} if lang else {})}}}
+                                 **({"languageCodes": [_bcp47(lang)]} if _bcp47(lang) else {})}}}
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GOOGLE_TRANSCRIBE}:generateContent"
     try:
         status("دارم صدا را با زمان‌بندی رونویسی می‌کنم…")
-        data = google_rotate(lambda k: _google_post(url, body, k, timeout=120), status, "رونویسی")
+        def post(k):
+            try:
+                return _google_post(url, body, k, timeout=120, revision=_G_WORDS_FORM["revision"])
+            except _GoogleHTTP as e:
+                if e.code == 400 and "thinking" in str(e.msg).lower():       # 169: the other form, once
+                    _G_WORDS_FORM["revision"] = not _G_WORDS_FORM["revision"]
+                    _diag("google_words_form", revision=_G_WORDS_FORM["revision"])
+                    return _google_post(url, body, k, timeout=120, revision=_G_WORDS_FORM["revision"])
+                raise
+        data = google_rotate(post, status, "رونویسی")
         words = _find_words(data)
         _diag("google_words", n=len(words or []), audio_s=round(len(pcm) / sr, 1))
         _words_cache_put(key, words)
@@ -7542,8 +7571,10 @@ def timeline_files(spec, music_cfg, status):
     if music_cfg and music_cfg.get("on"):
         if _MUSIC["pcm"] is None and music_cfg.get("file"):
             music_load(music_cfg["file"])
-        if _MUSIC["pcm"] is None:
-            raise RuntimeError("موسیقی‌ای انتخاب نشده؛ از منبع بالا یکی را انتخاب کنید یا از «موسیقی‌های قبلی» بردارید.")
+        if _MUSIC["pcm"] is None:                                    # 169: no music → the composition is what there is
+            _diag("timeline_music", skipped="no_music")
+            out["music"] = out["clean"]
+            return out
         status("دارم موسیقی را زیر صدا می‌گذارم…")
         mixed = mix_music_clips(pcm, sr, _MUSIC["pcm"], _MUSIC["sr"], music_cfg["clips"],
             level_db=float(music_cfg.get("level_db", -16)), duck=float(music_cfg.get("duck_db", 12)) > 0 and bool(music_cfg.get("duck", True)),
@@ -7663,15 +7694,20 @@ def _word_times(pcm, sr, a, b, text):
     if n < 2:
         return []
     env = np.sqrt(np.mean(seg[:n * hop].reshape(n, hop) ** 2, axis=1) + 1e-9)
+    # 169: the words live in the VOICED part of the span — spreading them over the leading and trailing
+    # silence put the caret behind (or ahead of) the voice whenever the transcription was unavailable
+    thr = max(1e-4, float(env.max()) * 0.06); voiced = np.where(env > thr)[0]
+    f0, f1 = (int(voiced[0]), int(voiced[-1]) + 1) if len(voiced) and voiced[-1] - voiced[0] > 10 else (0, n)
+    m = f1 - f0
     weights = [max(1, len(re.sub(r"[\u064B-\u0655\u0670\W_]", "", w.group(0)))) for w in words]
     tot = float(sum(weights)); cuts, acc = [], 0.0
     for wgt in weights[:-1]:
         acc += wgt
-        guess = min(n - 1, max(1, int(acc / tot * n)))
-        lo, hi = max(1, guess - 12), min(n - 1, guess + 12)
-        k = lo + int(np.argmin(env[lo:hi])) if hi > lo else guess
-        cuts.append(max(cuts[-1] + 1 if cuts else 1, min(n - 1, k)))
-    edges = [0] + cuts + [n]
+        guess = min(m - 1, max(1, int(acc / tot * m)))
+        lo, hi = max(1, guess - 12), min(m - 1, guess + 12)
+        k = lo + int(np.argmin(env[f0 + lo:f0 + hi])) if hi > lo else guess
+        cuts.append(max(cuts[-1] + 1 if cuts else 1, min(m - 1, k)))
+    edges = [f0] + [f0 + c for c in cuts] + [f1]
     return [{"w": w.group(0), "c0": w.start(), "c1": w.end(),
              "t0": round((a + edges[i] * hop) / sr, 3), "t1": round((a + min(len(seg), edges[i + 1] * hop)) / sr, 3)}
             for i, w in enumerate(words)]
@@ -8128,3 +8164,9 @@ def mix_music_clips(voice, vsr, music, msr, clips, level_db=-16.0, duck=True, du
         out *= 32000 / pk
     _diag("mix_music_clips", clips=len(spans), seconds=round(total / vsr, 1))
     return out.astype(np.int16)
+
+
+def gulp_engine(gid):
+    """169: which engine made a part (the editor re-voices a line with a changed engine as a fresh take)."""
+    e = _GULP_PCM.get(int(gid)) if gid is not None else None
+    return (e or {}).get("engine")

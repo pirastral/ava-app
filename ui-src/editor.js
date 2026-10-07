@@ -6,6 +6,12 @@
 // =====================================================================================
 const $ = id => document.getElementById(id);
 const API = () => window.pywebview.api;
+// 169: a whole music track crosses the bridge in pieces (one multi-megabyte answer stalled the window: «downloading music…» forever)
+async function readBlob(tok, size){ const parts = []; for (let off = 0; off < size; off += 786432){ const r = await API().blob_read(tok, off, 786432); if (!r || !r.ok) throw new Error((r && r.error) || 'blob'); parts.push(r.b64); } return parts.join(''); }
+function wrapBig(){ const api = window.pywebview && window.pywebview.api; if (!api || api.__big) return;
+  ['music_load', 'music_fetch', 'music_import', 'music_generate'].forEach(n => { const f = api[n]; if (typeof f !== 'function') return; api[n] = async (...a) => { const r = await f.apply(api, a); if (r && r.ok && r.blob && !r.b64) r.b64 = await readBlob(r.blob, r.size); return r; }; });
+  api.__big = true; }
+window.addEventListener('pywebviewready', wrapBig); setTimeout(wrapBig, 0); setTimeout(wrapBig, 1500);
 const FA = s => String(s).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
 let lang = 'fa';
 const T = (fa, en) => lang === 'fa' ? fa : en;
@@ -130,46 +136,79 @@ const ENG_MAP = { cbxVoice: ['cbx', 'voice'], cbxSpeed: ['cbx', 'speed'], cbxExa
   fishTemp: ['fish', 'temp'], fishTopP: ['fish', 'top_p'], fishCont: ['fish', 'cont'], fishCondPrev: ['fish', 'condPrev'], fishNormLoud: ['fish', 'normLoud'], fishNormalize: ['fish', 'normalize'], fishQuality: ['fish', 'quality'] };
 const ENG_OF = { cbx: ['chatterbox'], light: ['mana', 'gyro', 'amir'], fish: ['fish'] };
 let lastEngEdit = { id: '', t: 0 };
+// 169: «تغییر کرده» means the LINE changed since it was voiced — its text, its speaker, its own or its speaker's voice
+//      settings, its overlaps. A fingerprint is taken when it is voiced; changing something back clears the mark.
+const lineSig = id => { const L = S.lines[id] || {}; return JSON.stringify([spoken(id), L.spk || '', spkVoice(id), L.voice || {}, typeof ovlSig === 'function' ? ovlSig(id) : '']); };
+const mainSig = id => { const L = S.lines[id] || {}; return JSON.stringify([spoken(id), L.spk || '', spkVoice(id), L.voice || {}]); };
+function markMade(ids){ ids.forEach(id => { const L = S.lines[id]; if (L){ L.dirty = false; L.madeSig = lineSig(id); L.madeMain = mainSig(id); } }); }
+function refreshDirty(){ Object.keys(S.lines).forEach(k => { const id = +k, L = S.lines[id], [, c] = clipOfLine(id); if (!c || c.unvoiced || c.file) return;
+  const sg = lineSig(id); if (L.madeSig === undefined){ if (!L.dirty) L.madeSig = sg; return; }
+  L.dirty = sg !== L.madeSig || (typeof ovlMissing === 'function' && ovlMissing(id)); }); }
 function markDirty(test){ let n = 0; Object.keys(S.lines).forEach(id => { const L = S.lines[id], [, c] = clipOfLine(+id); if (c && !c.unvoiced && !c.file && !L.dirty && test(+id)){ L.dirty = true; n++; } }); return n; }
 function setEng(id, v){
   const [grp, key] = ENG_MAP[id]; if (S.proj[grp][key] === v) return;
   const now = Date.now(); if (lastEngEdit.id !== id || now - lastEngEdit.t > 1500) remember(); lastEngEdit = { id, t: now };   // one undo step per slider drag
   S.proj[grp][key] = v;
-  if (markDirty(id2 => ENG_OF[grp].includes(lineEngine(id2)))) renderScript();
   autosave();
 }
 function setProj(k, v){
   remember(); const was = S.proj.engine; S.proj[k] = v;
-  if (k === 'engine'){ markDirty(id => !(S.lines[id].voice && S.lines[id].voice.engine) && was !== v); fillInspector(); afterChange(); return; }
+  if (k === 'engine'){ fillInspector(); afterChange(); return; }   // 169: a project default is for what is voiced NEXT
   if (['g_model', 'g_voice', 'g_preset', 'g_state', 'g_age', 'g_lang'].includes(k)){
     // every voiced line that follows the project's setting now needs re-voicing
     const key = { g_voice: 'gVoice', g_preset: 'gPreset', g_state: 'gState' }[k];
-    Object.entries(S.lines).forEach(([id, L]) => { const [, c] = clipOfLine(+id); if (c && !c.unvoiced && !(key && L.voice && L.voice[key])) L.dirty = true; });
   }
   if (k === 'g_model'){ fillInspector(); try { API().settings_set({ default_g_model: v }); } catch (e) {} }
   afterChange();
 }
 function setLineOpt(k, v){
   if (sel.size !== 1) return; const id = [...sel][0]; remember();
-  const L = S.lines[id]; L.voice = Object.assign({}, L.voice || {}); if (v) L.voice[k] = v; else delete L.voice[k];
-  const [, c] = clipOfLine(id); if (c && !c.unvoiced) L.dirty = true;
-  if (k === 'engine'){ fillLineInspector(id); buildTagMenus(); }
-  afterChange();
+  const L = S.lines[id]; L.voice = Object.assign({}, L.voice || {});
+  if (v === null || v === undefined || v === '') delete L.voice[k]; else L.voice[k] = v;     // only THIS line; the speaker and the project are untouched
+  if (k === 'engine') buildTagMenus();
+  fillLineInspector(id); afterChange();
 }
 let lastSelKey = null;
 function showInsp(w, byUser){
   if (byUser && w === 'proj' && !$('insp-music').classList.contains('hidden') && selClip && String(selClip).startsWith('mu')) selClip = null;
-  ['line', 'proj', 'music'].forEach(k => $('insp-' + k).classList.toggle('hidden', k !== w));
+  ['line', 'proj', 'music'].forEach(k => $('insp-' + k).classList.toggle('hidden', k !== w)); const tl0 = $('it-line').parentElement; if (tl0) tl0.classList.toggle('hidden', w === 'music');
   $('it-line').classList.toggle('tab-active', w === 'line'); $('it-proj').classList.toggle('tab-active', w !== 'line');
 }
 function fillLineInspector(id){
-  const v = (S.lines[id] && S.lines[id].voice) || {};
-  const proj = T('— مثلِ پروژه —', '— as the project —');
-  $('lnEngine').innerHTML = `<option value="">${proj}</option>` + optList(ENGINES, v.engine); $('lnGoogle').classList.toggle('hidden', lineEngine(id) !== 'google');
-  $('lnVoice').innerHTML = voiceOptions(v.gVoice || '', true); $('lnVoice').dataset.recent = 'gvoice'; $('lnVoice')._onDel = delVoice;
-  $('lnPreset').innerHTML = `<option value="">${proj}</option>` + optList(G_PRESETS.map(p => [p[0], p[1]]), v.gPreset);
-  $('lnState').innerHTML = `<option value="">${proj}</option>` + optList(DIRECTOR.states.filter(a => a[0] !== 'custom').map(a => [a[0], a[1]]), v.gState);
-  ['lnEngine', 'lnVoice', 'lnPreset', 'lnState'].forEach(i => enh($(i)));
+  // 169: the line's speaker first; then the fields of the engine this line actually uses. Every field starts from the speaker
+  //      (or the project when there is no speaker); a change applies to THIS line only and has a reset back.
+  const L = S.lines[id] || {}, v = L.voice || {}, sp = speakerOfLine(id), eff = lineVoice(id), eng = eff.engine;
+  const base = { engine: S.proj.engine, gVoice: S.proj.g_voice, gPreset: S.proj.g_preset, gState: S.proj.g_state, ...spkVoice(id) };
+  const from = sp ? T('مثلِ گوینده', 'as the speaker') : T('مثلِ پروژه', 'as the project');
+  const engName = x => (((ENGINES.find(r => r[0] === x) || [x, x])[1]) || '').split(' — ')[0];
+  const set = k => v[k] !== undefined && v[k] !== '' && v[k] !== null;
+  const lab = (t, k) => `<legend class="fieldset-legend flex w-full items-center gap-1 text-xs font-medium text-base-content/70"><span class="flex-1">${t}</span>${set(k) ? `<span class="ddb text-primary" role="button" onclick="setLineOpt('${k}', null)" data-tip="${T('برگشت: ', 'Back: ')}${from}" aria-label="reset"><svg><use href="#i-rotate-ccw"/></svg></span>` : ''}</legend>`;
+  const inh = txt => `<option value="">— ${from}${txt ? ': ' + escapeHtml(String(txt)) : ''} —</option>`;
+  const sel = (t, k, html) => `<fieldset class="fieldset">${lab(t, k)}<select id="ln_${k}" class="select select-sm w-full" onchange="setLineOpt('${k}', this.value)">${html}</select></fieldset>`;
+  const rng = (t, k, min, max, step, cur) => `<fieldset class="fieldset">${lab(t, k)}<div class="flex items-center gap-2"><input id="ln_${k}" type="range" min="${min}" max="${max}" step="${step}" value="${cur}" class="range range-xs flex-1 text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] ${set(k) ? '' : 'opacity-60'}" oninput="this.nextElementSibling.textContent = num(this.value); this.classList.remove('opacity-60')" onchange="setLineOpt('${k}', +this.value)"><span class="w-10 text-end text-xs tabular-nums text-base-content/70">${num(cur)}</span></div></fieldset>`;
+  const pres = G_PRESETS.map(p => [p[0], p[1]]), states = DIRECTOR.states.filter(a => a[0] !== 'custom').map(a => [a[0], a[1]]), lbl = (list, k) => (list.find(r => r[0] === k) || [k, k])[1];
+  let out = sp ? `<div class="flex items-center gap-2 rounded-box bg-base-100 p-2"><span class="grid size-8 shrink-0 place-items-center overflow-hidden rounded-full text-xs font-bold" style="${spkBg(spkList().indexOf(sp))}">${spkFace(sp)}</span><div class="min-w-0 flex-1"><div class="truncate text-sm font-semibold">${escapeHtml(sp.name)}</div><div class="truncate text-xs text-base-content/60">${escapeHtml(spkSummary(sp))}</div></div></div>
+      <p class="text-xs text-base-content/60">${T('این خط با تنظیماتِ گوینده‌اش خوانده می‌شود. هر چیزی را این‌جا عوض کنید فقط برای همین خط عوض می‌شود — نه برای گوینده و نه بقیهٔ خط‌ها.', "This line is read with its speaker's settings. Anything you change here changes for this line only — not for the speaker or other lines.")}</p>`
+    : `<p class="text-xs text-base-content/60">${T('این خط گوینده ندارد و با تنظیماتِ پروژه خوانده می‌شود؛ هر چیزی را این‌جا عوض کنید فقط برای همین خط است.', "This line has no speaker and is read with the project's settings; anything you change here is for this line only.")}</p>`;
+  out += sel(T('موتور', 'Engine'), 'engine', inh(engName(base.engine)) + optList(ENGINES, v.engine || ''));
+  if (eng === 'google'){
+    out += sel(T('صدا', 'Voice'), 'gVoice', inh(base.gVoice) + voiceOptions(v.gVoice || '', true));
+    out += sel(T('سبکِ خواندن', 'Reading style'), 'gPreset', inh(lbl(pres, base.gPreset)) + optList(pres, v.gPreset || ''));
+    out += sel(T('حال و احساس', 'Mood'), 'gState', inh(lbl(states, base.gState)) + optList(states, v.gState || ''));
+  } else if (eng === 'fish'){
+    out += sel(T('صدا', 'Voice'), 'fishVoice', inh() + fishOptions(v.fishVoice || ''));
+    out += sel(T('سبک', 'Style'), 'fishPreset', inh(lbl(pres, S.proj.fish.preset)) + optList(pres, v.fishPreset || ''));
+  } else if (eng === 'chatterbox'){
+    const c = S.proj.cbx;
+    out += sel(T('صدا', 'Voice'), 'cbxVoice', inh(base.cbxVoice || c.voice) + `<option value="default" ${v.cbxVoice === 'default' ? 'selected' : ''}>${T('پیش‌فرض', 'Default')}</option>` + cbxGroups(CBX_VOICES, v.cbxVoice, false));
+    out += rng(T('سرعت', 'Speed'), 'cbxSpeed', 0.7, 1.3, 0.05, v.cbxSpeed ?? c.speed) + rng(T('شدتِ بیان و احساس', 'Expressiveness'), 'cbxExag', 0, 1, 0.05, v.cbxExag ?? c.exag)
+         + rng(T('پایبندی به متن', 'Faithfulness to the text'), 'cbxCfg', 0, 1, 0.05, v.cbxCfg ?? c.cfg) + rng(T('تنوع و خلاقیت', 'Variety'), 'cbxTemp', 0, 1.5, 0.05, v.cbxTemp ?? c.temp);
+  } else if (LIGHT_ENGINES.includes(eng)){
+    const l = S.proj.light;
+    out += rng(T('سرعت', 'Speed'), 'lightSpeed', 0.5, 2, 0.05, v.lightSpeed ?? l.speed) + rng(T('آهنگ و حالتِ گفتار', 'Intonation'), 'lightNoise', 0.1, 1.3, 0.05, v.lightNoise ?? l.noise) + rng(T('کشش و تن', 'Stretch and timbre'), 'lightNoiseW', 0.1, 1.5, 0.05, v.lightNoiseW ?? l.noisew);
+  }
+  $('lnBody').innerHTML = out; $('lnBody').querySelectorAll('select').forEach(s => enh(s));
+  const lv = $('ln_gVoice'); if (lv){ lv.dataset.recent = 'gvoice'; lv._onDel = delVoice; }
 }
 
 // =====================================================================================
@@ -222,6 +261,8 @@ function lineBar(){
     <button class="btn btn-xs join-item btn-square border-base-content/15 bg-base-100" onclick="deleteLine()" aria-label="delete"><svg class="size-3.5"><use href="#i-trash-2"/></svg></button></div></div>`;
 }
 function paintSel(){ sel.forEach(id => { if (!S.lines[id]) sel.delete(id); });
+  if (sel.size && selClip && String(selClip).startsWith('mu')){ selClip = null; if (typeof placeClipBar === 'function') placeClipBar(); }   // 169: one selection at a time
+  if (sel.size && $('insp-music') && !$('insp-music').classList.contains('hidden')) showInsp(sel.size === 1 ? 'line' : 'proj');
   if (sel.size === 1) lastLine = [...sel][0];
   const selKey = [...sel].sort().join(',');
   queueMicrotask(() => { lastSelKey = selKey; });
@@ -232,6 +273,7 @@ function paintSel(){ sel.forEach(id => { if (!S.lines[id]) sel.delete(id); });
   });
   $('it-line').classList.toggle('hidden', sel.size !== 1);
   $('tagBtn').classList.toggle('btn-disabled', sel.size !== 1); buildTagMenus(); $('toneBtn').classList.toggle('btn-disabled', !sel.size || !isG38());
+  { const mb0 = $('multiRevoice'); if (mb0 && sel.size < 2) mb0.classList.add('hidden'); }
   if (sel.size === 1){
     const id = [...sel][0], L = S.lines[id], [, c] = clipOfLine(id);
     $('lineTitle').textContent = T(`خطِ ${FA(orderedLines().indexOf(id) + 1)}`, `Line ${orderedLines().indexOf(id) + 1}`);
@@ -241,7 +283,9 @@ function paintSel(){ sel.forEach(id => { if (!S.lines[id]) sel.delete(id); });
     fillLineInspector(id);
     if (selKey !== lastSelKey) showInsp('line');            // only a NEW selection moves the inspector
   } else if (!$('insp-music').classList.contains('hidden') && selClip && String(selClip).startsWith('mu')){ /* keep the music panel */ }
-  else { if (selKey !== lastSelKey) showInsp('proj'); $('projTitle').textContent = sel.size > 1 ? T(`${FA(sel.size)} خط انتخاب شده`, `${sel.size} lines selected`) : T('پروژه', 'Project'); }
+  else { if (selKey !== lastSelKey) showInsp('proj'); $('projTitle').textContent = sel.size > 1 ? T(`${FA(sel.size)} خط انتخاب شده`, `${sel.size} lines selected`) : T('پروژه', 'Project');
+    let mb = $('multiRevoice'); if (!mb){ mb = document.createElement('button'); mb.id = 'multiRevoice'; mb.className = 'btn btn-primary btn-xs ms-auto gap-1'; mb.onclick = () => revoiceSelected(); $('projTitle').parentElement.appendChild(mb); }
+    mb.innerHTML = `<svg class="size-3.5"><use href="#i-refresh-cw"/></svg>${T('بازتولیدِ این خط‌ها', 'Re-voice these lines')}`; mb.classList.toggle('hidden', sel.size < 2); }   // 169: many lines selected → re-voice them all
 }
 function updatePCaret(){
   const pc = $('pcaret'); if (!pc) return;
@@ -403,6 +447,7 @@ function insertTag(tag){
   if (lastRange && lt.contains(lastRange.startContainer)){ s.removeAllRanges(); s.addRange(lastRange); } else { const r = document.createRange(); r.selectNodeContents(lt); r.collapse(false); s.removeAllRanges(); s.addRange(r); }
   document.execCommand('insertText', false, ' ' + tag + ' ');
   document.activeElement.blur && document.activeElement.blur();
+  requestAnimationFrame(() => renderScript());   // 169: drawn as a tag at once (not after re-voicing)
 }
 function setTone(tone){
   const ids = sel.size ? [...sel] : (lastLine ? [lastLine] : []); if (!ids.length || !isG38()) return; remember();
@@ -456,7 +501,7 @@ function renderTimeline(){
       <svg class="size-3.5 shrink-0 opacity-70"><use href="#i-${ICON[t.kind]}"/></svg>
       <span class="ui flex-1 truncate font-semibold">${T(t.name, t.en)}</span>
       ${t.kind === 'speech' ? `<label class="flex cursor-pointer items-center" data-tip="${T('بدونِ فاصله', 'gapless')}"><input type="checkbox" class="checkbox checkbox-xs" ${t.gapless ? 'checked' : ''} onchange="setGapless(${i}, this.checked)"></label>` : ''}
-      <button class="btn btn-ghost btn-xs btn-square ${t.muted ? 'text-error' : ''}" onclick="toggleMute(${i})" aria-label="mute"><svg class="size-3.5"><use href="#i-${t.muted ? 'volume-x' : 'volume-2'}"/></svg></button><button class="btn btn-ghost btn-xs btn-square ${(t.volume ?? 1) !== 1 ? 'text-primary' : ''}" onclick="openVolPop(event, ${i})" data-tip="${T('بلندیِ ترک', 'Track volume')}: ${Math.round((t.volume ?? 1) * 100)}٪" aria-label="volume"><svg class="size-3.5"><use href="#i-sliders-horizontal"/></svg></button>
+      <button class="btn btn-ghost btn-xs btn-square ${t.muted ? 'bg-error/15 text-error' : ''}" onclick="toggleMute(${i})" aria-label="mute" aria-pressed="${t.muted ? 'true' : 'false'}" data-tip="${t.muted ? T('بی‌صدا است — برای شنیدن کلیک کنید', 'Muted — click to hear it') : T('بی‌صدا کردن', 'Mute')}"><svg class="size-3.5"><use href="#i-volume-x"/></svg></button><button class="btn btn-ghost btn-xs btn-square ${(t.volume ?? 1) !== 1 ? 'text-primary' : ''}" data-vol="${i}" onclick="openVolPop(event, ${i})" data-tip="${T('بلندیِ ترک', 'Track volume')}: ${Math.round((t.volume ?? 1) * 100)}٪" aria-label="volume"><svg class="size-3.5"><use href="#i-volume-2"/></svg></button>
       <button class="btn btn-ghost btn-xs btn-square" aria-label="add" onclick="openTrackMenu(event, ${i})"><svg class="size-4"><use href="#i-plus"/></svg></button>
     </div></div>`).join('');
   const step = pps < 16 ? 10 : 5, dot = step / (step === 5 ? 5 : 4); let ticks = '';
@@ -493,11 +538,12 @@ function renderTimeline(){
   });
   lanes += `<div id="ph" class="pointer-events-none absolute inset-y-0 z-10 w-0.5 bg-secondary" style="left:${PAD + playhead * pps}px"></div>`;
   $('lanes').innerHTML = lanes; $('lanes').style.width = (W + tailPx()) + 'px'; syncRuler();
-  $('tTotal').textContent = '/ ' + num(fmt(speechEnd()));
+  $('tTotal').textContent = '/ ' + num(fmt(compEnd()));
   wireTimeline(); placeClipBar();
 }
+const compEnd = () => Math.max(0, ...S.tracks.flatMap(t => t.clips.map(c => c.at + dur(c))));   // 169: the composition's end (music included)
 const speechEnd = () => Math.max(0, ...speechClips().map(c => c.at + dur(c)));
-function syncRuler(){ $('rulerView').scrollLeft = $('tlScroll').scrollLeft; }
+function syncRuler(){}   // 169: the ruler scrolls with the lanes (one coordinate system)
 function wireTimeline(){
   $('ruler').onpointerdown = ev => { seekFromX(ev.clientX); scrubbing(); };
   $('phLabel').onpointerdown = ev => { ev.stopPropagation(); scrubbing(); };
@@ -517,8 +563,9 @@ function scrubbing(){
   addEventListener('pointermove', mv); addEventListener('pointerup', up);
 }
 function findClip(cid){ for (const t of S.tracks) { const c = t.clips.find(x => x.id === cid); if (c) return [t, c]; } return [null, null]; }
-function snapT(t, c){ if (!snapOn) return t; const edges = [0, playhead]; speechClips().concat(S.tracks.find(x => x.kind === 'music').clips).forEach(o => { if (o !== c){ edges.push(o.at, o.at + dur(o)); } });
-  for (const e of edges){ if (Math.abs((t - e) * zoom) < SNAP_PX) return e; if (Math.abs((t + dur(c) - e) * zoom) < SNAP_PX) return e - dur(c); } return t; }
+function snapEdges(c){ const edges = [0, playhead]; S.tracks.forEach(t => t.clips.forEach(o => { if (o !== c) edges.push(o.at, o.at + dur(o)); })); return edges; }
+function snapT(t, c){ if (!snapOn) return t; for (const ed of snapEdges(c)){ if (Math.abs((t - ed) * zoom) < SNAP_PX) return ed; if (Math.abs((t + dur(c) - ed) * zoom) < SNAP_PX) return ed - dur(c); } return t; }
+function snapPoint(t, c){ if (!snapOn) return t; let best = t, bd = SNAP_PX; snapEdges(c).forEach(ed => { const d = Math.abs((t - ed) * zoom); if (d < bd){ bd = d; best = ed; } }); return best; }
 const overlaps = (t, c) => t.clips.some(o => o !== c && o.at < c.at + dur(c) - 0.01 && c.at < o.at + dur(o) - 0.01);
 function placeOn(ti, c){
   const t = S.tracks[ti]; if (!overlaps(t, c)){ t.clips.push(c); t.clips.sort((a, b) => a.at - b.at); return; }
@@ -528,8 +575,8 @@ function placeOn(ti, c){
 function cleanupTracks(){ S.tracks = S.tracks.filter((t, k) => t.kind !== 'speech' || t.clips.length || t.id === 's1'); }
 function startClipDrag(ev, el){
   ev.stopPropagation(); if (document.activeElement && document.activeElement.isContentEditable) document.activeElement.blur(); getSelection().removeAllRanges(); const [t, c] = findClip(el.dataset.cid); if (!c) return;
-  selClip = c.id; if (t.kind === 'music'){ showMusicInspector(); const x0 = ev.clientX, at0 = c.at; let moved = false; remember();   // 166: music clips move
- const mv = e => { if (Math.abs(e.clientX - x0) > 3) moved = true; if (!moved) return; c.at = Math.max(0, at0 + (e.clientX - x0) / zoom); el.style.left = (PAD + c.at * zoom) + 'px'; };
+  selClip = c.id; if (t.kind === 'music'){ sel.clear(); paintSel(); showMusicInspector(); const x0 = ev.clientX, at0 = c.at; let moved = false; remember();   // 166: music clips move
+ const mv = e => { if (Math.abs(e.clientX - x0) > 3) moved = true; if (!moved) return; c.at = Math.max(0, snapT(at0 + (e.clientX - x0) / zoom, c)); el.style.left = (PAD + c.at * zoom) + 'px'; };   // 169: music snaps too
  const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); if (!moved){ hist.past.pop(); renderTimeline(); return; } S.music.manual = true; t.clips.sort((a, b) => a.at - b.at); renderTimeline(); autosave(); };
  addEventListener('pointermove', mv); addEventListener('pointerup', up); return; }
   sel = new Set(c.lines); const x0 = ev.clientX, at0 = c.at; let moved = false; remember();
@@ -549,9 +596,9 @@ function startClipDrag(ev, el){
 function startTrim(ev, el){
   ev.stopPropagation(); ev.preventDefault(); const [t, c] = findClip(el.dataset.cid); if (!c) return; remember(); if (t.kind === 'music'){ if (!c.src) c.src = [0, 1e9]; S.music.manual = true; } const edge = el.dataset.edge, x0 = ev.clientX, in0 = c.in, out0 = c.out, at0 = c.at, src = c.src || [c.in - (c.trimIn || 0), c.out + (c.trimOut || 0)];
   c.src = src;
-  const mv = e => { const d = (e.clientX - x0) / zoom;
-    if (edge === 'l'){ const ni = Math.min(out0 - 0.2, Math.max(src[0], in0 + d)); c.at = at0 + (ni - in0); c.in = ni; c.trimIn = ni - src[0]; }
-    else { const no = Math.max(in0 + 0.2, Math.min(src[1], out0 + d)); c.out = no; c.trimOut = src[1] - no; }
+  const mv = e => { const d0 = (e.clientX - x0) / zoom;   // 169: the moving edge snaps to every edge on every track
+    if (edge === 'l'){ const d = snapPoint(at0 + d0, c) - at0, ni = Math.min(out0 - 0.2, Math.max(src[0], in0 + d)); c.at = at0 + (ni - in0); c.in = ni; c.trimIn = ni - src[0]; }
+    else { const end0 = at0 + out0 - in0, d = snapPoint(end0 + d0, c) - end0, no = Math.max(in0 + 0.2, Math.min(src[1], out0 + d)); c.out = no; c.trimOut = src[1] - no; }
     quickTrimVisual(c); };
   const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); if (t.gapless) pack(t); renderScript(); autosave(); };
   addEventListener('pointermove', mv); addEventListener('pointerup', up);
@@ -657,12 +704,12 @@ async function chooseHit(k){
   catch (e) { say(e.message || String(e), 'err'); } finally { setBusy(false); }
 }
 const RUN_CHARS = 600;                               // the classic default part size for Google
-const fishFields = (v = {}) => { const f = S.proj.fish; return { f_model: f.model, f_latency: f.latency, f_voice: v.fishVoice || f.voice, f_preset: f.preset, f_style: f.preset === 'custom' ? (f.custom || '') : '', f_age: f.age || '', f_age_custom: f.ageCustom || '',
+const fishFields = (v = {}) => { const f = S.proj.fish; return { f_model: f.model, f_latency: f.latency, f_voice: v.fishVoice || f.voice, f_preset: v.fishPreset || f.preset, f_style: (v.fishPreset || f.preset) === 'custom' ? (f.custom || '') : '', f_age: f.age || '', f_age_custom: f.ageCustom || '',
   f_state: f.state || '', f_state_custom: f.stateCustom || '', f_speed: f.speed, f_volume: f.volume, f_temp: f.temp, f_top_p: f.top_p, f_continuity: f.cont, f_cond_prev: f.condPrev,
   f_norm_loud: f.normLoud, f_normalize: f.normalize, f_quality_guard: f.quality, f_speakers: [] }; };
 const payloadFor = (v, text) => ({ engine: v.engine, text, cbx_voice: v.cbxVoice || S.proj.cbx.voice, ...gFields(v), ...fishFields(v),
-  exaggeration: S.proj.cbx.exag, cfg_weight: S.proj.cbx.cfg, temperature: S.proj.cbx.temp, cbx_speed: S.proj.cbx.speed,
-  speed: S.proj.light.speed, noise: S.proj.light.noise, noisew: S.proj.light.noisew });
+  exaggeration: v.cbxExag ?? S.proj.cbx.exag, cfg_weight: v.cbxCfg ?? S.proj.cbx.cfg, temperature: v.cbxTemp ?? S.proj.cbx.temp, cbx_speed: v.cbxSpeed ?? S.proj.cbx.speed,
+  speed: v.lightSpeed ?? S.proj.light.speed, noise: v.lightNoise ?? S.proj.light.noise, noisew: v.lightNoiseW ?? S.proj.light.noisew });
 const gSpeakers = () => (S.proj.duo && S.proj.duo.on && /3\.1/.test(S.proj.g_model)) ? [S.proj.duo.a, S.proj.duo.b].filter(x => x && x.name).map(x => ({ name: x.name, voice: x.voice })) : [];
 const gFields = v => ({ g_model: S.proj.g_model, g_lang: S.proj.g_lang, g_voice: v.gVoice, g_preset: v.gPreset, g_style: (v.gPreset || S.proj.g_preset) === 'custom' ? (S.proj.g_style || '') : '', g_age: S.proj.g_age || '', g_age_custom: '',
   g_state: v.gState || '', g_state_custom: '', g_speakers: [], g_continuity: !!S.proj.g_continuity, g38_cast: [] });   // 162: speakers are per line now
@@ -715,12 +762,13 @@ async function voiceRun(run){
   t.clips = t.clips.filter(c => c.lines.length);
   const spans = r.lines || [], made = [];
   if (spans.length === ids.length && !spans[0].whole){
-    spans.forEach((sp, k) => made.push({ id: 'c' + (++uid), lines: [ids[k]], gulp: r.gulp, in: sp.t0, out: sp.t1, words: shiftWords(sp.words, spokenInfo(ids[k]).shift), src: [sp.t0, sp.t1], gi: k, at: anchor + (sp.t0 - spans[0].t0), trimIn: 0, trimOut: 0 }));
+    spans.forEach((sp, k) => made.push({ id: 'c' + (++uid), lines: [ids[k]], gulp: r.gulp, eng: lineEngine(ids[0]), in: sp.t0, out: sp.t1, words: shiftWordsFor(sp.words, ids[k]), src: [sp.t0, sp.t1], gi: k, at: anchor + (sp.t0 - spans[0].t0), trimIn: 0, trimOut: 0 }));
   } else {
     const end = spans.length ? spans[spans.length - 1].t1 : ((AUD.get(r.gulp) || {}).buf ? AUD.get(r.gulp).buf.duration : 1);
-    made.push({ id: 'c' + (++uid), lines: ids, gulp: r.gulp, in: 0, out: end, src: [0, end], gi: 0, at: anchor, trimIn: 0, trimOut: 0 });
+    made.push({ id: 'c' + (++uid), lines: ids, gulp: r.gulp, eng: lineEngine(ids[0]), in: 0, out: end, src: [0, end], gi: 0, at: anchor, trimIn: 0, trimOut: 0 });
   }
-  ids.forEach(id => { S.lines[id].dirty = false; });
+  if (typeof voiceOverlays === 'function') await voiceOverlays(ids);
+  markMade(ids);
   const newEnd = Math.max(...made.map(c => c.at + dur(c)));
   shiftAfter(t, oldEnd - 0.001, newEnd - oldEnd, null);
   t.clips.push(...made); t.clips.sort((a, b) => a.at - b.at); if (t.gapless) pack(t);
@@ -730,6 +778,10 @@ async function revoice(c, selectOnly){
   const owners = speechClips().filter(x => x.gulp === c.gulp && !x.file).sort((a, b) => (a.gi || 0) - (b.gi || 0) || a.in - b.in);
   const ids = owners.flatMap(x => x.lines), text = ids.map(id => spoken(id)).join('\n');
   const targets = selectOnly ? selectOnly : c.lines.filter(id => S.lines[id].dirty).length ? c.lines.filter(id => S.lines[id].dirty) : c.lines;
+  if (targets.every(id => S.lines[id] && S.lines[id].madeMain !== undefined && S.lines[id].madeMain === mainSig(id) && S.lines[id].madeSig !== lineSig(id))){ await voiceOverlays(targets); markMade(targets); return; }   // 169: only an overlap changed → the main take stays
+  { const eng = lineEngine(targets[0]); let ge = c.eng;   // 169: Chatterbox requests were silently re-made by Google (the part's engine)
+    if (!ge && typeof API().gulp_info === 'function'){ try { const gi = await API().gulp_info(c.gulp); ge = gi && gi.ok ? gi.engine : null; } catch (err) {} }
+    if (ge && eng && ge !== eng){ const [tr] = clipOfLine(c.lines[0]); await voiceRun({ track: tr, clips: [c] }); return; } }
   const first = ids.indexOf(targets[0]), last = ids.indexOf(targets[targets.length - 1]);
   const sel_start = ids.slice(0, first).reduce((s, id) => s + spoken(id).length + 1, 0);
   const sel_end = sel_start + ids.slice(first, last + 1).map(id => spoken(id)).join('\n').length;
@@ -741,7 +793,7 @@ async function revoice(c, selectOnly){
     owners.forEach(o => {
       const k = ids.indexOf(o.lines[0]), sp = spans[k], before = dur(o), [t] = clipOfLine(o.lines[0]);
       const fresh = targets.includes(o.lines[0]);
-      o.gulp = r.gulp; o.gi = k; o.src = [sp.t0, sp.t1]; o.words = shiftWords(sp.words, spokenInfo(o.lines[0]).shift);
+      o.gulp = r.gulp; o.gi = k; o.src = [sp.t0, sp.t1]; o.words = shiftWordsFor(sp.words, o.lines[0]);
       o.trimIn = fresh ? 0 : Math.min(o.trimIn || 0, sp.t1 - sp.t0 - 0.2); o.trimOut = fresh ? 0 : Math.min(o.trimOut || 0, sp.t1 - sp.t0 - 0.2 - o.trimIn);
       o.in = sp.t0 + o.trimIn; o.out = sp.t1 - o.trimOut;
       const delta = dur(o) - before; if (Math.abs(delta) > 0.001) shiftAfter(t, o.at + before - 0.001, delta, o);
@@ -750,16 +802,23 @@ async function revoice(c, selectOnly){
     const [t] = clipOfLine(owners[0].lines[0]), end = (AUD.get(r.gulp) || {}).buf ? AUD.get(r.gulp).buf.duration : dur(owners[0]);
     const at = Math.min(...owners.map(o => o.at)), oldEnd = Math.max(...owners.map(o => o.at + dur(o)));
     S.tracks.forEach(tr => tr.clips = tr.clips.filter(x => !owners.includes(x)));
-    t.clips.push({ id: 'c' + (++uid), lines: ids, gulp: r.gulp, in: 0, out: end, src: [0, end], gi: 0, at, trimIn: 0, trimOut: 0 });
+    t.clips.push({ id: 'c' + (++uid), lines: ids, gulp: r.gulp, eng: lineEngine(ids[0]), in: 0, out: end, src: [0, end], gi: 0, at, trimIn: 0, trimOut: 0 });
     shiftAfter(t, oldEnd - 0.001, (at + end) - oldEnd, null); t.clips.sort((a, b) => a.at - b.at); cleanupTracks();
   }
-  ids.forEach(id => { if (S.lines[id]) S.lines[id].dirty = false; });
+  if (typeof voiceOverlays === 'function') await voiceOverlays(ids.filter(id => S.lines[id])); markMade(ids.filter(id => S.lines[id]));
 }
-async function revoiceSelected(){ if (busy || sel.size !== 1) return; const id = [...sel][0], [, c] = clipOfLine(id); if (!c) return;
-  if (c.unvoiced) return generateAll(); remember(); setBusy(true);
-  try { await revoice(c, [id]); gcParts(); say(T('این خط دوباره ساخته شد.', 'This line was re-voiced.'), 'ok'); }
-  catch (e) { say(isCancel(e) ? T('لغو شد.', 'Cancelled.') : (e.message || String(e)), isCancel(e) ? 'ok' : 'err'); }
-  finally { setBusy(false); renderScript(); autosave(); } }
+async function revoiceSelected(){   // 169: any selection — one line or many (it silently did nothing for more than one)
+  if (busy || !sel.size) return;
+  const ids = orderedLines().filter(id => sel.has(id)), byClip = new Map(); let unvoiced = false;
+  ids.forEach(id => { const [, c] = clipOfLine(id); if (!c) return; if (c.unvoiced){ unvoiced = true; return; } if (!byClip.has(c)) byClip.set(c, []); byClip.get(c).push(id); });
+  if (!byClip.size){ if (unvoiced) generateAll(); return; }
+  remember(); setBusy(true); let ok = false;
+  try { for (const [c, part] of byClip) await revoice(c, part); gcParts(); ok = true;
+    say(ids.length > 1 ? T(`${FA(ids.length)} خط دوباره ساخته شد.`, `${ids.length} lines were re-voiced.`) : T('این خط دوباره ساخته شد.', 'This line was re-voiced.'), 'ok'); }
+  catch (err) { say(isCancel(err) ? T('لغو شد.', 'Cancelled.') : (err.message || String(err)), isCancel(err) ? 'ok' : 'err'); }
+  finally { setBusy(false); renderScript(); autosave(); }
+  if (ok && unvoiced) generateAll();
+}
 async function revoiceClip(){ const [, c] = findClip(selClip); if (!c || c.unvoiced) return; sel = new Set([c.lines[0]]); if (c.lines.length > 1){ remember(); setBusy(true);
   try { await revoice(c, c.lines); } catch (e) { say(e.message || String(e), 'err'); } finally { setBusy(false); renderScript(); autosave(); } } else revoiceSelected(); }
 
@@ -784,7 +843,9 @@ function schedule(){
     if (c.unvoiced) return; const a = AUD.get(c.gulp); if (!a || !a.buf) return;
     const end = c.at + dur(c); if (end <= playFrom) return;
     const off = Math.max(0, playFrom - c.at), src = ctx.createBufferSource(); src.buffer = a.buf; src.connect(gainFor(t));
-    src.start(base + c.at + off, c.in + off, dur(c) - off); nodes.push(src); if (!t.muted) speech.push([c.at, end]); }); });
+    src.start(base + c.at + off, c.in + off, dur(c) - off); nodes.push(src); if (!t.muted) speech.push([c.at, end]);
+    clipOverlays(c).forEach(o => { if (o.at + o.len <= playFrom) return; const oo = Math.max(0, playFrom - o.at), s2 = ctx.createBufferSource(); s2.buffer = AUD.get(o.gulp).buf; s2.connect(gainFor(t)); s2.start(base + o.at + oo, oo, o.len - oo); nodes.push(s2); });   // 169: overlaps over their line
+  }); });
   const mt = S.tracks.find(t => t.kind === 'music'); if (musicBuf && mt && mt.clips.length && !mt.muted){   // 166: every music clip at its place
     const lvl = Math.pow(10, S.music.level_db / 20), duckF = Math.pow(10, -(S.music.duck_db ?? 12) / 20), D = musicBuf.duration, ducking = (S.music.duck ?? true) && (S.music.duck_db ?? 12) > 0;
     const inSpeech = tt => speech.some(([a, b]) => tt >= a - 0.15 && tt < b + 0.6), cl = [...mt.clips].sort((a, b) => a.at - b.at), first = cl[0].at, last = Math.max(...cl.map(c => c.at + c.out - c.in));
@@ -798,7 +859,7 @@ function schedule(){
 }
 function tick(){
   if (!playing) return; const t = playFrom + (ac().currentTime - playT0);
-  if ((stopAt !== null && t >= stopAt) || t >= speechEnd() + 0.05){ stopPlay(); seekVisual(stopAt !== null ? stopAt : speechEnd()); return; }
+  if ((stopAt !== null && t >= stopAt) || t >= compEnd() + 0.05){ stopPlay(); seekVisual(stopAt !== null ? stopAt : compEnd()); return; }
   seekVisual(Math.max(playFrom, t));
   const wrap = $('tlScroll'), vis = wrap.clientWidth - $('heads').offsetWidth, x = PAD + playhead * zoom;
   if (x > wrap.scrollLeft + vis * 0.85) wrap.scrollLeft = x - vis * 0.15;
@@ -875,7 +936,7 @@ async function setMusicTrack(b64, file, name){
 function layoutMusic(){ const mt = S.tracks.find(t => t.kind === 'music'); if (!S.music.file){ mt.clips = []; S.music.manual = false; return; } if (!S.music.manual || !mt.clips.length) mt.clips = [{ id: 'mu1', name: S.music.name, at: 0, in: 0, out: Math.max(2, speechEnd()) }]; }   // 166: once edited, your clips are kept
 function removeMusic(){ remember(); S.music.file = null; S.music.name = null; musicBuf = null; layoutMusic(); selClip = null; showInsp('proj'); renderScript(); autosave(); }
 function setMusic(k, v){ S.music[k] = v; autosave(); if (playing){ const t = playhead; stopPlay(); seekVisual(t); startPlay(); } }
-function showMusicInspector(){ ['line', 'proj'].forEach(k => $('insp-' + k).classList.add('hidden')); $('insp-music').classList.remove('hidden');
+function showMusicInspector(){ ['line', 'proj'].forEach(k => $('insp-' + k).classList.add('hidden')); $('insp-music').classList.remove('hidden'); const tl = $('it-line').parentElement; if (tl) tl.classList.add('hidden');   // 169: a music clip has only its own panel
   $('musicName').textContent = S.music.name || ''; $('musicCredit').textContent = S.music.credit || ''; setRange('mLevel', S.music.level_db); setRange('mFadeIn', S.music.fade_in); setRange('mFadeOut', S.music.fade_out); setRange('mDuckDb', S.music.duck_db ?? 12); }
 const UNIT_FA = { '%': '٪', px: 'px', dB: 'دسی‌بل', s: 'ثانیه', '°': '°', '': '' };
 function rvText(el){ const v = +el.value, u = el.dataset.unit || '', n = Number.isInteger(v) ? String(v) : v.toFixed(1); return (lang === 'fa' ? FA(n).replace('.', '٫').replace('-', '−') : n) + (u ? ' ' + (lang === 'fa' ? (UNIT_FA[u] ?? u) : u) : ''); }
@@ -1118,7 +1179,7 @@ function clipWords(c, text){
   if (c.words.every(w => text.slice(w.c0, w.c1) === w.w)) return c.words;
   // diacritics added or cleared: the same words, at new positions — re-locate them by their letters
   const sk = x => x.replace(/[\u064B-\u0655\u0670\u200c\u200d]/g, ''), toks = [...text.matchAll(/\S+/g)];
-  if (toks.length !== c.words.length || !toks.every((m, i) => sk(m[0]) === sk(c.words[i].w))) return null;
+  if (toks.length !== c.words.length) return null;   // 169: an edited word keeps its timing while the count still matches (the spine is the engine's, paid once)
   return c.words.map((w, i) => ({ ...w, w: toks[i][0], c0: toks[i].index, c1: toks[i].index + toks[i][0].length }));
 }
 function timeToChar(c, text, t){             // t = time inside the gulp
@@ -1359,10 +1420,10 @@ function focusMusic(){ const mt = S.tracks.find(t => t.kind === 'music'); if (mt
 const tailPx = () => Math.max(160, Math.round(($('tlScroll') || { clientWidth: 800 }).clientWidth * 0.35));
 const maxPlayT = () => { const w = parseFloat($('lanes').style.width) || 0; return Math.max(0, (w - PAD - 50) / zoom); };
 function seekVisual(t){
-  playhead = Math.min(maxPlayT() || Infinity, Math.max(0, t)); const x = PAD + playhead * zoom;
+  playhead = Math.min(maxPlayT() || Infinity, Math.max(0, t)); const x = PAD + playhead * zoom; alignRuler();
   const ph = $('ph'); if (ph) ph.style.left = x + 'px';
   const pl = $('phLabel'); if (pl){ pl.textContent = num(fmt(playhead)); const host = pl.parentElement, hw = host ? host.scrollWidth || host.clientWidth : 1e6, lw = pl.offsetWidth || 44;
-    const rv = $('rulerView'), mL = parseFloat($('ruler').style.marginLeft) || 0, visL = rv ? rv.scrollLeft - mL : 0, visR = rv ? visL + rv.clientWidth : hw;
+    const sc0 = $('tlScroll'), visL = sc0 ? sc0.scrollLeft : 0, visR = sc0 ? visL + sc0.clientWidth - ($('heads').offsetWidth || 0) : hw;
  pl.style.left = Math.max(visL + 2, Math.min(x - lw / 2, Math.min(visR, hw) - lw - 2)) + 'px'; }   /* 167: centred on the line, held inside the visible ruler */
   const st = $('phStem'); if (st) st.style.left = x + 'px';
   const tb = $('tBtn'); if (tb) tb.textContent = num(fmt(playhead));
@@ -1378,28 +1439,31 @@ addEventListener('keydown', e => {
   if (e.key === 'Escape' && !typing && $('ddMenu').classList.contains('hidden')){ sel = new Set(); selClip = null; paintSel(); renderTimeline(); }
 });
 // ---- per-track volume, live while playing
-function setTrackVolume(i, v, el){ const t = S.tracks[i]; t.volume = v; const g = trackGain[t.id]; if (g && AC && !t.muted) g.gain.setValueAtTime(v, AC.currentTime);
+function setTrackVolume(i, v, el){ const t = S.tracks[i]; t.volume = v; const vb = document.querySelector(`[data-vol="${i}"]`); if (vb) vb.classList.toggle('text-primary', Math.abs(v - 1) > 1e-6); const g = trackGain[t.id]; if (g && AC && !t.muted) g.gain.setValueAtTime(v, AC.currentTime);
   if (el) el.dataset.tip = T('بلندیِ ترک', 'Track volume') + ': ' + Math.round(v * 100) + (lang === 'fa' ? '٪' : '%'); autosave(); }
 // ---- export: every unmuted voice track, at its volume; music at its track's volume, off when muted
 function timelineSpec(){
   const clips = [];
-  S.tracks.forEach(t => { if (t.kind !== 'speech' || t.muted) return; t.clips.forEach(c => { if (!c.unvoiced && c.gulp != null) clips.push({ gulp: c.gulp, in: c.in, out: c.out, at: c.at, gain: t.volume ?? 1 }); }); });
+  S.tracks.forEach(t => { if (t.kind !== 'speech' || t.muted) return; t.clips.forEach(c => { if (!c.unvoiced && c.gulp != null){ clips.push({ gulp: c.gulp, in: c.in, out: c.out, at: c.at, gain: t.volume ?? 1 }); clipOverlays(c).forEach(o => clips.push({ gulp: o.gulp, in: 0, out: o.len, at: o.at, gain: t.volume ?? 1 })); } }); });
   return { clips };
 }
 const musicTrack = () => S.tracks.find(t => t.kind === 'music');
-async function exportAudio(withMusic){
+async function exportAudio(mode){
   document.activeElement && document.activeElement.blur();
-  if (withMusic === undefined) withMusic = !!S.music.file || !!S.music.name;          // the default: with music when there is music
-  const mt = musicTrack(), mVol = mt ? (mt.volume ?? 1) : 1; if (mt && (mt.muted || mVol <= 0)) withMusic = false;
-  if (pending()) say(T(`${FA(pending())} خط تغییر کرده و دوباره ساخته نشده؛ تایم‌لاین همان‌طور که پخش می‌شود ذخیره می‌شود.`, `${pending()} lines are edited and not re-voiced; the timeline is exported as it plays.`), 'ok');
-  if (!timelineSpec().clips.length){ say(T('همهٔ ترک‌های گفتار بی‌صدا هستند یا چیزی ساخته نشده.', 'All voice tracks are muted, or nothing is voiced.'), 'err'); return; }
+  // 169: the main export is the COMPOSITION exactly as it plays — every unmuted track at its volume, the music
+  //      clips when there are any, muted tracks silent; nothing is required (no music → no music)
+  const comp = mode !== false && mode !== 'voice';
+  const mt = musicTrack(), mVol = mt ? (mt.volume ?? 1) : 1, hasMusic = comp && !!mt && !mt.muted && mVol > 0 && (mt.clips || []).length > 0 && !!S.music.file;
+  if (pending()) say(T(`${FA(pending())} خط تغییر کرده و دوباره ساخته نشده؛ ترکیب همان‌طور که پخش می‌شود ذخیره می‌شود.`, `${pending()} lines are edited and not re-voiced; the composition is exported as it plays.`), 'ok');
+  const spec = timelineSpec(); if (!spec.clips.length){ say(T('هیچ ترکِ گفتارِ شنیدنی‌ای نیست — همه بی‌صدا هستند یا چیزی ساخته نشده.', 'No audible voice track — all are muted or nothing is voiced.'), 'err'); return; }
   if (busy) return; setBusy(true);
   try {
-    const cfg = withMusic ? { on: true, clips: musicClipsSpec(), file: S.music.file, level_db: S.music.level_db + 20 * Math.log10(Math.max(0.01, mVol)), duck: (S.music.duck_db ?? 12) > 0, duck_db: S.music.duck_db ?? 12, fade_in: S.music.fade_in, fade_out: S.music.fade_out } : null;
-    const r = await API().timeline_files(timelineSpec(), cfg); if (!r.ok) throw new Error(r.error || T('خطای ناشناخته', 'Unknown error'));
-    const sv = await API().save_mp3(withMusic ? r.b64_music : r.b64, withMusic ? 'music' : '');
-    if (sv.ok) say(T('ذخیره شد: ', 'Saved: ') + sv.path + ' — ' + num(r.seconds) + T(' ثانیه', ' s') + (withMusic ? T(' — با موسیقی', ' — with music') : T(' — فقط گفتار', ' — voice only')), 'ok');
-  } catch (e) { say(isCancel(e) ? T('لغو شد.', 'Cancelled.') : (e.message || String(e)), isCancel(e) ? 'ok' : 'err'); }
+    const cfg = hasMusic ? { on: true, clips: musicClipsSpec(), file: S.music.file, level_db: S.music.level_db + 20 * Math.log10(Math.max(0.01, mVol)), duck: (S.music.duck_db ?? 12) > 0, duck_db: S.music.duck_db ?? 12, fade_in: S.music.fade_in, fade_out: S.music.fade_out } : null;
+    const suffix = comp ? '' : 'voice'; let path, secs;
+    if (typeof API().timeline_export === 'function'){ const r = await API().timeline_export(spec, cfg, suffix); if (!r.ok){ if (r.error === 'cancelled') return; throw new Error(r.error || T('خطای ناشناخته', 'Unknown error')); } path = r.path; secs = r.seconds; }
+    else { const r = await API().timeline_files(spec, cfg); if (!r.ok) throw new Error(r.error || T('خطای ناشناخته', 'Unknown error')); const sv = await API().save_mp3(hasMusic ? r.b64_music : r.b64, suffix); if (!sv.ok) return; path = sv.path; secs = r.seconds; }
+    say(T('ذخیره شد: ', 'Saved: ') + path + ' — ' + num(secs) + T(' ثانیه', ' s') + (comp ? T(' — ترکیبِ کامل', ' — full composition') : T(' — فقط گفتار', ' — voice only')), 'ok');
+  } catch (err) { say(isCancel(err) ? T('لغو شد.', 'Cancelled.') : (err.message || String(err)), isCancel(err) ? 'ok' : 'err'); }
   finally { setBusy(false); }
 }
 // ---- LETTER precision: inside a word, time is spread over its letters by weight
@@ -1407,7 +1471,7 @@ async function exportAudio(withMusic){
 const letterW = ch => /[\u064B-\u0655\u0670\u200c\u200d\s]/.test(ch) ? 0 : (/[اآوی]/.test(ch) ? 1.3 : 1);
 function timeToChar(c, text, t){
   const W = clipWords(c, text);
-  if (!W){ const D = (c.src ? c.src[1] - c.src[0] : dur(c)), s0 = c.src ? c.src[0] : c.in; return Math.round(Math.min(1, Math.max(0, (t - s0) / D)) * text.length); }
+  if (!W) return timeToCharEst(c, text, t);
   for (let i = 0; i < W.length; i++){ const w = W[i];
     if (t < w.t0) return w.c0;
     if (t <= w.t1){ const tot = [...text.slice(w.c0, w.c1)].reduce((a, ch) => a + letterW(ch), 0) || 1; let target = (t - w.t0) / Math.max(0.01, w.t1 - w.t0) * tot, k = w.c0;
@@ -1423,11 +1487,28 @@ function trimSpan(text, c){
 function caretLine(){ const id = sel.size === 1 ? [...sel][0] : lastLine; return id && S.lines[id] ? id : null; }
 async function insertIPA(){ const id = caretLine(); if (!id) return say(T('اول در یک خط، کنارِ واژه کلیک کنید.', 'Click next to the word first.'), 'err');
   const ipa = await askText(T('تلفظِ واژه به الفبای آوایی بین‌المللی (IPA)، بدونِ اسلش:', 'The word\'s pronunciation in IPA, without slashes:')); if (ipa && ipa.trim()) insertTag('/' + ipa.trim() + '/'); }
-async function insertOverlap(){ const id = caretLine(); if (!id) return say(T('اول در یک خط کلیک کنید.', 'Click in a line first.'), 'err');
-  const r = await askText(T('واکنشِ شنونده (مثلاً: آره، واقعاً؟):', 'The listener\'s reaction (e.g. oh really?):')); if (r && r.trim()) insertTag('|' + r.trim() + '|'); }
+async function insertOverlap(){   // 169: a speaker picker; «|Name: text|»; the line itself does not pause
+  const id = caretLine(); if (!id) return say(T('اول در یک خط کلیک کنید.', 'Click in a line first.'), 'err');
+  const own = speakerOfLine(id), res = await askOverlap(own); if (!res || !res.text) return;
+  insertTag('|' + (res.spk ? res.spk.name + ': ' : '') + res.text.replace(/[|]/g, '') + '|'); }
+function askOverlap(own){ return new Promise(done => {
+  let d = $('ovlDlg'); if (!d){ d = document.createElement('dialog'); d.id = 'ovlDlg'; d.className = 'modal'; document.body.appendChild(d); }
+  const list = spkList(), dflt = list.find(x => x !== own) || null, PRE = [T('آره', 'Yeah'), T('اوهوم', 'Mm-hmm'), T('واقعاً؟', 'Really?'), T('عجب!', 'Wow!'), T('درسته', 'Right'), T('نه بابا!', 'No way!'), T('خب', 'Well…')];
+  d.innerHTML = `<div class="modal-box ui max-w-md p-6" dir="${lang === 'fa' ? 'rtl' : 'ltr'}"><div class="flex items-center justify-between gap-3"><h3 class="text-lg font-bold">${T('واکنشِ هم‌زمان', 'Overlapping reaction')}</h3><button class="btn btn-ghost btn-circle" data-act="no" aria-label="close"><svg class="size-5"><use href="#i-x"/></svg></button></div>
+    <p class="mt-1 text-xs text-base-content/70">${T('کسِ دیگری وسطِ همین خط، روی صدای گوینده، واکنش نشان می‌دهد؛ خودِ خط مکث نمی‌کند.', "Someone else reacts in the middle of this line, over the speaker's voice; the line itself does not pause.")}</p>
+    <fieldset class="fieldset mt-3"><legend class="fieldset-legend text-xs">${T('چه کسی می‌گوید', 'Who says it')}</legend><select id="ovlSpk" class="select select-sm w-full">${list.length ? list.map((x, k) => `<option value="${k}" ${x === dflt ? 'selected' : ''}>${escapeHtml(x.name)}${x === own ? T(' — گویندهٔ همین خط', " — this line's speaker") : ''}</option>`).join('') : `<option value="">${T('— صدای پروژه —', "— project's voice —")}</option>`}</select></fieldset>
+    <fieldset class="fieldset"><legend class="fieldset-legend text-xs">${T('چه می‌گوید', 'What they say')}</legend><input id="ovlText" class="input input-sm w-full" placeholder="${T('مثلاً: واقعاً؟', 'e.g. really?')}"></fieldset>
+    <div class="mt-2 flex flex-wrap gap-1.5">${PRE.map(x => `<button type="button" class="btn btn-xs rounded-full border-base-content/15 bg-base-100" data-ovl="${escapeHtml(x)}">${escapeHtml(x)}</button>`).join('')}</div>
+    <div class="modal-action mt-4"><button class="btn btn-ghost btn-sm" data-act="no">${T('انصراف', 'Cancel')}</button><button class="btn btn-primary btn-sm" data-act="ok">${T('افزودن', 'Add')}</button></div></div><form method="dialog" class="modal-backdrop"><button>close</button></form>`;
+  let fin = false; const end = v => { if (fin) return; fin = true; if (d.open) d.close(); done(v); };
+  d.querySelectorAll('[data-ovl]').forEach(b => b.onclick = () => { $('ovlText').value = b.dataset.ovl; $('ovlText').focus(); });
+  d.querySelectorAll('[data-act=no]').forEach(b => b.onclick = () => end(null));
+  d.querySelector('[data-act=ok]').onclick = () => { const k = $('ovlSpk').value; end({ text: $('ovlText').value.trim(), spk: k === '' ? null : spkList()[+k] }); };
+  $('ovlText').onkeydown = ev => { if (ev.key === 'Enter'){ ev.preventDefault(); d.querySelector('[data-act=ok]').click(); } };
+  d.addEventListener('close', () => end(null), { once: true }); d.showModal(); setTimeout(() => $('ovlText').focus(), 30); }); }
 // ---- Google 3.1 two speakers; Fish custom style, age, state and speakers
-function setDuo(path, v){ remember(); const [a, b] = path.split('.'); if (b) S.proj.duo[a][b] = v; else S.proj.duo[a] = v; markDirty(() => true); fillExtras2(); renderScript(); autosave(); }
-function setFishOpt(k, v){ remember(); S.proj.fish[k] = v; markDirty(id => lineEngine(id) === 'fish'); fillExtras2(); renderScript(); autosave(); }
+function setDuo(path, v){ remember(); const [a, b] = path.split('.'); if (b) S.proj.duo[a][b] = v; else S.proj.duo[a] = v; fillExtras2(); renderScript(); autosave(); }
+function setFishOpt(k, v){ remember(); S.proj.fish[k] = v; fillExtras2(); renderScript(); autosave(); }
 const optRows = (rows, cur) => rows.map(([v, l]) => `<option value="${escapeHtml(v)}" ${v === cur ? 'selected' : ''}>${escapeHtml(l)}</option>`).join('');
 function fillExtras2(){
   const p = S.proj, f = p.fish, d = p.duo;
@@ -1518,7 +1599,12 @@ async function projectOpen(){
 const SPK_ONLY = /^\s*[^:：\n.!?؟«»"]{1,24}[:：]\s*$/;
 function joinSpk(arr){ const out = []; for (let i = 0; i < arr.length; i++){ if (SPK_ONLY.test(arr[i]) && i + 1 < arr.length){ out.push(arr[i].trim() + ' ' + String(arr[i + 1]).trimStart()); i++; } else out.push(arr[i]); } return out; }
 function splitSentences(...a){ const r = splitSentences0(...a); return Array.isArray(r) ? joinSpk(r) : (typeof r === 'string' ? joinSpk(r.split('\n')).join('\n') : r); }
-function reflowSentences(...a){ const r = reflowSentences0(...a); return typeof r === 'string' ? joinSpk(r.split('\n')).join('\n') : (Array.isArray(r) ? joinSpk(r) : r); }
+function reflowSentences(text, ...rest){
+  // 169: an overlap |…| is opaque to the sentence splitter (its «؟» or «Name:» must not open a new line)
+  const keep = []; const masked = String(text || '').replace(/\|[^|\n]{1,60}\|/g, m => { keep.push(m); return `\u2402${keep.length - 1}\u2403`; });
+  const un = s => s.replace(/\u2402(\d+)\u2403/g, (m, k) => keep[+k] || '');
+  const r = reflowSentences0(masked, ...rest);
+  return typeof r === 'string' ? joinSpk(un(r).split('\n')).join('\n') : (Array.isArray(r) ? joinSpk(r.map(un)) : r); }
 
 // 162 · ▶ on every voice menu row
 function previewHooks(){
@@ -1536,12 +1622,7 @@ function askText(title, hint, initial){ return new Promise(res => { if (ASK) ASK
 function askDone(v){ const r = ASK; ASK = null; if ($('askDlg').open) $('askDlg').close(); if (r) r(v === null ? null : String(v)); }
 document.addEventListener('DOMContentLoaded', () => { const d = $('askDlg'); if (d) d.addEventListener('close', () => { if (ASK) askDone(null); }); });
 // the ruler is exactly as wide as the lanes and starts at the same pixel, so the label and the line never part
-function alignRuler(){
-  const r = $('ruler'), l = $('lanes'), rv = $('rulerView'), sc = $('tlScroll'); if (!r || !l) return;
-  r.style.width = Math.max(l.scrollWidth, l.offsetWidth) + 'px'; const cur = parseFloat(r.style.marginLeft) || 0;
-  const d = Math.round(l.getBoundingClientRect().left - (r.getBoundingClientRect().left - cur) - (rv && sc ? sc.scrollLeft - rv.scrollLeft : 0));
-  if (Math.abs(d - cur) > 0.5) r.style.marginLeft = d + 'px'; if (rv && sc) rv.scrollLeft = sc.scrollLeft;
-}
+function alignRuler(){ const r = $('ruler'), l = $('lanes'); if (!r || !l) return; const w = l.style.width || (l.scrollWidth + 'px'); if (r.style.width !== w) r.style.width = w; if (r.style.marginLeft) r.style.marginLeft = ''; }
 const _renderTimeline163 = renderTimeline;
 renderTimeline = function(){ _renderTimeline163(); requestAnimationFrame(() => { alignRuler(); seekVisual(playhead); }); };
 addEventListener('resize', () => requestAnimationFrame(alignRuler));
@@ -1557,10 +1638,10 @@ function openVolPop(ev, i){
 }
 
 // 164 · voice lists as the classic interface had them; delete only on cloned voices, your samples and recent items
-function cbxGroups(list, selVal, delSamples){
+function cbxGroups(list, selVal, delSamples, prefix){
   const groups = new Map(), mine = [];
   (list || []).forEach(v => { if (typeof v === 'string') v = { id: v, name: v, builtin: true }; if (v.builtin === false || v.mine || v.user){ mine.push(v); return; }
-    const g = T('نمونه: ', 'Sample: ') + (v.voice || v.name || v.id); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(v); });
+    const g = (prefix || '') + (v.voice || v.name || v.id); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(v); });
   const op = (v, label, del) => `<option value="${escapeHtml(v.id || v.name)}" ${(v.id || v.name) === selVal ? 'selected' : ''} ${del ? 'data-del' : ''}>${escapeHtml(label)}</option>`;
   return [...groups.entries()].map(([g, vs]) => `<optgroup label="${escapeHtml(g)}">` + vs.map(v => op(v, v.style || v.title || v.name || v.id, false)).join('') + '</optgroup>').join('')
     + (mine.length ? `<optgroup label="${T('نمونه‌های من', 'My samples')}">` + mine.map(v => op(v, v.name || v.title || v.id, delSamples)).join('') + '</optgroup>' : '');
@@ -1572,7 +1653,7 @@ function fishOptions(cur){
     + (FISH_VOICES.length ? `<optgroup label="${T('صداهای من در Fish Audio', 'My Fish Audio voices')}">` + FISH_VOICES.map(v => fo(v._id || v.id, v.title || v._id || v.id, true)).join('') + '</optgroup>' : '')
     + (FISH_USED.length ? `<optgroup label="${T('استفاده‌شده‌های قبلی', 'Used before')}">` + FISH_USED.map(v => fo(v.id, v.title || v.id, true)).join('') + '</optgroup>' : '')
     + (FISH_DESIGNED.length ? `<optgroup label="${T('طراحی‌شده‌ها', 'Designed')}">` + FISH_DESIGNED.map(v => fo(v.id, v.title || v.id, false)).join('') + '</optgroup>' : '')
-    + cbxGroups(CBX_VOICES, cur, true);
+    + cbxGroups(CBX_VOICES, cur, true, T('نمونه: ', 'Sample: '));
 }
 
 // 166 · music clips: split, duplicate, delete one (the music itself goes only with its last clip); quick trim visual for music
@@ -1601,3 +1682,27 @@ previewHooks = function(){ _previewHooks166();
   ['pVoice', 'lnVoice'].forEach(id => { if ($(id)) $(id)._actions = g.map(a => a[3] ? a : [a[0], a[1], a[2], () => openLib(id === 'pVoice' ? 'proj' : 'line')]); });
   if ($('fishVoice')) $('fishVoice')._actions = [['library-big', 'کتابخانهٔ Fish Audio…', 'Fish Audio library…', () => openFishLib()], ['audio-lines', 'شبیه‌سازیِ صدا…', 'Clone a voice…', () => $('fishCloneDlg').showModal()], ['wand-sparkles', 'طراحیِ صدا…', 'Design a voice…', () => $('fishDesignDlg').showModal()]];
 };
+
+// 169: without word timings the caret spread the letters over the WHOLE clip, silences included, and fell behind the voice.
+//      Now they are spread (by weight) over the voiced part of the clip's audio only.
+const VOICED = new Map();
+function voicedSpan(c){
+  const s0 = c.src ? c.src[0] : c.in, s1 = c.src ? c.src[1] : c.out, key = c.gulp + ':' + (+s0).toFixed(3) + ':' + (+s1).toFixed(3); if (VOICED.has(key)) return VOICED.get(key);
+  const a = AUD.get(c.gulp), b = a && a.buf; let span = [s0, s1];
+  if (b){ const d = b.getChannelData(0), sr = b.sampleRate, i0 = Math.max(0, Math.floor(s0 * sr)), i1 = Math.min(d.length, Math.floor(s1 * sr)), win = Math.max(1, Math.floor(sr * 0.02)); let pk = 0;
+    for (let i = i0; i < i1; i += 32) pk = Math.max(pk, Math.abs(d[i]));
+    const th = Math.max(0.006, pk * 0.06), energy = i => { let m = 0; for (let j = i; j < Math.min(i1, i + win); j += 4) m = Math.max(m, Math.abs(d[j])); return m; };
+    let a0 = i0; while (a0 < i1 && energy(a0) < th) a0 += win; let a1 = i1; while (a1 > a0 && energy(Math.max(i0, a1 - win)) < th) a1 -= win;
+    if (a1 - a0 > sr * 0.1) span = [a0 / sr, a1 / sr]; }
+  VOICED.set(key, span); return span; }
+function timeToCharEst(c, text, t){ const [v0, v1] = voicedSpan(c), f = Math.min(1, Math.max(0, (t - v0) / Math.max(0.05, v1 - v0)));
+  const w = Array.from(text, letterW), tot = w.reduce((s, x) => s + x, 0) || 1, goal = f * tot; let acc = 0;
+  for (let i = 0; i < w.length; i++){ if (acc + w[i] > goal) return i; acc += w[i]; } return text.length; }
+// 169: «تغییر کرده» is recomputed whenever the script is drawn (so changing something back clears it)
+const _renderScript169 = renderScript;
+renderScript = function(){ try { refreshDirty(); } catch (err) {} return _renderScript169.apply(this, arguments); };
+// 169: Esc clears every selection, the music clip's too
+document.addEventListener('keydown', ev => { if (ev.key !== 'Escape' || (ev.target && (ev.target.isContentEditable || /INPUT|TEXTAREA|SELECT/.test(ev.target.tagName)))) return;
+  if (selClip && String(selClip).startsWith('mu')){ selClip = null; showInsp('proj'); if (typeof placeClipBar === 'function') placeClipBar(); renderTimeline(); } });
+// 169: reveal the app's log file — the engine resolves the folder from the user's home at run time (no fixed path)
+async function openLogFolder(){ try { const r = await API().open_log_folder(); if (!r || !r.ok) say((r && r.error) || T('پوشهٔ گزارش باز نشد.', "Could not open the log's folder."), 'err'); else say(T('پوشهٔ گزارش باز شد: ', "Log folder opened: ") + (r.path || ''), 'ok'); } catch (err) { say(String(err), 'err'); } }
