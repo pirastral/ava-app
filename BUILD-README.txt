@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist
 ======================================================================
-This zip is the COMPLETE application source as of update 170.
+This zip is the COMPLETE application source as of update 175.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -16,9 +16,143 @@ Replace these files in the repo (paths identical):
   builtin_keys.json – NEW (101): Freesound / Jamendo keys shipped with the app
   en_strings.py     – NEW (107): English renderings of engine messages (116: Fish added)
   requirements.txt  – 116: + msgpack
-  voices/           – NOW POPULATED (107): 63 clips + voices.json
+  voices/           – NOW POPULATED (107): 63 clips + voices.json — 175: NOT in the zip (byte-identical to 170's, so the
+                      zip stays under the 30 MB upload limit): leave the repo's voices/ folder exactly as it is
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
+  ui/sfx/           – the effects library (170); 175: + fox/ — the Fox and the Moon's own 45 sounds (ships in ui/)
+  tools/            – build-time only, never shipped: ui-build/ (the page), make_sfx.py, fox_sfx.py + fox_render.js (175),
+                      protect.py / verify_protection.py
+
+WHAT CHANGED IN 175 (on top of 174) — everything asked for since 174, in one build (none of 171–174 was deployed)
+  · TOOLING: the page's build tools live in the tree (tools/ui-build: build-editor.py, package.json, the Tailwind input).
+  · VIDEO: the audio track's own volume now reaches the video export (174 applied it to playback only).
+  · SLIDESHOW («اسلایدشو») on the background track: several pictures as background clips joined by fades, spread equally
+    over the background track's free time, each at least the minimum slide length; any slide's length or fade can be changed.
+  · ENGINE-AWARE MENUS: tones, tags and voices follow each line's engine; a switch removes the tags and tones the new
+    engine cannot do (pauses and paid overlaps stay) and replaces a voice it cannot use by its default; a warning dot shows
+    where a chosen voice does not carry over, and clears once that engine's voice menu is opened. A switch is not an edit:
+    lines stay unmarked (an empty voice slot keeps meaning «the project's voice») and the overlaps' audio is kept.
+  · The overlap dialog in the standard dialog design; its badge identical to the speaker chip; a choice dialog for
+    questions with several answers. The Orb Lab template reads the live frame as its texture (re-read every frame).
+  · ANIMATION, rebuilt object-aware after the founder's critique, on Picsart's model (he designed Picsart's animation tools):
+    In · Out · Loop tabs, each with its own slider (In/Out length, at most half the object's time; Loop speed); Out plays In
+    reversed; what is offered depends on the object — text, picture/video, sticker, podcast template, background clip
+    (Loop only: camera moves — background clips are joined by transitions). 32 In/Out presets, 19 loops; text by line,
+    word or letter (Persian letters stay joined: each is cut from the shaped word); 10 real text-background behaviours
+    (follow, fade, grow, stretch, pop, drop, rise, outline, highlighter…); the white shine sweep is gone; hover previews,
+    directions, podcast speakers together or one after another; a split keeps In on the first half, Out on the second.
+  · BLACK PLACEHOLDER fixed: a fading object composites as one layer (no black box behind it), a shadow comes only from
+    what is visible, and background clips no longer fade over black.
+  · ADJUSTMENTS WORK ON THE MAC: WKWebView ignores the canvas's ctx.filter, so brightness, contrast, saturation, hue and
+    blur run on WebGL (FXGL) — preview and export.
+  · FONTS: Vazirmatn, IBM Plex Sans Arabic, Noto Kufi Arabic, Noto Naskh Arabic, Markazi Text, Lalezar and Noto Sans
+    (Latin), embedded; only weights a family really has; the canvas loads a family before drawing (174's canvas asked for
+    «Vazirmatn» while the page embedded «Vazirmatn Variable», so every canvas text fell back to the system font).
+  · ENGLISH: a complete sweep — dialogs, menus, options, tooltips, placeholders, aria labels — rewritten as product English
+    (American, not literal), left-aligned; switching back to Persian restores everything (it never did), and the range
+    value labels no longer vanish on a language switch.
+  · THE FOX AND THE MOON'S OWN SOUNDS: a new family in the effects library («روباه و ماه», 45 sounds): the editor's 12
+    library sounds and 24 transition sounds rendered by its own code with its own room, the 8 Python-made events of the
+    film's sound-effects stem, and the film's score. tools/fox_sfx.py rebuilds them from the HTML (declicked where a
+    source stops dead, DC removed, peak −1 dB, MP3 checked for overshoot); make_sfx.py now keeps families it doesn't make.
+  · VIDEO-MODE EFFECTS: adding a sound effect in video mode threw since 172 (no inspector for an effect object). An effect
+    now has its own panel (name, family, listen, volume, Replace), no frame on the canvas, and a split plays on from where
+    it stopped (preview and export).
+  · SHADERS.COM: the 13 progress-driven wipes and dissolves of the MIT-licensed `shaders` package (engine 4.0.2) ported to
+    the app's WebGL engine (the package itself needs WebGPU): Linear wipe, Barn doors, Block dissolve, Checker, Diamond,
+    Iris, Noise dissolve, Page peel, Clock, Random bars, Ripple, Slice, Venetian blinds — same coverage fields, hashes and
+    noise, their props (directions and corners as menus), an ease-in-out; a third group in the transition menu. Every
+    transition now has a Persian name, a line about it and Persian control names; the Fox editor's scene programs (orb,
+    mesh, camera, look…) are no longer offered as transitions.
+  · EXPORT FORMATS: MP4 (default) · MOV (QuickTime's brand, for Final Cut and iMovie) · WebM · MKV (Matroska; H.264 + AAC
+    where the Mac has them, the engine's MP3 where it has no audio encoder) · GIF; the dialog's info line follows the
+    format. The save dialog forced «.mp4» on every file (a WebM became «….webm.mp4») — each format keeps its extension.
+  Tests: t18 (animation, 17) · t19 (fonts, 5) · t20 (English) · t21 (Fox sounds + the effect panel, 9) · t22 (shaders.com
+  transitions, 8) · t23 (formats, 6) · t23b (real H.264/AAC through the MKV and MOV muxers, decoded back by ffmpeg)
+  + every suite + engine 146–160.
+  STILL OPEN: 13 voice samples of the 3.1-preview set need the founder's keys; the music delay waits for his next log.
+
+WHAT CHANGED IN 174 (on top of 173) — VIDEO TRACKS as the founder specified
+  · Tracks: subtitles fixed on top; regular tracks (the only ones with a grab handle — they reorder); the BACKGROUND track
+    fixed right above the AUDIO track. 172's «layers take anything» undone; 172/older projects migrate (the old 'vid'
+    layer and full-frame/podcast objects → background).
+  · The frame is built in order: the background track's active clip — or the TRANSITION between two adjacent background
+    clips — then the regular tracks, then subtitles; so a transition changes only what actually changes.
+  · Transitions JOIN two background clips (the 170 transition objects are gone): «گذار» in the clip's toolbar, options in
+    the inspector (fade + the Fox editor's 30 looks, length, each look's controls), a badge right of the clip's duration
+    mark, and every change previews from 1 s before to 1 s after it.
+  · Background pictures/videos cover the canvas; a drag on the canvas pans along the free direction; the fit is computed
+    per object every frame, so a canvas change refits each one. Background videos start unmuted; every video has a volume.
+  · Podcast STYLE is a background clip; the podcast TEMPLATE («قالبِ پادکست») sits on a regular track with no background
+    (its orbs drawn over the frame).
+  · Pictures and videos: a collapsible «تنظیمِ تصویر» (brightness, contrast, saturation, hue, blur).
+  · The audio track is selectable, with its own volume over the whole audio composition (playback in video mode).
+  Tests: t16 (new, 5 checks) + every suite + engine 146–160.
+  NEXT: slideshow (min slide length, pictures spread equally over the composition, fades); the export applying the audio
+  track's volume; the warning dot with the engine-aware voices.
+
+WHAT CHANGED IN 173 (on top of 172) — the founder's track rules (172 over-generalised «no specialty tracks»)
+  · AUDIO MODE: TTS tracks are SPECIALIZED — speech clips and reactions only, always on top however many («گفتار N»);
+    music, effects and files sit on REGULAR tracks below («ترک N»). Placement, new tracks and drops respect the kind
+    (a clip dropped on the wrong kind of track is refused); 172 projects are sorted into the right kinds on opening.
+  · Each TTS clip's volume is in its «این خط» inspector; music/effects/reactions keep the clip-volume box.
+  · Track menus fit the track: TTS tracks offer a new line and silence; regular tracks offer audio files, music, effects.
+  · Dark content on every solid orange surface (the layers button had a white icon).
+  NEXT (agreed with the founder): video mode — subtitles fixed on top (no grab handle; cues not deletable/duplicable/
+  splittable), background track directly above the audio track (both fixed), regular tracks reorderable between them;
+  transitions BETWEEN background clips (toolbar tool, inspector options, a badge right of the duration mark; only what
+  actually changes is affected); a podcast template object without background; slideshow («اسلایدشو») with a minimum
+  slide length, pictures spread equally over the composition, fades between them; background objects cover the canvas
+  (drag the free direction; refit per object when the canvas changes); background videos unmuted with volume;
+  collapsible visual adjustments for video/image; the audio track selectable with its own volume; the warning dot
+  clears when that engine's voice menu is opened.
+
+WHAT CHANGED IN 172 (on top of 171) — ONE KIND OF TRACK (the founder's rule: no specialty or shared tracks)
+  · AUDIO MODE: every track is «گفتار N»; a clip carries its type (speech · music · sfx · ovl). Music, effects and
+    reactions sit on any track; two clips never share a spot on one track (a taken spot gets a new track); any typed clip
+    moves to another track by a vertical drop when the spot is free. Old projects' music/effects tracks are migrated.
+  · REACTIONS are real clips on normal tracks, derived from their tags (the text stays the source of truth): drag one and
+    its tag moves in the text — onto another line too — reusing the audio already paid for; duplicate, delete and
+    re-voice from the clip's toolbar (and Delete).
+  · EVERY CLIP'S OWN VOLUME in the inspector (speech, music, effect, reaction) → playback, export and the engine's music
+    mix (mix_music_clips takes a clip gain; a track's volume reaches music as the clip's gain).
+  · VIDEO MODE: no shared effects row — an effect added there is a video object on a video track, played in video mode
+    and mixed into the video export. Video layers take any object (no «پس‌زمینه» specialty layer; any restack).
+  · Fixed while testing: an inline comment of mine had swallowed «if (!gl) return null;» in the GL setup (170).
+  Tests: t15 (rewritten for the track model: reactions on a plain track, drag to another line with reuse, duplicate,
+  delete; music on a plain track with clip gain; collision-free effects; cross-track drop; clip volume) + every suite
+  (5 checks updated from the music-track model) + engine 146–160.
+
+WHAT CHANGED IN 171 (on top of 170) — the founder's review of 170 + his log
+  · KEYS: «20 keys for 8 voices» — google_rotate condemned a key FOR THE DAY on every 429 whose short message lacked the
+    words "per minute"; free-tier per-minute refusals come as 216-byte answers. Now the whole answer is kept
+    (_GoogleHTTP.raw) and a key is marked used up only when Google says the limit is per day; per-minute 429s wait for
+    Google's retryDelay on the same key (twice), then move on without condemning it (diag google_429 kind=…).
+  · VOICE SAMPLES: each sample carried the previous sample's phrase as a continuity lead-in (the doubled 51-character text
+    Google refused for Orus, Autonoe, Enceladus, Algieba, Erinome…) and spent two word-timing transcriptions trimming it.
+    Samples now go without lead-in and without timings (_PREVIEW_MODE): one request each. 82 samples bundled; 13 of the
+    3.1-preview set remain to be made.
+  · OVERLAPS: the reaction request no longer carries the previous line's tail as a lead-in (the stray first word).
+  · MUSIC: streamed download with progress in the status line; timings in the log (music_fetch dl/decode/save ms,
+    music_bridge encode ms, ui_music engine/transfer/decode ms) so the next log shows where any delay is; bigger pieces
+    (3 MB). Adding music no longer leaves the music panel up: an empty click clears every selection → project inspector.
+  · CARET: the word timings are calibrated per take against the voice's real onset in its audio (transcription
+    timestamps start late — the constant 3–5-character lag); playback caret only, trims untouched.
+  · ENGLISH: the page turns left-to-right in English (applyLang never set dir); a translation layer converts strings
+    built from Persian labels (options, badges, buttons, director lists, 30 voice descriptions, digits). The main screen
+    in English mode has no Persian left except the sample phrase itself.
+  · LINE TONE per engine: Gemini {tone}; Fish its bracket cue ([sad]…); Chatterbox and the light voices NONE (Chatterbox
+    read it aloud).
+  · RULER ONLY is tinted past the composition (170 tinted the lanes too).
+  · VOICE MENUS: groups open to the SIDE on hover like the old editor (click also opens; a search lists matches inline);
+    the line tab's voice menus got their ▶ (they never had the hook).
+  · EFFECTS: the library dialog closes on add; a taken spot on a track gets a new track (never two clips on one spot);
+    Delete removes a selected effect (the old handler sent it to the speech-clip delete).
+  · Export success: a toast in the middle of the window for audio and video; the video dialog closes after it.
+  · New project flushes the video mode too. The picture/video inspector's «choose a file» button now replaces the media
+    (it had no handler).
+  Tests: every suite (t4–t15, t1f/t2r/t3r) + engine 146–160.
 
 WHAT CHANGED IN 170 (on top of 169) — the founder's review of 169 + his log + the video-editor list
   FROM THE LOG (169 session)
@@ -1724,6 +1858,6 @@ Files that live ONLY in the repo and must NOT be touched:
   token.txt   – the Hugging Face token (written from the HF_TOKEN secret at build time)
 
 HOW TO TELL IT WORKED
-  - footer reads «نسخهٔ ۱۷۰»; the engine selector is the first card, Google selected
+  - footer reads «نسخهٔ ۱۷۴»; the engine selector is the first card, Google selected
   - «کلیدهای گوگل» opens the key dialog; after adding a key, a Google part generates
   - Chatterbox shows the «صدای چترباکس» row with «＋ افزودن نمونه»

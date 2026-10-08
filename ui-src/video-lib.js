@@ -87,4 +87,8 @@ const PALS = {
   zaf: ['#7a4a06', '#f2b233', '#2a1a00', '#9c5a10', '#d98a1a', '#3a2205'], ana: ['#7a1c22', '#e5484d', '#2a080a', '#5a0f2e', '#b8323a', '#1e0508'],
   shf: ['#3b1d6e', '#22c4b5', '#5b7cff', '#0c1230', '#b05bff', '#103a5c'], neo: ['#ff2fa0', '#3dd5ff', '#1a0b2e', '#7c3aed', '#00ffc3', '#0b0614'],
   mon: ['#2a2d3a', '#5a5f73', '#0e0f14', '#3c4051', '#8a8fa3', '#16171d'], sun: ['#ff7a45', '#ffcf6b', '#5a1f3d', '#c2416b', '#ffb07a', '#2b0f2a'] };
+/* 175: the English names of the designs and waveforms */
+const STYLE_EN = { 'کلاسیک': 'Classic', 'گوی شیشه': 'Glass orb', 'گوی آب': 'Water orb', 'رنگین‌کمان': 'Iridescent', 'دایره‌ای': 'Radial', 'خطی': 'Line', 'نقل‌قول': 'Quote', 'شب نئونی': 'Neon night',
+  'عکس و روکش': 'Photo and overlay', 'سینمایی': 'Cinematic', 'غروب آبی': 'Blue sunset', 'مینیمال': 'Minimal' };
+const WAVE_EN = { bars: 'Bars', mirror: 'Mirror', line: 'Line', circle: 'Circle', glass: 'Glass orb', water: 'Water orb', signature: 'Signature orb', sphere: 'Glass sphere' };
 const WAVES = [['bars', 'میله'], ['mirror', 'آینه‌ای'], ['line', 'خط'], ['circle', 'دایره'], ['glass', 'گوی شیشه'], ['water', 'گوی آب'], ['signature', 'گویِ امضا'], ['sphere', 'کرهٔ شیشه‌ای']];   // 170: the Orb Lab's two builds

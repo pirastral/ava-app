@@ -89,6 +89,24 @@ def _downloads_dir() -> str:
     return str(d if d.is_dir() else Path.home())
 
 
+_VIDEO_EXTS = (".mp4", ".mov", ".webm", ".mkv", ".gif")
+
+
+def _with_video_ext(path, suggested) -> str:
+    """175: the saved video keeps its format's extension (taken from the suggested name); a name typed with another
+    video extension gets the right one in its place; anything else gets the extension added."""
+    ext = Path(str(suggested)).suffix.lower()
+    if ext not in _VIDEO_EXTS:
+        ext = ".mp4"
+    p = str(path)
+    cur = Path(p).suffix.lower()
+    if cur == ext:
+        return p
+    if cur in _VIDEO_EXTS:
+        return p[: -len(cur)] + ext
+    return p + ext
+
+
 
 def _FD(name):
     """169: pywebview's current dialog names (FileDialog.OPEN…), the old constants on older versions."""
@@ -368,6 +386,15 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    def ui_diag(self, name, data=None):
+        """171: the window reports its own timings to the log."""
+        try:
+            import engines
+            engines._diag("ui_" + str(name)[:40], **{str(k)[:30]: (v if isinstance(v, (int, float)) else str(v)[:80]) for k, v in (data or {}).items()})
+        except Exception:
+            pass
+        return {"ok": True}
+
     def gulp_info(self, gid):
         try:
             import engines
@@ -380,7 +407,10 @@ class Api:
             import engines
             engines._job_start()
             pcm, sr, entry = engines.music_fetch(provider, item, self._status)
-            return {"ok": True, **_big(engines.pcm_to_mp3(pcm, sr)),
+            import time as _t; t0 = _t.time(); mp3 = engines.pcm_to_mp3(pcm, sr)
+            engines._diag("music_bridge", encode_ms=int((_t.time() - t0) * 1000), mp3_bytes=len(mp3))
+            self._status("موسیقی را به ویرایشگر می‌فرستم…")
+            return {"ok": True, **_big(mp3),
                     "seconds": round(len(pcm) / sr, 1), "entry": entry, "credit": engines.music_credit(entry)}
         except Exception as e:
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
@@ -518,15 +548,14 @@ class Api:
             return {"ok": False, "error": str(e)}
 
     def video_save_open(self, suggested="video.mp4"):
-        """Ask where to save the MP4, then accept it in chunks (big files never cross in one piece)."""
+        """Ask where to save the video, then accept it in chunks (big files never cross in one piece).
+        175: the file keeps the format's own extension (.mp4 · .mov · .webm · .mkv · .gif) — it used to become ….webm.mp4."""
         try:
             import engines
             res = self._window.create_file_dialog(_FD('SAVE'), directory=_downloads_dir(), save_filename=suggested)
             if not res:
                 return {"ok": False, "error": "cancelled"}
-            path = res if isinstance(res, str) else res[0]
-            if not str(path).lower().endswith(".mp4"):
-                path = str(path) + ".mp4"
+            path = _with_video_ext(res if isinstance(res, str) else res[0], suggested)
             return {"ok": True, "job": engines.save_stream_open(path), "path": str(path)}
         except Exception as e:
             return {"ok": False, "error": str(e)}

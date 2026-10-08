@@ -1,0 +1,149 @@
+@import "tailwindcss";
+@source "./SRC";
+/* classes build 174 shipped (scanned from mock pages beside the old build script) — kept for parity */
+@source inline("prose [.tab-active_&]:inline -left-[22px] -left-[5px] -top-0 -top-0.5 -top-[18px] -top-[26px] -translate-x-1 -translate-y-1 -translate-y-px [&.tab-active]:bg-base-100 [&.tab-active]:shadow [background-size:18px_18px] [box-decoration-break:clone] aura aura-glow avatar-group avatar-placeholder backdrop-blur bg-[#22c4b5] bg-[#5b7cff] bg-[#ae5039] bg-[#db9880] bg-[radial-gradient(circle,color-mix(in_oklab,var(--color-base-content)_10%,transparent)_1px,transparent_1.6px)] bg-accent/20 bg-base-100/30 bg-base-100/35 bg-base-100/40 bg-base-100/45 bg-base-100/70 bg-base-200/50 bg-base-300/40 bg-base-300/50 bg-base-300/60 bg-base-300/70 bg-base-content bg-base-content/25 bg-black/45 bg-linear-to-b bg-linear-to-br bg-primary/20 bg-secondary/10 bg-secondary/20 bg-white/15 bg-white/80 bg-white/85 border-[1.5px] border-base-content border-base-content/25 border-e border-s border-t-2 border-t-primary border-white bottom-[22%] bottom-[9%] btn-accent checked:bg-[#22c4b5] checked:bg-[#5b7cff] checked:bg-[#ae5039] checked:bg-[#db9880] cursor-move decoration-error dock dock-lg dock-md dock-sm dock-xl dock-xs drop-shadow dropdown-bottom dropdown-center dropdown-left dropdown-right dropdown-start dropdown-top ease-in-out ease-out end-3 end-[9%] font-black footer from-[#0f5a53] from-[#1c2a74] from-[#7a1c22] from-[#7a4a06] from-primary gap-0 gap-5 gap-[3px] grid-cols-4 group-hover:text-base-content/70 h-0 h-20 h-3 h-3/5 h-6 h-[18px] h-[37vh] inline-block inset-x-2.5 inset-x-[10%] inset-x-[6%] inset-x-[7%] inset-x-[8%] kbd kbd-xs leading-snug left-1.5 left-7 m-3 max-h-60 max-w-full me-2 menu-lg menu-md menu-xl min-h-56 mt-0 mx-3 object-contain origin-bottom origin-top-left outline-base-content outline-base-content/20 outline-base-content/30 outline-base-content/40 outline-dashed outline-error outline-error/40 outline-offset-2 outline-offset-4 outline-secondary outline-secondary/30 pb-2 pe-1 pe-1.5 peer-checked:outline-primary ps-1 py-0 py-2.5 range-primary range-secondary rating right-1 ring-white ring-white/70 ring-white/80 rotate-45 rotate-6 rounded-2xl rounded-[2px] rounded-[3px] rounded-xl shadow-black shadow-black/50 shadow-primary shadow-primary/20 shadow-primary/70 shadow-secondary shadow-secondary/60 size-14 size-2 size-40 skeleton sm:px-8 start-1 start-1.5 start-2 start-3 status-lg status-primary status-secondary steps steps-horizontal steps-vertical swap-flip tab-active tab-content tabs-bottom tabs-lift tabs-top text-3xl text-[#03211e] text-[#2a160c] text-[#2a1a00] text-[#8aa2ff] text-[#e7a68d] text-[#f0a184] text-[12px] text-base-content/30 text-base-content/90 text-white/80 text-xl timeline-horizontal timeline-middle timeline-vertical to-[#03211e] to-[#0c1230] to-[#2a080a] to-[#2a1a00] to-secondary toggle-xs tooltip-accent tooltip-bottom tooltip-center tooltip-end tooltip-error tooltip-info tooltip-left tooltip-primary tooltip-right tooltip-secondary tooltip-start tooltip-success tooltip-top tooltip-warning top-[13px] top-[30%] top-[33%] top-[40%] top-[8%] via-[#16204f] w-0 w-1 w-1.5 w-14 w-3 w-8 w-[108px] w-[78px] w-auto z-[25] z-[300] z-[500]");
+@plugin "daisyui" { themes: false; }
+
+/* ava-night — black page, charcoal panels, orange primary, peach secondary (palette applied in 168) */
+@plugin "daisyui/theme" {
+  name: "ava-night";
+  default: true;
+  prefersdark: true;
+  color-scheme: dark;
+  --color-base-100:#050505;
+  --color-base-200:#151515;
+  --color-base-300:#2a2a2a;
+  --color-base-content:#f3ece4;
+  --color-primary:#f26b3e;
+  --color-primary-content:oklch(21% .02 60);
+  --color-secondary:#f3d8c7;
+  --color-secondary-content:#1d1410;
+  --color-accent:#e9b49a;
+  --color-accent-content:#2a160c;
+  --color-neutral:#1c1c1c;
+  --color-neutral-content:#f3ece4;
+  --color-info:#b5b2d9;
+  --color-info-content:#1e1c31;
+  --color-success:#b2c977;
+  --color-success-content:#1b2305;
+  --color-warning:#f1af57;
+  --color-warning-content:#311d03;
+  --color-error:#ef7f74;
+  --color-error-content:#310d0a;
+  --radius-selector:1rem;
+  --radius-field:.625rem;
+  --radius-box:.875rem;
+  --size-selector:.25rem;
+  --size-field:.25rem;
+  --border:1px;
+  --depth:0;
+  --noise:0;
+}
+/* ava-day — cream page, near-white panels, orange primary, navy secondary */
+@plugin "daisyui/theme" {
+  name: "ava-day";
+  color-scheme: light;
+  --color-base-100:#e8ded1;
+  --color-base-200:#fdfaf6;
+  --color-base-300:#d9cab9;
+  --color-base-content:#161616;
+  --color-primary:#e9603b;
+  --color-primary-content:oklch(21% .02 60);
+  --color-secondary:#10283f;
+  --color-secondary-content:#f2ece6;
+  --color-accent:#e6a483;
+  --color-accent-content:#2a160c;
+  --color-neutral:#111;
+  --color-neutral-content:#f2ece6;
+  --color-info:#5c5a89;
+  --color-info-content:#fff;
+  --color-success:#617522;
+  --color-success-content:#fff;
+  --color-warning:#eea743;
+  --color-warning-content:#392000;
+  --color-error:#b63b35;
+  --color-error-content:#fff;
+  --radius-selector:1rem;
+  --radius-field:.625rem;
+  --radius-box:.875rem;
+  --size-selector:.25rem;
+  --size-field:.25rem;
+  --border:1px;
+  --depth:0;
+  --noise:0;
+}
+
+@theme {
+  --font-sans:"Noto Sans", "Vazirmatn", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ---- custom rules (168–174), recovered from the compiled build 174 */
+:root,[data-theme=ava-night]{--b-tint:16%;--b-stroke:42%;--ink-primary:#fcb398;--ink-secondary:#eacab1;--ink-accent:#fab688;--ink-info:#c1c1fa;--ink-success:#bad479;--ink-warning:#f8ba6b;--ink-error:#ffb0a6;--ink-neutral:#cfc5be;--spk1:#f0834e;--spk1-ink:#feb899;--spk1-on:#1a1410;--spk2:#9eaf52;--spk2-ink:#c5d48b;--spk2-on:#1a1410;--spk3:#f47a81;--spk3-ink:#feb4b5;--spk3-on:#1a1410;--spk4:#98a0d7;--spk4-ink:#c0c7f5;--spk4-on:#1a1410;--spk5:#d29922;--spk5-ink:#f0c374;--spk5-on:#1a1410;--spk6:#d1966d;--spk6-ink:#f0bf9e;--spk6-on:#1a1410;--spk7:#d387c2;--spk7-ink:#f2b3e4;--spk7-on:#1a1410;--spk8:#8ab181;--spk8-ink:#b5d5ae;--spk8-on:#1a1410}
+:root:has(input.theme-controller[value=ava-day]:checked),[data-theme=ava-day]{--b-tint:17%;--b-stroke:58%;--ink-primary:#8f3409;--ink-secondary:#284a6c;--ink-accent:#7f4413;--ink-info:#514e80;--ink-success:#4c5e06;--ink-warning:#764b00;--ink-error:#9b1f1d;--ink-neutral:#4a4038;--spk1:#cd632d;--spk1-ink:#883602;--spk1-on:#1a1410;--spk2:#808f31;--spk2-ink:#4e5905;--spk2-on:#1a1410;--spk3:#d15a63;--spk3-ink:#932031;--spk3-on:#1a1410;--spk4:#7b82b6;--spk4-ink:#484d7e;--spk4-on:#1a1410;--spk5:#ad7c12;--spk5-ink:#6c4c01;--spk5-on:#1a1410;--spk6:#b07750;--spk6-ink:#78431b;--spk6-on:#1a1410;--spk7:#b269a3;--spk7-ink:#79346c;--spk7-on:#1a1410;--spk8:#6c9264;--spk8-ink:#3a5d32;--spk8-on:#1a1410}
+.badge-soft{background-color:color-mix(in oklab,var(--badge-color,var(--color-base-content)) var(--b-tint),transparent)}
+.badge-soft{border-color:color-mix(in oklab,var(--badge-color,var(--color-base-content)) var(--b-stroke),transparent)}
+.badge-soft{color:var(--b-ink,var(--ink-neutral))}
+.badge-soft.badge-primary{--b-ink:var(--ink-primary)}
+.badge-soft.badge-secondary{--b-ink:var(--ink-secondary)}
+.badge-soft.badge-accent{--b-ink:var(--ink-accent)}
+.badge-soft.badge-info{--b-ink:var(--ink-info)}
+.badge-soft.badge-success{--b-ink:var(--ink-success)}
+.badge-soft.badge-warning{--b-ink:var(--ink-warning)}
+.badge-soft.badge-error{--b-ink:var(--ink-error)}
+.badge-soft.badge-neutral{--b-ink:var(--ink-neutral)}
+.badge-ghost{border-color:var(--color-base-300);color:var(--color-base-content);background-color:#0000}
+@supports (color:color-mix(in lab, red, red)){.badge-ghost{color:color-mix(in oklab,var(--color-base-content) 75%,transparent)}
+}
+.spkchip:not(.spkph){background-color:color-mix(in oklab,var(--sc) var(--b-tint),transparent)}
+.spkchip:not(.spkph){border-color:color-mix(in oklab,var(--sc) var(--b-stroke),transparent)}
+.spkchip:not(.spkph){color:var(--si)}
+.spkchip .spkav{background:var(--sc);color:var(--so)}
+.tagpill{white-space:nowrap;background-color:var(--color-accent);border-radius:9999px;margin-inline:.1em;padding:.05em .5em;font-size:.82em;font-weight:600;display:inline}
+@supports (color:color-mix(in lab, red, red)){.tagpill{background-color:color-mix(in oklab,var(--color-accent) var(--b-tint),transparent)}
+}
+.tagpill{border:1px solid color-mix(in oklab,var(--color-accent) var(--b-stroke),transparent)}
+.tagpill{color:var(--ink-accent)}
+.tp-x{font-size:0}
+.ln .badge,.ln .tagpill,.ln .spkchip:not(.spkph),#lineState .badge{vertical-align:middle;white-space:nowrap;border-style:solid;border-width:1px;border-radius:9999px;align-items:center;gap:.25rem;height:1.375rem;min-height:0;padding-block:0;padding-inline:.5rem;font-size:.75rem;font-weight:600;line-height:1.5;display:inline-flex}
+.ln .badge svg,.ln .tagpill svg,#lineState .badge svg{flex:none;width:.75rem;height:.75rem}
+.ln .spkchip:not(.spkph){gap:.35rem;padding-inline:2px .55rem}
+.ln .spkchip .spkav{width:18px;height:18px;font-size:10px}
+.ln .spkph{width:1.375rem;height:1.375rem}
+.ln .tagpill{margin-inline:.15em}
+.ln .spkchip .truncate{line-height:1.6}
+.spkav img{display:block}
+input[type=color]{appearance:none;border:1px solid var(--color-base-content);border-radius:9999px;block-size:1.75rem;inline-size:1.75rem;min-inline-size:1.75rem;padding:0}
+@supports (color:color-mix(in lab, red, red)){input[type=color]{border:1px solid color-mix(in oklab,var(--color-base-content) 18%,transparent)}
+}
+input[type=color]{cursor:pointer;background:0 0;flex:none;overflow:hidden}
+input[type=color]::-webkit-color-swatch-wrapper{padding:0}
+input[type=color]::-webkit-color-swatch{border:none;border-radius:9999px}
+input[type=color]::-moz-color-swatch{border:none;border-radius:9999px}
+.tagpill .ovav{background:var(--color-base-content);border-radius:9999px;flex:none;place-items:center;width:18px;height:18px;font-size:10px;font-weight:700;line-height:1;margin:0;display:inline-grid;overflow:hidden}   /* 175: the speaker chip's avatar size */
+@supports (color:color-mix(in lab, red, red)){.tagpill .ovav{background:color-mix(in oklab,var(--color-base-content) 16%,transparent)}
+}
+.tagpill .ovav{color:var(--color-base-content)}
+.tagpill .ovav img{object-fit:cover;width:100%;height:100%}
+.tagpill .ovav svg{width:10px;height:10px}
+.btn-primary,.badge-primary,.bg-primary{--color-primary-content:oklch(21% .02 60)}
+.tagpill .tpdel{opacity:.55;cursor:pointer;border-radius:9999px;justify-content:center;align-items:center;width:13px;height:13px;margin-inline-start:3px;display:inline-flex}
+.tagpill .tpdel:hover{opacity:1;background:var(--color-error)}
+@supports (color:color-mix(in lab, red, red)){.tagpill .tpdel:hover{background:color-mix(in oklab,var(--color-error) 25%,transparent)}
+}
+.tagpill .tpdel:hover{color:var(--color-error)}
+.tagpill .tpdel svg{width:9px;height:9px}
+.tagpill .ovmood{opacity:.55;margin-inline-end:3px;font-size:.85em}
+.tagpill.pipe{cursor:pointer}
+#ddMenu .ddfly{z-index:1300;border-radius:var(--radius-box);background:var(--color-base-200);border:1px solid var(--color-base-content);padding:.25rem;position:fixed;overflow:auto;box-shadow:0 14px 40px #0006}
+@supports (color:color-mix(in lab, red, red)){#ddMenu .ddfly{border:1px solid color-mix(in oklab,var(--color-base-content) 12%,transparent)}
+}
+#ddMenu .ddfly.ddinline{box-shadow:none;border:0;padding:0;position:static;width:auto!important;max-height:none!important}
+#ddMenu .ddghead.ddhot{background:color-mix(in oklab,var(--color-base-content) 10%,transparent)}
+.bg-primary,.bg-primary svg,.btn-primary,.btn-primary svg{color:var(--color-primary-content)!important}
+#lanes .vclip .trbadge{z-index:5;background:var(--color-primary);width:18px;height:18px;color:var(--color-primary-content);border-radius:9999px;place-items:center;display:grid;position:absolute;top:50%;right:2px;transform:translate(50%,-50%);box-shadow:0 1px 4px #0006}
+#lanes .vclip .trbadge svg{width:11px;height:11px}
+/* 175: the warning dot — the line's speaker had no voice in the new engine */
+.vwarn{position:absolute;top:-2px;inset-inline-start:-2px;z-index:2;width:9px;height:9px;border-radius:9999px;background:var(--color-warning);box-shadow:0 0 0 2px var(--color-base-100);pointer-events:auto}
+
+/* 175: a reaction badge starts with the speaker's avatar, spaced like the speaker chip */
+.ln .tagpill.pipe{gap:0;padding-inline:2px .55rem}.ln .tagpill.pipe .ovav{margin-inline-end:.35rem}

@@ -14,9 +14,9 @@ const SUBS0 = () => ({ on: true, size: 0.042, color: '#ffffff', bg: '#000000', b
 const TEXT0 = () => ({ type: 'text', text: T('عنوانِ قسمت', 'Episode title'), x: 0.1, y: 0.07, w: 0.8, h: 0.12, rot: 0, size: 0.06, weight: 900, color: '#ffffff', align: 'center',
   bg: { on: true, shape: 'capsule', color: '#f2b233', pad: 0.012 }, start: 0, end: null, opacity: 1 });
 const MEDIA0 = (type, asset, aw, ah) => { const r = aw && ah ? aw / ah : 16 / 9, w = 0.28, h = w * outSize()[0] / outSize()[1] / r;
-  return { type, asset, x: 0.68, y: 0.06, w, h: Math.min(0.5, h), rot: 0, fit: 'cover', radius: 0.02, opacity: 1, mute: true, volume: 1, loop: true, trimIn: 0, anim: {},
+  return { type, asset, x: 0.68, y: 0.06, w, h: Math.min(0.5, h), rot: 0, fit: 'cover', radius: 0.02, opacity: 1, mute: true, volume: 1, loop: true, trimIn: 0, anim: { v: 2 },
     stroke: { on: false, color: '#ffffff', style: 'solid', width: 0.004, opacity: 1 }, shadow: { on: true, color: '#000000', opacity: 0.45, angle: 90, distance: 0.008, blur: 0.02, spread: 0 }, start: 0, end: null }; };
-const STICKER0 = () => { const [W, H] = outSize(); return { type: 'sticker', emoji: '👑', x: 0.84, y: 0.08, w: 0.09, h: 0.09 * W / H, rot: 6, bg: { on: false, shape: 'circle', color: '#e6a483' }, start: 0, end: null, opacity: 1, anim: { loop: 'breathe', speed: 5 } }; };   // 169: no background by default
+const STICKER0 = () => { const [W, H] = outSize(); return { type: 'sticker', emoji: '👑', x: 0.84, y: 0.08, w: 0.09, h: 0.09 * W / H, rot: 6, bg: { on: false, shape: 'circle', color: '#e6a483' }, start: 0, end: null, opacity: 1, anim: { v: 2, loop: 'breathe', loopSpeed: 1 } }; };   // 169: no background by default
 const V0 = () => ({ ratio: '16:9', res: '2k', fps: 30, bg: '#0c1230', pod: POD0(), subs: SUBS0(),
   objects: [{ id: 'pod', type: 'pod', x: 0.06, y: 0.26, w: 0.88, h: 0.52, rot: 0, start: 0, end: null, opacity: 1 }, { id: 'title', ...TEXT0() }] });
 let V = V0();
@@ -74,7 +74,7 @@ async function addAsset(file){
 // ---- the GL layer: background + one orb per speaker (the mock's shader)
 const hex3 = h => [1, 3, 5].map(i => parseInt(h.substr(i, 2), 16) / 255);
 const GLR = (() => {
-  const cv = document.createElement('canvas'), gl = cv.getContext('webgl2', { preserveDrawingBuffer: true, premultipliedAlpha: false, antialias: true })   // 170: antialiased orbs; if (!gl) return null;
+  const cv = document.createElement('canvas'), gl = cv.getContext('webgl2', { preserveDrawingBuffer: true, premultipliedAlpha: false, antialias: true }); if (!gl) return null;   // 170: antialiased orbs
   const mk = (t, src) => { const sh = gl.createShader(t); gl.shaderSource(sh, src); gl.compileShader(sh); if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(sh)); return sh; };
   const pr = gl.createProgram(); gl.attachShader(pr, mk(gl.VERTEX_SHADER, VS)); gl.attachShader(pr, mk(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(pr);
   if (!gl.getProgramParameter(pr, gl.LINK_STATUS)){ console.error(gl.getProgramInfoLog(pr)); return null; }
@@ -109,37 +109,22 @@ function podLayout(o, W, H, t){
 function rrect(ctx, x, y, w, h, r){ r = Math.max(0, Math.min(r, w / 2, h / 2)); ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 function rgba(hex, a){ const [r, g, b] = hex3(hex).map(v => Math.round(v * 255)); return `rgba(${r},${g},${b},${a})`; }
 var RT = 0;   // the time being rendered (animations read it)
-function animAt(o, t){
-  const a = o.anim || {}, sp = a.speed || 5, d = Math.max(0.15, 1.25 - sp * 0.1), st = o.start || 0, en = o.end == null ? projEnd() : o.end;
-  const pin = Math.min(1, Math.max(0, (t - st) / d)), pout = Math.min(1, Math.max(0, (en - t) / d)), ease = x => 1 - Math.pow(1 - x, 3), back = x => 1 + 2.70158 * Math.pow(x - 1, 3) + 1.70158 * Math.pow(x - 1, 2);
-  let alpha = 1, dy = 0, sc = 1, rot = 0, type = 1, bg = 1;
-  if (a.in === 'fade') alpha *= ease(pin); else if (a.in === 'rise'){ alpha *= ease(pin); dy += (1 - ease(pin)) * 0.06; } else if (a.in === 'pop') sc *= pin < 1 ? Math.max(0.01, back(pin)) : 1; else if (a.in === 'type') type = Math.min(1, (t - st) / (d * 2.2));
-  if (a.out === 'fade') alpha *= ease(pout); else if (a.out === 'down'){ alpha *= ease(pout); dy += (1 - ease(pout)) * 0.06; } else if (a.out === 'shrink') sc *= Math.max(0.01, ease(pout));
-  const w = 2 * Math.PI * (t - st) * (0.25 + sp * 0.06);
-  if (a.loop === 'breathe') sc *= 1 + 0.025 * Math.sin(w); else if (a.loop === 'wave') rot += 2.5 * Math.sin(w);
-  if (a.bgIn && a.bgIn !== 'none') bg = ease(Math.min(1, Math.max(0, (t - st - (a.bgDelay || 0)) / d)));
-  return { alpha, dy, sc, rot, type, bg, bgMode: a.bgIn || 'none', shine: a.loop === 'shine' ? ((t - st) * (0.25 + sp * 0.06)) % 1.6 - 0.3 : null };
-}
-function withXform(ctx, o, W, H, fn){
-  const A = animAt(o, RT), cx = (o.x + o.w / 2) * W, cy = (o.y + o.h / 2) * H, w = o.w * W, h = o.h * H;
-  ctx.save(); ctx.globalAlpha *= (o.opacity ?? 1) * A.alpha; ctx.translate(cx, cy + A.dy * H); ctx.rotate(((o.rot || 0) + A.rot) * Math.PI / 180); ctx.scale(A.sc, A.sc);
-  fn(-w / 2, -h / 2, w, h, A);
-  if (A.shine !== null){ ctx.save(); ctx.beginPath(); ctx.rect(-w / 2, -h / 2, w, h); ctx.clip(); const x = -w / 2 + A.shine * w, g = ctx.createLinearGradient(x - w * 0.15, 0, x + w * 0.15, 0);
-    g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.5, 'rgba(255,255,255,0.35)'); g.addColorStop(1, 'rgba(255,255,255,0)'); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = g; ctx.fillRect(-w / 2, -h / 2, w, h); ctx.restore(); }
-  ctx.restore();
-}
+/* 175: animAt, withXform and the text renderer moved to anim.js (object-aware In · Out · Loop) */
 function wrapLines(ctx, text, maxW){ const out = []; text.split('\n').forEach(par => { let line = ''; par.split(/\s+/).forEach(w => { const tryL = line ? line + ' ' + w : w; if (ctx.measureText(tryL).width > maxW && line){ out.push(line); line = w; } else line = tryL; }); out.push(line); }); return out; }
-const FONT = (w, px) => `${w} ${px}px Vazirmatn, "Noto Sans", system-ui, sans-serif`;
-function drawText(ctx, o, W, H){
-  withXform(ctx, o, W, H, (x, y, w, h, A) => { const px = Math.max(6, o.size * H); ctx.font = FONT(o.weight || 700, px); ctx.direction = /[\u0600-\u06FF]/.test(o.text) ? 'rtl' : 'ltr';
-    const full = o.text || '', parts = full.split(/(\s+)/), shown = A && A.type < 1 ? parts.slice(0, Math.ceil(parts.length * A.type)).join('') : full;
-    const lines = wrapLines(ctx, shown, w * 0.96), lh = px * 1.35, tw = Math.max(...lines.map(l => ctx.measureText(l).width)), th = lines.length * lh;
-    const pad = (o.bg && o.bg.pad || 0) * H, bx = o.align === 'center' ? -tw / 2 : (o.align === 'right' ? w / 2 - tw : -w / 2), by = -th / 2;
-    if (o.bg && o.bg.on && tw > 0){ const bw = tw + pad * 3.2, bh = th + pad * 2, k = A ? A.bg : 1, rx = A && A.bgMode === 'open' ? bx - pad * 1.6 + bw * (1 - k) / 2 : (A && A.bgMode === 'stretch' ? (ctx.direction === 'rtl' ? bx - pad * 1.6 + bw * (1 - k) : bx - pad * 1.6) : bx - pad * 1.6);
-      ctx.save(); if (A && A.bgMode === 'fade') ctx.globalAlpha *= k; ctx.fillStyle = o.bg.color; const ww = A && (A.bgMode === 'open' || A.bgMode === 'stretch') ? bw * k : bw; if (ww > 0.5){ rrect(ctx, rx, by - pad, ww, bh, o.bg.shape === 'capsule' ? bh / 2 : o.bg.shape === 'round' ? px * 0.35 : px * 0.08); ctx.fill(); } ctx.restore(); }
-    ctx.fillStyle = o.color || '#fff'; ctx.textBaseline = 'middle'; ctx.textAlign = o.align === 'center' ? 'center' : (o.align === 'right' ? 'right' : 'left');
-    const ax = o.align === 'center' ? 0 : (o.align === 'right' ? w / 2 : -w / 2); lines.forEach((l, i) => ctx.fillText(l, ax, by + lh * (i + 0.5))); });
-}
+/* 175 · the text and subtitle fonts (embedded; the names match the @font-face rules the build writes) — [family, Persian name, weights] */
+const FONT_LIST = [['Vazirmatn', 'وزیرمتن', [100, 900]], ['IBM Plex Sans Arabic', 'آی‌بی‌اِم پلکس', [400, 700]], ['Noto Kufi Arabic', 'نوتو کوفی', [100, 900]], ['Noto Naskh Arabic', 'نوتو نسخ', [400, 700]],
+  ['Markazi Text', 'مرکزی', [400, 700]], ['Lalezar', 'لاله‌زار', [400, 400]], ['Noto Sans', 'نوتو سنس (لاتین)', [100, 900]]];
+const FONT_W = Object.fromEntries(FONT_LIST.map(f => [f[0], f[2]]));
+const fontFam = fam => fam && FONT_W[fam] ? fam : 'Vazirmatn';
+function fontW(fam, w){ const r = FONT_W[fontFam(fam)]; w = +w || 700; if (fam === 'IBM Plex Sans Arabic') return w >= 550 ? 700 : 400; return Math.max(r[0], Math.min(r[1], w)); }   /* never a faux bold */
+const FONT = (w, px, fam) => { const f = fontFam(fam); return `${fontW(f, w)} ${px}px "${f}", "Vazirmatn", "Noto Sans", system-ui, sans-serif`; };
+const FONT_OK = new Set();
+/* the canvas does not load a web font by itself: load every family/weight the frame uses first (the export waits; the preview redraws) */
+function fontKeys(){ const ks = new Set(), add = (fam, w) => { const f = fontFam(fam); ks.add(fontW(f, w) + '|' + f); };
+  (V.objects || []).forEach(o => { if (o.type === 'text') add(o.font, o.weight || 700); }); if (V.subs) add(V.subs.font, V.subs.weight || 700); add('Vazirmatn', 800); add('Vazirmatn', ((V.pod || {}).label || {}).weight || 700); return [...ks]; }
+async function fontsReady(){ const need = fontKeys().filter(k => !FONT_OK.has(k)); if (!need.length || !document.fonts) return true;
+  await Promise.all(need.map(async k => { const [w, f] = k.split('|'); try { await document.fonts.load(`${w} 40px "${f}"`, 'سلامِ گرم Hello ۱۲۳'); } catch (e) {} FONT_OK.add(k); }));
+  if (typeof TLC !== 'undefined') TLC.clear(); return false; }
 const EMOJI_CACHE = new Map();
 function emojiSprite(emoji, px){   // 169: colour-emoji fonts are bitmap fonts with a size ceiling — draw at ≤128 px and scale (a big glyph drew NOTHING)
   const base = Math.min(128, Math.max(16, Math.round(px))), key = emoji + '@' + base; let cv = EMOJI_CACHE.get(key);
@@ -154,18 +139,9 @@ function stickerShape(ctx, shape, r){
   else ctx.arc(0, 0, r, 0, Math.PI * 2);
 }
 function drawSticker(ctx, o, W, H){
-  withXform(ctx, o, W, H, (x, y, w, h) => { const r = Math.min(w, h) / 2, on = !!(o.bg && o.bg.on);
-    if (on){ ctx.fillStyle = o.bg.color || '#e6a483'; stickerShape(ctx, o.bg.shape || 'circle', r); ctx.fill(); }
-    const px = r * (on ? 1.15 : 1.7), sp = emojiSprite(o.emoji || '👑', px); ctx.drawImage(sp, -px, -px, px * 2, px * 2); });
-}
-function drawMedia(ctx, o, W, H, el){
-  if (!el) return; const iw = el.videoWidth || el.naturalWidth, ih = el.videoHeight || el.naturalHeight; if (!iw || !ih) return;
-  withXform(ctx, o, W, H, (x, y, w, h) => { const r = (o.radius || 0) * H, sh = o.shadow || {}, st = o.stroke || {};
-    if (sh.on){ ctx.save(); const a = (sh.angle || 90) * Math.PI / 180, d = (sh.distance || 0) * H, sp = (sh.spread || 0) * H; ctx.shadowColor = rgba(sh.color || '#000', sh.opacity ?? 0.4); ctx.shadowBlur = (sh.blur || 0) * H;
-      ctx.shadowOffsetX = Math.cos(a) * d; ctx.shadowOffsetY = Math.sin(a) * d; ctx.fillStyle = '#000'; rrect(ctx, x - sp, y - sp, w + sp * 2, h + sp * 2, r + sp); ctx.fill(); ctx.restore(); }
-    ctx.save(); rrect(ctx, x, y, w, h, r); ctx.clip(); const s = o.fit === 'contain' ? Math.min(w / iw, h / ih) : Math.max(w / iw, h / ih); ctx.drawImage(el, x + (w - iw * s) / 2, y + (h - ih * s) / 2, iw * s, ih * s); ctx.restore();
-    if (st.on && st.width > 0){ ctx.save(); ctx.strokeStyle = rgba(st.color || '#fff', st.opacity ?? 1); ctx.lineWidth = st.width * H; const lw = ctx.lineWidth;
-      ctx.setLineDash(st.style === 'dashed' ? [lw * 3, lw * 2] : st.style === 'dotted' ? [lw * 0.1, lw * 1.8] : []); ctx.lineCap = st.style === 'dotted' ? 'round' : 'butt'; rrect(ctx, x, y, w, h, r); ctx.stroke(); ctx.restore(); } });
+  withXform(ctx, o, W, H, (g, x, y, w, h) => { const r = Math.min(w, h) / 2, on = !!(o.bg && o.bg.on);
+    if (on){ g.fillStyle = o.bg.color || '#e6a483'; stickerShape(g, o.bg.shape || 'circle', r); g.fill(); }
+    const px = r * (on ? 1.15 : 1.7), sp = emojiSprite(o.emoji || '👑', px); g.drawImage(sp, -px, -px, px * 2, px * 2); });
 }
 function cleanCue(text){ return (text || '').replace(SPK_RE, '').replace(/<[^>]*>|\|[^|]*\||\{[^{}]*\}|\[[^\[\]]*\]|\/[^/\s][^/]*\//g, ' ').replace(/\s+/g, ' ').trim(); }
 const SUB_TAG_TOKEN = /^(<[^>]*>|\|[^|]*\||\{[^{}]*\}|\[[^\[\]]*\])$/;
@@ -193,7 +169,7 @@ function drawPhotoCircle(ctx, im, cx, cy, r){
   ctx.save(); ctx.strokeStyle = rgba('#ffffff', 0.75); ctx.lineWidth = Math.max(1, r * 0.06); ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); }
 function drawPodLayer(ctx, o, W, H, t, orbs){ const P = V.pod, orb = P.wave === 'glass' || P.wave === 'water' || isLabWave(P.wave);
   if ((V.pod.layout === 'quote')){ const q = cuesNow().find(c => t >= c.at && t < c.at + c.dur); if (q){ const fake = { ...o, text: '«' + q.text + '»', size: 0.05, weight: 900, color: '#fff', align: 'center', bg: { on: false } }; drawText(ctx, fake, W, H); } }
-  orbs.forEach(ob => { const cx = ob.cx * W, cy = ob.cy * H, R = ob.r * H;
+  orbs.forEach(ob => { const cx = ob.cx * W, cy = ob.cy * H, R = ob.r * H; if ((ob.alpha ?? 1) <= 0.002) return; ctx.save(); if (ob.alpha < 1) ctx.globalAlpha *= ob.alpha; if (ob.mask && ob.mask.p < 0.999) maskRect(ctx, ob.mask, ...ob.mask.box);   /* 175: In / Out per speaker */
     if (!orb){ ctx.save(); const AV = (P.avatar && P.avatar.size) || 1, ph = spkPhotoImg(ob.spk); if (ph) drawPhotoCircle(ctx, ph, cx, cy, R * 0.55 * AV); else { ctx.fillStyle = rgba('#ffffff', 0.12); ctx.beginPath(); ctx.arc(cx, cy, R * 0.55 * AV, 0, Math.PI * 2); ctx.fill(); if (!(P.avatar && P.avatar.ring === false)){ ctx.lineWidth = Math.max(1, R * 0.04); ctx.strokeStyle = rgba('#ffffff', 0.5); ctx.stroke(); }
       ctx.font = FONT(800, R * 0.32 * AV); ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.direction = 'rtl'; ctx.fillText(ob.spk.slice(0, 2), cx, cy); }
       const lv = ob.level, bars = 36; ctx.fillStyle = rgba('#ffffff', 0.85);
@@ -210,32 +186,28 @@ function drawPodLayer(ctx, o, W, H, t, orbs){ const P = V.pod, orb = P.wave === 
       else if (style === 'solid'){ ctx.fillStyle = prim; rrect(ctx, cx - tw / 2, ty - lh / 2, tw, lh, lh / 2); ctx.fill(); }
       else if (style === 'outline'){ ctx.lineWidth = Math.max(1, px * 0.08); ctx.strokeStyle = rgba('#ffffff', 0.55); rrect(ctx, cx - tw / 2, ty - lh / 2, tw, lh, lh / 2); ctx.stroke(); }
       else if (style === 'plain'){ ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = px * 0.35; ctx.shadowOffsetY = px * 0.08; }
-      ctx.fillStyle = LB.color || '#fff'; ctx.fillText(ob.spk, cx, ty); ctx.restore(); } });
+      ctx.fillStyle = LB.color || '#fff'; ctx.fillText(ob.spk, cx, ty); ctx.restore(); }
+    ctx.restore(); });
 }
 function drawSubs(ctx, W, H, t){
   const s = V.subs; if (!s.on) return; const q = cuesNow().find(c => t >= c.at && t < c.at + c.dur); if (!q) return;
-  const px = s.size * H; ctx.save(); ctx.font = FONT(s.weight || 600, px); ctx.direction = 'rtl'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const px = s.size * H; ctx.save(); ctx.font = FONT(s.weight || 600, px, s.font); ctx.direction = 'rtl'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   const lines = wrapLines(ctx, q.text, W * 0.84), lh = px * 1.45, y0 = s.pos * H - (lines.length - 1) * lh;
   lines.forEach((l, i) => { const tw = ctx.measureText(l).width, y = y0 + i * lh; ctx.fillStyle = rgba(s.bg, s.bgOp); rrect(ctx, W / 2 - tw / 2 - px * 0.4, y - lh / 2, tw + px * 0.8, lh, px * 0.25); ctx.fill(); ctx.fillStyle = s.color; ctx.fillText(l, W / 2, y); });
   ctx.restore();
 }
 // ---- one frame (preview and export call exactly this)
 async function vFrame(ctx, W, H, t, exporting){
-  if (exporting) await preloadPhotos(); RT = t;
-  const P = V.pod, pod = V.objects.find(o => o.type === 'pod' && visibleAt(o, t)), orbs = pod ? podLayout(pod, W, H, t) : [];
+  if (exporting){ await preloadPhotos(); await fontsReady(); } else fontsReady().then(ok => { if (!ok) vDraw(); }); RT = t;
+  const P = V.pod, pod = V.objects.find(o => o.type === 'pod' && visibleAt(o, t)), orbs = pod ? podAnimOrbs(pod, podLayout(pod, W, H, t), W, H, t) : [];   /* 175: In · Out · Loop on the speakers */
   const bgEl = (P.bg === 'image' || P.bg === 'video') && P.bgAsset ? await mediaEl(P.bgAsset) : null;
   if (bgEl && bgEl.tagName === 'VIDEO' && exporting) await seekVideo(bgEl, t % (bgEl.duration || 1e9));
-  if (GLR){ GLR.draw(W, H, t, (P.wave === 'glass' || P.wave === 'water') ? orbs : [], bgEl); ctx.drawImage(GLR.cv, 0, 0, W, H); } else { ctx.fillStyle = V.bg; ctx.fillRect(0, 0, W, H); }
-  if (isLabWave(P.wave) && pod) drawLabOrbs(ctx, W, H, t, orbs, P);   // 170: the Orb Lab's engine (antialiased WebGL2) draws these designs
-  if (P.ovOp > 0){ ctx.fillStyle = rgba(P.ovColor, P.ovOp); ctx.fillRect(0, 0, W, H); }
-  if (P.grad && P.gradOp > 0){ const g = P.gradDir === 'to top' ? ctx.createLinearGradient(0, H, 0, 0) : P.gradDir === 'to bottom' ? ctx.createLinearGradient(0, 0, 0, H) : P.gradDir === 'to left' ? ctx.createLinearGradient(W, 0, 0, 0) : P.gradDir === 'to right' ? ctx.createLinearGradient(0, 0, W, 0) : P.gradDir === 'radial' ? ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7) : ctx.createLinearGradient(0, 0, W, H);
-    g.addColorStop(0, rgba(P.gradA, P.gradOp)); g.addColorStop(1, rgba(P.gradB, 0)); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); }
-  for (const o of zOrder()){ if (!visibleAt(o, t) || layerOf(o.id).hidden) continue;
+  await drawBackground(ctx, W, H, t, exporting, orbs, P, pod);   // 174: the background track (and its transitions) is the base
+  for (const o of zOrder()){ if (!visibleAt(o, t) || layerOf(o.id).hidden) continue; if (o.bgl && o.type !== 'pod') continue; if (o.type === 'pod' && o.tpl && (isLabWave(V.pod.wave) || V.pod.wave === 'glass' || V.pod.wave === 'water')) drawLabOrbsOver(ctx, W, H, t, orbs, V.pod);   // 174
     if (o.type === 'pod') drawPodLayer(ctx, o, W, H, t, orbs);
     else if (o.type === 'text') drawText(ctx, o, W, H);
     else if (o.type === 'sticker') drawSticker(ctx, o, W, H);
     else if (o.type === 'image' || o.type === 'video'){ const el = await mediaEl(o.asset); if (el && el.tagName === 'VIDEO' && exporting){ const local = (o.trimIn || 0) + t - (o.start || 0); await seekVideo(el, o.loop && el.duration ? local % el.duration : Math.min(local, (el.duration || 1e9) - 0.01)); } drawMedia(ctx, o, W, H, el); } }
-  for (const o of zOrder()) if (o.type === 'fx' && visibleAt(o, t) && !(layerOf(o.id) || {}).hidden) applyTransition(ctx, W, H, t, o);   // 170: transitions over the finished layers
   drawSubs(ctx, W, H, t);
 }
 function seekVideo(v, t){ return new Promise(r => { if (Math.abs(v.currentTime - t) < 0.0005){ r(); return; } const done = () => { v.removeEventListener('seeked', done); r(); }; v.addEventListener('seeked', done); v.currentTime = Math.max(0, t); setTimeout(done, 1500); }); }
@@ -255,7 +227,7 @@ function fitFrame(){
   const cv = $('vcanvas'), dpr = Math.min(2, devicePixelRatio || 1); cv.width = Math.round(frameW * dpr); cv.height = Math.round(frameH * dpr); placeSelBox();   // 170: full Retina resolution
 }
 async function vDraw(){
-  if (mode !== 'video') return; if (drawing){ drawAgain = true; return; } drawing = true;
+  if (mode !== 'video' || ANPV) return;   /* 175: a preset is previewing on the canvas */ if (drawing){ drawAgain = true; return; } drawing = true;
   try { const cv = $('vcanvas'), dpr = Math.min(2, devicePixelRatio || 1), cw = Math.round(frameW * dpr), ch = Math.round(frameH * dpr);   // lighter while playing
     if (cw > 0 && (cv.width !== cw || cv.height !== ch)){ cv.width = cw; cv.height = ch; }
     const ctx = cv.getContext('2d'); syncPreviewVideos(); await vFrame(ctx, cv.width, cv.height, playhead, false); } catch (e) { console.error(e); }
@@ -280,7 +252,7 @@ function hitTest(nx, ny){
 function selectV(id){ vSel = id; if (id && typeof sel !== 'undefined' && (sel.size || selClip)){ sel.clear(); selClip = null; paintSel(); }   // 169: a non-speech selection deselects everything else
   placeSelBox(); fillVInsp(); renderVTL(); }
 function placeSelBox(){
-  const sb = $('selbox'); if (!sb) return; const o = vSel && objById(vSel); if (!o || mode !== 'video'){ sb.classList.add('hidden'); return; }
+  const sb = $('selbox'); if (!sb) return; const o = vSel && objById(vSel); if (!o || mode !== 'video' || o.type === 'sfx'){ sb.classList.add('hidden'); return; }
   sb.classList.remove('hidden'); sb.style.left = o.x * frameW + 'px'; sb.style.top = o.y * frameH + 'px'; sb.style.width = o.w * frameW + 'px'; sb.style.height = o.h * frameH + 'px'; sb.style.transform = `rotate(${o.rot || 0}deg)`;
 }
 function guides(gx, gy){ $('gV').classList.toggle('hidden', !gx); $('gH').classList.toggle('hidden', !gy); }
@@ -355,17 +327,17 @@ function fillXformOnly(){ const o = objById(vSel); if (!o) return; const [W, H] 
 function xfApply(k){ const o = objById(vSel); if (!o) return; remember(); const [W, H] = outSize(), ar = o.w * W / (o.h * H);
   o.x = +$('xfX').value / W; o.y = +$('xfY').value / H; const w = +$('xfW').value / W, h = +$('xfH').value / H;
   if (k === 'w'){ o.w = w; if (o.lock !== false) o.h = o.w * W / ar / H; } else if (k === 'h'){ o.h = h; if (o.lock !== false) o.w = o.h * H * ar / W; } o.rot = +$('xfR').value || 0; vChanged(); }
-const TYPE_NAME = { pod: ['قالبِ پادکست', 'Podcast template'], text: ['متن', 'Text'], image: ['تصویر', 'Picture'], video: ['ویدیو', 'Video'], sticker: ['استیکر', 'Sticker'] };
+const TYPE_NAME = { pod: ['قالبِ پادکست', 'Podcast template'], text: ['متن', 'Text'], image: ['تصویر', 'Picture'], video: ['ویدیو', 'Video'], sticker: ['استیکر', 'Sticker'], sfx: ['افکتِ صوتی', 'Sound effect'] };
 function fillVInsp(){
   const box = $('vinsp'); if (!box) return; const o = vSel && objById(vSel), [W, H] = outSize(), P = V.pod; let h = '';
   if (!o){
     h += vsec('ویدیو', 'Video', vselect('نسبتِ تصویر', 'Aspect ratio', [['16:9', '۱۶:۹ — افقی'], ['9:16', '۹:۱۶ — عمودی'], ['1:1', '۱:۱ — مربع'], ['4:5', '۴:۵']], V.ratio, "vset('ratio', this.value); fitFrame(); vDraw()")
       + vselect('کیفیتِ خروجی', 'Output resolution', [['1080p', '1080p'], ['2k', '2K (پیش‌فرض)'], ['4k', '4K']], V.res, "vset('res', this.value); fillVInsp()")
       + vselect('نرخِ فریم', 'Frame rate', [['30', '۳۰ فریم در ثانیه (پیش‌فرض)'], ['60', '۶۰ فریم در ثانیه']], String(V.fps), "vset('fps', +this.value)")
-      + `<p class="text-xs text-base-content/60" dir="ltr">${W} × ${H} · ${V.fps} fps</p>` + vcolor('رنگِ زمینهٔ ساده', 'Plain background colour', V.bg, "vset('bg', this.value, true)"), "vreset('video')");
+      + `<p class="text-xs text-base-content/60" dir="ltr">${W} × ${H} · ${V.fps} fps</p>` + vcolor('رنگِ زمینهٔ ساده', 'Plain background color', V.bg, "vset('bg', this.value, true)"), "vreset('video')");
     h += vsec('زیرنویس', 'Subtitles', vtoggle('نمایشِ زیرنویس', 'Show subtitles', V.subs.on, "vset('subs.on', this.checked)") + vrange('اندازه', 'Size', V.subs.size, 0.02, 0.09, 0.002, '', "vset('subs.size', +this.value, true)")
-      + vrange('جایگاهِ عمودی', 'Vertical position', V.subs.pos, 0.5, 0.97, 0.005, '', "vset('subs.pos', +this.value, true)") + vcolor('رنگِ نوشته', 'Text colour', V.subs.color, "vset('subs.color', this.value, true)")
-      + vcolor('رنگِ زمینه', 'Box colour', V.subs.bg, "vset('subs.bg', this.value, true)") + vrange('شفافیتِ زمینه', 'Box opacity', V.subs.bgOp, 0, 1, 0.05, '%', "vset('subs.bgOp', +this.value, true)")
+      + vrange('جایگاهِ عمودی', 'Vertical position', V.subs.pos, 0.5, 0.97, 0.005, '', "vset('subs.pos', +this.value, true)") + vcolor('رنگِ نوشته', 'Text color', V.subs.color, "vset('subs.color', this.value, true)")
+      + vcolor('رنگِ زمینه', 'Box color', V.subs.bg, "vset('subs.bg', this.value, true)") + vrange('شفافیتِ زمینه', 'Box opacity', V.subs.bgOp, 0, 1, 0.05, '%', "vset('subs.bgOp', +this.value, true)")
       + vtoggle('همراهِ تایم‌لاین (خودکار)', 'Follow the timeline (automatic)', V.subs.follow, "vset('subs.follow', this.checked); if (!this.checked && !V.subs.cues.length) resyncSubs(); renderVTL()")
       + `<button class="btn btn-sm w-full border-base-content/15 bg-base-100" onclick="resyncSubs()">${T('هم‌گام‌سازیِ دوباره با تایم‌لاین', 'Re-sync with the timeline')}</button>`, "vreset('subs')");
     h += vsec('افزودن', 'Add', `<div class="grid grid-cols-3 gap-1.5"><button class="btn btn-sm border-base-content/15 bg-base-100" onclick="addVText()">${T('متن', 'Text')}</button><button class="btn btn-sm border-base-content/15 bg-base-100" onclick="pickVMedia('image')">${T('تصویر', 'Picture')}</button><button class="btn btn-sm border-base-content/15 bg-base-100" onclick="pickVMedia('video')">${T('ویدیو', 'Video')}</button></div><button class="btn btn-sm w-full border-base-content/15 bg-base-100" onclick="addVSticker()">${T('استیکر', 'Sticker')}</button>`
@@ -378,12 +350,12 @@ function fillVInsp(){
       <div class="grid grid-cols-2 gap-2" dir="ltr"><label class="input input-sm"><span class="label">X</span><input id="xfX" type="number" onchange="xfApply()"></label><label class="input input-sm"><span class="label">Y</span><input id="xfY" type="number" onchange="xfApply()"></label>
       <label class="input input-sm"><span class="label">W</span><input id="xfW" type="number" onchange="xfApply('w')"></label><label class="input input-sm"><span class="label">H</span><input id="xfH" type="number" onchange="xfApply('h')"></label>
       <label class="input input-sm col-span-2"><span class="label">°</span><input id="xfR" type="number" onchange="xfApply()"></label></div>
-      <p class="text-xs leading-relaxed text-base-content/60">${T('دستگیره‌ها با نسبتِ ثابت بزرگ و کوچک می‌کنند؛ Shift نسبت را آزاد می‌کند و Alt از مرکز. Shift هنگامِ چرخاندن، گام‌های ۱۵ درجه. کلیدهای جهت جابه‌جا می‌کنند و Delete حذف.', 'Handles keep the ratio; Shift frees it, Alt scales from the centre. Shift while rotating snaps to 15°. Arrows nudge, Delete removes.')}</p>`, "vreset('xform')");
+      <p class="text-xs leading-relaxed text-base-content/60">${T('دستگیره‌ها با نسبتِ ثابت بزرگ و کوچک می‌کنند؛ Shift نسبت را آزاد می‌کند و Alt از مرکز. Shift هنگامِ چرخاندن، گام‌های ۱۵ درجه. کلیدهای جهت جابه‌جا می‌کنند و Delete حذف.', 'Handles keep the proportions — hold Shift to resize freely, Alt to scale from the center. Shift while rotating snaps to 15°. Arrow keys nudge; Delete removes.')}</p>`, "vreset('xform')");
     if (o.type === 'text') h += vsec('متن', 'Text', `<textarea class="textarea textarea-sm w-full" rows="2" dir="auto" oninput="vset('sel.text', this.value, true)">${escapeHtml(o.text || '')}</textarea>`
       + vselect('وزن', 'Weight', [['900', 'سیاه'], ['700', 'پررنگ'], ['400', 'معمولی']], String(o.weight), "vset('sel.weight', +this.value)") + vrange('اندازه', 'Size', o.size, 0.02, 0.16, 0.002, '', "vset('sel.size', +this.value, true)")
-      + vselect('چینش', 'Alignment', [['right', 'راست'], ['center', 'وسط'], ['left', 'چپ']], o.align, "vset('sel.align', this.value)") + vcolor('رنگِ نوشته', 'Text colour', o.color, "vset('sel.color', this.value, true)")
+      + vselect('چینش', 'Alignment', [['right', 'راست'], ['center', 'وسط'], ['left', 'چپ']], o.align, "vset('sel.align', this.value)") + vcolor('رنگِ نوشته', 'Text color', o.color, "vset('sel.color', this.value, true)")
       + vtoggle('پس‌زمینه', 'Background', o.bg.on, "vset('sel.bg.on', this.checked)") + vselect('شکلِ پس‌زمینه', 'Background shape', [['round', 'گرد'], ['capsule', 'کپسولی'], ['brush', 'قلم‌مو']], o.bg.shape, "vset('sel.bg.shape', this.value)")
-      + vcolor('رنگِ پس‌زمینه', 'Background colour', o.bg.color, "vset('sel.bg.color', this.value, true)") + vrange('فاصلهٔ درونی', 'Padding', o.bg.pad, 0, 0.05, 0.001, '', "vset('sel.bg.pad', +this.value, true)"), "vreset('text')");
+      + vcolor('رنگِ پس‌زمینه', 'Background color', o.bg.color, "vset('sel.bg.color', this.value, true)") + vrange('فاصلهٔ درونی', 'Padding', o.bg.pad, 0, 0.05, 0.001, '', "vset('sel.bg.pad', +this.value, true)"), "vreset('text')");
     if (o.type === 'image' || o.type === 'video') h += vsec(o.type === 'video' ? 'ویدیو' : 'تصویر', o.type === 'video' ? 'Video' : 'Picture',
       vselect('جاگیری', 'Fit', [['cover', 'پرکردنِ قاب'], ['contain', 'کامل در قاب']], o.fit, "vset('sel.fit', this.value)") + vrange('گوشه‌ها', 'Corners', o.radius, 0, 0.2, 0.002, '', "vset('sel.radius', +this.value, true)")
       + vrange('شفافیت', 'Opacity', o.opacity ?? 1, 0, 1, 0.05, '%', "vset('sel.opacity', +this.value, true)")
@@ -392,24 +364,19 @@ function fillVInsp(){
       + (o.type === 'video' ? vtoggle('بی‌صدا', 'Muted', o.mute !== false, "vset('sel.mute', this.checked); fillVInsp()") + (o.mute === false ? vrange('بلندیِ صدای ویدیو', "The video's volume", o.volume ?? 1, 0, 2, 0.05, '%', "vset('sel.volume', +this.value, true)") : '') : '')
       + (o.type === 'video' ? vtoggle('تکرار', 'Loop', o.loop, "vset('sel.loop', this.checked)") + vrange('شروع از ثانیهٔ', 'Start from second', o.trimIn || 0, 0, 120, 0.1, 's', "vset('sel.trimIn', +this.value, true)") : '')
       + `<button class="btn btn-sm w-full border-base-content/15 bg-base-100" onclick="pickVMedia('${o.type}', true)">${T('جایگزین کردنِ فایل…', 'Replace the file…')}</button>`, "vreset('media')")
-      + vsec('خطِ دور', 'Stroke', vtoggle('خطِ دور', 'Stroke', o.stroke.on, "vset('sel.stroke.on', this.checked)") + vcolor('رنگ', 'Colour', o.stroke.color, "vset('sel.stroke.color', this.value, true)")
+      + vsec('خطِ دور', 'Stroke', vtoggle('خطِ دور', 'Stroke', o.stroke.on, "vset('sel.stroke.on', this.checked)") + vcolor('رنگ', 'Color', o.stroke.color, "vset('sel.stroke.color', this.value, true)")
       + vselect('سبک', 'Style', [['solid', 'یک‌دست'], ['dashed', 'خط‌چین'], ['dotted', 'نقطه‌چین']], o.stroke.style, "vset('sel.stroke.style', this.value)") + vrange('ضخامت', 'Thickness', o.stroke.width, 0, 0.03, 0.0005, '', "vset('sel.stroke.width', +this.value, true)")
       + vrange('شفافیت', 'Opacity', o.stroke.opacity, 0, 1, 0.05, '%', "vset('sel.stroke.opacity', +this.value, true)"))
-      + vsec('سایه', 'Shadow', vtoggle('سایه', 'Shadow', o.shadow.on, "vset('sel.shadow.on', this.checked)") + vcolor('رنگ', 'Colour', o.shadow.color, "vset('sel.shadow.color', this.value, true)")
+      + vsec('سایه', 'Shadow', vtoggle('سایه', 'Shadow', o.shadow.on, "vset('sel.shadow.on', this.checked)") + vcolor('رنگ', 'Color', o.shadow.color, "vset('sel.shadow.color', this.value, true)")
       + vrange('شفافیت', 'Opacity', o.shadow.opacity, 0, 1, 0.05, '%', "vset('sel.shadow.opacity', +this.value, true)") + vrange('زاویه', 'Angle', o.shadow.angle, 0, 360, 1, '°', "vset('sel.shadow.angle', +this.value, true)")
       + vrange('فاصله', 'Distance', o.shadow.distance, 0, 0.05, 0.0005, '', "vset('sel.shadow.distance', +this.value, true)") + vrange('محوشدگی', 'Blur', o.shadow.blur, 0, 0.08, 0.001, '', "vset('sel.shadow.blur', +this.value, true)")
       + vrange('گسترش', 'Spread', o.shadow.spread, 0, 0.03, 0.0005, '', "vset('sel.shadow.spread', +this.value, true)"));
     if (o.type === 'sticker') h += vsec('استیکر', 'Sticker', `<div class="grid grid-cols-6 gap-1.5">${['👑', '🎙️', '🎧', '❤️', '⭐', '🔥', '👍', '😂', '🎵', '☀️', '🦁', '📌'].map(e => `<button class="btn btn-sm text-lg ${o.emoji === e ? 'btn-primary' : 'border-base-content/15 bg-base-100'}" onclick="vset('sel.emoji', '${e}'); fillVInsp()">${e}</button>`).join('')}</div>`
       + `<label class="input input-sm w-full"><span class="label">${T('هر ایموجی', 'Any emoji')}</span><input value="${escapeHtml(o.emoji)}" onchange="vset('sel.emoji', this.value.trim() || '👑')"></label>`
-      + vtoggle('دایرهٔ پشت', 'Circle behind', o.bg.on, "vset('sel.bg.on', this.checked)") + vcolor('رنگِ دایره', 'Circle colour', o.bg.color, "vset('sel.bg.color', this.value, true)")
+      + vtoggle('دایرهٔ پشت', 'Circle behind', o.bg.on, "vset('sel.bg.on', this.checked)") + vcolor('رنگِ دایره', 'Circle color', o.bg.color, "vset('sel.bg.color', this.value, true)")
       + vrange('اندازه', 'Size', o.w, 0.03, 0.4, 0.005, '', "const o = objById(vSel), [W, H] = outSize(); o.h = +this.value * W / H * o.h / (o.w * W / H); vset('sel.w', +this.value, true); placeSelBox()")
       + vrange('چرخش', 'Rotation', o.rot || 0, -45, 45, 1, '°', "vset('sel.rot', +this.value, true); placeSelBox()"), "vreset('sticker')");
-    if (o.type !== 'pod') h += vsec('انیمیشن', 'Animation', (() => { const a = o.anim || {}; return `<div class="grid grid-cols-2 gap-2">`
-      + vselect('ورود', 'In', [['none', T('بدون', 'None')], ['type', T('تایپ واژه‌به‌واژه', 'Type word by word')], ['fade', T('محو شدن', 'Fade')], ['rise', T('بالا آمدن', 'Rise')], ['pop', T('پریدن', 'Pop')]].filter(x => x[0] !== 'type' || o.type === 'text'), a.in || 'none', "vsetAnim('in', this.value)")
-      + vselect('خروج', 'Out', [['none', T('بدون', 'None')], ['fade', T('محو شدن', 'Fade')], ['down', T('پایین رفتن', 'Sink')], ['shrink', T('کوچک شدن', 'Shrink')]], a.out || 'none', "vsetAnim('out', this.value)") + `</div>`
-      + vselect('در طولِ نمایش', 'While on screen', [['none', T('بدون انیمیشن', 'No animation')], ['breathe', T('نفس کشیدن', 'Breathe')], ['wave', T('موج', 'Wave')], ['shine', T('درخشش', 'Shine')]], a.loop || 'none', "vsetAnim('loop', this.value)")
-      + vrange('سرعت', 'Speed', a.speed || 5, 1, 10, 1, '', "vsetAnim('speed', +this.value, true)")
-      + (o.type === 'text' && o.bg && o.bg.on ? vselect('انیمیشنِ پس‌زمینهٔ متن', "The text background's animation", [['none', T('بدون', 'None')], ['open', T('باز شدن از وسط', 'Open from the centre')], ['stretch', T('کشیده شدن', 'Stretch')], ['fade', T('محو شدن', 'Fade')]], a.bgIn || 'none', "vsetAnim('bgIn', this.value)") : ''); })(), "vreset('anim')");
+    /* 175: animation lives in its own panel (anim.js) */
     if (o.type === 'pod'){
       h += vsec('طرح‌ها', 'Designs', `<div class="grid grid-cols-3 gap-2">${STYLES.map(([n, st], k) => `<button class="btn h-auto flex-col gap-1 p-1 ${P.style === k ? 'btn-primary' : 'border-base-content/10 bg-base-100'}" onclick="applyVStyle(${k})"><span class="mx-auto block size-9 rounded-full" style="background:linear-gradient(135deg, ${PALS[st.pal][1]}, ${PALS[st.pal][0]} 45%, ${PALS[st.pal][2]})"></span><span class="text-[11px]">${escapeHtml(n)}</span></button>`).join('')}</div>`, "vreset('pod')");
       h += vsec('چیدمان و موجِ صدا', 'Layout and waveform', vselect('چیدمان', 'Layout', [['auto', T('خودکار — یکی برای هر گوینده', 'Automatic — one per speaker')], ['single', T('فقط گوینده‌ای که حرف می‌زند', 'Only whoever is speaking')], ['quote', T('نقل‌قولِ بزرگ', 'Big quote')]], P.layout, "vset('pod.layout', this.value)")
@@ -420,15 +387,13 @@ function fillVInsp(){
         + `<div class="flex flex-wrap gap-1.5">${Object.keys(PALS).map(k => `<button class="size-7 rounded-full ring-offset-2 ring-offset-base-200 ${P.pal === k ? 'ring-2 ring-primary' : ''}" style="background:linear-gradient(135deg, ${PALS[k][1]}, ${PALS[k][0]})" onclick="vset('pod.pal', '${k}'); fillVInsp()" aria-label="${k}"></button>`).join('')}</div>`);
       h += vsec('پس‌زمینه', 'Background', `<div class="join w-full">${[['mesh', 'رنگی', 'Mesh'], ['image', 'عکس', 'Photo'], ['video', 'ویدیو', 'Video'], ['solid', 'ساده', 'Plain']].map(([v, fa, en]) => `<button class="join-item btn btn-sm flex-1 ${P.bg === v ? 'btn-primary' : 'border-base-content/15 bg-base-100'}" onclick="vset('pod.bg', '${v}'); fillVInsp()">${T(fa, en)}</button>`).join('')}</div>`
         + (P.bg === 'image' || P.bg === 'video' ? `<button class="btn btn-sm w-full border-base-content/15 bg-base-100" onclick="pickVMedia('bg-${P.bg}')">${P.bgAsset ? escapeHtml((MEDIA.get(P.bgAsset) || {}).name || T('فایلِ انتخاب‌شده', 'chosen file')) : T('انتخابِ فایل…', 'Choose a file…')}</button>` + vrange('بزرگ‌نمایی', 'Zoom', P.zoom, 1, 2.5, 0.01, '×', "vset('pod.zoom', +this.value, true)") : '')
-        + vcolor('رنگِ روکش', 'Overlay colour', P.ovColor, "vset('pod.ovColor', this.value, true)") + vrange('شفافیتِ روکش', 'Overlay opacity', P.ovOp, 0, 0.9, 0.01, '%', "vset('pod.ovOp', +this.value, true)")
-        + vtoggle('گرادیان', 'Gradient', P.grad, "vset('pod.grad', this.checked)") + vcolor('رنگِ گرادیان', 'Gradient colour', P.gradA, "vset('pod.gradA', this.value, true)") + vrange('شدتِ گرادیان', 'Gradient strength', P.gradOp, 0, 1, 0.01, '%', "vset('pod.gradOp', +this.value, true)"));
+        + vcolor('رنگِ روکش', 'Overlay color', P.ovColor, "vset('pod.ovColor', this.value, true)") + vrange('شفافیتِ روکش', 'Overlay opacity', P.ovOp, 0, 0.9, 0.01, '%', "vset('pod.ovOp', +this.value, true)")
+        + vtoggle('گرادیان', 'Gradient', P.grad, "vset('pod.grad', this.checked)") + vcolor('رنگِ گرادیان', 'Gradient color', P.gradA, "vset('pod.gradA', this.value, true)") + vrange('شدتِ گرادیان', 'Gradient strength', P.gradOp, 0, 1, 0.01, '%', "vset('pod.gradOp', +this.value, true)"));
     }
   }
   box.innerHTML = h; box.querySelectorAll('select').forEach(el => enh(el)); fillXformOnly();
 }
 function applyVStyle(k){ remember(); const keep = { bgAsset: V.pod.bgAsset, sens: V.pod.sens, names: V.pod.names }; Object.assign(V.pod, STYLES[k][1], { style: k }, keep); if (STYLES[k][1].layout === 'two') V.pod.layout = 'auto'; VVER++; fillVInsp(); vDraw(); autosave(); }
-function vsetAnim(k, val, noHist){ const o = objById(vSel); if (!o) return; if (!noHist) remember(); o.anim = { ...(o.anim || {}), [k]: val }; if (k === 'in' || k === 'out') previewAnim(o); vDraw(); autosave(); }
-function previewAnim(o){ if (playing) return; const st = o.start || 0; seek(Math.max(0, st)); }
 function placeOnGrid(px, py){ const o = objById(vSel); if (!o) return; remember(); const m = 0.04; o.x = px < 0 ? m : px > 0 ? 1 - o.w - m : (1 - o.w) / 2; o.y = py < 0 ? m + 0.02 : py > 0 ? 1 - o.h - m - 0.1 : (1 - o.h) / 2; vChanged(); }
 function addVSticker(){ remember(); const o = { id: 'o' + (++uid), ...STICKER0() }; V.objects.push(o); selectV(o.id); vChanged(); }
 function addVText(){ remember(); const o = { id: 'o' + (++uid), ...TEXT0(), y: 0.2 }; V.objects.push(o); selectV(o.id); vChanged(); }
@@ -461,7 +426,7 @@ function wireVTL(){
   const lanes = $('vlanes'); if (!lanes) return;
   lanes.onpointerdown = e => { const bar = e.target.closest('.vbar'), r = lanes.firstElementChild.getBoundingClientRect(), t = Math.max(0, (e.clientX - r.left - PAD) / zoom);
     if (!bar){ seek(t); return; } const k = bar.dataset.k; if (k === 'audio'){ seek(t); return; }
-    if (k === 'subs'){ const ci = +bar.dataset.i; remember(); if (V.subs.follow){ V.subs.cues = cuesNow().map(q => ({ ...q })); V.subs.follow = false; say(T('زیرنویس حالا ثابت است؛ «هم‌گام‌سازیِ دوباره» آن را به تایم‌لاین برمی‌گرداند.', 'Subtitles are now fixed; «Re-sync» returns them to the timeline.'), 'ok'); }
+    if (k === 'subs'){ const ci = +bar.dataset.i; remember(); if (V.subs.follow){ V.subs.cues = cuesNow().map(q => ({ ...q })); V.subs.follow = false; say(T('زیرنویس حالا ثابت است؛ «هم‌گام‌سازیِ دوباره» آن را به تایم‌لاین برمی‌گرداند.', 'Subtitles are now fixed. Use Re-sync to follow the timeline again.'), 'ok'); }
       const q = V.subs.cues[ci], tr = e.target.closest('.vtrim'), x0 = e.clientX, a0 = q.at, d0 = q.dur;
       const mv = ev => { const d = (ev.clientX - x0) / zoom; if (tr && tr.dataset.e === 's'){ q.at = Math.max(0, Math.min(a0 + d0 - 0.2, a0 + d)); q.dur = a0 + d0 - q.at; } else if (tr) q.dur = Math.max(0.2, d0 + d); else q.at = Math.max(0, a0 + d); renderVTL(); vDraw(); };
       const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); autosave(); if (!vSel) fillVInsp(); }; addEventListener('pointermove', mv); addEventListener('pointerup', up); return; }
@@ -498,7 +463,7 @@ async function probeCodecs(W, H, fps, fmt){
   let vc = null, ac = null; if (typeof VideoEncoder === 'undefined') return { vc, ac };
   const cands = fmt === 'webm' ? [['vp9', W >= 3800 ? 'vp09.00.51.08' : 'vp09.00.41.08'], ['vp8', 'vp8'], ['av1', W >= 3800 ? 'av01.0.12M.08' : 'av01.0.08M.08']] : [['avc', W >= 3800 && fps > 30 ? 'avc1.640034' : 'avc1.640033'], ['vp9', W >= 3800 ? 'vp09.00.51.08' : 'vp09.00.41.08'], ['av1', W >= 3800 ? 'av01.0.12M.08' : 'av01.0.08M.08']];
   for (const [k, c] of cands){ try { if ((await VideoEncoder.isConfigSupported({ codec: c, width: W, height: H, bitrate: BR(W, H, fps), framerate: fps })).supported){ vc = [k, c]; break; } } catch (e) {} }
-  if (typeof AudioEncoder !== 'undefined' && !window.__forceMp3) for (const [k, c] of (fmt === 'webm' ? [['opus', 'opus']] : [['aac', 'mp4a.40.2'], ['opus', 'opus']])){ try { if ((await AudioEncoder.isConfigSupported({ codec: c, sampleRate: 48000, numberOfChannels: 2, bitrate: 160000 })).supported){ ac = [k, c]; break; } } catch (e) {} }
+  if (typeof AudioEncoder !== 'undefined' && !window.__forceMp3) for (const [k, c] of (fmt === 'webm' ? [['opus', 'opus']] : [['aac', 'mp4a.40.2'], ['opus', 'opus']])){   /* 175: mp4 · mov · mkv share these */ try { if ((await AudioEncoder.isConfigSupported({ codec: c, sampleRate: 48000, numberOfChannels: 2, bitrate: 160000 })).supported){ ac = [k, c]; break; } } catch (e) {} }
   return { vc, ac };
 }
 async function openVExport(){
@@ -506,9 +471,15 @@ async function openVExport(){
   ['vxRes', 'vxFps', 'vxMusic'].forEach(id => enh($(id))); $('vxProg').value = 0; $('vxProgRow').classList.add('hidden'); $('vxGo').disabled = false; $('vxInfo').textContent = '';
   $('vexpDlg').showModal(); vxProbe();
 }
-async function vxProbe(){ const [W, H] = outSize($('vxRes').value), fps = +$('vxFps').value, { vc, ac } = await probeCodecs(W, H, fps);
-  $('vxInfo').textContent = `${W} × ${H} · ${fps} fps · ` + (vc ? vc[0].toUpperCase() : T('بدونِ رمزگذارِ ویدیو', 'no video encoder')) + ' + ' + (ac ? ac[0].toUpperCase() : T('MP3 (برای macOSِ قدیمی‌تر)', 'MP3 (for older macOS)'));
+async function vxProbe(){ const [W, H] = outSize($('vxRes').value), fps = +$('vxFps').value, fmt = ($('vxFmt') || {}).value || 'mp4';   // 175: per format
+  if (fmt === 'gif'){ const gW = Math.min(W, 640), gH = Math.round(H * gW / W); $('vxInfo').textContent = `GIF · ${gW} × ${gH} · ` + T('حدودِ ۱۲ فریم در ثانیه، بی‌صدا', 'about 12 fps, no sound'); $('vxGo').disabled = false; return; }
+  const { vc, ac } = await probeCodecs(W, H, fps, fmt);
+  $('vxInfo').textContent = `${fmt.toUpperCase()} · ${W} × ${H} · ${fps} fps · ` + (vc ? vc[0].toUpperCase() : T('بدونِ رمزگذارِ ویدیو', 'no video encoder')) + ' + ' + (ac ? ac[0].toUpperCase() : fmt === 'webm' ? T('بی‌صدا (این سیستم رمزگذارِ Opus ندارد)', 'no sound (this system has no Opus encoder)') : T('MP3 (برای macOSِ قدیمی‌تر)', 'MP3 (for older macOS)'));
   $('vxGo').disabled = !vc; if (!vc) $('vxInfo').textContent += ' — ' + T('این سیستم رمزگذارِ ویدیو ندارد.', 'this system has no video encoder.'); }
+// 175: MOV is the same ISO file as MP4 with QuickTime's brand ('qt  '), patched in place (no offsets move)
+function toQuickTime(u8){ if (u8.length < 16 || String.fromCharCode(u8[4], u8[5], u8[6], u8[7]) !== 'ftyp') return u8; const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength), n = dv.getUint32(0), qt = [0x71, 0x74, 0x20, 0x20];
+  u8.set(qt, 8); dv.setUint32(12, 0x20050300); for (let o = 16; o + 4 <= n; o += 4) u8.set(qt, o); return u8; }
+const MKV_V = { avc: 'V_MPEG4/ISO/AVC', vp9: 'V_VP9', vp8: 'V_VP8', av1: 'V_AV1' };
 const u8b64 = u8 => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
 async function exportVideo(){
   if (vExp) return; const res = $('vxRes').value, fps = +$('vxFps').value, [W, H] = window.__vxSize || outSize(res), dur = projEnd();   // __vxSize: test hook only
@@ -525,11 +496,12 @@ async function exportVideo(){
     if (timelineSpec().clips.length){ const r = await API().timeline_files(timelineSpec(), cfg); if (!r.ok) throw new Error(r.error || '');
       const actx = new AudioContext({ sampleRate: 48000 }); base = await actx.decodeAudioData(Uint8Array.from(atob(wm ? r.b64_music : r.b64), c => c.charCodeAt(0)).buffer); actx.close(); }
     const SR = 48000, N = Math.max(base ? base.length : 0, Math.ceil(dur * SR)), L = new Float32Array(N), Rr = new Float32Array(N);
-    if (base){ const b0 = base.getChannelData(0), b1 = base.numberOfChannels > 1 ? base.getChannelData(1) : b0; L.set(b0.subarray(0, N)); Rr.set(b1.subarray(0, N)); }
+    if (base){ const b0 = base.getChannelData(0), b1 = base.numberOfChannels > 1 ? base.getChannelData(1) : b0, av = V.audioVol ?? 1;   // 175: the audio track's own volume over the whole audio composition
+      if (av === 1){ L.set(b0.subarray(0, N)); Rr.set(b1.subarray(0, N)); } else { const n = Math.min(N, b0.length); for (let i = 0; i < n; i++){ L[i] = b0[i] * av; Rr[i] = b1[i] * av; } } }
     await mixVideoSounds(L, Rr, SR);
-    const ch = 2, isGif = fmt === 'gif', target = isGif ? { buffer: null } : (fmt === 'webm' ? new WebMMuxer.ArrayBufferTarget() : new Mp4Muxer.ArrayBufferTarget());   // 170: mp4 · webm · gif
+    const ch = 2, isGif = fmt === 'gif', mkv = fmt === 'mkv', ebml = fmt === 'webm' || mkv, target = isGif ? { buffer: null } : (ebml ? new WebMMuxer.ArrayBufferTarget() : new Mp4Muxer.ArrayBufferTarget());   // 170: mp4 · webm · gif — 175: mov · mkv
     const muxer = isGif ? { addVideoChunk(){}, addAudioChunk(){}, addAudioChunkRaw(){}, finalize(){} }
-      : fmt === 'webm' ? new WebMMuxer.Muxer({ target, video: { codec: vc[0] === 'vp8' ? 'V_VP8' : vc[0] === 'av1' ? 'V_AV1' : 'V_VP9', width: W, height: H, frameRate: fps }, audio: ac ? { codec: 'A_OPUS', numberOfChannels: ch, sampleRate: SR } : undefined, firstTimestampBehavior: 'offset' })
+      : ebml ? new WebMMuxer.Muxer({ target, type: mkv ? 'matroska' : 'webm', video: { codec: MKV_V[vc[0]] || 'V_VP9', width: W, height: H, frameRate: fps }, audio: ac ? { codec: ac[0] === 'aac' ? 'A_AAC' : 'A_OPUS', numberOfChannels: ch, sampleRate: SR } : (mkv ? { codec: 'A_MPEG/L3', numberOfChannels: ch, sampleRate: SR } : undefined), firstTimestampBehavior: 'offset' })
       : new Mp4Muxer.Muxer({ target, video: { codec: vc[0], width: W, height: H, frameRate: fps }, audio: { codec: ac ? ac[0] : 'mp3', numberOfChannels: ch, sampleRate: SR }, fastStart: 'in-memory', firstTimestampBehavior: 'offset' });
     const gif = isGif ? gifBegin(W, H, fps) : null;
     const venc = isGif ? { encode(){}, flush: async () => {}, encodeQueueSize: 0, configure(){} } : new VideoEncoder({ output: (c, m) => muxer.addVideoChunk(c, m), error: e => { err = e; } });
@@ -542,7 +514,7 @@ async function exportVideo(){
       for (let i = 0; i < N; i += 8192){ const n = Math.min(8192, N - i), data = new Float32Array(n * 2); data.set(L.subarray(i, i + n), 0); data.set(Rr.subarray(i, i + n), n);
         aenc.encode(new AudioData({ format: 'f32-planar', sampleRate: SR, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round(i / SR * 1e6), data })); }
       audioFlush = () => aenc.flush();
-    } else if (fmt === 'mp4') {
+    } else if (fmt === 'mp4' || fmt === 'mov' || mkv) {
       // macOS before Safari 26 has no AudioEncoder: the engine encodes the mix as MP3; its frames go into the MP4
       prog(0.01, T('صدا به MP3 تبدیل می‌شود…', 'Encoding the audio as MP3…'));
       const job = (await API().mp3_begin(SR, 2)).job;
@@ -550,8 +522,8 @@ async function exportVideo(){
         for (let k = 0; k < n; k++){ pcm[2 * k] = Math.max(-32768, Math.min(32767, Math.round(L[i + k] * 32767))); pcm[2 * k + 1] = Math.max(-32768, Math.min(32767, Math.round(Rr[i + k] * 32767))); }
         await API().mp3_chunk(job, u8b64(new Uint8Array(pcm.buffer))); }
       const m3 = await API().mp3_end(job); if (!m3.ok) throw new Error(m3.error || '');
-      mp3Frames(Uint8Array.from(atob(m3.b64), c => c.charCodeAt(0))).forEach((f, k) => muxer.addAudioChunkRaw(new Uint8Array(f.data), 'key', Math.round(k * f.spf / f.sr * 1e6), Math.round(f.spf / f.sr * 1e6),
-        k === 0 ? { decoderConfig: { codec: 'mp3', sampleRate: f.sr, numberOfChannels: 2 } } : undefined));
+      mp3Frames(Uint8Array.from(atob(m3.b64), c => c.charCodeAt(0))).forEach((f, k) => mkv ? muxer.addAudioChunkRaw(new Uint8Array(f.data), 'key', Math.round(k * f.spf / f.sr * 1e6))   /* Matroska: A_MPEG/L3, no codec private */
+        : muxer.addAudioChunkRaw(new Uint8Array(f.data), 'key', Math.round(k * f.spf / f.sr * 1e6), Math.round(f.spf / f.sr * 1e6), k === 0 ? { decoderConfig: { codec: 'mp3', sampleRate: f.sr, numberOfChannels: 2 } } : undefined));
     }
     const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const ctx = cv.getContext('2d'), total = Math.max(1, Math.ceil(dur * fps)), t0 = performance.now();
     for (let i = 0; i < total; i++){
@@ -560,13 +532,13 @@ async function exportVideo(){
       venc.encode(fr, { keyFrame: i % (fps * 2) === 0 }); fr.close(); } while (venc.encodeQueueSize > 6) await new Promise(q => setTimeout(q, 2));
       if (i % 5 === 0){ const el = (performance.now() - t0) / 1000, left = el / (i + 1) * (total - i - 1); prog(0.02 + 0.93 * i / total, T(`فریمِ ${FA(i + 1)} از ${FA(total)} — حدودِ ${FA(Math.ceil(left))} ثانیه مانده`, `Frame ${i + 1} of ${total} — about ${Math.ceil(left)} s left`)); }
     }
-    await venc.flush(); await audioFlush(); if (err) throw err; muxer.finalize(); const out = isGif ? gif.finish() : new Uint8Array(target.buffer);
+    await venc.flush(); await audioFlush(); if (err) throw err; muxer.finalize(); const out = isGif ? gif.finish() : fmt === 'mov' ? toQuickTime(new Uint8Array(target.buffer)) : new Uint8Array(target.buffer);
     prog(0.96, T('ذخیره می‌شود…', 'Saving…'));
     const so = await API().video_save_open('Avaye-Javid-Shah.' + fmt); if (!so.ok){ if (so.error !== 'cancelled') throw new Error(so.error || ''); throw new Error('cancelled'); }
     for (let off = 0; off < out.length; off += 4 << 20){ const ok = await API().video_save_chunk(so.job, u8b64(out.subarray(off, off + (4 << 20)))); if (!ok.ok) throw new Error(ok.error || ''); prog(0.96 + 0.04 * off / out.length); }
-    const sc = await API().video_save_close(so.job); prog(1, T('ذخیره شد: ', 'Saved: ') + (sc.path || '')); say(T('ویدیو ذخیره شد: ', 'Video saved: ') + (sc.path || ''), 'ok');
-    window.__lastVideo = { bytes: out.length, codecs: vc[0] + '+' + (ac ? ac[0] : 'mp3'), W, H, fps, frames: total };
-  } catch (e) { const c = String(e.message || e) === 'cancelled'; $('vxInfo').textContent = c ? T('لغو شد.', 'Cancelled.') : (e.message || String(e)); if (!c) say(e.message || String(e), 'err'); }
+    const sc = await API().video_save_close(so.job); prog(1, T('ذخیره شد: ', 'Saved: ') + (sc.path || '')); doneToast(T('ویدیو ساخته شد', 'Video exported'), sc.path || ''); setTimeout(() => { const d = $('vxDlg') || document.querySelector('dialog[open]'); if (d && d.open) d.close(); }, 1600);   // 171 say(T('ویدیو ذخیره شد: ', 'Video saved: ') + (sc.path || ''), 'ok');
+    window.__lastVideo = { bytes: out.length, fmt, codecs: vc[0] + '+' + (ac ? ac[0] : isGif || fmt === 'webm' ? 'none' : 'mp3'), W, H, fps, frames: total };
+  } catch (e) { const c = String(e.message || e) === 'cancelled'; $('vxInfo').textContent = c ? T('لغو شد.', 'Canceled.') : (e.message || String(e)); if (!c) say(e.message || String(e), 'err'); }
   finally { vExp = null; $('vxGo').disabled = false; }
 }
 // ---- each video clip's own sound (decoded once), mixed at its place, trim, loop and volume
@@ -575,7 +547,8 @@ async function videoSound(id){ if (VSND.has(id)) return VSND.get(id); let ab = n
   try { const url = await assetUrl(id), buf = await (await fetch(url)).arrayBuffer(), ctx = new AudioContext({ sampleRate: 48000 }); try { ab = await ctx.decodeAudioData(buf); } catch (e) { ab = null; } ctx.close(); } catch (e) {}
   VSND.set(id, ab); return ab; }
 async function mixVideoSounds(L, R, sr){
-  for (const o of V.objects){ if (o.type !== 'video' || o.mute !== false) continue; const ab = await videoSound(o.asset); if (!ab) continue;
+  for (const o of V.objects){ if (o.type === 'sfx'){ try { const b = await loadSfx(o.file), a = b.getChannelData(0), q = b.numberOfChannels > 1 ? b.getChannelData(1) : a, s0 = Math.round((o.start || 0) * sr), e0 = Math.min(L.length, Math.round((o.end ?? (o.start || 0) + b.duration) * sr)), g = o.gain ?? 1, ratio = b.sampleRate / sr; for (let i = s0; i < e0; i++){ const k2 = Math.round((o.trimIn || 0) * b.sampleRate) + Math.floor((i - s0) * ratio); if (k2 >= a.length) break; L[i] += a[k2] * g; R[i] += q[k2] * g; } } catch (err) {} continue; }   // 172: video-mode effects
+     if (o.type !== 'video' || o.mute !== false) continue; const ab = await videoSound(o.asset); if (!ab) continue;
     const vol = o.volume ?? 1, s0 = Math.round((o.start || 0) * sr), e0 = Math.min(L.length, Math.round((o.end == null ? projEnd() : o.end) * sr)), a = ab.getChannelData(0), b = ab.numberOfChannels > 1 ? ab.getChannelData(1) : a, off = Math.round((o.trimIn || 0) * sr), n = a.length;
     for (let i = s0; i < e0; i++){ let k = off + (i - s0); if (k >= n){ if (!o.loop) break; k %= n; } L[i] += a[k] * vol; R[i] += b[k] * vol; } }
 }
@@ -607,9 +580,9 @@ vInit();
 //       background layers (drag the grip to restack, drag clips between layers), the audio as one track below.
 // =====================================================================================
 Object.defineProperty(window, 'POD', { get: () => V.pod, configurable: true });   // the mock's inline handlers write POD.*
-const VICON = { sfx: 'sparkles', sub: 'captions', obj: 'layers', vid: 'clapperboard', mix: 'audio-lines' };
-const VADD = { sfx: [['sfx', 'افکتِ صوتی از کتابخانه…', 'A sound effect from the library…']], sub: [['subs', 'زیرنویسِ تازه', 'New subtitle']], obj: [['text', 'متن', 'Text'], ['pimage', 'تصویر روی ویدیو', 'Picture on top'], ['pvideo', 'ویدیو روی ویدیو', 'Video on top'], ['sticker', 'استیکر', 'Sticker'], ['fx', 'گذار / جلوه', 'Transition / effect']],
-  vid: [['podcast', 'قالبِ پادکست', 'Podcast template'], ['video', 'ویدیو', 'Video'], ['image', 'تصویر', 'Image']], mix: [] };
+const VICON = { bg: 'clapperboard', sfx: 'sparkles', sub: 'captions', obj: 'layers', vid: 'clapperboard', mix: 'audio-lines' };
+const VADD = { sfx: [['sfx', 'افکتِ صوتی از کتابخانه…', 'A sound effect from the library…']], sub: [['subs', 'زیرنویسِ تازه', 'New subtitle']], obj: [['text', 'متن', 'Text'], ['pimage', 'تصویر روی ویدیو', 'Picture on top'], ['pvideo', 'ویدیو روی ویدیو', 'Video on top'], ['sticker', 'استیکر', 'Sticker'], ['podtpl', 'قالبِ پادکست', 'Podcast template'], ['sfx', 'افکتِ صوتی…', 'Sound effect…']],
+  bg: [['bgvideo', 'ویدیو', 'Video'], ['bgimage', 'تصویر', 'Image'], ['slideshow', 'اسلایدشو', 'Slideshow'], ['podcast', 'سبکِ پادکست', 'Podcast style']], vid: [], mix: [] };
 let vTouchT = null;
 function vTouch(){ if (!vTouchT) remember(); clearTimeout(vTouchT); vTouchT = setTimeout(() => vTouchT = null, 800); VVER++; vDraw(); autosave(); }
 function renderPod(){ vTouch(); renderPodUI(); }
@@ -618,17 +591,17 @@ function paintOverlay(){ vTouch(); }
 function ensureLayers(){
   if (!Array.isArray(V.layers)) V.layers = [];
   const known = new Set(V.layers.flatMap(l => l.items));
-  V.objects.forEach(o => { if (known.has(o.id)) return; const kind = o.type === 'pod' || o.full ? 'vid' : 'obj';
+  V.objects.forEach(o => { if (known.has(o.id)) return; const kind = 'obj';   // 172: one kind of video track — any object on any layer
     let L = V.layers.find(l => l.kind === kind && !l.items.some(id => { const x = objById(id); return x && overlap(x, o); }));
     if (!L){ L = { id: 'L' + (++uid), kind, name: kind === 'vid' ? T('پس‌زمینه', 'Background') : T('لایه', 'Layer'), en: kind === 'vid' ? 'Background' : 'Layer', items: [] }; if (kind === 'obj') V.layers.unshift(L); else V.layers.push(L); }
     L.items.push(o.id); });
   V.layers.forEach(l => l.items = l.items.filter(id => objById(id))); V.layers = V.layers.filter(l => l.items.length || l.keep);
-  V.layers.sort((a, b) => (a.kind === 'vid') - (b.kind === 'vid'));
+  V.layers.forEach(l => { if (l.kind === 'vid'){ l.kind = 'obj'; l.name = 'لایه'; l.en = 'Layer'; } });
 }
 const overlap = (a, b) => (a.start || 0) < (b.end == null ? projEnd() : b.end) && (b.start || 0) < (a.end == null ? projEnd() : a.end);
 function layerOf(id){ ensureLayers(); return V.layers.find(l => l.items.includes(id)) || {}; }
 function zOrder(){ ensureLayers(); return [...V.layers].reverse().flatMap(l => l.items.map(objById).filter(Boolean)); }
-function vTracks(){ ensureLayers(); return [{ kind: 'sub', id: 'SUB', name: 'زیرنویس', en: 'Subtitles' }, ...V.layers, { kind: 'sfx', id: 'SFX', name: 'افکت‌ها', en: 'Effects' }, { kind: 'mix', id: 'MIX', name: 'صدا', en: 'Audio' }]; }   // 170: effects in video mode too
+function vTracks(){ ensureLayers(); return [{ kind: 'sub', id: 'SUB', name: 'زیرنویس', en: 'Subtitles' }, ...V.layers, { kind: 'mix', id: 'MIX', name: 'صدا', en: 'Audio' }]; }   // 170: effects in video mode too
 // ---- the timeline in video mode (same component, same ruler and playhead)
 const _rtAudio = renderTimeline;
 renderTimeline = function(){ if (mode !== 'video') return _rtAudio(); renderVideoTimeline(); requestAnimationFrame(() => { alignRuler(); seekVisual(playhead); }); };
@@ -636,10 +609,10 @@ function renderVTL(){ if (mode === 'video') renderTimeline(); }
 function vBars(n, seed){ let s = seed, out = ''; for (let i = 0; i < n; i++){ s = (s * 9301 + 49297) % 233280; out += `<i class="block flex-1 rounded-[1px] bg-current opacity-40" style="height:${20 + Math.round(s / 233280 * 60)}%"></i>`; } return out; }
 function renderVideoTimeline(){
   const TR = vTracks(), pps = zoom, end = projEnd(), sc = $('tlScroll'), span = Math.max(end, (((sc.clientWidth - $('heads').offsetWidth) || 0) - PAD - 1) / pps), W = PAD + span * pps + tailPx();
-  $('heads').innerHTML = TR.map((t, i) => { const layer = t.kind === 'obj' || t.kind === 'vid';
+  $('heads').innerHTML = TR.map((t, i) => { const layer = t.kind === 'obj';   // 174: only regular tracks reorder
     return `<div class="flex h-14 items-center pe-2" data-ti="${i}"><div class="flex h-11 w-full items-center gap-1 rounded-box bg-base-100/50 px-1.5 text-xs">
       ${layer ? `<span class="tgrip grid size-6 cursor-grab place-items-center rounded text-base-content/40 hover:bg-base-300" data-tip="بکشید تا ترتیبِ لایه‌ها عوض شود" data-tip-en="Drag to restack the layers"><svg class="size-4"><use href="#i-grip-horizontal"/></svg></span>`
-        : `<span class="grid size-6 cursor-not-allowed place-items-center rounded text-base-content/15" data-tip="${t.kind === 'sub' ? 'زیرنویس همیشه بالای همهٔ لایه‌هاست' : 'صدا زیرِ لایه‌های تصویر می‌ماند'}" data-tip-en="${t.kind === 'sub' ? 'Subtitles always stay on top' : 'Audio stays below the picture layers'}"><svg class="size-4"><use href="#i-grip-horizontal"/></svg></span>`}
+        : `<span class="grid size-6 cursor-not-allowed place-items-center rounded text-base-content/15" data-tip="${t.kind === 'sub' ? 'زیرنویس همیشه بالای همهٔ لایه‌هاست' : 'صدا زیرِ لایه‌های تصویر می‌ماند'}" data-tip-en="${t.kind === 'sub' ? 'Subtitles always stay on top' : t.kind === 'bg' ? 'The background always sits right above the audio' : 'Audio stays below the picture layers'}"><svg class="size-4"><use href="#i-grip-horizontal"/></svg></span>`}
       <svg class="size-3.5 shrink-0 opacity-70"><use href="#i-${VICON[t.kind]}"/></svg><span class="ui flex-1 truncate font-semibold">${escapeHtml(T(t.name, t.en))}</span>
       ${t.kind === 'sub' ? `<button class="btn btn-ghost btn-xs btn-square" onclick="resyncSubs()" data-tip="همگام‌سازیِ دوباره با گفتار" data-tip-en="Re-sync with the speech" aria-label="re-sync"><svg class="size-3.5"><use href="#i-refresh-cw"/></svg></button>` : ''}
       ${layer || t.kind === 'sub' ? `<button class="btn btn-ghost btn-xs btn-square ${(t.kind === 'sub' ? !V.subs.on : t.hidden) ? 'text-error' : ''}" onclick="vToggleTrack(${i})" data-tip="نمایش / پنهان" data-tip-en="Show / hide" aria-label="visibility"><svg class="size-3.5"><use href="#i-${(t.kind === 'sub' ? !V.subs.on : t.hidden) ? 'eye-off' : 'eye'}"/></svg></button>` : `<button class="btn btn-ghost btn-xs btn-square" onclick="setMode('audio')" data-tip="ویرایشِ صدا" data-tip-en="Edit the audio" aria-label="audio"><svg class="size-3.5"><use href="#i-pencil"/></svg></button>`}
@@ -647,7 +620,7 @@ function renderVideoTimeline(){
   const step = pps < 16 ? 10 : 5, dot = step / (step === 5 ? 5 : 4); let ticks = '';
   for (let k = 0; k * dot <= span + (typeof tailPx === 'function' ? tailPx() / pps : 0); k++){ const tt = k * dot, x = PAD + tt * pps; ticks += Math.abs(tt % step) < 1e-6 ? `<span class="absolute top-1 text-[11px] leading-none tabular-nums text-base-content/55" style="left:${x}px">${num(Math.floor(tt / 60))}:${num(String(Math.round(tt % 60)).padStart(2, '0'))}</span>` : `<span class="absolute top-[11px] size-[3px] -translate-x-1/2 rounded-full bg-base-content/30" style="left:${x}px"></span>`; }
   $('ruler').style.width = W + 'px';
-  $('ruler').innerHTML = `<div class="tl-empty pointer-events-none absolute inset-y-0 z-0" style="left:${PAD + (typeof projEnd === 'function' ? projEnd() : projEnd()) * pps}px;right:0;background:color-mix(in oklab, var(--color-primary) 7%, transparent)"></div>` + ticks + `<span id="phStem" class="pointer-events-none absolute bottom-0 top-3 w-0.5 bg-secondary" style="left:${PAD + playhead * pps}px"></span><span id="phLabel" class="absolute top-0 z-10 cursor-ew-resize rounded-sm bg-secondary px-1 text-[10px] font-bold tabular-nums text-secondary-content" style="left:${PAD + playhead * pps - 22}px">${num(fmt(playhead))}</span>`;
+  $('ruler').innerHTML = `<div class="tl-empty pointer-events-none absolute inset-y-0 z-0" style="left:${PAD + (typeof projEnd === 'function' ? projEnd() : projEnd()) * pps}px;right:0;background:color-mix(in oklab, var(--color-primary) 10%, transparent)"></div>` + ticks + `<span id="phStem" class="pointer-events-none absolute bottom-0 top-3 w-0.5 bg-secondary" style="left:${PAD + playhead * pps}px"></span><span id="phLabel" class="absolute top-0 z-10 cursor-ew-resize rounded-sm bg-secondary px-1 text-[10px] font-bold tabular-nums text-secondary-content" style="left:${PAD + playhead * pps - 22}px">${num(fmt(playhead))}</span>`;
   const clipEl = (cls, left, w, data, label, trims, extra = '') => `<div class="clip vclip absolute top-1.5 bottom-1.5 cursor-grab overflow-hidden rounded-field px-2 text-[11px] leading-[2.6] outline outline-1 ${cls}" style="left:${left}px;width:${Math.max(8, w)}px" ${data}><span class="ui pointer-events-none relative z-[1] block truncate font-semibold">${escapeHtml(label)}</span>${extra}${trims ? '<span class="trimh vtrim absolute inset-y-0 left-0 w-2 cursor-ew-resize" data-e="s"></span><span class="trimh vtrim absolute inset-y-0 right-0 w-2 cursor-ew-resize" data-e="e"></span>' : ''}</div>`;
   const lanes = TR.map((t, i) => { let c = '';
     if (t.kind === 'sub') cuesNow().forEach((q, k) => { const on = vSel === 'SUB' && V.subSel === k; c += clipEl(`bg-accent/15 text-accent ${on ? 'outline-2 outline-accent' : 'outline-accent/40'}`, PAD + q.at * pps, q.dur * pps - 2, `data-k="sub" data-i="${k}"`, q.text, true); });
@@ -655,10 +628,10 @@ function renderVideoTimeline(){
     else if (t.kind === 'mix') c += clipEl('bg-base-content/5 text-base-content/60 outline-base-content/15', PAD, speechEnd() * pps, 'data-k="mix"', T('صدا — دوبار کلیک برای ویرایش', 'Audio — double-click to edit'), false, `<span class="pointer-events-none absolute inset-x-2 bottom-1 top-6 flex items-end gap-px">${vBars(Math.max(20, Math.round(speechEnd() * pps / 6)), 7)}</span>`);
     else t.items.map(objById).filter(Boolean).forEach(o => { const s0 = o.start || 0, e0 = o.end == null ? projEnd() : o.end, on = vSel === o.id;
       const look = t.kind === 'vid' ? 'bg-secondary/15 text-secondary' : 'bg-primary/15 text-primary';
-      c += clipEl(`${look} ${on ? 'outline-2 outline-primary!' : 'outline-current/40'} ${t.hidden ? 'opacity-40' : ''}`, PAD + s0 * pps, (e0 - s0) * pps - 2, `data-k="obj" data-id="${o.id}"`, T((TYPE_NAME[o.type] || [o.type])[0], (TYPE_NAME[o.type] || [0, o.type])[1]) + (o.type === 'text' ? ' · ' + (o.text || '') : o.type === 'sticker' ? ' · ' + (o.emoji || '') : o.type === 'fx' ? ' · ' + ((AvaTrans.LIB[o.fx] || {}).name || o.fx) : ''), true); });
+      c += clipEl(`${look} ${on ? 'outline-2 outline-primary!' : 'outline-current/40'} ${t.hidden ? 'opacity-40' : ''}`, PAD + s0 * pps, (e0 - s0) * pps - 2, `data-k="obj" data-id="${o.id}"`, T((TYPE_NAME[o.type] || [o.type])[0], (TYPE_NAME[o.type] || [0, o.type])[1]) + (o.type === 'text' ? ' · ' + (o.text || '') : o.type === 'sticker' ? ' · ' + (o.emoji || '') : o.type === 'fx' ? ' · ' + ((AvaTrans.LIB[o.fx] || {}).name || o.fx) : o.type === 'sfx' ? ' · ' + sfxName(o) : ''), true); });
     return `<div class="lane relative h-14 border-b border-base-300/40" data-ti="${i}">${c}</div>`; }).join('');
   $('lanes').style.width = W + 'px';
-  $('lanes').innerHTML = `<div class="tl-empty pointer-events-none absolute inset-y-0 z-0" style="left:${PAD + (typeof projEnd === 'function' ? projEnd() : 0) * pps}px;right:0;background:color-mix(in oklab, var(--color-primary) 7%, transparent)"></div>` + lanes + `<div id="ph" class="pointer-events-none absolute inset-y-0 z-20 w-0.5 bg-secondary" style="left:${PAD + playhead * pps}px"></div>`;
+  $('lanes').innerHTML = lanes + `<div id="ph" class="pointer-events-none absolute inset-y-0 z-20 w-0.5 bg-secondary" style="left:${PAD + playhead * pps}px"></div>`;
   wireVideoTimeline(TR); placeVObjBar();
 }
 function vToggleTrack(i){ const t = vTracks()[i]; remember(); if (t.kind === 'sub') V.subs.on = !V.subs.on; else t.hidden = !t.hidden; renderTimeline(); vDraw(); autosave(); }
@@ -671,7 +644,7 @@ function wireVideoTimeline(TR){
     const el = ev.target.closest('.vclip'), r = lanes.getBoundingClientRect(), t = Math.max(0, (ev.clientX - r.left - PAD) / zoom);
     if (!el){ selectV(null); seek(t); return; }
     const k = el.dataset.k, now = performance.now(), dbl = LASTDOWN.el === (el.dataset.id || el.dataset.i || k) && now - LASTDOWN.t < 420; LASTDOWN = { el: el.dataset.id || el.dataset.i || k, t: dbl ? 0 : now };
-    if (k === 'mix'){ if (dbl) return setMode('audio'); seek(t); return; }
+    if (k === 'mix'){ if (dbl) return setMode('audio'); vSel = 'MIX'; seek(t); renderTimeline(); showMixPanel(); return; }   // 174: the audio track is selectable
     if (k === 'sfx'){ ev.stopPropagation(); const [st, c] = findClip(el.dataset.cid); if (!c) return; selClip = c.id; remember(); const x0 = ev.clientX, at0 = c.at; let moved = false;   // 170: effects move in video mode too
       const mv = e => { if (Math.abs(e.clientX - x0) > 2) moved = true; if (!moved) return; c.at = Math.max(0, snapT(at0 + (e.clientX - x0) / zoom, c)); el.style.left = (PAD + c.at * zoom) + 'px'; };
       const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); if (!moved) hist.past.pop(); st.clips.sort((a, b) => a.at - b.at); renderTimeline(); autosave(); }; addEventListener('pointermove', mv); addEventListener('pointerup', up); return; }   // two quick presses (the lanes redraw between clicks, so the browser's dblclick never fires)
@@ -688,19 +661,21 @@ function wireVideoTimeline(TR){
     const s0 = o.start || 0, e0 = o.end == null ? projEnd() : o.end, from = layerOf(o.id);
     const mv = e => { const d = (e.clientX - x0) / zoom; if (Math.abs(e.clientX - x0) > 2 || Math.abs(e.clientY - y0) > 6) moved = true; if (!moved) return;
       const snap = t => { let best = t, bd = 8; vSnapEdges(o).forEach(ed => { const dd = Math.abs((t - ed) * zoom); if (dd < bd){ bd = dd; best = ed; } }); return best; };   // 170: bars snap to every edge
+      if (o.show && slideEdit(o, trim ? trim.dataset.e : null, s0, e0, d)){ el.style.left = (PAD + (o.start || 0) * zoom) + 'px'; el.style.width = ((o.end - (o.start || 0)) * zoom - 2) + 'px'; return; }   // 175: a slide edits within its slideshow
       if (trim && trim.dataset.e === 's'){ o.start = Math.max(0, Math.min(e0 - 0.2, snap(s0 + d))); } else if (trim){ o.end = Math.max(s0 + 0.2, snap(e0 + d)); } else { let ns = Math.max(0, s0 + d); const a1 = snap(ns), b1 = snap(ns + (e0 - s0)) - (e0 - s0); ns = Math.abs(a1 - ns) <= Math.abs(b1 - ns) ? a1 : b1; o.start = Math.max(0, ns); o.end = o.start + (e0 - s0); }
       el.style.left = (PAD + (o.start || 0) * zoom) + 'px'; el.style.width = (((o.end == null ? projEnd() : o.end) - (o.start || 0)) * zoom - 2) + 'px';
       if (!trim){ el.style.pointerEvents = 'none'; el.style.zIndex = 30; el.style.transform = `translateY(${e.clientY - y0}px)`; const ln = document.elementFromPoint(e.clientX, e.clientY), lane = ln && ln.closest('.lane');
         if (hot && hot !== lane) hot.classList.remove('lane-hot'); const tt = lane && TR[+lane.dataset.ti]; hot = tt && tt.kind === from.kind ? lane : null; if (hot) hot.classList.add('lane-hot'); } };
     const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); const tgt = hot ? TR[+hot.dataset.ti] : null; if (hot) hot.classList.remove('lane-hot');
       if (!moved){ hist.past.pop(); return; }
+      if (o.show){ slideDrop(o); ensureLayers(); renderTimeline(); vDraw(); autosave(); showVPanels(); return; }   // 175: a slide stays in its slideshow
       if (tgt && tgt !== from){ from.items = from.items.filter(id => id !== o.id);
         if (tgt.items.some(id => { const x = objById(id); return x && x !== o && overlap(x, o); })){ const nl = { id: 'L' + (++uid), kind: tgt.kind, name: tgt.name, en: tgt.en, items: [o.id] }; V.layers.splice(V.layers.indexOf(tgt), 0, nl); }   // occupied → a new layer on top of it
         else tgt.items.push(o.id); }
       ensureLayers(); renderTimeline(); vDraw(); autosave(); showVPanels(); };
     addEventListener('pointermove', mv); addEventListener('pointerup', up);
   };
-  lanes.ondblclick = async e => { const hit = document.elementFromPoint(e.clientX, e.clientY), el = e.target.closest('.vclip') || (hit && hit.closest('.vclip')); if (!el) return;   // the first click may have redrawn the lanes if (el.dataset.k === 'mix') return setMode('audio');
+  lanes.ondblclick = async e => { const hit = document.elementFromPoint(e.clientX, e.clientY), el = e.target.closest('.vclip') || (hit && hit.closest('.vclip')); if (!el) return; if (el.dataset.k === 'mix') return setMode('audio');   // the first click may have redrawn the lanes
     if (el.dataset.k === 'sub'){ const q = V.subs.cues[+el.dataset.i]; if (!q) return; const nt = await askText(T('متنِ زیرنویس', 'Subtitle text'), '', q.text); if (nt !== null){ remember(); q.text = nt.trim(); renderTimeline(); vDraw(); autosave(); } } };
   document.querySelectorAll('#heads .tgrip').forEach(g => g.onpointerdown = ev => {   // restack layers by their grip
     ev.preventDefault(); const row = g.closest('[data-ti]'), i0 = +row.dataset.ti, t0 = TR[i0]; let tgt = i0;
@@ -708,7 +683,7 @@ function wireVideoTimeline(TR){
     const ghost = row.cloneNode(true), rr = row.getBoundingClientRect(); ghost.className = 'drag-ghost'; Object.assign(ghost.style, { position: 'fixed', left: rr.left + 'px', top: rr.top + 'px', width: rr.width + 'px', zIndex: 1200, pointerEvents: 'none', opacity: 0.9 }); document.body.appendChild(ghost); row.classList.add('drag-src');
     const line = document.createElement('div'); line.className = 'drop-line'; $('heads').appendChild(line); const y0 = ev.clientY;
     const mv = e => { ghost.style.transform = `translateY(${e.clientY - y0}px)`; const el = document.elementFromPoint(e.clientX, e.clientY), r2 = el && el.closest('#heads [data-ti]'); document.querySelectorAll('#heads [data-ti], #lanes .lane').forEach(x => x.classList.remove('lane-hot'));
-      if (r2 && (TR[+r2.dataset.ti].kind === t0.kind)){ tgt = +r2.dataset.ti; r2.classList.add('lane-hot'); const ln = document.querySelector(`#lanes .lane[data-ti="${tgt}"]`); if (ln) ln.classList.add('lane-hot'); const b2 = r2.getBoundingClientRect(), hb = $('heads').getBoundingClientRect(); line.style.top = ((tgt < i0 ? b2.top : b2.bottom) - hb.top + $('heads').scrollTop) + 'px'; line.classList.add('on'); } else line.classList.remove('on'); };
+      if (r2 && (TR[+r2.dataset.ti].kind === 'obj' && t0.kind === 'obj')){ tgt = +r2.dataset.ti; r2.classList.add('lane-hot'); const ln = document.querySelector(`#lanes .lane[data-ti="${tgt}"]`); if (ln) ln.classList.add('lane-hot'); const b2 = r2.getBoundingClientRect(), hb = $('heads').getBoundingClientRect(); line.style.top = ((tgt < i0 ? b2.top : b2.bottom) - hb.top + $('heads').scrollTop) + 'px'; line.classList.add('on'); } else line.classList.remove('on'); };
     const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); ghost.remove(); line.remove(); row.classList.remove('drag-src'); document.querySelectorAll('#heads [data-ti], #lanes .lane').forEach(x => x.classList.remove('lane-hot'));
       if (tgt !== i0){ remember(); const a = V.layers.indexOf(t0), b = V.layers.indexOf(TR[tgt]); V.layers.splice(a, 1); V.layers.splice(b, 0, t0); renderTimeline(); vDraw(); autosave(); } };
     addEventListener('pointermove', mv); addEventListener('pointerup', up); });
@@ -720,14 +695,17 @@ function openVTrackMenu(ev, i){
 }
 function vAdd(kind, layer){
   const put = o => { o.start = playhead; o.end = Math.min(projEnd(), playhead + 5) > playhead + 0.5 ? Math.min(projEnd(), playhead + 5) : playhead + 5; remember(); V.objects.push(o); ensureLayers();
-    const L = layerOf(o.id); if (layer && layer.items && L !== layer && layer.kind === L.kind && !layer.items.some(id => overlap(objById(id), o))){ L.items = L.items.filter(x => x !== o.id); layer.items.push(o.id); ensureLayers(); }
+    const L = layerOf(o.id); if (layer && layer.items && L !== layer && layer.kind === 'obj' && !layer.items.some(id => overlap(objById(id), o))){ L.items = L.items.filter(x => x !== o.id); layer.items.push(o.id); ensureLayers(); }
     selectV(o.id); vChanged(); };
   if (kind === 'sfx') return openSfxLib();
   if (kind === 'subs'){ remember(); if (V.subs.follow){ V.subs.cues = cuesNow().map(q => ({ ...q })); V.subs.follow = false; } V.subs.cues.push({ at: playhead, dur: 2, text: T('زیرنویسِ تازه', 'New subtitle') }); V.subs.cues.sort((a, b) => a.at - b.at); V.subSel = V.subs.cues.findIndex(q => q.at === playhead); vSel = 'SUB'; renderTimeline(); showVPanels(); vDraw(); autosave(); return; }
   if (kind === 'text') return put({ id: 'o' + (++uid), ...TEXT0(), y: 0.2 });
   if (kind === 'sticker') return put({ id: 'o' + (++uid), ...STICKER0() });
   if (kind === 'fx'){ const o = { id: 'o' + (++uid), ...FX0() }; put(o); o.end = o.start + 1.2; vChanged(); return; }   // 170: a transition lasts 1.2 s by default
-  if (kind === 'podcast') return put({ id: 'o' + (++uid), type: 'pod', x: 0.06, y: 0.26, w: 0.88, h: 0.52, rot: 0, opacity: 1 });
+  if (kind === 'podcast'){ const s = bgEnd(); return put({ id: 'o' + (++uid), type: 'pod', bgl: true, x: 0.06, y: 0.26, w: 0.88, h: 0.52, rot: 0, opacity: 1, start: s, end: Math.max(s + 5, projEnd()) }); }   // 174: podcast style = a background clip
+  if (kind === 'podtpl') return put({ id: 'o' + (++uid), type: 'pod', tpl: true, x: 0.06, y: 0.26, w: 0.88, h: 0.52, rot: 0, opacity: 1, start: playhead });   // 174: the template — no background
+  if (kind === 'bgimage' || kind === 'bgvideo') return pickBgMedia(kind === 'bgimage' ? 'image' : 'video');
+  if (kind === 'slideshow') return addSlideshow();   // 175
   pickVMedia(kind === 'pimage' || kind === 'image' ? 'image' : 'video', false, kind === 'image' || kind === 'video');
 }
 // a full-frame background picture/video (the "video" layers) vs a picture-on-top
@@ -741,16 +719,17 @@ pickVMedia = function(kind, replace, full){
   inp.click();
 }
 // ---- the inspector: the mock's panels, shown and filled
-const PANEL_OF = { text: 'iv-text', sticker: 'iv-sticker', pod: 'iv-pod', image: 'iv-pip', video: 'iv-pip', fx: 'iv-fx' };
+const PANEL_OF = { text: 'iv-text', sticker: 'iv-sticker', pod: 'iv-pod', image: 'iv-pip', video: 'iv-pip', fx: 'iv-fx', sfx: 'iv-sfx' };
 function fillVInsp(){ showVPanels(); }
 function showVPanels(anim){
   if (!$('iv-proj')) return; const o = vSel && vSel !== 'SUB' ? objById(vSel) : null;
-  ['iv-proj', 'iv-text', 'iv-sticker', 'iv-pod', 'iv-pip', 'iv-anim', 'iv-sub', 'iv-xform', 'iv-fx'].forEach(id => $(id) && $(id).classList.add('hidden'));
+  ['iv-proj', 'iv-text', 'iv-sticker', 'iv-pod', 'iv-pip', 'iv-anim', 'iv-sub', 'iv-xform', 'iv-fx', 'iv-sfx'].forEach(id => $(id) && $(id).classList.add('hidden'));
   if (anim && o){ $('iv-anim').classList.remove('hidden'); fillAnim(o); return; }
   if (vSel === 'SUB'){ $('iv-sub').classList.remove('hidden'); fillSub(); return; }
   if (!o){ $('iv-proj').classList.remove('hidden'); fillProj(); return; }
   $(PANEL_OF[o.type]).classList.remove('hidden'); $('iv-xform').classList.remove('hidden');
   if (o.type === 'fx'){ $('iv-xform').classList.add('hidden'); fillFx(o); return; }
+  if (o.type === 'sfx'){ $('iv-xform').classList.add('hidden'); fillSfxObj(o); return; }   /* 175: a sound has no frame on the canvas */
   if (o.type === 'text') fillText(o); else if (o.type === 'sticker') fillSticker(o); else if (o.type === 'pod') renderPodUI(); else fillPip(o);
   fillXformOnly(); const lk = $('lockBtn'); if (lk) lk.classList.toggle('btn-active', o.lock !== false);
   posObjBar();
@@ -765,8 +744,7 @@ function fillProj(){
 function fillText(o){
   const p = $('iv-text'), [font, weight] = p.querySelectorAll('select'), size = p.querySelectorAll('input[type=range]')[0], pad = p.querySelectorAll('input[type=range]')[1];
   const badge = p.querySelector('.badge'); if (badge) badge.textContent = `${fmt(o.start || 0)} → ${o.end == null ? fmt(projEnd()) : fmt(o.end)}`;
-  [...font.options].forEach(op => op.value = op.text); font.value = o.font || 'Vazirmatn'; font.onchange = () => vset('sel.font', font.value); enh(font);
-  [...weight.options].forEach((op, k) => op.value = ['900', '700', '400'][k]); weight.value = String(o.weight || 900); weight.onchange = () => vset('sel.weight', +weight.value); enh(weight);
+  fillFontPick(font, weight, fontFam(o.font), o.weight || 900, f => { vset('sel.font', f); fillText(objById(vSel)); }, w => vset('sel.weight', w));
   bindRange(size, Math.round(o.size * 1080), v => vset('sel.size', v / 1080, true));
   bindRadios('ta', ['right', 'center', 'left'], o.align, v => vset('sel.align', v));
   bindRadios('tc', ['#ffffff', '#f2b233', '#e6a483'], o.color, v => vset('sel.color', v));
@@ -804,8 +782,8 @@ function pipSet(k, val){
 function setBg(kind){ V.pod.bg = kind; vTouch(); renderPodUI(); if ((kind === 'image' || kind === 'video') && !V.pod.bgAsset) pickVMedia('bg-' + kind); }
 function renderPodUI(){
   if (!$('styleGrid')) return; const P = V.pod, grad = k => `linear-gradient(135deg, ${PALS[k][1]}, ${PALS[k][0]} 45%, ${PALS[k][2]})`;
-  $('styleGrid').innerHTML = STYLES.map(([n, st], k) => `<button class="flex flex-col items-center gap-1 rounded-box p-1 text-base-content/75 hover:bg-base-content/5 ${P.style === k ? 'font-semibold text-base-content' : ''}" onclick="applyVStyle(${k})"><span class="relative grid size-11 place-items-center overflow-hidden rounded-full ring-offset-2 ring-offset-base-200 ${P.style === k ? 'ring-2 ring-primary' : ''}" style="background:${grad(st.pal)}">${st.wave === 'glass' || st.wave === 'water' ? `<span class="size-7 rounded-full border border-white/50 bg-white/10 shadow-[inset_0_0_10px_rgba(255,255,255,.6)]"></span>` : `<svg class="size-5 text-white/90"><use href="#i-${st.wave === 'line' ? 'audio-waveform' : st.wave === 'circle' ? 'podcast' : 'audio-lines'}"/></svg>`}</span><span class="text-[11px]">${escapeHtml(n)}</span></button>`).join('');
-  $('waveGrid').innerHTML = WAVES.map(([k, n]) => `<input class="btn btn-sm text-xs border-base-content/15 bg-base-100 checked:bg-primary checked:text-primary-content" type="radio" name="wave" aria-label="${escapeHtml(n)}" ${P.wave === k ? 'checked' : ''} onchange="POD.wave='${k}'; renderPod()">`).join('');
+  $('styleGrid').innerHTML = STYLES.map(([n, st], k) => `<button class="flex flex-col items-center gap-1 rounded-box p-1 text-base-content/75 hover:bg-base-content/5 ${P.style === k ? 'font-semibold text-base-content' : ''}" onclick="applyVStyle(${k})"><span class="relative grid size-11 place-items-center overflow-hidden rounded-full ring-offset-2 ring-offset-base-200 ${P.style === k ? 'ring-2 ring-primary' : ''}" style="background:${grad(st.pal)}">${st.wave === 'glass' || st.wave === 'water' ? `<span class="size-7 rounded-full border border-white/50 bg-white/10 shadow-[inset_0_0_10px_rgba(255,255,255,.6)]"></span>` : `<svg class="size-5 text-white/90"><use href="#i-${st.wave === 'line' ? 'audio-waveform' : st.wave === 'circle' ? 'podcast' : 'audio-lines'}"/></svg>`}</span><span class="text-[11px]">${escapeHtml(T(n, STYLE_EN[n] || n))}</span></button>`).join('');
+  $('waveGrid').innerHTML = WAVES.map(([k, n]) => `<input class="btn btn-sm text-xs border-base-content/15 bg-base-100 checked:bg-primary checked:text-primary-content" type="radio" name="wave" aria-label="${escapeHtml(T(n, WAVE_EN[k] || n))}" ${P.wave === k ? 'checked' : ''} onchange="POD.wave='${k}'; renderPod()">`).join('');
   fillLabOpts(P); fillLabelOpts(P);
   $('palGrid').innerHTML = Object.keys(PALS).map(k => `<button class="size-7 rounded-full border-2 ${P.pal === k ? 'border-primary' : 'border-transparent'}" style="background:${grad(k)}" onclick="POD.pal='${k}'; renderPod()" aria-label="${k}"></button>`).join('');
   $('posGrid').innerHTML = [-1, 0, 1].flatMap(y => [-1, 0, 1].map(x => `<input class="btn btn-xs btn-square border-base-content/15 bg-base-100 checked:bg-primary" type="radio" name="pos" aria-label="·" ${P.pos[0] === x && P.pos[1] === y ? 'checked' : ''} onchange="POD.pos=[${x},${y}]; renderPod()">`)).join('');
@@ -818,20 +796,10 @@ function renderPodUI(){
   const bm = $('bgMesh'), bmd = $('bgMedia'); if (bm) bm.classList.toggle('hidden', P.bg !== 'mesh'); if (bmd) bmd.classList.toggle('hidden', !(P.bg === 'image' || P.bg === 'video'));
   const mp = $('mediaPick'); if (mp){ mp.onclick = () => pickVMedia('bg-' + (P.bg === 'video' ? 'video' : 'image')); }
 }
-function fillAnim(o){
-  const p = $('iv-anim'), a = o.anim || {}, sels = p.querySelectorAll('select'), sp = p.querySelector('input[type=range]'); $('animTarget').textContent = T((TYPE_NAME[o.type] || [o.type])[0], (TYPE_NAME[o.type] || [0, o.type])[1]);
-  const maps = [['in', ['none', 'type', 'fade', 'rise', 'pop']], ['out', ['none', 'fade', 'down', 'shrink']], ['loop', ['none', 'breathe', 'wave', 'shine']], ['bgIn', ['open', 'stretch', 'fade']], ['bgDelay', [0, -0.2, 0.2]]];
-  sels.forEach((s, k) => { const [key, vals] = maps[k] || []; if (!key) return; if ((key === 'in' || key === 'out') && s.options[0].value !== 'none'){ const op = document.createElement('option'); op.textContent = T('بدون', 'None'); s.insertBefore(op, s.options[0]); }
-    if (key === 'in') [...s.options].forEach(op => { if (op.text === 'تایپ واژه‌به‌واژه') op.hidden = o.type !== 'text'; });
-    [...s.options].forEach((op, i) => op.value = String(vals[i])); s.value = String(a[key] ?? vals[0]); s.onchange = () => vsetAnim(key, key === 'bgDelay' ? +s.value : s.value); enh(s); });
-  bindRange(sp, a.speed || 5, v => vsetAnim('speed', v, true)); $('animBg').classList.toggle('hidden', !(o.type === 'text' && o.bg && o.bg.on));
-}
-function openAnim(){ $('objBar').classList.add('hidden'); showVPanels(true); }
-function closeAnim(){ showVPanels(); }
 // ---- the floating object bar (the mock): animation, duplicate, bring forward, delete
 // the object bar sits below the selection box (or well above it) — never over the rotation handle
-function posObjBar(){ const b = $('objBar'), o = vSel && vSel !== 'SUB' ? objById(vSel) : null; if (!b) return; if (!o || mode !== 'video'){ b.classList.add('hidden'); return; }
-  const sb = $('selbox').getBoundingClientRect(), st = $('stage').getBoundingClientRect(); b.classList.remove('hidden');
+function posObjBar(){ const b = $('objBar'), o = vSel && vSel !== 'SUB' ? objById(vSel) : null; if (!b) return; if (!o || mode !== 'video' || o.type === 'sfx'){ b.classList.add('hidden'); return; }
+  const sb = $('selbox').getBoundingClientRect(), st = $('stage').getBoundingClientRect(); b.classList.remove('hidden'); { const an = b.querySelector('[onclick="openAnim()"]'); if (an && an.parentElement) an.parentElement.classList.toggle('hidden', !animKind(o)); }   /* 175: only objects that animate */
   b.style.top = (sb.bottom + 54 < st.bottom ? sb.bottom + 12 : Math.max(8, sb.top - 92)) + 'px'; b.style.left = Math.max(8, Math.min(innerWidth - b.offsetWidth - 8, sb.left + sb.width / 2 - b.offsetWidth / 2)) + 'px'; }
 function vDuplicate(){ const o = objById(vSel); if (!o) return; remember(); const c = JSON.parse(JSON.stringify(o)); c.id = 'o' + (++uid); c.x = Math.min(0.95 - c.w, c.x + 0.03); c.y = Math.min(0.95 - c.h, c.y + 0.03); V.objects.push(c); const L = layerOf(o.id); ensureLayers(); const L2 = layerOf(c.id); if (L2 !== L && !L.items.some(id => overlap(objById(id), c))){ L2.items = L2.items.filter(x => x !== c.id); L.items.push(c.id); ensureLayers(); } selectV(c.id); vChanged(); }
 function vForward(){ const L = layerOf(vSel); const i = V.layers.indexOf(L); if (i > 0 && V.layers[i - 1].kind === L.kind){ remember(); V.layers.splice(i, 1); V.layers.splice(i - 1, 0, L); vChanged(); } }
@@ -839,13 +807,14 @@ function vDelete(){ const o = objById(vSel); if (!o) return; remember(); V.objec
 // 170: split the selected object at the playhead — the second half keeps playing from where the first stopped
 function vSplit(){ const o = objById(vSel); if (!o || o.type === 'pod') return; const s0 = o.start || 0, e0 = o.end == null ? projEnd() : o.end;
   if (playhead <= s0 + 0.05 || playhead >= e0 - 0.05) return say(T('پلی‌هد باید داخلِ این شیء باشد.', 'The playhead must be inside this object.'), 'err');
-  remember(); const c = JSON.parse(JSON.stringify(o)); c.id = 'o' + (++uid); c.start = playhead; c.end = o.end; if (o.type === 'video') c.trimIn = (o.trimIn || 0) + (playhead - s0); o.end = playhead;
+  remember(); const c = JSON.parse(JSON.stringify(o)); c.id = 'o' + (++uid); c.start = playhead; c.end = o.end; if (o.type === 'video' || o.type === 'sfx') c.trimIn = (o.trimIn || 0) + (playhead - s0); o.end = playhead;
+  if (o.anim){ migrateAnim(o); migrateAnim(c); o.anim.out = 'none'; c.anim.in = 'none'; if (o.anim.bgOut) o.anim.bgOut = 'follow'; if (c.anim.bgIn) c.anim.bgIn = 'follow'; }   /* 175: the first half keeps In, the second keeps Out */
   V.objects.push(c); const L = layerOf(o.id); if (L && L.items) L.items.push(c.id); ensureLayers(); selectV(c.id); vChanged(); }
 // 170: the timeline's own toolbar for the selected object bar (animate · duplicate · split · delete)
 function placeVObjBar(){ const bar = $('clipBar'); if (!bar || mode !== 'video') return; const o = vSel && vSel !== 'SUB' ? objById(vSel) : null, el = o && document.querySelector(`#lanes .vclip[data-id="${o.id}"]`);
   if (!o || !el){ if (!selClip) bar.classList.add('hidden'); return; }
   const b = (icon, tip, fn, txt) => `<li><a onclick="${fn}" class="gap-1" ${txt ? '' : `data-tip="${tip}"`}><svg class="size-3.5"><use href="#i-${icon}"/></svg>${txt ? `<span class="ui">${txt}</span>` : ''}</a></li>`;
-  bar.innerHTML = b('sparkles', '', 'openAnim()', T('انیمیشن', 'Animation')) + b('copy', T('تکثیر', 'duplicate'), 'vDuplicate()') + (o.type !== 'pod' ? b('scissors', T('برش در جای پلی‌هد', 'split at the playhead'), 'vSplit()') : '') + b('trash-2', T('حذف', 'delete'), 'vDelete()');
+  bar.innerHTML = (animKind(o) ? b('sparkles', '', 'openAnim()', T('انیمیشن', 'Animation')) : '') + b('copy', T('تکثیر', 'duplicate'), 'vDuplicate()') + (o.type !== 'pod' ? b('scissors', T('برش در جای پلی‌هد', 'split at the playhead'), 'vSplit()') : '') + b('trash-2', T('حذف', 'delete'), 'vDelete()');
   const r = el.getBoundingClientRect(), sc = $('tlScroll').getBoundingClientRect(), left0 = sc.left + $('heads').offsetWidth;
   if (r.bottom < sc.top || r.top > sc.bottom || r.right < left0 || r.left > sc.right){ bar.classList.add('hidden'); return; }
   bar.classList.remove('hidden'); const bh = bar.offsetHeight || 34; let top = r.top - bh - 6; if (top < sc.top - bh / 2) top = r.bottom + 6; bar.style.top = top + 'px'; bar.style.left = Math.min(innerWidth - bar.offsetWidth - 8, Math.max(left0, r.left)) + 'px'; }
@@ -886,11 +855,11 @@ const SUB_PRESETS = [   // 169: today's caption styles (word timing from the spi
 const SUB_COLORS = ['#ffffff', '#f2b233', '#e6a483', '#e9603b', '#000000'];
 function fillSub(){
   const s = V.subs, q = cuesNow()[V.subSel]; $('subTime').textContent = q ? `${fmt(q.at)} → ${fmt(q.at + q.dur)}` : '';
-  $('subPresets').innerHTML = SUB_PRESETS.map(([k, fa, en, p]) => `<button class="btn h-auto flex-col gap-1 p-1 ${s.preset === k ? 'btn-primary' : 'border-base-content/10 bg-base-100'}" onclick="subPreset('${k}')"><span class="grid h-9 w-full place-items-center rounded-field bg-[#0c1230]"><span class="rounded px-1 text-[11px] leading-tight" style="font-weight:${p.weight};color:${p.color};${p.bgOn ? `background:rgba(0,0,0,${p.capsule ? 0 : p.bgOp})` : ''};${p.capsule ? 'background:var(--color-primary);border-radius:999px;padding:0 .5em' : ''};${p.outline ? 'text-shadow:0 0 2px #000,0 0 2px #000' : ''}">${p.anim === 'word' ? 'سلام <b style="color:' + p.hi + '">دوست</b>' : 'سلام دوست'}</span></span><span class="text-[11px]">${T(fa, en)}</span></button>`).join('');
+  $('subPresets').innerHTML = SUB_PRESETS.map(([k, fa, en, p]) => `<button class="btn h-auto flex-col gap-1 p-1 ${s.preset === k ? 'btn-primary' : 'border-base-content/10 bg-base-100'}" onclick="subPreset('${k}')"><span class="grid h-9 w-full place-items-center rounded-field bg-[#0c1230]"><span class="rounded px-1 text-[11px] leading-tight" style="font-weight:${p.weight};color:${p.color};${p.bgOn ? `background:rgba(0,0,0,${p.capsule ? 0 : p.bgOp})` : ''};${p.capsule ? 'background:var(--color-primary);border-radius:999px;padding:0 .5em' : ''};${p.outline ? 'text-shadow:0 0 2px #000,0 0 2px #000' : ''}">${p.anim === 'word' ? T('سلام', 'Hello') + ' <b style="color:' + p.hi + '">' + T('دوست', 'friend') + '</b>' : T('سلام دوست', 'Hello friend')}</span></span><span class="text-[11px]">${T(fa, en)}</span></button>`).join('');
   const sw = (box, key) => { $(box).innerHTML = SUB_COLORS.map(c => `<input type="radio" name="${box}" class="radio radio-sm border-0 checked:border-0" style="background:${c}" ${s[key] === c ? 'checked' : ''} onchange="subSet('${key}', '${c}')" aria-label="${c}">`).join(''); };
   sw('subTextColors', 'color'); sw('subHiColors', 'hi');
-  const font = $('subFont'), wt = $('subWeight'), an = $('subAnim'); font.value = s.font || 'Vazirmatn'; wt.value = String(s.weight || 700); an.value = s.anim || 'fade';
-  font.onchange = () => subSet('font', font.value); wt.onchange = () => subSet('weight', +wt.value); an.onchange = () => subSet('anim', an.value); [font, wt, an].forEach(enh);
+  const font = $('subFont'), wt = $('subWeight'), an = $('subAnim'); an.value = s.anim || 'fade';
+  fillFontPick(font, wt, fontFam(s.font), s.weight || 700, f => { subSet('font', f); fillSub(); }, w => subSet('weight', w)); an.onchange = () => subSet('anim', an.value); enh(an);
   bindRange($('subSize'), s.sizePx || 46, v => subSet('sizePx', v, true)); bindRange($('subBgOp'), Math.round((s.bgOp ?? 0.55) * 100), v => subSet('bgOp', v / 100, true));
   bindRadios('sp', ['top', 'middle', 'bottom'], s.place || 'bottom', v => subSet('place', v));
   [['subChunk', 'chunk', 0], ['subHiMode', 'hiMode', 'none'], ['subBgMode', 'bgMode', 'box']].forEach(([id, key, d]) => { const el = $(id); if (!el) return; el.value = String(s[key] ?? d); el.onchange = () => subSet(key, key === 'chunk' ? +el.value : el.value); enh(el); });   // 169
@@ -905,7 +874,7 @@ function drawSubs(ctx, W, H, t){
   //      a cinematic band; the box (SUBRECT) hugs exactly what was drawn.
   const s = V.subs; SUBRECT = null; if (!s.on) return; const cues = cuesNow(), qi = cues.findIndex(c => t >= c.at && t < c.at + c.dur); if (qi < 0) return; const q = cues[qi];
   const px = (s.sizePx || Math.round((s.size || 0.042) * 1080)) / 1080 * H, an = s.anim || 'fade', k = Math.min(1, (t - q.at) / 0.25), hiMode = s.hiMode || 'none', prim = s.hi || '#f2b233';
-  ctx.save(); ctx.font = FONT(s.weight || 700, px).replace('Vazirmatn', s.font || 'Vazirmatn'); ctx.direction = 'rtl'; ctx.textBaseline = 'middle';
+  ctx.save(); ctx.font = FONT(s.weight || 700, px, s.font); ctx.direction = 'rtl'; ctx.textBaseline = 'middle';
   const words = cueWords(q), curW = words.findIndex(w => t >= w.t0 && t < w.t1), shownN = an === 'type' ? Math.max(1, words.filter(w => w.t0 <= t).length) : words.length;
   const spkName = s.spk ? (() => { const sp = q.spk ? spkList().find(z => z.id === q.spk) : null; return sp ? sp.name + ':' : ''; })() : '';
   // lay the words out in lines, right to left
@@ -1009,7 +978,7 @@ function drawLabOrbs(ctx, W, H, t, orbs, P){ const L = orbLab(); if (!L) return 
 function fillLabOpts(P){ const box = $('labOpts'); if (!box) return; const on = isLabWave(P.wave); box.classList.toggle('hidden', !on); if (!on) return;
   const pals = labPalettes(), meshes = labMeshes(), S0 = window.AvaOrbSets || { PALETTES: {} };
   box.innerHTML = `<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T('پالتِ گوی‌ها', "The orbs' palette")}</legend><select class="select select-sm w-full" onchange="POD.labPalette = this.value; vTouch()"><option value="auto" ${!P.labPalette || P.labPalette === 'auto' ? 'selected' : ''}>${T('— خودکار (هر گوینده یکی) —', '— automatic (one per speaker) —')}</option>${pals.map(k => `<option value="${k}" ${P.labPalette === k ? 'selected' : ''}>${escapeHtml(S0.PALETTES[k].name || k)}</option>`).join('')}</select></fieldset>
-    <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T('پس‌زمینهٔ گوی‌ها', "The orbs' backdrop")}</legend><select class="select select-sm w-full" onchange="POD.labMesh = this.value; vTouch()"><option value="solid" ${!P.labMesh || P.labMesh === 'solid' ? 'selected' : ''}>${T('رنگِ پس‌زمینه / تصویر', 'the background colour / picture')}</option>${meshes.map(k => `<option value="${k}" ${P.labMesh === k ? 'selected' : ''}>${escapeHtml(k)}</option>`).join('')}</select></fieldset>`;
+    <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T('پس‌زمینهٔ گوی‌ها', "The orbs' backdrop")}</legend><select class="select select-sm w-full" onchange="POD.labMesh = this.value; vTouch()"><option value="solid" ${!P.labMesh || P.labMesh === 'solid' ? 'selected' : ''}>${T('رنگِ پس‌زمینه / تصویر', 'the background color / picture')}</option>${meshes.map(k => `<option value="${k}" ${P.labMesh === k ? 'selected' : ''}>${escapeHtml(k)}</option>`).join('')}</select></fieldset>`;
   box.querySelectorAll('select').forEach(s => enh(s)); }
 function fillLabelOpts(P){ const box = $('labelOpts'); if (!box) return; const LB = P.label || (P.label = { size: 1, weight: 700, style: 'pill' }), AV = P.avatar || (P.avatar = { size: 1, ring: true });
   const rng = (fa, en, path, min, max, cur) => `<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T(fa, en)}</legend><input type="range" data-unit="%" min="${min}" max="${max}" value="${Math.round(cur * 100)}" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="podPath('${path}', +this.value / 100)"></fieldset>`;
@@ -1048,6 +1017,14 @@ function applyTransition(ctx, W, H, t, o){ const T = trgl(); if (!T) return; con
   const P = AvaTrans.tparams(o.fx, o.params || {}); gl.uniform1f(pg.u.p, p); gl.uniform1f(pg.u.t, t); gl.uniform1f(pg.u.aspect, W / H); gl.uniform1f(pg.u.seed, 0.37);
   gl.uniform4fv(pg.u.pa, P.pa); gl.uniform4fv(pg.u.pb, P.pb); gl.uniform4fv(pg.u.pc, P.pc); gl.uniform4fv(pg.u.pd, P.pd);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); ctx.save(); ctx.globalAlpha = o.opacity ?? 1; ctx.drawImage(T.cv, 0, 0, W, H); ctx.restore(); }
+// 175: a sound effect in video mode — its name and family, a listen button, its own volume, and Replace (the library picks the new one)
+function fillSfxObj(o){ const box = $('iv-sfx'); if (!box) return; const it = sfxItems().find(x => x.file === o.file) || {}, fam = sfxFams()[it.fam] || {};
+  box.innerHTML = `<div class="flex items-center gap-2"><svg class="size-4 text-primary"><use href="#i-audio-lines"/></svg><span class="text-sm font-bold">${T('افکتِ صوتی', 'Sound effect')}</span></div>
+    <div class="flex items-center gap-2 rounded-box border border-base-300 p-2"><button class="btn btn-ghost btn-sm btn-circle" onclick="previewSfx('${o.file}')" aria-label="${T('شنیدن', 'Listen')}"><svg class="size-4"><use href="#i-play"/></svg></button>
+      <div class="min-w-0 flex-1"><div class="truncate text-sm font-semibold">${escapeHtml(sfxName(o))}</div><div class="truncate text-xs text-base-content/60">${escapeHtml([fam.fa ? T(fam.fa, fam.en) : '', it.sec ? num(it.sec) + T('ث', ' s') : ''].filter(Boolean).join(' · '))}</div></div></div>
+    <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T('بلندی', 'Volume')}</legend><input type="range" data-unit="%" min="0" max="200" step="5" value="${Math.round((o.gain ?? 1) * 100)}" class="${RNG}" oninput="vset('sel.gain', +this.value / 100, true)"></fieldset>
+    <button class="btn btn-sm w-full gap-1.5 border-base-content/15 bg-base-100" onclick="replaceSfx()"><svg class="size-4"><use href="#i-replace"/></svg>${T('جایگزینی با صدای دیگر…', 'Replace with another sound…')}</button>`; }
+function replaceSfx(){ SFX_REPLACE = vSel; openSfxLib(); const d = $('sfxDlg'); if (d) d.addEventListener('close', () => setTimeout(() => { SFX_REPLACE = null; }, 0), { once: true }); }
 function fillFx(o){ const box = $('iv-fx'); if (!box) return; const LIB = AvaTrans.LIB, TP = AvaTrans.TP, cur = LIB[o.fx] ? o.fx : Object.keys(LIB)[0];
   const ctr = (TP[cur] || []).map(([k, label, min, max, step, d]) => `<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${escapeHtml(label)}</legend><input type="range" min="${min}" max="${max}" step="${step}" value="${(o.params || {})[k] ?? d}" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="fxParam('${k}', +this.value)"></fieldset>`).join('');
   box.innerHTML = `<div class="flex items-center gap-2"><svg class="size-4"><use href="#i-sparkles"/></svg><span class="text-sm font-bold">${T('گذار / جلوه', 'Transition / effect')}</span></div>
@@ -1063,3 +1040,172 @@ function gifBegin(W, H, fps){ const gW = Math.min(W, 640), gH = Math.round(H * g
   const enc = gifenc.GIFEncoder(), cv = document.createElement('canvas'); cv.width = gW; cv.height = gH; const g = cv.getContext('2d', { willReadFrequently: true });
   return { frame(src, i){ if (i % every) return; g.drawImage(src, 0, 0, gW, gH); const rgba = g.getImageData(0, 0, gW, gH).data, pal = gifenc.quantize(rgba, 256), idx = gifenc.applyPalette(rgba, pal); enc.writeFrame(idx, gW, gH, { palette: pal, delay, repeat: 0 }); },
     finish(){ enc.finish(); return enc.bytes(); } }; }
+
+// 174: a podcast-style background clip draws what the old base always drew
+function drawPodBg(ctx, W, H, t, orbs, P, bgEl, pod){
+  if (GLR){ GLR.draw(W, H, t, (P.wave === 'glass' || P.wave === 'water') ? orbs : [], bgEl); ctx.drawImage(GLR.cv, 0, 0, W, H); } else { ctx.fillStyle = V.bg; ctx.fillRect(0, 0, W, H); }
+  if (isLabWave(P.wave) && pod) drawLabOrbs(ctx, W, H, t, orbs, P);   // 170: the Orb Lab's engine (antialiased WebGL2) draws these designs
+  if (P.ovOp > 0){ ctx.fillStyle = rgba(P.ovColor, P.ovOp); ctx.fillRect(0, 0, W, H); }
+  if (P.grad && P.gradOp > 0){ const g = P.gradDir === 'to top' ? ctx.createLinearGradient(0, H, 0, 0) : P.gradDir === 'to bottom' ? ctx.createLinearGradient(0, 0, 0, H) : P.gradDir === 'to left' ? ctx.createLinearGradient(W, 0, 0, 0) : P.gradDir === 'to right' ? ctx.createLinearGradient(0, 0, W, 0) : P.gradDir === 'radial' ? ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7) : ctx.createLinearGradient(0, 0, W, H);
+    g.addColorStop(0, rgba(P.gradA, P.gradOp)); g.addColorStop(1, rgba(P.gradB, 0)); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); }
+  
+}
+
+// =====================================================================================
+// 174 · VIDEO TRACKS — subtitles fixed on top · regular tracks (reorderable) · the BACKGROUND track fixed right above
+//       the AUDIO track. Background clips cover the canvas (pan along the free direction), join by transitions between
+//       two clips (only the background changes; everything above stays), podcast style is a background clip, the
+//       podcast template sits on a regular track without a background.
+// =====================================================================================
+const _ensureLayers174 = ensureLayers;
+ensureLayers = function(){ V.objects = V.objects.filter(o => o.type !== 'fx');   // the 170 transition objects are gone (transitions join two clips)
+  V.objects.forEach(o => { if (o.full && !o.tpl) o.bgl = true; if (o.type === 'pod' && !o.tpl && o.bgl === undefined) o.bgl = true; if (o.bgl && (o.type === 'image' || o.type === 'video')){ o.x = 0; o.y = 0; o.w = 1; o.h = 1; o.rot = 0; o.fit = 'cover'; } });   // podcast style keeps its box (it places the orbs)
+  if (Array.isArray(V.layers)) V.layers.forEach(l => { if (l.kind === 'vid') l.kind = 'bg'; });
+  _ensureLayers174();
+  let B = V.layers.find(l => l.kind === 'bg'); if (!B){ B = { id: 'L' + (++uid), kind: 'bg', name: 'پس‌زمینه', en: 'Background', items: [], keep: true }; V.layers.push(B); }
+  B.keep = true; B.name = 'پس‌زمینه'; B.en = 'Background';
+  V.layers.forEach(l => { if (l === B) return; const out = l.items.filter(id => { const o = objById(id); return o && o.bgl; }); if (out.length){ l.items = l.items.filter(id => !out.includes(id)); out.forEach(id => { if (!B.items.includes(id)) B.items.push(id); }); } });
+  B.items = B.items.filter(id => { const o = objById(id); return o && o.bgl; }); V.layers = V.layers.filter(l => l === B || l.items.length || l.keep); V.layers = [...V.layers.filter(l => l !== B), B]; };
+const bgClips = () => { const B = (V.layers || []).find(l => l.kind === 'bg'); return B ? B.items.map(objById).filter(Boolean).sort((a, b) => (a.start || 0) - (b.start || 0)) : []; };
+const bgEnd = () => bgClips().reduce((m, o) => Math.max(m, o.end ?? projEnd()), 0);
+const TRC = [null, null]; function trCanvas(i, W, H){ let c = TRC[i]; if (!c) c = TRC[i] = document.createElement('canvas'); if (c.width !== W || c.height !== H){ c.width = W; c.height = H; } return c; }
+async function drawBgClip(ctx, o, W, H, t, exporting, orbs, P, pod){
+  if (o.type === 'pod'){ const bgEl = (P.bg === 'image' || P.bg === 'video') && P.bgAsset ? await mediaEl(P.bgAsset) : null; if (bgEl && bgEl.tagName === 'VIDEO' && exporting) await seekVideo(bgEl, t % (bgEl.duration || 1e9)); drawPodBg(ctx, W, H, t, orbs, P, bgEl, pod); return; }
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); const el = await mediaEl(o.asset);
+  if (el && el.tagName === 'VIDEO'){ if (exporting){ const local = (o.trimIn || 0) + Math.max(0, t - (o.start || 0)); await seekVideo(el, o.loop && el.duration ? local % el.duration : Math.min(local, (el.duration || 1e9) - 0.01)); } else { el.muted = o.mute === true; el.volume = Math.max(0, Math.min(1, o.volume ?? 1)); } }
+  drawMedia(ctx, o, W, H, el); }
+async function drawBackground(ctx, W, H, t, exporting, orbs, P, pod){ const L = bgClips();
+  for (let i = 0; i < L.length - 1; i++){ const A = L[i], B = L[i + 1]; if (!A.trans || !A.trans.type) continue; const cut = A.end ?? projEnd(); if (Math.abs((B.start || 0) - cut) > 0.06) continue; const d = Math.max(0.1, A.trans.dur || 0.8);
+    if (t >= cut - d / 2 && t < cut + d / 2){ const p = (t - (cut - d / 2)) / d, ca = trCanvas(0, W, H), cb = trCanvas(1, W, H); await drawBgClip(ca.getContext('2d'), A, W, H, t, exporting, orbs, P, pod); await drawBgClip(cb.getContext('2d'), B, W, H, t, exporting, orbs, P, pod); blendTr(ctx, W, H, ca, cb, p, A.trans, t); return; } }
+  const cur = L.find(o => visibleAt(o, t)); if (cur) return drawBgClip(ctx, cur, W, H, t, exporting, orbs, P, pod); ctx.fillStyle = V.bg || '#0c1230'; ctx.fillRect(0, 0, W, H); }
+function blendTr(ctx, W, H, ca, cb, p, tr, t){ const T = tr.type !== 'fade' && AvaTrans.LIB[tr.type] ? trgl() : null, pg = T && T.prog(tr.type);
+  if (!pg){ ctx.save(); ctx.globalAlpha = 1; ctx.drawImage(ca, 0, 0, W, H); ctx.globalAlpha = Math.min(1, Math.max(0, p)); ctx.drawImage(cb, 0, 0, W, H); ctx.restore(); return; }
+  const gl = T.gl; if (T.cv.width !== W || T.cv.height !== H){ T.cv.width = W; T.cv.height = H; } gl.viewport(0, 0, W, H); gl.useProgram(pg.p); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, T.ta); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, ca); gl.uniform1i(pg.u.ta, 0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, T.tb); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cb); gl.uniform1i(pg.u.tb, 1);
+  const Q = AvaTrans.tparams(tr.type, tr.params || {}); gl.uniform1f(pg.u.p, p); gl.uniform1f(pg.u.t, t); gl.uniform1f(pg.u.aspect, W / H); gl.uniform1f(pg.u.seed, 0.37); gl.uniform4fv(pg.u.pa, Q.pa); gl.uniform4fv(pg.u.pb, Q.pb); gl.uniform4fv(pg.u.pc, Q.pc); gl.uniform4fv(pg.u.pd, Q.pd);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); ctx.drawImage(T.cv, 0, 0, W, H); }
+function drawLabOrbsOver(ctx, W, H, t, orbs, P){   // the template's orbs over whatever is already in the frame
+  window.AVA_LAB_IMGS = window.AVA_LAB_IMGS || {}; ctx.canvas.__live = true; window.AVA_LAB_IMGS.__frame = ctx.canvas; /* 175: live — re-read every frame */ const L = orbLab(); if (!L) return; const S0 = window.AvaOrbSets;
+  if (L.W !== W || L.H !== H){ L.cv.width = W; L.cv.height = H; L.eng.resize(W, H); L.W = W; L.H = H; } L.eng.backdrop({ time: t, kind: 'image', image: '__frame', force: true }); const pals = labPalettes();
+  orbs.forEach((ob, i) => { const pal = P.labPalette && P.labPalette !== 'auto' && pals.includes(P.labPalette) ? P.labPalette : pals[i % pals.length]; const o = S0.orb(pal, { mode: P.wave === 'signature' ? 'signature' : 'sphere' }); o.x = ob.cx * W; o.y = ob.cy * H; o.r = ob.r * H * 1.15;
+    if ((ob.alpha ?? 1) <= 0.002) return; const d = labDrive(ob.spk, t, o); L.eng.draw(o, { energy: d.e, swirl: d.swirl, pulses: d.pulses.map(p => t - p), flow: d.flow, bass: d.bass, treble: d.treble, time: t, presence: d.presence }, true); });
+  if (!orbs.some(ob => (ob.alpha ?? 1) < 0.999 || ob.mask)){ ctx.drawImage(L.cv, 0, 0, W, H); return; }
+  orbs.forEach(ob => { const a = ob.alpha ?? 1; if (a <= 0.002) return; const R = ob.r * H * 2.1, cx = ob.cx * W, cy = ob.cy * H; ctx.save(); ctx.beginPath(); ctx.rect(cx - R, cy - R, 2 * R, 2 * R); ctx.clip();   /* 175: each speaker with its own alpha */
+    if (ob.mask && ob.mask.p < 0.999) maskRect(ctx, ob.mask, ...ob.mask.box); ctx.globalAlpha *= a; ctx.drawImage(L.cv, 0, 0, W, H); ctx.restore(); }); }
+function pickBgMedia(kind){ const inp = document.createElement('input'); inp.type = 'file'; inp.accept = kind === 'video' ? 'video/*' : 'image/*';
+  inp.onchange = async () => { const f = inp.files && inp.files[0]; if (!f) return; setBusy(true); try { const id = await addAsset(f), el = await mediaEl(id); remember(); const s = bgEnd(), len = kind === 'video' && el && el.duration ? el.duration : 5;
+    const o = { id: 'o' + (++uid), ...MEDIA0(kind, id, el && (el.videoWidth || el.naturalWidth), el && (el.videoHeight || el.naturalHeight)), bgl: true, x: 0, y: 0, w: 1, h: 1, fit: 'cover', panX: 0.5, panY: 0.5, radius: 0, mute: false, volume: 1, loop: false, start: s, end: s + len, shadow: { on: false }, stroke: { on: false } };
+    V.objects.push(o); ensureLayers(); selectV(o.id); vChanged(); } catch (err) { say(err.message || String(err), 'err'); } finally { setBusy(false); } }; inp.click(); }
+// a background clip: drag on the canvas pans along its free direction (it always covers the canvas)
+const _startVMove174 = startVMove;
+startVMove = function(ev){ const o = objById(vSel); if (!o || !o.bgl || (o.type !== 'image' && o.type !== 'video')) return _startVMove174.apply(this, arguments);
+  ev.preventDefault(); const m = MEDIA.get(o.asset), el = m && m.el, iw = el && (el.videoWidth || el.naturalWidth), ih = el && (el.videoHeight || el.naturalHeight); if (!iw || !ih) return; remember();
+  const s = Math.max(frameW / iw, frameH / ih), freeX = iw * s - frameW, freeY = ih * s - frameH, x0 = ev.clientX, y0 = ev.clientY, px = o.panX ?? 0.5, py = o.panY ?? 0.5;
+  const mv = e => { if (freeX > 1) o.panX = Math.min(1, Math.max(0, px - (e.clientX - x0) / freeX)); if (freeY > 1) o.panY = Math.min(1, Math.max(0, py - (e.clientY - y0) / freeY)); vDraw(); };
+  const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); autosave(); }; addEventListener('pointermove', mv); addEventListener('pointerup', up); };
+// transitions between two background clips — on the outgoing clip; options in the inspector; a ±1 s preview on every change
+function openBgTrans(){ const o = objById(vSel); if (!o || !o.bgl) return; const L = bgClips(), i = L.indexOf(o), nx = L[i + 1];
+  if (!nx || Math.abs((nx.start || 0) - (o.end ?? projEnd())) > 0.06) return say(T('گذار بینِ دو کلیپِ پس‌زمینه است: کلیپِ بعدی باید درست پشتِ این کلیپ شروع شود.', 'A transition joins two background clips: the next clip must start right where this one ends.'), 'err');
+  if (!o.trans){ remember(); o.trans = { type: 'fade', dur: 0.8, params: {} }; renderTimeline(); vChanged(); } showTransPanel(o); previewTrans(o); }
+function showTransPanel(o){ const box = $('iv-fx'); if (!box) return; document.querySelectorAll('[id^="iv-"]').forEach(x => { if (x.id !== 'iv-fx' && x.closest('#vInsp, aside') ) x.classList.add('hidden'); }); box.classList.remove('hidden');
+  const tr = o.trans, LIB = AvaTrans.LIB, TP = AvaTrans.TP[tr.type] || [], L = LIB[tr.type], RCLS = 'range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]';
+  const keys = Object.keys(LIB).filter(k => !LIB[k].scene), opt = k => `<option value="${k}" ${k === tr.type ? 'selected' : ''}>${escapeHtml(trName(k))}</option>`;   /* 175: scenes are not transitions; three groups */
+  const kinds = `<optgroup label="${T('ساده', 'Simple')}">${opt('fade')}${keys.filter(k => k === 'push').map(opt).join('')}</optgroup>`
+    + `<optgroup label="${T('سینمایی', 'Cinematic')}">${keys.filter(k => k !== 'push' && !LIB[k].sc).map(opt).join('')}</optgroup>`
+    + `<optgroup label="${T('وایپ و محو — shaders.com', 'Wipes and dissolves — shaders.com')}">${keys.filter(k => LIB[k].sc).map(opt).join('')}</optgroup>`;
+  const lbl = en => T((AvaTrans.TPFA || {})[en] || en, en), about = tr.type === 'fade' || !L ? T('کلیپِ بعدی آرام روی کلیپِ فعلی پیدا می‌شود.', 'The next clip fades in over the current one.') : T(L.aboutFa || L.about || '', L.aboutEn || L.about || '');
+  const ctl = ([k, label, min, max, step, d, , opts]) => { const v = (tr.params || {})[k] ?? d;
+    return `<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${escapeHtml(lbl(label))}</legend>` + (opts
+      ? `<select class="select select-sm w-full" onchange="setBgTrans('p:${k}', +this.value)">${opts.map(([ov, en, fa]) => `<option value="${ov}" ${+ov === +v ? 'selected' : ''}>${escapeHtml(T(fa, en))}</option>`).join('')}</select>`
+      : `<input type="range" min="${min}" max="${max}" step="${step}" value="${v}" class="${RCLS}" onchange="setBgTrans('p:${k}', +this.value)">`) + `</fieldset>`; };
+  box.innerHTML = `<div class="flex items-center gap-2"><svg class="size-4"><use href="#i-sparkles"/></svg><span class="flex-1 text-sm font-bold">${T('گذار به کلیپِ بعدی', 'Transition to the next clip')}</span><button class="btn btn-ghost btn-xs text-error" onclick="removeBgTrans()">${T('حذف', 'Remove')}</button></div>
+    <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T('نوع', 'Kind')}</legend><select class="select select-sm w-full" onchange="setBgTrans('type', this.value)">${kinds}</select></fieldset>
+    <p class="text-xs leading-relaxed text-base-content/60">${escapeHtml(about)}</p>
+    <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T('مدت', 'Length')} · ${num((tr.dur || 0.8).toFixed(1))} ${T('ثانیه', 's')}</legend><input type="range" min="0.2" max="3" step="0.1" value="${tr.dur || 0.8}" class="${RCLS}" onchange="setBgTrans('dur', +this.value)"></fieldset>
+    ${TP.map(ctl).join('')}`;
+  box.querySelectorAll('select').forEach(s => enh(s)); }
+/* 175: a transition's name in the language on screen */
+function trName(k){ if (k === 'fade') return T('محو', 'Fade'); const L = AvaTrans.LIB[k]; return L ? T(L.fa || L.name, L.name) : k; }
+function setBgTrans(k, val){ const o = objById(vSel); if (!o || !o.trans) return; remember(); if (k.startsWith('p:')){ o.trans.params = o.trans.params || {}; o.trans.params[k.slice(2)] = val; } else { o.trans[k] = val; if (k === 'type') o.trans.params = {}; } showTransPanel(o); renderTimeline(); vChanged(); previewTrans(o); }
+function removeBgTrans(){ const o = objById(vSel); if (!o) return; remember(); delete o.trans; renderTimeline(); vChanged(); showVPanels(); }
+function previewTrans(o){ const cut = o.end ?? projEnd(), d = (o.trans && o.trans.dur) || 0.8; try { if (playing) stopPlay(); seek(Math.max(0, cut - d / 2 - 1)); startPlay(cut + d / 2 + 1); } catch (err) {} }
+// the audio track: selectable, with its own volume over the whole audio composition
+function showMixPanel(){ let box = $('iv-mix'); const ref = $('iv-pip'); if (!ref) return; if (!box){ box = document.createElement('div'); box.id = 'iv-mix'; box.className = 'hidden space-y-3 p-4'; ref.parentElement.insertBefore(box, ref); }
+  document.querySelectorAll('[id^="iv-"]').forEach(x => { if (x !== box && x.parentElement === ref.parentElement) x.classList.add('hidden'); }); box.classList.remove('hidden'); const v0 = Math.round((V.audioVol ?? 1) * 100);
+  box.innerHTML = `<div class="flex items-center gap-2"><svg class="size-4"><use href="#i-audio-lines"/></svg><span class="text-sm font-bold">${T('صدا — همهٔ ترکیبِ صوتی', 'Audio — the full mix')}</span></div><fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T('بلندی', 'Volume')} · <span class="mixv">${num(v0)}${pctSign()}</span></legend><input type="range" min="0" max="200" value="${v0}" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="V.audioVol = +this.value / 100; document.querySelector('#iv-mix .mixv').textContent = num(+this.value) + pctSign(); trackGain = {}; if (playing){ const t = playhead; stopPlay(); seekVisual(t); startPlay(); } autosave()"></fieldset><p class="text-xs text-base-content/60">${T('دوبار کلیک روی ترکِ صدا، حالتِ صدا را باز می‌کند.', 'Double-click the audio track to switch to audio mode.')}</p>`; }
+// pictures and videos: a volume for every video, and collapsible visual adjustments at the bottom
+const _fillPip174 = fillPip;
+fillPip = function(o){ const r = _fillPip174.apply(this, arguments); const host = $('iv-pip'); if (!host || !o) return r; let box = $('pipAdj'); if (!box){ box = document.createElement('div'); box.id = 'pipAdj'; host.appendChild(box); }
+  const a = o.adj || {}, rng = (k, fa, en, min, max, step, d) => `<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T(fa, en)}</legend><input type="range" min="${min}" max="${max}" step="${step}" value="${a[k] ?? d}" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="adjSet('${k}', +this.value)"></fieldset>`;
+  box.innerHTML = (o.type === 'video' ? `<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T('بلندیِ صدای ویدیو', "The video's volume")}</legend><input type="range" min="0" max="100" value="${Math.round((o.volume ?? 1) * 100)}" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="{ const x = objById(vSel); if (x){ x.volume = +this.value / 100; x.mute = false; autosave(); } }"></fieldset>` : '')
+    + `<div class="collapse collapse-arrow rounded-box border border-base-300"><input type="checkbox" aria-label="adjust"><div class="collapse-title text-sm font-semibold">${T('تنظیمِ تصویر', 'Adjustments')}</div><div class="collapse-content space-y-1">${rng('brightness', 'روشنایی', 'Brightness', 0.2, 2, 0.02, 1)}${rng('contrast', 'کنتراست', 'Contrast', 0.2, 2, 0.02, 1)}${rng('saturate', 'اشباعِ رنگ', 'Saturation', 0, 2.5, 0.02, 1)}${rng('hue', 'چرخشِ رنگ', 'Hue', -180, 180, 1, 0)}${rng('blur', 'محوی', 'Blur', 0, 20, 0.5, 0)}<button class="btn btn-ghost btn-xs" onclick="{ const x = objById(vSel); if (x){ remember(); delete x.adj; fillPip(x); vTouch(); } }">${T('بازنشانی', 'Reset')}</button></div></div>`; return r; };
+function adjSet(k, val){ const o = objById(vSel); if (!o) return; o.adj = o.adj || {}; o.adj[k] = val; vTouch(); }
+// the transition badge on a background clip (right of its duration mark) and the toolbar's transition tool
+const _placeVObjBar174 = placeVObjBar;
+placeVObjBar = function(){ const r = _placeVObjBar174.apply(this, arguments); const o = vSel && vSel !== 'SUB' && vSel !== 'MIX' ? objById(vSel) : null, bar = $('clipBar');
+  if (o && o.bgl && bar && !bar.classList.contains('hidden') && !bar.querySelector('[data-trans]')) bar.insertAdjacentHTML('afterbegin', `<li data-trans><a onclick="openBgTrans()" class="gap-1"><svg class="size-3.5"><use href="#i-sparkles"/></svg><span class="ui">${T('گذار', 'Transition')}</span></a></li>`); return r; };
+const _renderTimeline174 = renderTimeline;
+renderTimeline = function(){ const r = _renderTimeline174.apply(this, arguments); if (mode === 'video') bgClips().forEach(o => { if (!o.trans) return; const el = document.querySelector(`#lanes .vclip[data-id="${o.id}"]`); if (el && !el.querySelector('.trbadge')) el.insertAdjacentHTML('beforeend', `<span class="trbadge" title="${escapeHtml(trName(o.trans.type))}"><svg><use href="#i-sparkles"/></svg></span>`); }); return r; };
+
+// =====================================================================================
+// 175 · SLIDESHOW («اسلایدشو») — several pictures as background clips joined by fades. They are spread equally over
+//       the free time of the background track (each at least V.slideMin seconds); every boundary between two slides
+//       is a roll edit (the transition stays intact), dragging a slide reorders it, and the outer edges trim.
+// =====================================================================================
+const slideMin = () => Math.max(0.5, V.slideMin ?? 2);
+const slidesOf = id => V.objects.filter(o => o.show === id).sort((a, b) => (a.start || 0) - (b.start || 0));
+function pickFiles(accept, multiple){ return new Promise(done => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = accept; inp.multiple = !!multiple;
+  inp.onchange = () => done([...(inp.files || [])]); inp.addEventListener('cancel', () => done([])); inp.click(); }); }
+function bgFreeSpan(){ const L = bgClips(); const end = L.length ? Math.max(...L.map(o => o.end ?? projEnd())) : 0; return [end, Math.max(0, projEnd() - end)]; }
+function layoutSlides(id, start){ let t = start; const L = slidesOf(id);
+  L.forEach((o, i) => { const d = Math.max(slideMin(), (o.end ?? (o.start || 0) + 4) - (o.start || 0)); o.start = t; o.end = t + d; t += d;
+    if (i < L.length - 1){ if (!o.trans) o.trans = { type: 'fade', dur: 0.8, params: {} }; } else delete o.trans; }); }
+function distributeSlides(id){ const L = slidesOf(id); if (!L.length) return; const s0 = L[0].start || 0;
+  const after = bgClips().filter(o => o.show !== id && (o.start || 0) > s0 + 0.01).map(o => o.start || 0), end = after.length ? Math.min(...after) : projEnd();
+  const per = Math.max(slideMin(), (end - s0) / L.length); L.forEach((o, i) => { o.start = s0 + i * per; o.end = o.start + per; }); layoutSlides(id, s0); }
+async function addSlideshow(into){ const files = await pickFiles('image/*', true); if (!files.length) return;
+  const old = into ? null : bgClips(); let [start, free] = into ? [0, 0] : bgFreeSpan(), mode = 'fit';
+  if (!into && free < slideMin()){   // the background track is already full (a new project's podcast style spans everything)
+    const pod = old.some(o => o.type === 'pod');
+    const k = await askChoice(T('پس‌زمینه پر است', 'The background is full'), T('همهٔ زمانِ ترکیب را کلیپ‌های پس‌زمینه پر کرده‌اند. اسلایدشو کجا برود؟', 'Background clips already fill the whole composition. Where should the slideshow go?'),
+      [{ k: 'no', label: T('لغو', 'Cancel') }, { k: 'after', label: T('بعد از آن‌ها', 'After them') }, { k: 'replace', label: T('جایگزینِ پس‌زمینه', 'Replace the background') }, ...(pod ? [{ k: 'replace-keep', label: T('جایگزین، با گوینده‌ها روی تصویر', 'Replace, but keep the speakers on screen'), primary: true }] : [])]);
+    if (!k || k === 'no') return; mode = k; }
+  setBusy(true); try { remember(); const id = into || ('ss' + (++uid)), made = [];
+    if (mode.startsWith('replace')){ V.objects = V.objects.filter(o => !o.bgl); start = 0; if (mode === 'replace-keep' && !V.objects.some(o => o.tpl)) V.objects.push({ id: 'o' + (++uid), type: 'pod', tpl: true, x: 0.06, y: 0.26, w: 0.88, h: 0.52, rot: 0, opacity: 1, start: 0, end: null }); }
+    for (const f of files){ const aid = await addAsset(f), el = await mediaEl(aid);
+      made.push({ id: 'o' + (++uid), ...MEDIA0('image', aid, el && (el.naturalWidth || el.videoWidth), el && (el.naturalHeight || el.videoHeight)), bgl: true, show: id, x: 0, y: 0, w: 1, h: 1, fit: 'cover', panX: 0.5, panY: 0.5, radius: 0, mute: false, volume: 1, loop: false, shadow: { on: false }, stroke: { on: false }, start: 0, end: 4 }); }
+    if (into){ const L = slidesOf(id), last = L[L.length - 1]; made.forEach((o, i) => { o.start = (last ? last.end : 0) + i * 4; o.end = o.start + 4; }); V.objects.push(...made); ensureLayers(); distributeSlides(id); }
+    else { const per = mode === 'after' ? 4 : Math.max(slideMin(), (mode.startsWith('replace') ? projEnd() : free) / made.length); made.forEach((o, i) => { o.start = start + i * per; o.end = o.start + per; }); V.objects.push(...made); ensureLayers(); layoutSlides(id, start); }
+    selectV(made[0].id); vChanged(); say(T(`اسلایدشو: ${FA(slidesOf(id).length)} تصویر`, `Slideshow: ${slidesOf(id).length} pictures`), 'ok'); }
+  catch (err) { say(err.message || String(err), 'err'); } finally { setBusy(false); } }
+// the bar drag calls this for a slide; true = handled
+function slideEdit(o, edge, s0, e0, d){ const L = slidesOf(o.show), i = L.indexOf(o), mn = slideMin(), prev = L[i - 1], next = L[i + 1];
+  if (!edge){ if (o._from === undefined) Object.defineProperty(o, '_from', { value: s0, writable: true, configurable: true, enumerable: false }); o.start = Math.max(0, s0 + d); o.end = o.start + (e0 - s0); return true; }   // reorder on drop (slideDrop); _from is never saved
+  if (edge === 's' && prev){ const lo = (prev.start || 0) + mn, hi = e0 - mn, t = Math.min(hi, Math.max(lo, s0 + d)); prev.end = t; o.start = t; return true; }   // roll the boundary with the previous slide
+  if (edge === 'e' && next){ const lo = s0 + mn, hi = (next.end ?? projEnd()) - mn, t = Math.min(hi, Math.max(lo, e0 + d)); o.end = t; next.start = t; return true; }   // roll the boundary with the next slide
+  if (edge === 's'){ o.start = Math.max(0, Math.min(e0 - mn, s0 + d)); return true; } o.end = Math.max(s0 + mn, e0 + d); return true; }   // the outer edges trim (never below the minimum)
+function slideDrop(o){ const L = slidesOf(o.show).filter(x => x !== o), first = Math.min(o._from ?? Infinity, ...L.map(x => x.start || 0)), mid = (o.start || 0) + ((o.end || 0) - (o.start || 0)) / 2;
+  let k = L.findIndex(x => mid < (x.start || 0) + ((x.end || 0) - (x.start || 0)) / 2); if (k < 0) k = L.length; L.splice(k, 0, o);
+  const durs = new Map(L.map(x => [x, (x.end || 0) - (x.start || 0)])); let t = first; L.forEach(x => { x.start = t; x.end = t + durs.get(x); t = x.end; }); delete o._from; layoutSlides(o.show, first); }
+// deleting a slide closes the gap; duplicating inserts the copy right after it
+const _vDelete175 = vDelete;
+vDelete = function(){ const o = objById(vSel); if (!o || !o.show) return _vDelete175.apply(this, arguments); remember(); const id = o.show, first = Math.min(...slidesOf(id).map(x => x.start || 0)); V.objects = V.objects.filter(x => x !== o); if (slidesOf(id).length) layoutSlides(id, first); selectV(null); vChanged(); };
+const _vDuplicate175 = typeof vDuplicate === 'function' ? vDuplicate : null;
+vDuplicate = function(){ const o = objById(vSel); if (!o || !o.show) return _vDuplicate175 && _vDuplicate175.apply(this, arguments); remember(); const c = JSON.parse(JSON.stringify(o)); c.id = 'o' + (++uid); c.start = (o.end || 0) - 0.001; c.end = c.start + ((o.end || 0) - (o.start || 0));
+  const first = Math.min(...slidesOf(o.show).map(x => x.start || 0)); slidesOf(o.show).forEach(x => { if ((x.start || 0) >= (o.end || 0) - 0.01){ x.start += c.end - c.start; x.end += c.end - c.start; } }); V.objects.push(c); ensureLayers(); layoutSlides(o.show, first); selectV(c.id); vChanged(); };
+// the slideshow section in a slide's inspector: count, add pictures, spread equally, the minimum per slide
+const _fillPip175 = fillPip;
+fillPip = function(o){ const r = _fillPip175.apply(this, arguments); const host = $('iv-pip'); let box = $('slideBox'); if (!host) return r;
+  if (!o || !o.show){ if (box) box.remove(); return r; } if (!box){ box = document.createElement('div'); box.id = 'slideBox'; box.className = 'space-y-2 rounded-box border border-base-300 p-3'; host.insertBefore(box, host.children[1] || null); }
+  const n = slidesOf(o.show).length;
+  box.innerHTML = `<div class="flex items-center gap-2"><svg class="size-4"><use href="#i-film"/></svg><span class="flex-1 text-sm font-semibold">${T('اسلایدشو', 'Slideshow')} · ${num(n)} ${T('تصویر', 'pictures')}</span></div>
+    <div class="flex gap-2"><button class="btn btn-sm flex-1 gap-1 border-base-content/15 bg-base-100" onclick="addSlideshow(objById(vSel).show)"><svg class="size-4"><use href="#i-plus"/></svg>${T('افزودنِ تصویر', 'Add pictures')}</button><button class="btn btn-sm flex-1 border-base-content/15 bg-base-100" onclick="{ remember(); distributeSlides(objById(vSel).show); vChanged(); renderTimeline(); }">${T('تقسیمِ مساوی', 'Spread equally')}</button></div>
+    <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T('کمترین مدتِ هر اسلاید', 'Shortest slide')} · <span class="slmin">${num(slideMin().toFixed(1))}</span> ${T('ثانیه', 's')}</legend><input type="range" min="0.5" max="10" step="0.5" value="${slideMin()}" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="V.slideMin = +this.value; document.querySelector('#slideBox .slmin').textContent = num((+this.value).toFixed(1))" onchange="{ remember(); const L = slidesOf(objById(vSel).show); layoutSlides(objById(vSel).show, L[0].start || 0); vChanged(); renderTimeline(); }"></fieldset>
+    <p class="text-xs leading-relaxed text-base-content/60">${T('لبه‌ی بینِ دو اسلاید را بکشید تا مرزشان جابه‌جا شود؛ اسلاید را بکشید تا جایش در ترتیب عوض شود.', 'Drag the edge between two slides to move their boundary; drag a slide to change its place in the order.')}</p>`; return r; };
+/* 175 · a font picker (each row drawn in its own font) and the weights that family really has */
+function fillFontPick(fsel, wsel, fam, w, setF, setW){
+  fsel.innerHTML = FONT_LIST.map(([f, fa]) => `<option value="${f}" data-font="${f}">${escapeHtml(lang === 'fa' ? fa : f)}</option>`).join(''); fsel.value = fam; fsel.onchange = () => setF(fsel.value); enh(fsel);
+  if (!wsel) return; const seen = new Set(), opts = [[900, 'سیاه', 'Black'], [700, 'پررنگ', 'Bold'], [400, 'معمولی', 'Regular']].filter(([v]) => { const k = fontW(fam, v); if (seen.has(k)) return false; seen.add(k); return true; });
+  wsel.innerHTML = opts.map(([v, fa, en]) => `<option value="${v}">${T(fa, en)}</option>`).join(''); const cur = opts.find(([v]) => fontW(fam, v) === fontW(fam, w)) || opts[0]; wsel.value = String(cur[0]);
+  wsel.disabled = opts.length < 2; wsel.onchange = () => setW(+wsel.value); enh(wsel); if (wsel._btn) wsel._btn.disabled = opts.length < 2; }

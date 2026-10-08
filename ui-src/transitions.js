@@ -1,5 +1,5 @@
 // Transition library — from the founder's «The Fox and the Moon» editor (his own asset), ported verbatim: 30 GLSL ES 3.00
-// transitions. Each exposes tr(uv) over A()/B() (the two frames), p (progress 0→1), pa/pc/pd (controls), aspect, seed, t.
+// transitions (175: plus shaders.com's 13 wipes and dissolves, below, under its MIT licence). Each exposes tr(uv) over A()/B() (the two frames), p (progress 0→1), pa/pc/pd (controls), aspect, seed, t.
 (function (root) {
 'use strict';
 const LIB = {
@@ -938,26 +938,119 @@ vec4 tr(vec2 uv) {
 };
 
 
+/* ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   175 · Wipes and dissolves from shaders.com — the 13 progress-driven transitions of the `shaders` package (engine
+   4.0.2: BarnDoors, BlockDissolve, CheckerWipe, DiamondWipe, IrisWipe, LinearWipe, NoiseDissolve, PagePeel,
+   RadialWipe, RandomBars, RippleWipe, SliceWipe, VenetianBlinds), ported from its WGSL to this GLSL so they run on the
+   app's own WebGL engine in the preview and in the export (the package itself needs WebGPU). Same coverage fields,
+   reveal curve, hashes and noise; props and defaults as there; the progress gets an ease-in-out here.
+
+   Portions: shaders — Copyright (c) 2026 Shader Effects Inc. — MIT License.
+   Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+   documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
+   rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons to whom the Software is furnished to do so, subject to the following conditions: The above copyright notice
+   and this permission notice shall be included in all copies or substantial portions of the Software.
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+   WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+   COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+   ───────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
+const SC = `
+precision highp int;
+float scEase(float x) { return x * x * (3.0 - 2.0 * x); }
+vec2 scUV(vec2 q) { return vec2(q.x, 1.0 - q.y); }
+float scReveal(float c, float pr, float f) { f = max(f, 0.0001); float front = pr * (1.0 + 2.0 * f) - f; return smoothstep(front - f, front + f, c); }
+float scDirC(vec2 s, float asp, float deg) { float a = radians(deg); vec2 d = vec2(cos(a), sin(a)); float g = dot(vec2((s.x - 0.5) * asp, s.y - 0.5), d); float ext = 0.5 * (asp * abs(d.x) + abs(d.y)); return g / (2.0 * ext) + 0.5; }
+float scH11(float x) { uint u = floatBitsToUint(x * 3141592653.0); return float(u * u * 3141592653u) / 4294967295.0; }
+float scH12(vec2 x) { uvec2 u = floatBitsToUint(x * vec2(141421356.0, 2718281828.0)); return float((u.x ^ u.y) * 3141592653u) / 4294967295.0; }
+void scGrid(vec2 s, float asp, float size, out vec2 cell, out vec2 lc, out vec2 grid) { float gx = 1.0 / max(size, 0.001); float gy = max(gx / asp, 1.0); vec2 q = vec2(s.x * gx, s.y * gy); cell = floor(q); lc = fract(q); grid = vec2(gx, gy); }
+float scRadial(vec2 s, float asp, vec2 c) { float d = length(vec2((s.x - c.x) * asp, s.y - c.y)); float m = length(vec2(max(c.x, 1.0 - c.x) * asp, max(c.y, 1.0 - c.y))); return d / max(m, 0.0001); }
+uint scRot(uint x, int k) { return (x << uint(k)) | (x >> uint(32 - k)); }
+uint scBj(uint a0, uint b0, uint c0) { uint a = a0; uint b = b0; uint c = c0;
+  c ^= b; c -= scRot(b, 14); a ^= c; a -= scRot(c, 11); b ^= a; b -= scRot(a, 25); c ^= b; c -= scRot(b, 16);
+  a ^= c; a -= scRot(c, 4); b ^= a; b -= scRot(a, 14); c ^= b; c -= scRot(b, 24); return c; }
+uint scHashI(int x, int y) { uint seed = 0xdeadbeefu + (2u << 2u) + 13u; return scBj(seed + uint(x), seed + uint(y), seed); }
+float scGradF(uint h0, float x, float y) { uint h = h0 & 7u; float u = h < 4u ? x : y; float v = 2.0 * (h < 4u ? y : x); return ((h & 1u) != 0u ? -u : u) + ((h & 2u) != 0u ? -v : v); }
+float scFade(float t) { return t * t * t * (t * (t * 6.0 - 15.0) + 10.0); }
+float scPerlin(vec2 q) { int X = int(floor(q.x)); int Y = int(floor(q.y)); float fx = q.x - float(X); float fy = q.y - float(Y); float u = scFade(fx); float v = scFade(fy);
+  float v0 = scGradF(scHashI(X, Y), fx, fy); float v1 = scGradF(scHashI(X + 1, Y), fx - 1.0, fy); float v2 = scGradF(scHashI(X, Y + 1), fx, fy - 1.0); float v3 = scGradF(scHashI(X + 1, Y + 1), fx - 1.0, fy - 1.0);
+  float s1 = 1.0 - u; return 0.6616 * ((1.0 - v) * (v0 * s1 + v1 * u) + v * (v2 * s1 + v3 * u)); }
+float scFbmC(vec2 s, float asp, float sc, float sd) { vec2 q = vec2(s.x * asp * sc + sd * 13.7, s.y * sc + sd * 7.9);
+  float n1 = scPerlin(q); float n2 = scPerlin(vec2(q.x * 2.0 + 17.3 + sd * 3.1, q.y * 2.0 + 9.1)) * 0.5; float n3 = scPerlin(vec2(q.x * 4.0 + 41.7, q.y * 4.0 + 27.9 + sd * 5.3)) * 0.25;
+  return clamp(0.5 + (n1 + n2 + n3) / 1.75 * 0.9, 0.0, 1.0); }
+`;
+/* every one: A (the outgoing clip) is wiped away over B; s is the screen coordinate (0–1, y down), as the props read */
+Object.assign(LIB, {
+  wipe: { name: 'Linear wipe', sc: true, overlap: 0.9, src: SC + `
+vec4 tr(vec2 uv) { vec2 s = scUV(uv); return mix(B(uv), A(uv), scReveal(scDirC(s, aspect, pb.x), scEase(p), pb.y)); }` },
+  barn: { name: 'Barn doors', sc: true, overlap: 0.9, src: SC + `
+vec4 tr(vec2 uv) { vec2 s = scUV(uv); float c = abs(scDirC(s, aspect, pb.x) - 0.5) * 2.0; return mix(B(uv), A(uv), scReveal(c, scEase(p), pb.y)); }` },
+  blocks: { name: 'Block dissolve', sc: true, overlap: 1.0, src: SC + `
+vec4 tr(vec2 uv) { vec2 s = scUV(uv); vec2 cell; vec2 lc; vec2 grid; scGrid(s, aspect, pb.z, cell, lc, grid); return mix(B(uv), A(uv), scReveal(scH12(cell), scEase(p), pb.y)); }` },
+  checker: { name: 'Checker wipe', sc: true, overlap: 1.0, src: SC + `
+vec4 tr(vec2 uv) { vec2 s = scUV(uv); vec2 cell; vec2 lc; vec2 grid; scGrid(s, aspect, pb.z, cell, lc, grid);
+  float par = fract((cell.x + cell.y) * 0.5) * 2.0; float diag = (cell.x / grid.x + cell.y / grid.y) * 0.5;
+  return mix(B(uv), A(uv), scReveal(clamp(0.5 * par + 0.5 * diag, 0.0, 1.0), scEase(p), pb.y)); }` },
+  diamond: { name: 'Diamond wipe', sc: true, overlap: 1.0, src: SC + `
+vec4 tr(vec2 uv) { vec2 s = scUV(uv); vec2 cell; vec2 lc; vec2 grid; scGrid(s, aspect, pb.z, cell, lc, grid); return mix(B(uv), A(uv), scReveal(abs(lc.x - 0.5) + abs(lc.y - 0.5), scEase(p), pb.y)); }` },
+  iris: { name: 'Iris wipe', sc: true, overlap: 0.9, src: SC + `
+vec4 tr(vec2 uv) { vec2 s = scUV(uv); return mix(B(uv), A(uv), scReveal(scRadial(s, aspect, pa.xy), scEase(p), pb.y)); }` },
+  noise: { name: 'Noise dissolve', sc: true, overlap: 1.1, src: SC + `
+vec4 tr(vec2 uv) { vec2 s = scUV(uv); return mix(B(uv), A(uv), scReveal(scFbmC(s, aspect, pb.z, pb.w), scEase(p), pb.y)); }` },
+  peel: { name: 'Page peel', sc: true, overlap: 1.2, src: SC + `
+vec4 tr(vec2 uv) { vec2 s = scUV(uv); float k = pb.x; vec2 cn = vec2(mod(k, 2.0), step(1.5, k)); vec2 op = 1.0 - cn; float amount = scEase(p);
+  vec2 pA = vec2(s.x * aspect, s.y); vec2 cA = vec2(cn.x * aspect, cn.y); vec2 axv = vec2(op.x * aspect, op.y) - cA; float L = length(axv); vec2 ax = axv / L;
+  float t0 = dot(pA - cA, ax); float pl = amount * L; float R = max(pb.z * L, 0.0001); float thetaMax = pl / R; float X = (t0 - pl) / R;
+  float theta = asin(clamp(X, 0.0, 1.0)); float inBand = step(0.0, X) * step(X, 1.0); float paper = step(theta, thetaMax);
+  vec2 srcA = pA + ax * ((pl - R * theta) - t0); vec2 cuv = vec2(srcA.x / aspect, srcA.y); float inb = step(0.0, cuv.x) * step(cuv.x, 1.0) * step(0.0, cuv.y) * step(cuv.y, 1.0);
+  float lip = R * (1.0 - cos(clamp(thetaMax, 0.0, 1.5707963))); float flatReach = max(R + lip * 0.5, 0.0001); float peelReach = max(lip * 2.5, 0.0001);
+  float lift = smoothstep(0.0, 0.04, amount) * pow(1.0 - amount, 0.7); float dPast = t0 - pl; float dInto = pl - t0;
+  float overhang = 1.0 - pb.w * pow(1.0 - smoothstep(0.0, flatReach, dPast), 2.0) * step(0.0, dPast) * lift * 0.5;
+  float shadowIn = pow(1.0 - smoothstep(0.0, peelReach, dInto), 1.5) * step(0.0, dInto) * lift * pb.w * 0.6;
+  float fold = smoothstep(pl - 0.0015, pl + 0.0015, t0); float showCurl = inBand * paper * inb;
+  float sd = (theta / 1.5707963 - 0.65) / mix(0.05, 0.4, 0.2); float spec = exp(sd * sd * -0.5) * 0.4 * pc.y;
+  vec4 cs = A(vec2(cuv.x, 1.0 - cuv.y)); vec4 fs = A(uv);
+  vec4 curl = vec4(cs.rgb * (1.0 - 0.55 * pc.x * cos(theta)) + spec * cs.a, cs.a);
+  vec4 lay = showCurl > 0.5 ? curl : mix(vec4(0.0, 0.0, 0.0, shadowIn), vec4(fs.rgb * overhang, fs.a), fold);
+  return vec4(lay.rgb + B(uv).rgb * (1.0 - lay.a), 1.0); }` },
+  clock: { name: 'Clock wipe', sc: true, overlap: 1.0, src: SC + `
+vec4 tr(vec2 uv) { vec2 s = scUV(uv); vec2 rel = vec2((s.x - pa.x) * aspect, s.y - pa.y); float fr = (atan(rel.y, rel.x) - radians(pb.x)) / 6.2831853; fr -= floor(fr);
+  float c = pb.z > 1.5 ? min(fr, 1.0 - fr) * 2.0 : (pb.z > 0.5 ? 1.0 - fr : fr); return mix(B(uv), A(uv), scReveal(c, scEase(p), pb.y)); }` },
+  bars: { name: 'Random bars', sc: true, overlap: 1.0, src: SC + `
+vec4 tr(vec2 uv) { vec2 s = scUV(uv); float c = scH11(floor(scDirC(s, aspect, pb.x) * max(pb.z, 1.0)) + 0.5); return mix(B(uv), A(uv), scReveal(c, scEase(p), pb.y)); }` },
+  ripple: { name: 'Ripple wipe', sc: true, overlap: 1.0, src: SC + `
+vec4 tr(vec2 uv) { vec2 s = scUV(uv); float n = max(pb.z, 1.0); float c = clamp((floor(scRadial(s, aspect, pa.xy) * n) + 0.5) / n, 0.0, 1.0); return mix(B(uv), A(uv), scReveal(c, scEase(p), pb.y)); }` },
+  slices: { name: 'Slice wipe', sc: true, overlap: 0.9, src: SC + `
+vec4 tr(vec2 uv) { vec2 s = scUV(uv); float a = radians(pb.x); vec2 d = vec2(cos(a), sin(a)); vec2 q0 = vec2((s.x - 0.5) * aspect, s.y - 0.5);
+  float ext = 0.5 * (aspect * abs(d.x) + abs(d.y)); float idx = floor((dot(q0, d) / (2.0 * ext) + 0.5) * max(pb.z, 1.0)); float sg = fract(idx * 0.5) * 4.0 - 1.0;
+  float extP = 0.5 * (aspect * abs(d.y) + abs(d.x)); vec2 q = q0 + vec2(-d.y, d.x) * (scEase(p) * 2.02 * extP * sg); vec2 su = vec2(q.x / aspect + 0.5, q.y + 0.5);
+  float inb = step(0.0, su.x) * step(su.x, 1.0) * step(0.0, su.y) * step(su.y, 1.0); return mix(B(uv), A(vec2(su.x, 1.0 - su.y)), inb); }` },
+  blinds: { name: 'Venetian blinds', sc: true, overlap: 1.0, src: SC + `
+vec4 tr(vec2 uv) { vec2 s = scUV(uv); float c = fract(scDirC(s, aspect, pb.x) * max(pb.z, 1.0)); return mix(B(uv), A(uv), scReveal(c, scEase(p), pb.y)); }` },
+});
+
+
 /* the controls each transition exposes; slot a = pa (defaults 0.5, 0.55, 0, 0), c = pc and d = pd (defaults 1) */
 
 const TP = {
   liquid: [['cx', 'Drop across', 0, 1, 0.01, 0.5, 'a0'], ['cy', 'Drop down', 0, 1, 0.01, 0.55, 'a1'], ['ripple', 'Ripple strength', 0, 3, 0.01, 1, 'c0'], ['rings', 'Ring count', 0.3, 3, 0.01, 1, 'c1'], ['rim', 'Rim light', 0, 3, 0.01, 1, 'c2']],
-  glass: [['thick', 'Thickness', 0.3, 3, 0.01, 1, 'c0'], ['refr', 'Refraction', 0.2, 2, 0.01, 1, 'c1'], ['disp', 'Colour split', 0, 3, 0.01, 1, 'c2'], ['width', 'Pane width', 0.5, 1.8, 0.01, 1, 'c3'], ['tilt', 'Turn', 0, 2.5, 0.01, 1, 'd0']],
+  glass: [['thick', 'Thickness', 0.3, 3, 0.01, 1, 'c0'], ['refr', 'Refraction', 0.2, 2, 0.01, 1, 'c1'], ['disp', 'Color split', 0, 3, 0.01, 1, 'c2'], ['width', 'Pane width', 0.5, 1.8, 0.01, 1, 'c3'], ['tilt', 'Turn', 0, 2.5, 0.01, 1, 'd0']],
   frosted: [['blur', 'Blur', 0.2, 3, 0.01, 1, 'c0'], ['frost', 'Frost', 0, 3, 0.01, 1, 'c1'], ['size', 'Pane size', 0.6, 1.2, 0.01, 1, 'c2'], ['bevel', 'Bevel', 0.3, 3, 0.01, 1, 'c3']],
   reeded: [['rib', 'Rib width', 0.4, 3, 0.01, 1, 'c0'], ['refr', 'Refraction', 0, 3, 0.01, 1, 'c1'], ['width', 'Panel width', 0.4, 1.8, 0.01, 1, 'c2']],
-  lens: [['refr', 'Refraction', 0.2, 2, 0.01, 1, 'c0'], ['size', 'Ball size', 0.6, 1.4, 0.01, 1, 'c1'], ['disp', 'Colour split', 0, 3, 0.01, 1, 'c2'], ['wobble', 'Surface ripple', 0, 4, 0.01, 1, 'c3']],
+  lens: [['refr', 'Refraction', 0.2, 2, 0.01, 1, 'c0'], ['size', 'Ball size', 0.6, 1.4, 0.01, 1, 'c1'], ['disp', 'Color split', 0, 3, 0.01, 1, 'c2'], ['wobble', 'Surface ripple', 0, 4, 0.01, 1, 'c3']],
   leak: [['amount', 'Intensity', 0, 2, 0.01, 1, 'c0'], ['size', 'Flare size', 0.4, 2.5, 0.01, 1, 'c1'], ['streak', 'Streak', 0, 3, 0.01, 1, 'c2'], ['grain', 'Grain', 0, 3, 0.01, 1, 'c3']],
   pool: [['waves', 'Wave strength', 0, 3, 0.01, 1, 'c0'], ['caustics', 'Caustic light', 0, 3, 0.01, 1, 'c1'], ['scale', 'Caustic scale', 0.4, 2.5, 0.01, 1, 'c2'], ['tint', 'Water tint', 0, 2, 0.01, 1, 'c3']],
   rays: [['amount', 'Intensity', 0, 2, 0.01, 1, 'c0'], ['count', 'Ray count', 0.3, 3, 0.01, 1, 'c1'], ['source', 'Source across', 0, 1, 0.01, 0.5, 'c2'], ['haze', 'Haze', 0, 3, 0.01, 1, 'c3']],
-  barrel: [['strength', 'Strength', 0, 2, 0.01, 1, 'c0'], ['fringe', 'Colour fringe', 0, 4, 0.01, 1, 'c1'], ['vignette', 'Vignette', 0, 3, 0.01, 1, 'c2']],
-  glitch: [['amount', 'Amount', 0, 2, 0.01, 1, 'c0'], ['blocks', 'Blocks', 0, 4, 0.01, 1, 'c1'], ['split', 'Colour split', 0, 3, 0.01, 1, 'c2']],
+  barrel: [['strength', 'Strength', 0, 2, 0.01, 1, 'c0'], ['fringe', 'Color fringe', 0, 4, 0.01, 1, 'c1'], ['vignette', 'Vignette', 0, 3, 0.01, 1, 'c2']],
+  glitch: [['amount', 'Amount', 0, 2, 0.01, 1, 'c0'], ['blocks', 'Blocks', 0, 4, 0.01, 1, 'c1'], ['split', 'Color split', 0, 3, 0.01, 1, 'c2']],
   burn: [['glow', 'Ember glow', 0, 3, 0.01, 1, 'c0'], ['scale', 'Burn pattern', 0.3, 3, 0.01, 1, 'c1']],
   ink: [['edge', 'Edge darkness', 0, 1.25, 0.01, 1, 'c0'], ['scale', 'Texture scale', 0.3, 3, 0.01, 1, 'c1'], ['rough', 'Raggedness', 0, 2.5, 0.01, 1, 'c2']],
   whip: [['blur', 'Motion blur', 0, 3, 0.01, 1, 'c0']],
   zoom: [['depth', 'Zoom depth', 0.2, 3, 0.01, 1, 'c0'], ['blur', 'Radial blur', 0, 3, 0.01, 1, 'c1']],
   mosaic: [['tiles', 'Tile size', 0.3, 4, 0.01, 1, 'c0'], ['grid', 'Grid lines', 0, 3, 0.01, 1, 'c1']],
   halftone: [['dots', 'Dot size', 0.4, 3, 0.01, 1, 'c0'], ['bulge', 'Bulge', 0, 3, 0.01, 1, 'c1']],
-  stained: [['cells', 'Pane size', 0.4, 3, 0.01, 1, 'c0'], ['colour', 'Colour', 0, 1.8, 0.01, 1, 'c1'], ['lead', 'Leading', 0.3, 3, 0.01, 1, 'c2']],
+  stained: [['cells', 'Pane size', 0.4, 3, 0.01, 1, 'c0'], ['colour', 'Color', 0, 1.8, 0.01, 1, 'c1'], ['lead', 'Leading', 0.3, 3, 0.01, 1, 'c2']],
   chrome: [['band', 'Wave width', 0.4, 2.5, 0.01, 1, 'c0'], ['detail', 'Surface detail', 0.3, 3, 0.01, 1, 'c1']],
   smear: [['length', 'Streak length', 0, 3, 0.01, 1, 'c0'], ['bands', 'Band count', 0.3, 3, 0.01, 1, 'c1']],
   melt: [['smear', 'Smear', 0, 3, 0.01, 1, 'c0'], ['blocks', 'Block size', 0.4, 4, 0.01, 1, 'c1']],
@@ -965,6 +1058,81 @@ const TP = {
   flip: [['back', 'Pull back', 0, 3, 0.01, 1, 'c0'], ['tilt', 'Tilt', 0, 4, 0.01, 1, 'c1']],
   push: [['blur', 'Motion blur', 0, 3, 0.01, 1, 'c0'], ['shadow', 'Edge shadow', 0, 2.5, 0.01, 1, 'c1']],
 };
+/* 175: the shaders.com set; an eighth item lists the choices of a control that is a choice, not a range: [value, English, Persian] */
+const DIR8 = [[180, 'Right to left', 'راست به چپ'], [0, 'Left to right', 'چپ به راست'], [90, 'Top to bottom', 'بالا به پایین'], [270, 'Bottom to top', 'پایین به بالا'],
+  [135, 'Diagonal, from the top right', 'مورب، از بالا راست'], [45, 'Diagonal, from the top left', 'مورب، از بالا چپ'], [225, 'Diagonal, from the bottom right', 'مورب، از پایین راست'], [315, 'Diagonal, from the bottom left', 'مورب، از پایین چپ']];
+const CX = ['cx', 'Center across', 0, 1, 0.01, 0.5, 'a0'], CY = ['cy', 'Center down', 0, 1, 0.01, 0.5, 'a1'], SOFT = (d, max = 0.5) => ['soft', 'Softness', 0, max, 0.01, d, 'b1'];
+Object.assign(TP, {
+  wipe: [['dir', 'Direction', 0, 315, 45, 180, 'b0', DIR8], SOFT(0.1)],
+  barn: [['dir', 'Opening', 0, 135, 45, 0, 'b0', [[0, 'To the sides', 'به دو طرف'], [90, 'Up and down', 'به بالا و پایین'], [45, 'Diagonal', 'مورب'], [135, 'The other diagonal', 'مورب، از سوی دیگر']]], SOFT(0.1)],
+  blocks: [['size', 'Block size', 0.02, 0.3, 0.01, 0.08, 'b2'], SOFT(0.15)],
+  checker: [['size', 'Block size', 0.03, 0.3, 0.01, 0.1, 'b2'], SOFT(0.15)],
+  diamond: [['size', 'Diamond size', 0.04, 0.4, 0.01, 0.15, 'b2'], SOFT(0.1)],
+  iris: [CX, CY, SOFT(0.1)],
+  noise: [['scale', 'Pattern scale', 0.5, 10, 0.1, 3, 'b2'], SOFT(0.25, 0.6), ['seed', 'Variation', 0, 20, 1, 0, 'b3']],
+  peel: [['corner', 'Corner', 0, 3, 1, 3, 'b0', [[3, 'Bottom right', 'پایین راست'], [2, 'Bottom left', 'پایین چپ'], [1, 'Top right', 'بالا راست'], [0, 'Top left', 'بالا چپ']]],
+    ['radius', 'Curl size', 0.05, 0.5, 0.01, 0.2, 'b2'], ['shading', 'Shading', 0, 1.8, 0.01, 1, 'c0'], ['shine', 'Highlight', 0, 2.5, 0.01, 1, 'c1'], ['shadow', 'Shadow', 0, 2, 0.01, 1, 'b3']],
+  clock: [['start', 'Starts at', 0, 270, 90, 270, 'b0', [[270, '12 o’clock', 'ساعتِ ۱۲'], [0, '3 o’clock', 'ساعتِ ۳'], [90, '6 o’clock', 'ساعتِ ۶'], [180, '9 o’clock', 'ساعتِ ۹']]],
+    ['way', 'Direction', 0, 2, 1, 0, 'b2', [[0, 'Clockwise', 'ساعتگرد'], [1, 'Counterclockwise', 'پادساعتگرد'], [2, 'Both ways', 'به هر دو سو']]], CX, CY, SOFT(0.1)],
+  bars: [['dir', 'Bars', 0, 90, 90, 0, 'b0', [[0, 'Vertical', 'عمودی'], [90, 'Horizontal', 'افقی']]], ['count', 'Bar count', 2, 40, 1, 12, 'b2'], SOFT(0.15)],
+  ripple: [['rings', 'Ring count', 2, 24, 1, 8, 'b2'], CX, CY, SOFT(0.2)],
+  slices: [['dir', 'Slices', 0, 90, 90, 0, 'b0', [[0, 'Vertical', 'عمودی'], [90, 'Horizontal', 'افقی']]], ['count', 'Slice count', 2, 24, 1, 8, 'b2']],
+  blinds: [['dir', 'Strips', 0, 270, 90, 90, 'b0', [[90, 'Horizontal, from the top', 'افقی، از بالا'], [270, 'Horizontal, from the bottom', 'افقی، از پایین'], [180, 'Vertical, from the right', 'عمودی، از راست'], [0, 'Vertical, from the left', 'عمودی، از چپ']]],
+    ['count', 'Strip count', 2, 30, 1, 5, 'b2'], SOFT(0.15)],
+});
+/* 175: every transition's name and one line about it, in Persian and English (the app's own words: «the next clip») */
+const NAMES = {
+  liquid: ['قطرهٔ مایع', 'Liquid drop', 'قطره‌ای می‌افتد و موجش کلیپِ بعدی را باز می‌کند.', 'A drop lands; its ripple opens onto the next clip.'],
+  glass: ['شیشهٔ ضخیم', 'Glass pane', 'شیشه‌ای ضخیم از کادر می‌گذرد و کلیپِ بعدی از پشتِ آن پیدا می‌شود.', 'A thick pane of glass slides across, with the next clip seen through it.'],
+  frosted: ['شیشهٔ مات', 'Frosted glass', 'کادر مات می‌شود، کلیپِ بعدی پشتِ شیشه شکل می‌گیرد و بعد شیشه صاف می‌شود.', 'The frame frosts over, the next clip forms behind the frost, then the glass clears.'],
+  reeded: ['شیشهٔ شیاردار', 'Reeded glass', 'صفحه‌ای از شیشهٔ شیاردار از کادر می‌گذرد.', 'A panel of fluted glass sweeps across.'],
+  stained: ['شیشهٔ رنگی', 'Stained glass', 'کادر به تکه‌های شیشهٔ رنگی می‌شکند و کلیپِ بعدی از میانِ آن‌ها پیدا می‌شود.', 'The frame breaks into panes of colored glass that give way to the next clip.'],
+  ink: ['شکوفهٔ جوهر', 'Ink bloom', 'جوهر از سه قطره پخش می‌شود و کلیپِ بعدی را با خود می‌آورد.', 'Ink spreads from three drops and carries in the next clip.'],
+  burn: ['سوختنِ اخگر', 'Ember burn', 'کادر در امتدادِ لبه‌ای گداخته می‌سوزد.', 'The frame burns away along a glowing edge.'],
+  whip: ['پنِ شلاقی', 'Whip pan', 'حرکتِ تندِ دوربین با محویِ حرکت، تا کلیپِ بعدی.', 'A fast camera pan with motion blur, landing on the next clip.'],
+  glitch: ['گلیچ', 'Glitch', 'رنگ‌های جداشده، خط‌های پاره و بلوک‌های شکسته.', 'Split colors, torn lines and broken blocks.'],
+  zoom: ['زومِ عبوری', 'Zoom through', 'دوربین با محویِ شعاعی به درونِ کادر می‌رود و در کلیپِ بعدی بیرون می‌آید.', 'The camera rushes in with radial blur and out into the next clip.'],
+  mosaic: ['موزاییک', 'Mosaic', 'کادر به کاشی‌هایی بزرگ‌شونده می‌شکند و در کلیپِ بعدی جمع می‌شود.', 'The frame breaks into growing tiles that resolve into the next clip.'],
+  halftone: ['هاف‌تون', 'Halftone', 'کادر به نقطه‌های چاپی تبدیل می‌شود که بزرگ و کوچک می‌شوند.', 'The frame turns into printed dots that swell and shrink.'],
+  chrome: ['کرومِ مایع', 'Liquid chrome', 'موجی از کرومِ مایع از کادر می‌گذرد.', 'A wave of liquid chrome washes across the frame.'],
+  cube: ['چرخشِ مکعب', 'Cube spin', 'کلیپ وجهِ یک مکعب می‌شود و می‌چرخد تا کلیپِ بعدی پیدا شود.', 'The clip becomes a face of a cube that turns to show the next one.'],
+  flip: ['ورق‌خوردنِ کارت', 'Card flip', 'کادر مثلِ کارت برمی‌گردد؛ کلیپِ بعدی پشتِ آن است.', 'The frame flips over like a card, with the next clip on its back.'],
+  lens: ['گویِ شیشه‌ای', 'Glass ball', 'گویی شیشه‌ای بزرگ می‌شود و کلیپِ بعدی را نشان می‌دهد.', 'A glass ball grows over the frame, showing the next clip.'],
+  leak: ['نشتِ نور', 'Light leak', 'نورِ داغ از لبه‌ها نشت می‌کند و کادر را می‌سوزاند.', 'Hot light leaks in from the edges and burns through.'],
+  melt: ['ذوبِ دیتاموش', 'Datamosh melt', 'تصویرِ قبلی در حرکتِ تصویرِ تازه کش می‌آید و بعد جا خالی می‌کند.', 'The old picture smears along the new one’s motion, then gives way.'],
+  smear: ['کشیدگیِ حرکت', 'Smear frames', 'هر دو کلیپ در حرکتِ تندِ دوربین کش می‌آیند.', 'Both clips stretch into motion streaks as the camera whips.'],
+  pool: ['آبِ استخر', 'Pool water', 'کادر زیرِ آبِ موج‌دار با نورِ لرزان فرو می‌رود.', 'The frame sinks under rippling pool water with caustic light.'],
+  rays: ['پرتوهای نور', 'God rays', 'پرتوهای نور از بالا می‌تابند و کلیپِ بعدی را می‌آورند.', 'Shafts of light break through and bring in the next clip.'],
+  barrel: ['اعوجاجِ لنز', 'Lens distortion', 'کادر از پشتِ لنزی واید باد می‌کند، با حاشیه‌های رنگی.', 'The frame bulges through a wide lens, with color fringes.'],
+  push: ['هل دادن', 'Push', 'کلیپِ بعدی کلیپِ فعلی را به کنار هل می‌دهد.', 'The next clip pushes the current one out sideways.'],
+  wipe: ['وایپِ خطی', 'Linear wipe', 'لبه‌ای نرم از یک سو به سوی دیگر می‌رود و کلیپِ بعدی را نشان می‌دهد.', 'A soft edge travels across and uncovers the next clip.'],
+  barn: ['درِ دولنگه', 'Barn doors', 'کادر از وسط باز می‌شود، مثلِ دو لنگهٔ در.', 'The frame opens from the middle like a pair of doors.'],
+  blocks: ['محوِ خانه‌خانه', 'Block dissolve', 'کادر خانه‌خانه و به ترتیبی تصادفی ناپدید می‌شود.', 'The frame vanishes block by block, in random order.'],
+  checker: ['شطرنجی', 'Checker wipe', 'خانه‌های شطرنجی یکی‌درمیان و در امتدادِ قطر محو می‌شوند.', 'Checkerboard squares fade away, alternating, along a diagonal.'],
+  diamond: ['لوزی‌ها', 'Diamond wipe', 'شبکه‌ای از لوزی‌های بزرگ‌شونده کلیپِ بعدی را نشان می‌دهد.', 'A lattice of growing diamonds uncovers the next clip.'],
+  iris: ['دریچهٔ دایره', 'Iris wipe', 'دایره‌ای از یک نقطه باز می‌شود.', 'A circle opens out from a point.'],
+  noise: ['محوِ ابری', 'Noise dissolve', 'کادر در نقشی ابری و طبیعی حل می‌شود.', 'The frame dissolves through an organic, cloudy pattern.'],
+  peel: ['برگشتنِ برگه', 'Page peel', 'گوشهٔ کادر مثلِ برگهٔ کاغذ برمی‌گردد و کنار می‌رود.', 'A corner of the frame curls up like a page and peels away.'],
+  clock: ['عقربهٔ ساعت', 'Clock wipe', 'مثلِ عقربهٔ ساعت دور می‌زند.', 'Sweeps around like the hand of a clock.'],
+  bars: ['نوارهای تصادفی', 'Random bars', 'نوارهای موازی به ترتیبی تصادفی ناپدید می‌شوند.', 'Parallel bars vanish in random order.'],
+  ripple: ['حلقه‌های موج', 'Ripple wipe', 'حلقه‌هایی هم‌مرکز، یکی‌یکی از مرکز به بیرون، محو می‌شوند.', 'Concentric rings fade away from the center outward.'],
+  slices: ['برش‌های لغزان', 'Slice wipe', 'کادر به نوارهایی برش می‌خورد که در جهت‌های مخالف بیرون می‌لغزند.', 'The frame is sliced into strips that slide away in opposite directions.'],
+  blinds: ['کرکره', 'Venetian blinds', 'مثلِ کرکره: تیغه‌ها همه با هم بسته می‌شوند.', 'Like blinds: the strips close all at once.'],
+};
+for (const [k, v] of Object.entries(NAMES)) if (LIB[k]) Object.assign(LIB[k], { fa: v[0], name: v[1], aboutFa: v[2], aboutEn: v[3] });
+/* the controls' names in Persian (by their English name) */
+const TPFA = { 'Drop across': 'جای قطره — افقی', 'Drop down': 'جای قطره — عمودی', 'Ripple strength': 'شدتِ موج', 'Ring count': 'تعدادِ حلقه‌ها', 'Rim light': 'نورِ لبه', 'Thickness': 'ضخامت',
+  'Refraction': 'شکستِ نور', 'Color split': 'جداییِ رنگ‌ها', 'Pane width': 'پهنای شیشه', 'Turn': 'چرخش', 'Blur': 'محوی', 'Frost': 'ماتی', 'Pane size': 'اندازهٔ شیشه', 'Bevel': 'پخِ لبه',
+  'Rib width': 'پهنای شیارها', 'Panel width': 'پهنای صفحه', 'Ball size': 'اندازهٔ گوی', 'Surface ripple': 'موجِ سطح', 'Intensity': 'شدت', 'Flare size': 'اندازهٔ تابش', 'Streak': 'رگهٔ نور',
+  'Grain': 'دانه', 'Wave strength': 'شدتِ موج‌ها', 'Caustic light': 'نقشِ نور در آب', 'Caustic scale': 'اندازهٔ نقشِ نور', 'Water tint': 'رنگِ آب', 'Ray count': 'تعدادِ پرتوها',
+  'Source across': 'جای منبع — افقی', 'Haze': 'مه', 'Strength': 'قدرت', 'Color fringe': 'حاشیهٔ رنگی', 'Vignette': 'تیرگیِ گوشه‌ها', 'Amount': 'مقدار', 'Blocks': 'بلوک‌ها',
+  'Ember glow': 'درخششِ اخگر', 'Burn pattern': 'نقشِ سوختن', 'Edge darkness': 'تیرگیِ لبه', 'Texture scale': 'اندازهٔ بافت', 'Raggedness': 'ناهمواریِ لبه', 'Motion blur': 'محویِ حرکت',
+  'Zoom depth': 'عمقِ زوم', 'Radial blur': 'محویِ شعاعی', 'Tile size': 'اندازهٔ کاشی', 'Grid lines': 'خط‌های شبکه', 'Dot size': 'اندازهٔ نقطه', 'Bulge': 'برآمدگی', 'Color': 'رنگ',
+  'Leading': 'پهنای سرب', 'Wave width': 'پهنای موج', 'Surface detail': 'جزئیاتِ سطح', 'Streak length': 'طولِ رگه‌ها', 'Band count': 'تعدادِ نوارها', 'Smear': 'کشیدگی',
+  'Block size': 'اندازهٔ خانه‌ها', 'Pull back': 'عقب کشیدن', 'Tilt': 'کجی', 'Edge shadow': 'سایهٔ لبه', 'Direction': 'جهت', 'Softness': 'نرمیِ لبه', 'Opening': 'باز شدن',
+  'Diamond size': 'اندازهٔ لوزی‌ها', 'Center across': 'مرکز — افقی', 'Center down': 'مرکز — عمودی', 'Pattern scale': 'اندازهٔ نقش', 'Variation': 'گونه', 'Corner': 'گوشه',
+  'Curl size': 'اندازهٔ تاخوردگی', 'Shading': 'سایه‌روشن', 'Highlight': 'برقِ کاغذ', 'Shadow': 'سایه', 'Starts at': 'شروع از', 'Bars': 'نوارها', 'Bar count': 'تعدادِ نوارها',
+  'Slices': 'برش‌ها', 'Slice count': 'تعدادِ برش‌ها', 'Strips': 'تیغه‌ها', 'Strip count': 'تعدادِ تیغه‌ها' };
 const GLSL_PRE = `#version 300 es
 precision highp float;
 uniform sampler2D ta;
@@ -993,5 +1161,5 @@ function tparams(type, vals = {}) {
   for (const [k, , , , , d, slot] of TP[type] || []) V[slot[0]][+slot[1]] = vals[k] ?? d;
   return { pa, pb, pc, pd };
 }
-root.AvaTrans = { LIB, TP, GLSL_PRE, VS, tparams };
+root.AvaTrans = { LIB, TP, TPFA, GLSL_PRE, VS, tparams };
 })(window);

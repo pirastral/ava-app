@@ -7,7 +7,7 @@
 const $ = id => document.getElementById(id);
 const API = () => window.pywebview.api;
 // 169: a whole music track crosses the bridge in pieces (one multi-megabyte answer stalled the window: «downloading music…» forever)
-async function readBlob(tok, size){ const parts = []; for (let off = 0; off < size; off += 786432){ const r = await API().blob_read(tok, off, 786432); if (!r || !r.ok) throw new Error((r && r.error) || 'blob'); parts.push(r.b64); } return parts.join(''); }
+async function readBlob(tok, size){ const parts = []; for (let off = 0; off < size; off += 3145728){ const r = await API().blob_read(tok, off, 3145728); if (!r || !r.ok) throw new Error((r && r.error) || 'blob'); parts.push(r.b64); } return parts.join(''); }
 async function bigResult(r){ if (r && r.ok && r.blob && !r.b64){ r.b64 = await readBlob(r.blob, r.size); delete r.blob; } return r; }   // 170
 function wrapBig(){ const api = window.pywebview && window.pywebview.api; if (!api || api.__big) return;
   ['music_load', 'music_fetch', 'music_import', 'music_generate'].forEach(n => { const f = api[n]; if (typeof f !== 'function') return; api[n] = async (...a) => { const r = await f.apply(api, a); if (r && r.ok && r.blob && !r.b64) r.b64 = await readBlob(r.blob, r.size); return r; }; });
@@ -17,6 +17,7 @@ const FA = s => String(s).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
 let lang = 'fa';
 const T = (fa, en) => lang === 'fa' ? fa : en;
 const num = s => lang === 'fa' ? FA(s) : String(s);
+const pctSign = () => lang === 'fa' ? '٪' : '%';   /* 175: 100% in English, ۱۰۰٪ in Persian */
 const fmt = t => `${String(Math.floor(t / 60)).padStart(2, '0')}:${(t % 60).toFixed(1).padStart(4, '0')}`;
 const escapeHtml = x => String(x ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');   // 160: quotes too — attributes broke on them
 const PAD = 18, SNAP_PX = 8, GAP = 0.12;            // margin before 0:00; snapping; the breath between parts
@@ -25,8 +26,7 @@ let uid = Date.now() % 100000, zoom = 22, playhead = 0, playing = false, snapOn 
 // ---------------- state ----------------
 const S = {
   lines: {},                                         // id -> { text, dirty, voice: {gVoice,gPreset,gState} | null }
-  tracks: [ { id: 's1', name: 'گفتار ۱', en: 'Speech 1', kind: 'speech', gapless: false, clips: [] },
-            { id: 'm1', name: 'موسیقی', en: 'Music', kind: 'music', clips: [] } ],
+  tracks: [ { id: 's1', name: 'گفتار ۱', en: 'Speech 1', kind: 'speech', gapless: false, clips: [] } ],
   proj: { engine: 'google', g_model: 'gemini-3.1-flash-tts-preview', g_voice: 'Charon', g_preset: 'neutral', g_state: '', g_age: '', g_lang: 'fa', g_continuity: true, g_style: '',
           duo: { on: false, a: { name: '', voice: 'Charon' }, b: { name: '', voice: 'Kore' } },
           cbx: { voice: 'default', speed: 1, exag: 0.8, cfg: 1, temp: 0 }, light: { speed: 1, noise: 0.667, noisew: 0.8 },
@@ -37,7 +37,7 @@ const S = {
 //   (a part without a trusted line map is ONE clip carrying several lines)
 const AUD = new Map();                               // gulp id -> { b64, buf (AudioBuffer) }
 const tracks = () => S.tracks;
-const speechClips = () => S.tracks.filter(t => t.kind === 'speech').flatMap((t, ti) => t.clips.map(c => Object.assign(c, { _ti: ti, _track: t })));
+const speechClips = () => S.tracks.flatMap((t, ti) => t.clips.filter(c => !c.type).map(c => Object.assign(c, { _ti: ti, _track: t })));   // 172: any track; speech clips only
 const scriptOrder = () => speechClips().sort((a, b) => a.at - b.at || a._ti - b._ti);
 const orderedLines = () => scriptOrder().flatMap(c => c.lines);
 const clipOfLine = id => { for (const t of S.tracks) for (const c of t.clips) if (c.lines && c.lines.includes(id)) return [t, c]; return [null, null]; };
@@ -50,7 +50,7 @@ const lineEngine = id => lineVoice(id).engine;
 function say(msg, kind){ const s = $('status'); s.textContent = msg || ''; s.className = 'min-w-0 flex-1 truncate ' + (kind === 'err' ? 'text-error' : 'text-primary'); }
 window.avaStatus = ({ msg, pct }) => { say(msg, 'ok'); const p = $('prog'); if (pct === undefined || pct === null) p.removeAttribute('value'); else p.value = pct; };
 function setBusy(on){ busy = on; $('prog').classList.toggle('hidden', !on); $('cancelBtn').classList.toggle('hidden', !on); $('genBtn').disabled = on; }
-async function cancelJob(){ try { await API().cancel(); } catch (e) {} say(T('لغو شد.', 'Cancelled.'), 'ok'); }
+async function cancelJob(){ try { await API().cancel(); } catch (e) {} say(T('لغو شد.', 'Canceled.'), 'ok'); }
 const isCancel = e => /cancel|لغو/i.test(String(e && e.message || e));
 
 // ---------------- persistence: the document survives switching interfaces ----------------
@@ -104,6 +104,10 @@ let DIRECTOR = { ages: [], states: [] };
 // MODELS, EZ_TOOLS, LANGS and I18N_EN come from the classic interface at build time
 const isG38 = () => /3\.8/.test(S.proj.g_model);
 const tr = s => lang === 'en' ? (I18N_EN[s] || s) : s;          // the classic interface's own English table
+/* 175: names shown in the interface language — an engine's short name, a reading style, a mood */
+const engShort = e => tr(((ENGINES.find(r => r[0] === e) || [e, e])[1]) || '').split(' — ')[0];
+const presetName = k => tr((G_PRESETS.find(p => p[0] === k) || [k, k])[1] || '');
+const stateName = k => { const a = (DIRECTOR.states || []).find(r => r[0] === k); return a ? (lang === 'fa' ? a[1] : (a[2] || a[1])) : k; };
 const optList = (rows, cur) => rows.map(([v, l]) => `<option value="${escapeHtml(v)}" ${v === cur ? 'selected' : ''}>${escapeHtml(tr(l))}</option>`).join('');
 function fillInspector(){
   $('pModel').innerHTML = optList(MODELS, S.proj.g_model);
@@ -182,16 +186,16 @@ function fillLineInspector(id){
   const L = S.lines[id] || {}, v = L.voice || {}, sp = speakerOfLine(id), eff = lineVoice(id), eng = eff.engine;
   const base = { engine: S.proj.engine, gVoice: S.proj.g_voice, gPreset: S.proj.g_preset, gState: S.proj.g_state, ...spkVoice(id) };
   const from = sp ? T('مثلِ گوینده', 'as the speaker') : T('مثلِ پروژه', 'as the project');
-  const engName = x => (((ENGINES.find(r => r[0] === x) || [x, x])[1]) || '').split(' — ')[0];
+  const engName = engShort;
   const set = k => v[k] !== undefined && v[k] !== '' && v[k] !== null;
   const lab = (t, k) => `<legend class="fieldset-legend flex w-full items-center gap-1 text-xs font-medium text-base-content/70"><span class="flex-1">${t}</span>${set(k) ? `<span class="ddb text-primary" role="button" onclick="setLineOpt('${k}', null)" data-tip="${T('برگشت: ', 'Back: ')}${from}" aria-label="reset"><svg><use href="#i-rotate-ccw"/></svg></span>` : ''}</legend>`;
   const inh = txt => `<option value="">— ${from}${txt ? ': ' + escapeHtml(String(txt)) : ''} —</option>`;
   const sel = (t, k, html) => `<fieldset class="fieldset">${lab(t, k)}<select id="ln_${k}" class="select select-sm w-full" onchange="setLineOpt('${k}', this.value)">${html}</select></fieldset>`;
   const rng = (t, k, min, max, step, cur) => `<fieldset class="fieldset">${lab(t, k)}<div class="flex items-center gap-2"><input id="ln_${k}" type="range" min="${min}" max="${max}" step="${step}" value="${cur}" class="range range-xs flex-1 text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] ${set(k) ? '' : 'opacity-60'}" oninput="this.nextElementSibling.textContent = num(this.value); this.classList.remove('opacity-60')" onchange="setLineOpt('${k}', +this.value)"><span class="w-10 text-end text-xs tabular-nums text-base-content/70">${num(cur)}</span></div></fieldset>`;
-  const pres = G_PRESETS.map(p => [p[0], p[1]]), states = DIRECTOR.states.filter(a => a[0] !== 'custom').map(a => [a[0], a[1]]), lbl = (list, k) => (list.find(r => r[0] === k) || [k, k])[1];
-  let out = sp ? `<div class="flex items-center gap-2 rounded-box bg-base-100 p-2"><span class="grid size-8 shrink-0 place-items-center overflow-hidden rounded-full text-xs font-bold" style="${spkBg(spkList().indexOf(sp))}">${spkFace(sp)}</span><div class="min-w-0 flex-1"><div class="truncate text-sm font-semibold">${escapeHtml(sp.name)}</div><div class="truncate text-xs text-base-content/60">${escapeHtml(spkSummary(sp))}</div></div></div>
-      <p class="text-xs text-base-content/60">${T('این خط با تنظیماتِ گوینده‌اش خوانده می‌شود. هر چیزی را این‌جا عوض کنید فقط برای همین خط عوض می‌شود — نه برای گوینده و نه بقیهٔ خط‌ها.', "This line is read with its speaker's settings. Anything you change here changes for this line only — not for the speaker or other lines.")}</p>`
-    : `<p class="text-xs text-base-content/60">${T('این خط گوینده ندارد و با تنظیماتِ پروژه خوانده می‌شود؛ هر چیزی را این‌جا عوض کنید فقط برای همین خط است.', "This line has no speaker and is read with the project's settings; anything you change here is for this line only.")}</p>`;
+  const pres = G_PRESETS.map(p => [p[0], p[1]]), states = DIRECTOR.states.filter(a => a[0] !== 'custom').map(a => [a[0], lang === 'fa' ? a[1] : (a[2] || a[1])]), lbl = (list, k) => tr((list.find(r => r[0] === k) || [k, k])[1]);
+  let out = sp ? `<div class="flex items-center gap-2 rounded-box bg-base-100 p-2"><span class="grid size-8 shrink-0 place-items-center overflow-hidden rounded-full text-xs font-bold" style="${spkBg(spkList().indexOf(sp))}">${spkFace(sp)}</span><div class="min-w-0 flex-1"><div class="truncate text-sm font-semibold" data-keep-fa>${escapeHtml(sp.name)}</div><div class="truncate text-xs text-base-content/60">${escapeHtml(spkSummary(sp))}</div></div></div>
+      <p class="text-xs text-base-content/60">${T('این خط با تنظیماتِ گوینده‌اش خوانده می‌شود. هر چیزی را این‌جا عوض کنید فقط برای همین خط عوض می‌شود — نه برای گوینده و نه بقیهٔ خط‌ها.', "This line uses its speaker’s settings. Changes here apply to this line only — not to the speaker or other lines.")}</p>`
+    : `<p class="text-xs text-base-content/60">${T('این خط گوینده ندارد و با تنظیماتِ پروژه خوانده می‌شود؛ هر چیزی را این‌جا عوض کنید فقط برای همین خط است.', "This line has no speaker, so it uses the project’s settings. Changes here apply to this line only.")}</p>`;
   out += sel(T('موتور', 'Engine'), 'engine', inh(engName(base.engine)) + optList(ENGINES, v.engine || ''));
   if (eng === 'google'){
     out += sel(T('صدا', 'Voice'), 'gVoice', inh(base.gVoice) + voiceOptions(v.gVoice || '', true));
@@ -243,9 +247,9 @@ function renderScript(){ Object.values(S.lines).forEach(normLine); const clips =
 function lineRow(id, n, c){
   const L = S.lines[id]; if (!L) return '';
   const badge = (cls, icon, text, tip) => `<span class="badge ${cls} badge-xs gap-1 align-middle ${tip ? 'tooltip' : ''}" ${tip ? `data-tip="${tip}"` : ''} contenteditable="false">${icon ? `<svg class="size-2.5"><use href="#i-${icon}"/></svg>` : ''}${text}</span>`;
-  const extra = (L.dirty ? badge('badge-soft badge-warning', 'pencil', T('تغییر کرده', 'edited'), T('متن یا صدای این خط عوض شده و هنوز دوباره ساخته نشده', 'changed, not re-voiced yet')) : '')
-    + (c.unvoiced && (L.text || '').trim() ? badge('badge-ghost', '', T('ساخته نشده', 'not voiced')) : '')
-    + (c.lines.length > 1 && c.lines[0] === id ? badge('badge-soft badge-info', 'layers', T('یک کلیپ', 'one clip'), T('این خط‌ها یک کلیپ‌اند: نقشهٔ خط برای این بخش ساخته نشد', 'these lines are one clip: no line map for this part')) : '')
+  const extra = (L.dirty ? badge('badge-soft badge-warning', 'pencil', T('تغییر کرده', 'edited'), T('متن یا صدای این خط عوض شده و هنوز دوباره ساخته نشده', 'changed — not regenerated yet')) : '')
+    + (c.unvoiced && (L.text || '').trim() ? badge('badge-ghost', '', T('ساخته نشده', 'not generated')) : '')
+    + (c.lines.length > 1 && c.lines[0] === id ? badge('badge-soft badge-info', 'layers', T('یک کلیپ', 'one clip'), T('این خط‌ها یک کلیپ‌اند: نقشهٔ خط برای این بخش ساخته نشد', 'these lines share one clip, so this part has no line map')) : '')
     + (c.lines.length === 1 && (c.trimIn > 0.05 || c.trimOut > 0.05) ? badge('badge-error badge-soft', 'scissors', T('کوتاه شده', 'trimmed')) : '');
   return `<div class="ln group relative flex items-start gap-1.5 px-2" data-id="${id}">
     <span class="grip mt-1.5 grid size-6 shrink-0 cursor-grab place-items-center rounded text-base-content/40 opacity-0 hover:bg-base-300 group-hover:opacity-100" title="${T('بکشید تا جابه‌جا شود', 'drag to reorder')}"><svg class="size-4"><use href="#i-grip-vertical"/></svg></span>
@@ -256,7 +260,7 @@ function lineRow(id, n, c){
 function lineBar(){
   const b = 'btn btn-xs join-item gap-1 border-base-content/15 bg-base-100';
   return `<div class="mb-1.5 mt-0.5 flex flex-wrap items-center gap-1.5" contenteditable="false"><div class="join">
-    <button class="btn btn-primary btn-xs join-item gap-1" onclick="revoiceSelected()"><svg class="size-3.5"><use href="#i-refresh-cw"/></svg>${T('بازتولید', 'Re-voice')}</button>
+    <button class="btn btn-primary btn-xs join-item gap-1" onclick="revoiceSelected()"><svg class="size-3.5"><use href="#i-refresh-cw"/></svg>${T('بازتولید', 'Regenerate')}</button>
     <button class="${b}" onclick="playLine()"><svg class="size-3.5"><use href="#i-play"/></svg>${T('شنیدن', 'Play')}</button>
     <button class="${b}" onclick="newLineAfter()"><svg class="size-3.5"><use href="#i-plus"/></svg>${T('خطِ تازه', 'New line')}</button>
     <button class="btn btn-xs join-item btn-square border-base-content/15 bg-base-100" onclick="diacritize(true)" data-tip="حرکت‌گذاریِ همین خط" data-tip-en="Diacritize this line" aria-label="diacritize"><svg class="size-3.5"><use href="#i-wand-sparkles"/></svg></button>
@@ -280,14 +284,14 @@ function paintSel(){ sel.forEach(id => { if (!S.lines[id]) sel.delete(id); });
     const id = [...sel][0], L = S.lines[id], [, c] = clipOfLine(id);
     $('lineTitle').textContent = T(`خطِ ${FA(orderedLines().indexOf(id) + 1)}`, `Line ${orderedLines().indexOf(id) + 1}`);
     $('lineState').innerHTML = L.dirty ? `<span class="badge badge-soft badge-warning badge-sm gap-1"><svg class="size-3"><use href="#i-pencil"/></svg>${T('تغییر کرده', 'edited')}</span>`
-      : c && c.unvoiced ? `<span class="badge badge-ghost badge-sm">${T('ساخته نشده', 'not voiced')}</span>`
-      : c ? `<span class="badge badge-soft badge-success badge-sm gap-1"><svg class="size-3"><use href="#i-check"/></svg>${T('ساخته‌شده', 'voiced')}، ${num(dur(c).toFixed(1))} ${T('ثانیه', 's')}</span>` : '';
+      : c && c.unvoiced ? `<span class="badge badge-ghost badge-sm">${T('ساخته نشده', 'not generated')}</span>`
+      : c ? `<span class="badge badge-soft badge-success badge-sm gap-1"><svg class="size-3"><use href="#i-check"/></svg>${T('ساخته‌شده', 'generated')}${T('، ', ', ')}${num(dur(c).toFixed(1))} ${T('ثانیه', 's')}</span>` : '';
     fillLineInspector(id);
     if (selKey !== lastSelKey) showInsp('line');            // only a NEW selection moves the inspector
   } else if (!$('insp-music').classList.contains('hidden') && selClip && String(selClip).startsWith('mu')){ /* keep the music panel */ }
   else { if (selKey !== lastSelKey) showInsp('proj'); $('projTitle').textContent = sel.size > 1 ? T(`${FA(sel.size)} خط انتخاب شده`, `${sel.size} lines selected`) : T('پروژه', 'Project');
     let mb = $('multiRevoice'); if (!mb){ mb = document.createElement('button'); mb.id = 'multiRevoice'; mb.className = 'btn btn-primary btn-xs ms-auto gap-1'; mb.onclick = () => revoiceSelected(); $('projTitle').parentElement.appendChild(mb); }
-    mb.innerHTML = `<svg class="size-3.5"><use href="#i-refresh-cw"/></svg>${T('بازتولیدِ این خط‌ها', 'Re-voice these lines')}`; mb.classList.toggle('hidden', sel.size < 2); }   // 169: many lines selected → re-voice them all
+    mb.innerHTML = `<svg class="size-3.5"><use href="#i-refresh-cw"/></svg>${T('بازتولیدِ این خط‌ها', 'Regenerate these lines')}`; mb.classList.toggle('hidden', sel.size < 2); }   // 169: many lines selected → re-voice them all
 }
 function updatePCaret(){
   const pc = $('pcaret'); if (!pc) return;
@@ -428,9 +432,9 @@ function buildTagMenus(){
   const m = $('tagMenu'), model = S.proj.g_model, eng = sel.size === 1 ? lineEngine([...sel][0]) : S.proj.engine;
   const item0 = t => `<li><a dir="ltr" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</a></li>`;
   if (eng === 'fish'){ m.innerHTML = (DIRECTOR.fish_tags || []).map(([g, list]) => `<li class="menu-title">${escapeHtml(groupLabel(g))}</li>` + list.map(item0).join('')).join(''); return buildToneMenu(); }
-  if (eng !== 'google'){ m.innerHTML = `<li class="menu-title whitespace-normal">${T('این موتور فقط مکث می‌گیرد', 'This engine takes pauses only')}</li>` + ['[مکث]', '[مکث بلند]'].map(item0).join(''); return buildToneMenu(); }
+  if (eng !== 'google'){ m.innerHTML = `<li class="menu-title whitespace-normal">${T('این موتور فقط مکث می‌گیرد', 'This engine supports pauses only')}</li>` + ['[مکث]', '[مکث بلند]'].map(item0).join(''); return buildToneMenu(); }
   const item = t => `<li><a dir="ltr" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</a></li>`;
-  if (/2\.5/.test(model)) m.innerHTML = `<li class="menu-title whitespace-normal">${T('مدل‌های 2.5 برچسبِ صوتی نمی‌گیرند.', 'The 2.5 models take no sound tags.')}</li>`;
+  if (/2\.5/.test(model)) m.innerHTML = `<li class="menu-title whitespace-normal">${T('مدل‌های 2.5 برچسبِ صوتی نمی‌گیرند.', 'Gemini 2.5 models don’t support sound tags.')}</li>`;
   else if (isG38()) m.innerHTML = G38_TAGS.map(([g, list]) => `<li class="menu-title">${escapeHtml(groupLabel(g))}</li>` + list.map(item).join('')).join('')
     + `<li class="menu-title">${T('واکنشِ شنونده', 'Listener reactions')}</li>` + G38_BACK.map(item).join('');
   else m.innerHTML = G_TAGS.map(([g, list]) => `<li class="menu-title">${escapeHtml(groupLabel(g))}</li>` + list.map(item).join('')).join('');
@@ -439,8 +443,8 @@ function buildTagMenus(){
 function buildToneMenu(){
   if (isG38() && !$('tagMenu').querySelector('[data-x="ipa"]')) $('tagMenu').insertAdjacentHTML('beforeend', `<li class="menu-title">${T('تلفظ و هم‌زمانی', 'Pronunciation & overlap')}</li><li data-x="ipa"><a onmousedown="event.preventDefault()" onclick="insertIPA()">${T('تلفظ با IPA: /…/', 'Pronounce with IPA: /…/')}</a></li><li><a onmousedown="event.preventDefault()" onclick="insertOverlap()">${T('واکنشِ هم‌زمان: |…|', 'Overlapping reaction: |…|')}</a></li>`);
   const tones = (typeof G38_TONES !== 'undefined' ? G38_TONES : DIRECTOR.states.filter(a => a[0] && a[0] !== 'custom').map(a => a[1]));
-  $('toneMenu').innerHTML = isG38() ? tones.map(x => `<li><a data-tone="${escapeHtml(x)}">${escapeHtml(x)}</a></li>`).join('')
-    : `<li class="menu-title whitespace-normal">${T('لحنِ خط فقط در 3.8؛ در مدل‌های دیگر از «حال و احساس»ِ همین خط استفاده کنید.', 'Line tone is for 3.8; on other models use this line\'s mood.')}</li>`;
+  $('toneMenu').innerHTML = isG38() ? tones.map(x => `<li><a data-tone="${escapeHtml(x)}">${escapeHtml(toneLabel(x))}</a></li>`).join('')
+    : `<li class="menu-title whitespace-normal">${T('لحنِ خط فقط در 3.8؛ در مدل‌های دیگر از «حال و احساس»ِ همین خط استفاده کنید.', 'Line tone works with Gemini 3.8; on other models, set this line’s mood instead.')}</li>`;
 }
 let lastLine = null;
 function insertTag(tag){
@@ -458,17 +462,17 @@ function setTone(tone){
 }
 async function diacritize(){
   const ids = orderedLines(), text = ids.map(id => S.lines[id].text).join('\n');
-  if (!text.trim()){ say(T('اول یک متن فارسی بنویسید یا بچسبانید.', 'Type or paste a Persian text first.'), 'err'); return; }
+  if (!text.trim()){ say(T('اول یک متن فارسی بنویسید یا بچسبانید.', 'Type or paste some Persian text first.'), 'err'); return; }
   if (busy) return; setBusy(true); say(T('دارم حرکت‌ها را می‌گذارم…', 'Adding diacritics…'), 'ok');
   try {
     const r = await API().ezafe(text, $('ezTool').value, '');
     if (!r.ok) throw new Error(r.error || T('خطای ناشناخته', 'Unknown error'));
     const out = r.text.split('\n');
-    if (out.length !== ids.length) throw new Error(T('حرکت‌گذاری تعدادِ خط‌ها را عوض کرد؛ چیزی تغییر داده نشد.', 'Diacritization changed the number of lines; nothing was changed.'));
+    if (out.length !== ids.length) throw new Error(T('حرکت‌گذاری تعدادِ خط‌ها را عوض کرد؛ چیزی تغییر داده نشد.', 'Diacritizing would change the number of lines, so nothing was changed.'));
     remember();
     ids.forEach((id, k) => { const L = S.lines[id]; if (out[k] !== L.text){ L.text = out[k]; const [, c] = clipOfLine(id); if (c && !c.unvoiced) L.dirty = true; } });
-    renderScript(); autosave(); say(T('حرکت‌های پیشنهادی توی متن گذاشته شد؛ قبل از ساختن گفتار می‌توانید دستکاری‌شان کنید.', 'Suggested diacritics were added; you can adjust them before voicing.'), 'ok');
-  } catch (e) { say(isCancel(e) ? T('لغو شد.', 'Cancelled.') : (e.message || String(e)), isCancel(e) ? 'ok' : 'err'); }
+    renderScript(); autosave(); say(T('حرکت‌های پیشنهادی توی متن گذاشته شد؛ قبل از ساختن گفتار می‌توانید دستکاری‌شان کنید.', 'Suggested diacritics were added — adjust them before generating if you like.'), 'ok');
+  } catch (e) { say(isCancel(e) ? T('لغو شد.', 'Canceled.') : (e.message || String(e)), isCancel(e) ? 'ok' : 'err'); }
   finally { setBusy(false); }
 }
 function clearDiacritics(){
@@ -503,7 +507,7 @@ function renderTimeline(){
       <svg class="size-3.5 shrink-0 opacity-70"><use href="#i-${ICON[t.kind]}"/></svg>
       <span class="ui flex-1 truncate font-semibold">${T(t.name, t.en)}</span>
       ${t.kind === 'speech' ? `<label class="flex cursor-pointer items-center" data-tip="${T('بدونِ فاصله', 'gapless')}"><input type="checkbox" class="checkbox checkbox-xs" ${t.gapless ? 'checked' : ''} onchange="setGapless(${i}, this.checked)"></label>` : ''}
-      <button class="btn btn-ghost btn-xs btn-square ${t.muted ? 'bg-error/15 text-error' : ''}" onclick="toggleMute(${i})" aria-label="mute" aria-pressed="${t.muted ? 'true' : 'false'}" data-tip="${t.muted ? T('بی‌صدا است — برای شنیدن کلیک کنید', 'Muted — click to hear it') : T('بی‌صدا کردن', 'Mute')}"><svg class="size-3.5"><use href="#i-volume-x"/></svg></button><button class="btn btn-ghost btn-xs btn-square ${(t.volume ?? 1) !== 1 ? 'text-primary' : ''}" data-vol="${i}" onclick="openVolPop(event, ${i})" data-tip="${T('بلندیِ ترک', 'Track volume')}: ${Math.round((t.volume ?? 1) * 100)}٪" aria-label="volume"><svg class="size-3.5"><use href="#i-volume-2"/></svg></button>
+      <button class="btn btn-ghost btn-xs btn-square ${t.muted ? 'bg-error/15 text-error' : ''}" onclick="toggleMute(${i})" aria-label="mute" aria-pressed="${t.muted ? 'true' : 'false'}" data-tip="${t.muted ? T('بی‌صدا است — برای شنیدن کلیک کنید', 'Muted — click to hear it') : T('بی‌صدا کردن', 'Mute')}"><svg class="size-3.5"><use href="#i-volume-x"/></svg></button><button class="btn btn-ghost btn-xs btn-square ${(t.volume ?? 1) !== 1 ? 'text-primary' : ''}" data-vol="${i}" onclick="openVolPop(event, ${i})" data-tip="${T('بلندیِ ترک', 'Track volume')}: ${Math.round((t.volume ?? 1) * 100)}${pctSign()}" aria-label="volume"><svg class="size-3.5"><use href="#i-volume-2"/></svg></button>
       <button class="btn btn-ghost btn-xs btn-square" aria-label="add" onclick="openTrackMenu(event, ${i})"><svg class="size-4"><use href="#i-plus"/></svg></button>
     </div></div>`).join('');
   const step = pps < 16 ? 10 : 5, dot = step / (step === 5 ? 5 : 4); let ticks = '';
@@ -511,7 +515,7 @@ function renderTimeline(){
     ticks += Math.abs(tt % step) < 1e-6 ? `<span class="absolute top-1 text-[11px] leading-none tabular-nums text-base-content/55" style="left:${x}px">${num(Math.floor(tt / 60))}:${num(String(Math.round(tt % 60)).padStart(2, '0'))}</span>`
       : `<span class="absolute top-[11px] size-[3px] -translate-x-1/2 rounded-full bg-base-content/30" style="left:${x}px"></span>`; }
   $('ruler').style.width = W + 'px';
-  $('ruler').innerHTML = `<div class="tl-empty pointer-events-none absolute inset-y-0 z-0" style="left:${PAD + (typeof compEnd === 'function' ? compEnd() : total()) * pps}px;right:0;background:color-mix(in oklab, var(--color-primary) 7%, transparent)"></div>` + ticks + `<span id="phStem" class="pointer-events-none absolute bottom-0 top-3 w-0.5 bg-secondary" style="left:${PAD + playhead * pps}px"></span><span id="phLabel" class="absolute top-0 z-10 cursor-ew-resize rounded-sm bg-secondary px-1 text-[10px] font-bold tabular-nums text-secondary-content" style="left:${PAD + playhead * pps - 22}px">${num(fmt(playhead))}</span>`;
+  $('ruler').innerHTML = `<div class="tl-empty pointer-events-none absolute inset-y-0 z-0" style="left:${PAD + (typeof compEnd === 'function' ? compEnd() : total()) * pps}px;right:0;background:color-mix(in oklab, var(--color-primary) 10%, transparent)"></div>` + ticks + `<span id="phStem" class="pointer-events-none absolute bottom-0 top-3 w-0.5 bg-secondary" style="left:${PAD + playhead * pps}px"></span><span id="phLabel" class="absolute top-0 z-10 cursor-ew-resize rounded-sm bg-secondary px-1 text-[10px] font-bold tabular-nums text-secondary-content" style="left:${PAD + playhead * pps - 22}px">${num(fmt(playhead))}</span>`;
   const order = orderedLines(); let lanes = '';
   TR.forEach((t, ti) => {
     let clips = '';
@@ -519,7 +523,7 @@ function renderTimeline(){
       const w = Math.max(6, dur(c) * pps - 2), isSel = selClip === c.id || (c.lines && c.lines.some(id => sel.has(id)));
       const pos = c.hi ? 'top-1 bottom-[52%]' : c.lo ? 'top-[52%] bottom-1' : 'top-1.5 bottom-1.5';
       let look, label;
-      if (t.kind === 'music'){ look = 'bg-secondary/15 text-secondary outline-secondary/50'; label = c.name || T('موسیقی', 'Music'); } else if (t.kind === 'sfx'){ look = 'bg-accent/15 text-accent outline-accent/50'; label = c.name || T('افکت', 'Effect'); }
+      if (c.type === 'music'){ look = 'bg-secondary/15 text-secondary outline-secondary/50'; label = c.name || T('موسیقی', 'Music'); } else if (c.type === 'sfx'){ look = 'bg-accent/15 text-accent outline-accent/50'; label = c.name || T('افکت', 'Effect'); } else if (c.type === 'ovl'){ look = 'bg-primary/15 text-primary outline-primary/50'; label = c.name || T('واکنش', 'Reaction'); }
       else { const L = S.lines[c.lines[0]] || { text: '' }; look = c.unvoiced ? 'border border-dashed border-base-content/30 bg-transparent text-base-content/50 outline-transparent' : 'bg-primary/15 text-primary outline-primary/50';
         label = `${num(order.indexOf(c.lines[0]) + 1)}${c.lines.length > 1 ? '–' + num(order.indexOf(c.lines[c.lines.length - 1]) + 1) : ''} ${escapeHtml((c.file ? '♪ ' : '') + (L.text || '').slice(0, 28))}…`; }
       const dirty = c.lines && c.lines.some(id => S.lines[id] && S.lines[id].dirty);
@@ -530,7 +534,7 @@ function renderTimeline(){
         ${(c.trimIn > 0.05 || c.trimOut > 0.05) ? `<span class="badge badge-error badge-xs pointer-events-none absolute bottom-1 ${dirty ? 'left-6' : 'left-1'}"><svg class="size-2.5"><use href="#i-scissors"/></svg></span>` : ''}
         ${selClip === c.id && w > 130 ? `<span class="pointer-events-none absolute bottom-1 right-6 rounded-md bg-black/60 px-1.5 text-[10px] font-semibold tabular-nums text-white">${num(dur(c).toFixed(1))}${T('ث', 's')}</span>` : ''}
       </div>`;
-      if (selClip === c.id && ((t.kind === 'speech' && !c.unvoiced) || t.kind === 'music' || t.kind === 'sfx')){
+      if (selClip === c.id && ((!c.type && !c.unvoiced) || c.type === 'music' || c.type === 'sfx')){
         const xl = PAD + c.at * pps, xr = xl + w;
         const hdl = (x, edge) => `<span class="trimh absolute z-20 w-[18px] cursor-ew-resize ${pos}" style="left:${x}px" data-edge="${edge}" data-cid="${c.id}" data-ti="${ti}"><span class="pointer-events-none absolute top-1/2 h-[55%] w-[3px] -translate-y-1/2 rounded-full bg-white shadow-[0_0_4px_rgba(0,0,0,.55)] ${edge === 'l' ? 'left-[10px]' : 'left-[5px]'}"></span></span>`;
         clips += hdl(xl - 5, 'l') + hdl(xr - 13, 'r');
@@ -539,7 +543,7 @@ function renderTimeline(){
     lanes += `<div class="lane relative h-14" style="width:${W}px" data-ti="${ti}">${clips}</div>`;
   });
   lanes += `<div id="ph" class="pointer-events-none absolute inset-y-0 z-10 w-0.5 bg-secondary" style="left:${PAD + playhead * pps}px"></div>`;
-  $('lanes').innerHTML = `<div class="tl-empty pointer-events-none absolute inset-y-0 z-0" style="left:${PAD + compEnd() * pps}px;right:0;background:color-mix(in oklab, var(--color-primary) 7%, transparent)"></div>` + lanes; $('lanes').style.width = (W + tailPx()) + 'px'; syncRuler();
+  $('lanes').innerHTML = lanes; $('lanes').style.width = (W + tailPx()) + 'px'; syncRuler();
   $('tTotal').textContent = '/ ' + num(fmt(compEnd()));
   wireTimeline(); placeClipBar();
 }
@@ -574,11 +578,11 @@ function placeOn(ti, c){
   const n = S.tracks.filter(x => x.kind === 'speech').length + 1;
   S.tracks.splice(ti + 1, 0, { id: 's' + (++uid), name: 'گفتار ' + FA(n), en: 'Speech ' + n, kind: 'speech', gapless: false, clips: [c] });
 }
-function cleanupTracks(){ S.tracks = S.tracks.filter((t, k) => t.kind !== 'speech' || t.clips.length || t.id === 's1'); }
+function cleanupTracks(){ S.tracks = S.tracks.filter((t, k) => t.clips.length || t === S.tracks.find(x => x.kind === 'speech')); renameTracks(); }
 function startClipDrag(ev, el){
   ev.stopPropagation(); if (document.activeElement && document.activeElement.isContentEditable) document.activeElement.blur(); getSelection().removeAllRanges(); const [t, c] = findClip(el.dataset.cid); if (!c) return;
-  selClip = c.id; if (t.kind === 'music' || t.kind === 'sfx'){ sel.clear(); paintSel(); if (t.kind === 'music') showMusicInspector(); else showInsp('proj'); const x0 = ev.clientX, at0 = c.at; let moved = false; remember();   // 166: music clips move
- const mv = e => { if (Math.abs(e.clientX - x0) > 3) moved = true; if (!moved) return; c.at = Math.max(0, snapT(at0 + (e.clientX - x0) / zoom, c)); el.style.left = (PAD + c.at * zoom) + 'px'; };   // 169: music snaps too
+  selClip = c.id; if (c.type){ sel.clear(); paintSel(); if (c.type === 'music') showMusicInspector(); else showInsp('proj'); window.__tdrag = { c, t }; if (c.type === 'ovl') OVL_DRAG = true;   const x0 = ev.clientX, at0 = c.at; let moved = false; remember();   // 166/172: typed clips move, across tracks too
+ const mv = e => { if (Math.abs(e.clientX - x0) > 3) moved = true; if (!moved) return; c.at = Math.max(0, snapT(at0 + (e.clientX - x0) / zoom, c)); el.style.left = (PAD + c.at * zoom) + 'px'; const hit = document.elementFromPoint(e.clientX, e.clientY), lane = hit && hit.closest('#lanes [data-ti]'); document.querySelectorAll('#lanes .lane-hot').forEach(x => x.classList.remove('lane-hot')); if (lane && !isNaN(+lane.dataset.ti)){ lane.classList.add('lane-hot'); window.__dropTi = +lane.dataset.ti; } };   // 169/172
  const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); if (!moved){ hist.past.pop(); renderTimeline(); return; } S.music.manual = true; t.clips.sort((a, b) => a.at - b.at); renderTimeline(); autosave(); };
  addEventListener('pointermove', mv); addEventListener('pointerup', up); return; }
   sel = new Set(c.lines); const x0 = ev.clientX, at0 = c.at; let moved = false; remember();
@@ -596,7 +600,7 @@ function startClipDrag(ev, el){
   addEventListener('pointermove', mv); addEventListener('pointerup', up);
 }
 function startTrim(ev, el){
-  ev.stopPropagation(); ev.preventDefault(); const [t, c] = findClip(el.dataset.cid); if (!c) return; remember(); if (t.kind === 'music'){ if (!c.src) c.src = [0, 1e9]; S.music.manual = true; } const edge = el.dataset.edge, x0 = ev.clientX, in0 = c.in, out0 = c.out, at0 = c.at, src = c.src || [c.in - (c.trimIn || 0), c.out + (c.trimOut || 0)];
+  ev.stopPropagation(); ev.preventDefault(); const [t, c] = findClip(el.dataset.cid); if (!c) return; remember(); if (c.type === 'music'){ if (!c.src) c.src = [0, 1e9]; S.music.manual = true; } if (c.type === 'sfx' && !c.src) c.src = [0, (SFXB.get(c.file) || {}).duration || c.out]; const edge = el.dataset.edge, x0 = ev.clientX, in0 = c.in, out0 = c.out, at0 = c.at, src = c.src || [c.in - (c.trimIn || 0), c.out + (c.trimOut || 0)];
   c.src = src;
   const mv = e => { const d0 = (e.clientX - x0) / zoom;   // 169: the moving edge snaps to every edge on every track
     if (edge === 'l'){ const d = snapPoint(at0 + d0, c) - at0, ni = Math.min(out0 - 0.2, Math.max(src[0], in0 + d)); c.at = at0 + (ni - in0); c.in = ni; c.trimIn = ni - src[0]; }
@@ -624,7 +628,7 @@ function placeClipBar(){
   const bar = $('clipBar'), el = selClip && document.querySelector(`#lanes .clip[data-cid="${selClip}"]`);
   if (!el){ bar.classList.add('hidden'); return; }
   const [t, c] = findClip(selClip), b = (icon, tip, fn, txt) => `<li><a onclick="${fn}" class="gap-1 " ${txt ? '' : `data-tip="${tip}"`}><svg class="size-3.5"><use href="#i-${icon}"/></svg>${txt ? `<span class="ui">${txt}</span>` : ''}</a></li>`;
-  bar.innerHTML = (t.kind === 'music' || t.kind === 'sfx') ? b('scissors', T('برش در جای پلی‌هد', 'split at the playhead'), 'splitMusic()') + b('copy', T('تکثیر', 'duplicate'), 'dupMusic()') + b('trash-2', T('حذف', 'delete'), 'delMusicClip()') : (c.unvoiced || c.file ? '' : b('refresh-cw', '', 'revoiceClip()', T('بازتولید', 'Re-voice')))
+  bar.innerHTML = c.type === 'ovl' ? (b('refresh-cw', T('بازتولید', 'regenerate'), 'ovlRegen()') + b('copy', T('تکثیر', 'duplicate'), 'ovlDup()') + b('trash-2', T('حذف', 'delete'), 'ovlDel()')) : (c.type === 'music' || c.type === 'sfx') ? b('scissors', T('برش در جای پلی‌هد', 'split at the playhead'), 'splitMusic()') + b('copy', T('تکثیر', 'duplicate'), 'dupMusic()') + b('trash-2', T('حذف', 'delete'), 'delMusicClip()') : (c.unvoiced || c.file ? '' : b('refresh-cw', '', 'revoiceClip()', T('بازتولید', 'Regenerate')))
       + (c.lines.length === 1 && !c.unvoiced ? b('scissors', T('برش در جای پلی‌هد', 'split at the playhead'), 'splitClip()') : '')
       + b('copy', T('تکثیر', 'duplicate'), 'dupClip()') + b('trash-2', T('حذف', 'delete'), 'delClip()');
   const r = el.getBoundingClientRect(), sc = $('tlScroll').getBoundingClientRect(), left0 = sc.left + $('heads').offsetWidth;
@@ -648,8 +652,7 @@ function dupClip(){
 function delClip(){ const [t, c] = findClip(selClip); if (!c) return; remember(); c.lines.forEach(id => { delete S.lines[id]; sel.delete(id); }); t.clips = t.clips.filter(x => x !== c); if (t.gapless) pack(t); cleanupTracks(); selClip = null; ensureOneLine(); renderScript(); autosave(); }
 function openTrackMenu(ev, ti){
   ev.stopPropagation(); const m = $('trackMenu'), t = S.tracks[ti], r = ev.currentTarget.getBoundingClientRect();
-  const items = t.kind === 'speech' ? [['line', T('خطِ تازه در جای پلی‌هد', 'New line at the playhead')], ['silence', T('یک ثانیه سکوت در جای پلی‌هد', 'One second of silence at the playhead')], ['file', T('فایلِ صوتی…', 'Audio file…')], ['sfx', T('افکتِ صوتی از کتابخانه…', 'A sound effect from the library…')]]
-    : t.kind === 'sfx' ? [['sfx', T('افکتِ صوتی از کتابخانه…', 'A sound effect from the library…')]] : [['music', T('انتخابِ موسیقی…', 'Choose music…')], ['sfx', T('افکتِ صوتی از کتابخانه…', 'A sound effect from the library…')]];
+  const items = t.kind === 'speech' ? [['line', T('خطِ تازه در جای پلی‌هد', 'New line at the playhead')], ['silence', T('یک ثانیه سکوت در جای پلی‌هد', 'One second of silence at the playhead')]] : [['file', T('فایلِ صوتی…', 'Audio file…')], ['music', T('موسیقی…', 'Music…')], ['sfx', T('افکتِ صوتی از کتابخانه…', 'A sound effect from the library…')]];   // 173
   m.dir = lang === 'fa' ? 'rtl' : 'ltr';
   m.innerHTML = `<li class="menu-title">${T('افزودن', 'Add')}</li>` + items.map(([k, l]) => `<li><a onclick="document.getElementById('trackMenu').classList.add('hidden'); addFromTrack(${ti}, '${k}')">${l}</a></li>`).join('');
   m.classList.remove('hidden'); const h = m.offsetHeight, below = innerHeight - r.bottom - 8;
@@ -702,8 +705,9 @@ async function searchMusic(){
   } catch (e) { $('musicResults').innerHTML = `<li class="p-3 text-sm text-error">${escapeHtml(e.message || String(e))}</li>`; }
 }
 async function chooseHit(k){
-  setBusy(true); try { const r = await bigResult(await API().music_fetch($('mProv').value, MUSIC_HITS[k])); if (!r.ok) throw new Error(r.error || '');
-    const e = r.entry || {}; S.music.credit = r.credit || ''; await setMusicTrack(r.b64, e.file, e.title || e.name || MUSIC_HITS[k].title || e.file); $('musicDlg').close(); focusMusic(); }
+  setBusy(true); try { const t0 = performance.now(); const r0 = await API().music_fetch($('mProv').value, MUSIC_HITS[k]); const t1 = performance.now(); const r = await bigResult(r0); const t2 = performance.now(); if (!r.ok) throw new Error(r.error || '');
+    const e = r.entry || {}; S.music.credit = r.credit || ''; await setMusicTrack(r.b64, e.file, e.title || e.name || MUSIC_HITS[k].title || e.file); const t3 = performance.now(); $('musicDlg').close(); focusMusic();
+    try { API().ui_diag('music', { engine_ms: Math.round(t1 - t0), transfer_ms: Math.round(t2 - t1), decode_ms: Math.round(t3 - t2), b64_kb: Math.round((r.b64 || '').length / 1024) }); } catch (err) {} say(T('موسیقی آماده است: ', 'Music ready: ') + (e.title || e.file || ''), 'ok'); }   // 171
   catch (e) { say(e.message || String(e), 'err'); } finally { setBusy(false); }
 }
 const RUN_CHARS = 600;                               // the classic default part size for Google
@@ -741,7 +745,7 @@ function collectRuns(){
 }
 async function generateAll(){
   if (busy) return; const runs = collectRuns();
-  if (!runs.length){ say(T('همهٔ خط‌ها ساخته شده‌اند؛ چیزی برای ساختن نمانده.', 'Every line is voiced; nothing left to make.'), 'ok'); return; }
+  if (!runs.length){ say(T('همهٔ خط‌ها ساخته شده‌اند؛ چیزی برای ساختن نمانده.', 'Every line is generated — nothing left to do.'), 'ok'); return; }
   remember(); setBusy(true);
   try {
     for (let k = 0; k < runs.length; k++){
@@ -749,8 +753,8 @@ async function generateAll(){
       if (runs[k].patch) await revoice(runs[k].patch, null); else await voiceRun(runs[k]);
       renderScript();
     }
-    gcParts(); say(T('ساخته شد. با دکمهٔ پخش بشنوید؛ «فایل نهایی» فایل را از روی خطِ زمان می‌سازد.', 'Done. Press play to listen; "Export" builds the file from the timeline.'), 'ok');
-  } catch (e) { say(isCancel(e) ? T('لغو شد.', 'Cancelled.') : (e.message || String(e)), isCancel(e) ? 'ok' : 'err'); }
+    gcParts(); say(T('ساخته شد. با دکمهٔ پخش بشنوید؛ «فایل نهایی» فایل را از روی خطِ زمان می‌سازد.', 'Done. Press Play to listen — Export builds the file from your timeline.'), 'ok');
+  } catch (e) { say(isCancel(e) ? T('لغو شد.', 'Canceled.') : (e.message || String(e)), isCancel(e) ? 'ok' : 'err'); }
   finally { setBusy(false); renderScript(); autosave(); }
 }
 async function voiceRun(run){
@@ -817,8 +821,8 @@ async function revoiceSelected(){   // 169: any selection — one line or many (
   if (!byClip.size){ if (unvoiced) generateAll(); return; }
   remember(); setBusy(true); let ok = false;
   try { for (const [c, part] of byClip) await revoice(c, part); gcParts(); ok = true;
-    say(ids.length > 1 ? T(`${FA(ids.length)} خط دوباره ساخته شد.`, `${ids.length} lines were re-voiced.`) : T('این خط دوباره ساخته شد.', 'This line was re-voiced.'), 'ok'); }
-  catch (err) { say(isCancel(err) ? T('لغو شد.', 'Cancelled.') : (err.message || String(err)), isCancel(err) ? 'ok' : 'err'); }
+    say(ids.length > 1 ? T(`${FA(ids.length)} خط دوباره ساخته شد.`, `${ids.length} lines regenerated.`) : T('این خط دوباره ساخته شد.', 'This line was regenerated.'), 'ok'); }
+  catch (err) { say(isCancel(err) ? T('لغو شد.', 'Canceled.') : (err.message || String(err)), isCancel(err) ? 'ok' : 'err'); }
   finally { setBusy(false); renderScript(); autosave(); }
   if (ok && unvoiced) generateAll();
 }
@@ -841,22 +845,23 @@ async function startPlay(until){
 }
 function schedule(){
   const ctx = ac(), base = playT0 - playFrom, speech = []; trackGain = {};
-  const gainFor = t => { if (!trackGain[t.id]){ const g = ctx.createGain(); g.gain.value = t.muted ? 0 : (t.volume ?? 1); g.connect(ctx.destination); trackGain[t.id] = g; } return trackGain[t.id]; };
-  S.tracks.forEach(t => { if (t.kind !== 'speech') return; t.clips.forEach(c => {
+  const gainFor = t => { if (!trackGain[t.id]){ const g = ctx.createGain(); g.gain.value = (t.muted ? 0 : (t.volume ?? 1)) * (typeof mode !== 'undefined' && mode === 'video' ? (V.audioVol ?? 1) : 1); g.connect(ctx.destination); trackGain[t.id] = g; } return trackGain[t.id]; };   // 174: the audio track's own volume
+  S.tracks.forEach(t => { t.clips.forEach(c => { if (c.type) return;   // 172: speech clips only (any track)
     if (c.unvoiced) return; const a = AUD.get(c.gulp); if (!a || !a.buf) return;
     const end = c.at + dur(c); if (end <= playFrom) return;
     const off = Math.max(0, playFrom - c.at), src = ctx.createBufferSource(); src.buffer = a.buf; src.connect(gainFor(t));
     src.start(base + c.at + off, c.in + off, dur(c) - off); nodes.push(src); if (!t.muted) speech.push([c.at, end]);
-    clipOverlays(c).forEach(o => { if (o.at + o.len <= playFrom || (S.ovl && S.ovl.muted)) return; const oo = Math.max(0, playFrom - o.at), s2 = ctx.createBufferSource(); s2.buffer = AUD.get(o.gulp).buf; const og = ctx.createGain(); og.gain.value = (S.ovl && S.ovl.volume) ?? 1; og.connect(gainFor(t)); s2.connect(og); s2.start(base + o.at + oo, oo, o.len - oo); nodes.push(s2); });   // 169/170: overlaps over their line, on their own row
   }); });
-  S.tracks.forEach(t => { if (t.kind !== 'sfx') return; t.clips.forEach(c => { const b = SFXB.get(c.file); if (!b){ loadSfx(c.file); return; } const end = c.at + (c.out - c.in); if (end <= playFrom) return; const off = Math.max(0, playFrom - c.at), s3 = ctx.createBufferSource(); s3.buffer = b; const g2 = ctx.createGain(); g2.gain.value = c.gain ?? 1; g2.connect(gainFor(t)); s3.connect(g2); s3.start(base + c.at + off, c.in + off, c.out - c.in - off); nodes.push(s3); }); });   // 170: sound effects
-  const mt = S.tracks.find(t => t.kind === 'music'); if (musicBuf && mt && mt.clips.length && !mt.muted){   // 166: every music clip at its place
+  S.tracks.forEach(t => { t.clips.forEach(c => { if (c.type !== 'sfx') return; const b = SFXB.get(c.file); if (!b){ loadSfx(c.file); return; } const end = c.at + (c.out - c.in); if (end <= playFrom) return; const off = Math.max(0, playFrom - c.at), s3 = ctx.createBufferSource(); s3.buffer = b; const g2 = ctx.createGain(); g2.gain.value = c.gain ?? 1; g2.connect(gainFor(t)); s3.connect(g2); s3.start(base + c.at + off, c.in + off, c.out - c.in - off); nodes.push(s3); }); });   // 170: sound effects
+  S.tracks.forEach(t => t.clips.forEach(c => { if (c.type !== 'ovl') return; const a = AUD.get(c.gulp); if (!a || !a.buf) return; const len = c.out - c.in, end = c.at + len; if (end <= playFrom) return; const off = Math.max(0, playFrom - c.at), s4 = ctx.createBufferSource(); s4.buffer = a.buf; const g4 = ctx.createGain(); g4.gain.value = c.gain ?? 1; g4.connect(gainFor(t)); s4.connect(g4); s4.start(base + c.at + off, c.in + off, len - off); nodes.push(s4); }));   // 172: reactions are clips
+  if (typeof mode !== 'undefined' && mode === 'video') V.objects.forEach(o => { if (o.type !== 'sfx') return; const b = SFXB.get(o.file); if (!b){ loadSfx(o.file); return; } const at = o.start || 0, len = Math.min(b.duration - (o.trimIn || 0), (o.end ?? at + b.duration) - at); if (at + len <= playFrom) return; const off = Math.max(0, playFrom - at), s5 = ctx.createBufferSource(); s5.buffer = b; const g5 = ctx.createGain(); g5.gain.value = o.gain ?? 1; g5.connect(ctx.destination); s5.connect(g5); s5.start(base + at + off, (o.trimIn || 0) + off, len - off); nodes.push(s5); });   // 172: video-mode effects
+  const mt = { id: '__music', muted: false, volume: 1, clips: musicClips().filter(c => !(c._track && c._track.muted)) }; if (musicBuf && mt.clips.length){   // 166/172: every music clip at its place, on any track
     const lvl = Math.pow(10, S.music.level_db / 20), duckF = Math.pow(10, -(S.music.duck_db ?? 12) / 20), D = musicBuf.duration, ducking = (S.music.duck ?? true) && (S.music.duck_db ?? 12) > 0;
     const inSpeech = tt => speech.some(([a, b]) => tt >= a - 0.15 && tt < b + 0.6), cl = [...mt.clips].sort((a, b) => a.at - b.at), first = cl[0].at, last = Math.max(...cl.map(c => c.at + c.out - c.in));
     cl.forEach(c => { const len = c.out - c.in, s0 = Math.max(c.at, playFrom), e0 = c.at + len; if (e0 <= playFrom || len <= 0.05) return;
       const g = ctx.createGain(), src = ctx.createBufferSource(); src.buffer = musicBuf; src.loop = true; src.connect(g); g.connect(gainFor(mt));
       const at = tt => base + tt, P = g.gain, fi = c.at === first ? (S.music.fade_in || 0) : 0.03, fo = Math.abs(e0 - last) < 1e-6 ? (S.music.fade_out || 0) : 0.03;
-      const level = tt => { let l = ducking && inSpeech(tt) ? lvl * duckF : lvl; if (fi > 0 && tt - c.at < fi) l *= Math.max(0, (tt - c.at) / fi); if (fo > 0 && e0 - tt < fo) l *= Math.max(0, (e0 - tt) / fo); return l; };
+      const cf = ((c._track && c._track.volume) ?? 1) * (c.gain ?? 1), level = tt => { let l = (ducking && inSpeech(tt) ? lvl * duckF : lvl) * cf; if (fi > 0 && tt - c.at < fi) l *= Math.max(0, (tt - c.at) / fi); if (fo > 0 && e0 - tt < fo) l *= Math.max(0, (e0 - tt) / fo); return l; };
       P.setValueAtTime(level(s0), Math.max(ctx.currentTime, at(s0))); for (let tt = s0; tt <= e0; tt += 0.1) P.linearRampToValueAtTime(level(tt), Math.max(ctx.currentTime, at(tt)));
       src.start(Math.max(ctx.currentTime, at(s0)), (c.in + (s0 - c.at)) % D); src.stop(at(e0) + 0.02); nodes.push(src); });
   }
@@ -898,15 +903,15 @@ function pending(){ return Object.entries(S.lines).filter(([id, L]) => { const [
 function timelineSpec(){ return { clips: S.tracks.filter(t => t.kind === 'speech' && !t.muted).flatMap(t => t.clips.filter(c => !c.unvoiced && c.gulp !== null).map(c => ({ gulp: c.gulp, in: c.in, out: c.out, at: c.at, gain: 1 }))) }; }
 async function exportAudio(withMusic){
   document.activeElement && document.activeElement.blur();
-  if (pending()) say(T(`${FA(pending())} خط تغییر کرده و دوباره ساخته نشده؛ تایم‌لاین همان‌طور که پخش می‌شود ذخیره می‌شود.`, `${pending()} lines are edited and not re-voiced; the timeline is exported as it plays.`), 'ok');
-  if (withMusic && !S.music.file){ say(T('موسیقی‌ای انتخاب نشده؛ از دکمهٔ + روی ترکِ موسیقی یکی انتخاب کنید.', 'No music chosen; pick one with + on the music track.'), 'err'); return; }
+  if (pending()) say(T(`${FA(pending())} خط تغییر کرده و دوباره ساخته نشده؛ تایم‌لاین همان‌طور که پخش می‌شود ذخیره می‌شود.`, `${pending()} edited lines aren’t regenerated yet; the export uses what plays now.`), 'ok');
+  if (withMusic && !S.music.file){ say(T('موسیقی‌ای انتخاب نشده؛ از دکمهٔ + روی ترکِ موسیقی یکی انتخاب کنید.', 'No music chosen yet — add some from a track’s + menu.'), 'err'); return; }
   if (busy) return; setBusy(true);
   try {
     const r = await API().timeline_files(timelineSpec(), withMusic ? { on: true, file: S.music.file, level_db: S.music.level_db, duck: (S.music.duck_db ?? 12) > 0, duck_db: S.music.duck_db ?? 12, fade_in: S.music.fade_in, fade_out: S.music.fade_out } : null);
     if (!r.ok) throw new Error(r.error || T('خطای ناشناخته', 'Unknown error'));
     const s = await API().save_mp3(withMusic ? r.b64_music : r.b64, withMusic ? 'music' : '');
     if (s.ok) say(T('ذخیره شد: ', 'Saved: ') + s.path + ' — ' + num(r.seconds) + T(' ثانیه', ' s'), 'ok');
-  } catch (e) { say(isCancel(e) ? T('لغو شد.', 'Cancelled.') : (e.message || String(e)), isCancel(e) ? 'ok' : 'err'); }
+  } catch (e) { say(isCancel(e) ? T('لغو شد.', 'Canceled.') : (e.message || String(e)), isCancel(e) ? 'ok' : 'err'); }
   finally { setBusy(false); }
 }
 const cueText = s => (s || '').replace(/\[[^\]]{1,40}\]|<[^>]{1,30}>|\{[^{}]{1,60}\}|\|[^|]{1,20}\|/g, ' ').replace(/^\s*[^:：\n]{1,30}[:：]\s*/, '').replace(/\s+/g, ' ').trim();
@@ -916,7 +921,7 @@ async function exportCaptions(fmt){
     const lens = c.lines.map(id => Math.max(1, cueText(S.lines[id].text).length)), tot = lens.reduce((a, b) => a + b, 0); let t0 = c.at;
     c.lines.forEach((id, k) => { const d = dur(c) * lens[k] / tot; cues.push({ t0, t1: t0 + d, text: cueText(S.lines[id].text) }); t0 += d; });
   });
-  if (!cues.length){ say(T('هنوز خطی ساخته نشده که زیرنویس داشته باشد.', 'No voiced lines to caption yet.'), 'err'); return; }
+  if (!cues.length){ say(T('هنوز خطی ساخته نشده که زیرنویس داشته باشد.', 'No generated lines to caption yet.'), 'err'); return; }
   const r = await API().timeline_captions({ cues, fmt }); if (!r.ok){ say(r.error, 'err'); return; }
   const s = await API().save_text(r.text, fmt); if (s.ok) say(T('زیرنویس ذخیره شد: ', 'Subtitles saved: ') + s.path + ' — ' + num(cues.length) + T(' سطر', ' cues'), 'ok');
 }
@@ -937,7 +942,9 @@ async function setMusicTrack(b64, file, name){
   try { musicBuf = await ac().decodeAudioData(u8.buffer.slice(0)); } catch (e) { musicBuf = null; }
   S.music.file = file; S.music.name = name; layoutMusic(); sel = new Set(); selClip = 'mu1'; renderScript(); showMusicInspector(); autosave();
 }
-function layoutMusic(){ const mt = S.tracks.find(t => t.kind === 'music'); if (!S.music.file){ mt.clips = []; S.music.manual = false; return; } if (!S.music.manual || !mt.clips.length) mt.clips = [{ id: 'mu1', name: S.music.name, at: 0, in: 0, out: Math.max(2, speechEnd()) }]; }   // 166: once edited, your clips are kept
+function layoutMusic(){ if (!S.music.file){ S.tracks.forEach(t => { t.clips = t.clips.filter(c => c.type !== 'music'); }); S.music.manual = false; cleanupTracks(); return; }   // 172: music is a clip on a normal track
+  if (S.music.manual && musicClips().length) return; S.tracks.forEach(t => { t.clips = t.clips.filter(c => c.type !== 'music'); });
+  const c = { id: 'mu1', type: 'music', lines: [], name: S.music.name, at: 0, in: 0, out: Math.max(2, speechEnd()), gain: 1 }; freeTrack(c).clips.push(c); }
 function removeMusic(){ remember(); S.music.file = null; S.music.name = null; musicBuf = null; layoutMusic(); selClip = null; showInsp('proj'); renderScript(); autosave(); }
 function setMusic(k, v){ S.music[k] = v; autosave(); if (playing){ const t = playhead; stopPlay(); seekVisual(t); startPlay(); } }
 function showMusicInspector(){ ['line', 'proj'].forEach(k => $('insp-' + k).classList.add('hidden')); $('insp-music').classList.remove('hidden'); const tl = $('it-line').parentElement; if (tl) tl.classList.add('hidden');   // 169: a music clip has only its own panel
@@ -970,11 +977,20 @@ function openHelp(section){
   $('helpDlg').showModal();
 }
 function applyLang(){
-  document.querySelectorAll('[data-en]').forEach(el => { if (el.dataset.fa === undefined) el.dataset.fa = el.textContent; el.textContent = lang === 'fa' ? el.dataset.fa : el.dataset.en; });
+  /* 175: only the element's own text changes — a legend keeps the value label wired into it (it used to vanish on every switch) */
+  const ownText = el => [...el.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join('').trim();
+  const setOwn = (el, t) => { if (!el.children.length){ el.textContent = t; return; } const tn = [...el.childNodes].find(n => n.nodeType === 3 && n.textContent.trim()); if (tn) tn.textContent = t; else el.insertBefore(document.createTextNode(t), el.firstChild); };
+  document.querySelectorAll('[data-en]').forEach(el => { if (el.dataset.fa === undefined) el.dataset.fa = el.children.length ? ownText(el) : el.textContent; setOwn(el, lang === 'fa' ? el.dataset.fa : el.dataset.en); });
   document.querySelectorAll('[data-tip]').forEach(el => { if (el.dataset.tipFa === undefined) el.dataset.tipFa = el.dataset.tip; });
-  document.documentElement.lang = lang;
+  document.documentElement.lang = lang; document.documentElement.dir = lang === 'fa' ? 'rtl' : 'ltr';   // 171: English is left-to-right
+  document.querySelectorAll('[dir="rtl"]:not(#editor):not(#editor *):not(.lt)').forEach(el => { if (el.dataset.dirFa === undefined) el.dataset.dirFa = 'rtl'; });
+  document.querySelectorAll('[data-dir-fa]').forEach(el => el.setAttribute('dir', lang === 'fa' ? 'rtl' : 'ltr'));
+  const ed = $('editor'); if (ed) ed.setAttribute('dir', 'rtl');
+  [['aria-label', 'ariaEn', 'ariaFa'], ['placeholder', 'phEn', 'phFa'], ['title', 'titleEn', 'titleFa']].forEach(([a, en, fa]) => document.querySelectorAll(`[data-${a === 'aria-label' ? 'aria' : a === 'placeholder' ? 'ph' : 'title'}-en]`).forEach(el => {   /* 175 */
+    if (el.dataset[fa] === undefined) el.dataset[fa] = el.getAttribute(a) || ''; el.setAttribute(a, lang === 'fa' ? el.dataset[fa] : el.dataset[en]); }));
+  document.querySelectorAll('select').forEach(sl => { if (sl._btn) refreshEnh(sl); });
 }
-$('langBtn').onclick = () => { lang = lang === 'fa' ? 'en' : 'fa'; try { localStorage.setItem('ava-lang', lang); } catch (e) {} try { API().set_lang(lang); } catch (e) {} applyLang(); fillInspector(); renderScript(); refreshKeys(); seekVisual(playhead); showBuild(); document.querySelectorAll('aside input[type=range]').forEach(el => { if (el._rv) el._rv.textContent = rvText(el); }); };
+$('langBtn').onclick = () => { lang = lang === 'fa' ? 'en' : 'fa'; { const st = $('status'); if (st) st.textContent = ''; }   /* 175: the last message was in the other language */ try { localStorage.setItem('ava-lang', lang); } catch (e) {} try { API().set_lang(lang); } catch (e) {} applyLang(); fillInspector(); renderScript(); refreshKeys(); seekVisual(playhead); showBuild(); document.querySelectorAll('aside input[type=range]').forEach(el => { if (el._rv) el._rv.textContent = rvText(el); }); };
 $('themeChk').onchange = e => { try { localStorage.setItem('ava-ed-theme', e.target.checked ? 'ava-day' : 'ava-night'); } catch (x) {} };
 async function netStatus(){ try { const r = await API().net_get(); const dot = $('netDot'); dot.className = 'status status-md ' + (r.ok ? 'status-success' : 'status-warning');
   $('netTip').dataset.tip = (r.route ? T('مسیر: ', 'Route: ') + r.route : T('اتصال به گوگل', 'Connection to Google')); } catch (e) {} }
@@ -986,16 +1002,16 @@ async function init(){
   if (!window.pywebview || !window.pywebview.api) await new Promise(r => addEventListener('pywebviewready', r, { once: true }));
   try { lang = localStorage.getItem('ava-lang') === 'en' ? 'en' : 'fa'; const th = localStorage.getItem('ava-ed-theme'); if (th === 'ava-day'){ $('themeChk').checked = true; } } catch (e) {}
   const [st, ses, dl] = await Promise.all([API().settings_get(), API().session(), API().director_lists()]);
-  DIRECTOR = dl || DIRECTOR; SESSION = ses.session;
+  DIRECTOR = dl || DIRECTOR; (DIRECTOR.ages || []).concat(DIRECTOR.states || []).forEach(x => { if (x && x[1] && x[2] && typeof EN_FA !== 'undefined') EN_FA[x[1]] = x[2]; });   /* 175: after they load */ SESSION = ses.session;
   BUILD_N = ses.build || ''; showBuild();
   document.querySelectorAll('.xlink').forEach(a => a.onclick = e => { e.preventDefault(); API().open_url('https://x.com/kamangir31'); });   // as in the classic interface CAST = (st && st.g38_cast) || [];
   if (st && st.default_g_model) S.proj.g_model = st.default_g_model;
   if (st && st.ed_doc) API().settings_set({ ed_doc: null });   // 164: the app always opens empty
   if (false){ restoreSnap(st.ed_doc);
     if (st.ed_session !== SESSION){             // a new app session: parts are no longer in memory
-      S.tracks.forEach(t => t.clips.forEach(c => { if (t.kind === 'speech'){ c.gulp = null; c.unvoiced = true; c.in = 0; c.out = c.lines.reduce((s, id) => s + estDur(S.lines[id] && S.lines[id].text), 0); c.trimIn = c.trimOut = 0; delete c.src; } }));
-      Object.values(S.lines).forEach(L => L.dirty = false); S.tracks = S.tracks.filter(t => t.kind !== 'speech' || t.id === 's1' || t.clips.length);
-      if (Object.keys(S.lines).length) say(T('متنِ کارِ قبلی برگشت؛ صداهایش در جلسهٔ قبلیِ برنامه بودند — برای شنیدن دوباره «تبدیل به گفتار» را بزنید.', 'Your text is back; its audio was in the previous session — press "Voice it" to hear it again.'), 'ok');
+      S.tracks.forEach(t => t.clips.forEach(c => { if (!c.type){ c.gulp = null; c.unvoiced = true; c.in = 0; c.out = c.lines.reduce((s, id) => s + estDur(S.lines[id] && S.lines[id].text), 0); c.trimIn = c.trimOut = 0; delete c.src; } }));
+      Object.values(S.lines).forEach(L => L.dirty = false); S.tracks = S.tracks.filter(t => t.id === 's1' || t.clips.length);
+      if (Object.keys(S.lines).length) say(T('متنِ کارِ قبلی برگشت؛ صداهایش در جلسهٔ قبلیِ برنامه بودند — برای شنیدن دوباره «تبدیل به گفتار» را بزنید.', 'Your text is back; its audio was in the previous session — press "Generate" to hear it again.'), 'ok');
     }
     if (S.music.file){ try { const r = await bigResult(await API().music_load(S.music.file)); if (r.ok){ const bin = atob(r.b64), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); musicBuf = await ac().decodeAudioData(u8.buffer.slice(0)); } } catch (e) {} }
   }
@@ -1003,7 +1019,7 @@ async function init(){
   DEFAULTS = { engine: st && st.default_engine, model: st && st.default_g_model };
   await loadEngineLists(); await loadG38Lists(); if (st && st.default_engine && !st.ed_doc) S.proj.engine = st.default_engine; if (st && st.default_g_model && !st.ed_doc) S.proj.g_model = st.default_g_model;
   ensureOneLine(); applyLang(); fillInspector(); wireRangeValues(); layoutMusic(); renderScript(); seekVisual(0); refreshKeys(); netStatus();
-  try { const L = await API().license_state(); if (L && L.ok && L.days_left !== null && L.days_left !== undefined && L.days_left <= 21) say(T(`مجوزِ این دستگاه ${FA(L.days_left)} روزِ دیگر تمام می‌شود؛ برای تمدید، کدِ درخواست را برای کسی بفرستید که برنامه را به شما داده است.`, `This machine's licence ends in ${L.days_left} days; to renew, send the request code to whoever gave you the app.`), 'ok'); } catch (e) {}
+  try { const L = await API().license_state(); if (L && L.ok && L.days_left !== null && L.days_left !== undefined && L.days_left <= 21) say(T(`مجوزِ این دستگاه ${FA(L.days_left)} روزِ دیگر تمام می‌شود؛ برای تمدید، کدِ درخواست را برای کسی بفرستید که برنامه را به شما داده است.`, `This machine’s license ends in ${L.days_left} days. To renew, send the request code to whoever gave you the app.`), 'ok'); } catch (e) {}
   const gulps = [...new Set(speechClips().filter(c => !c.unvoiced && c.gulp !== null).map(c => c.gulp))];
   for (const g of gulps){ if (await ensureAudio(g)) renderTimeline(); }
 }
@@ -1023,7 +1039,7 @@ addEventListener('keydown', e => {
   if (e.key === 'Escape' && !document.querySelector('dialog[open]') && $('ddMenu').classList.contains('hidden') && !(typeof mode !== 'undefined' && mode === 'video')){
     if (t.isContentEditable) t.blur(); getSelection().removeAllRanges(); if (sel.size || selClip){ sel = new Set(); selClip = null; paintSel(); renderTimeline(); } return; }
   if ((e.key === 'Delete' || e.key === 'Backspace') && !inText && !t.isContentEditable && !(typeof mode !== 'undefined' && mode === 'video')){
-    if (selClip){ e.preventDefault(); const [tr] = findClip(selClip); if (tr && tr.kind === 'music') delMusicClip(); else delClip(); return; }
+    if (selClip){ e.preventDefault(); const cc0 = findClip(selClip)[1]; if (cc0 && cc0.type === 'ovl') ovlDel(); else if (cc0 && cc0.type) delMusicClip(); else delClip(); return; }   // 172
     if (sel.size){ e.preventDefault(); deleteLine(); }
   }
 }, true);
@@ -1060,12 +1076,12 @@ function enh(sel){
   sel.addEventListener('change', () => { refreshEnh(sel); noteRecent(sel.dataset.recent, sel.value); });
   refreshEnh(sel);
 }
-function refreshEnh(sel){ if (!sel._btn) return; const o = sel.options[sel.selectedIndex]; sel._btn.innerHTML = sel.dataset.compact !== undefined ? `<span class="min-w-0 flex-1 truncate" dir="auto">${o ? escapeHtml(o.text.split(' — ')[0]) : ''}</span>` : `<span class="ddlbl min-w-0 flex-1">${o ? escapeHtml(o.text) : ''}</span>`; }
+function refreshEnh(sel){ if (!sel._btn) return; const o = sel.options[sel.selectedIndex]; sel._btn.innerHTML = sel.dataset.compact !== undefined ? `<span class="min-w-0 flex-1 truncate" dir="auto">${o ? escapeHtml(o.text.split(' — ')[0]) : ''}</span>` : `<span class="ddlbl min-w-0 flex-1" ${o && o.dataset.font ? `style="font-family:'${escapeHtml(o.dataset.font)}', Vazirmatn"` : ''}>${o ? escapeHtml(o.text) : ''}</span>`; }   /* 175: a font shows in itself */
 function closeDD(){ const m = $('ddMenu'); m.classList.add('hidden'); m._sel = null; }
 function openDD(sel, b){
   const m = $('ddMenu'); if (m._sel === sel && !m.classList.contains('hidden')) return closeDD(); const host = b.closest('dialog[open]') || document.body; if (m.parentElement !== host) host.appendChild(m); m._sel = sel; m.dir = b.getAttribute('dir') || 'rtl';
   const opts = [...sel.options], recent = (RECENT[sel.dataset.recent] || []).map(v => opts.find(o => o.value === v && !o.disabled)).filter(Boolean);
-  const row = o => `<li class="flex flex-row items-center gap-0.5" data-v="${escapeHtml(o.value)}"><a class="min-w-0 flex-1 ${o.selected ? 'menu-active' : ''}" data-pick="${escapeHtml(o.value)}"><span class="whitespace-normal break-words">${escapeHtml(o.text)}</span></a>`
+  const row = o => `<li class="flex flex-row items-center gap-0.5" data-v="${escapeHtml(o.value)}"><a class="min-w-0 flex-1 ${o.selected ? 'menu-active' : ''}" data-pick="${escapeHtml(o.value)}"><span class="whitespace-normal break-words" ${o.dataset.font ? `style="font-family:'${escapeHtml(o.dataset.font)}', Vazirmatn; font-size:15px"` : ''}>${escapeHtml(o.text)}</span></a>`
     + (sel.dataset.preview !== undefined && o.value !== '' ? `<button class="ddb opacity-80 hover:opacity-100" data-pv="${escapeHtml(o.value)}" data-tip="شنیدنِ صدا" data-tip-en="Hear the voice"><svg class="size-3.5"><use href="#i-play"/></svg></button>` : '')
     + (o.dataset.pin !== undefined ? `<button class="ddb ${o.dataset.pinned !== undefined ? 'text-primary' : 'opacity-50'}" data-pin="${escapeHtml(o.value)}" data-tip="${o.dataset.pinned !== undefined ? 'پیش‌فرض' : 'پیش‌فرض کن'}" data-tip-en="${o.dataset.pinned !== undefined ? 'Default' : 'Make default'}"><svg class="size-3.5"><use href="#i-${o.dataset.pinned !== undefined ? 'pin' : 'pin-off'}"/></svg></button>` : '')
     + (o.dataset.del !== undefined ? `<button class="ddb opacity-60 hover:text-error" data-del="${escapeHtml(o.value)}" data-tip="حذف" data-tip-en="Delete"><svg class="size-3.5"><use href="#i-trash-2"/></svg></button>` : '') + '</li>';
@@ -1076,8 +1092,10 @@ function openDD(sel, b){
   opts.forEach(o => { const g = o.parentElement.tagName === 'OPTGROUP' ? o.parentElement.label : null; if (!cur || cur.g !== g){ cur = { g, items: [] }; groups.push(cur); } cur.items.push(o); });
   const nested = groups.filter(x => x.g).length >= 2, title = o => `<li class="menu-title">${escapeHtml(o.text)}</li>`;
   groups.forEach((gr, gi) => { if (!gr.g){ gr.items.forEach(o => body.push(o.disabled ? title(o) : row(o))); return; }
-    const open = !nested || gr.items.some(o => o.selected);
-    body.push(`<li class="ddgrp" data-grp="${gi}"><a class="ddghead flex items-center gap-1 text-xs font-semibold text-base-content/70" data-grp-toggle="${gi}"><svg class="ddchev size-3.5 transition-transform ${open ? '' : (m.dir === 'rtl' ? 'rotate-90' : '-rotate-90')}"><use href="#i-chevron-down"/></svg><span class="min-w-0 flex-1 truncate">${escapeHtml(gr.g)}</span><span class="opacity-60">${num(gr.items.length)}</span></a><ul class="ddgbody ${open ? '' : 'hidden'}">${gr.items.map(o => o.disabled ? title(o) : row(o)).join('')}</ul></li>`); });
+    if (!nested){ body.push(`<li class="menu-title">${escapeHtml(gr.g)}</li>`); gr.items.forEach(o => body.push(o.disabled ? title(o) : row(o))); return; }
+    // 171: like the old editor — a group opens to the SIDE on hover (click also opens it), its rows keep their ▶
+    const has = gr.items.some(o => o.selected);
+    body.push(`<li class="ddgrp" data-grp="${gi}"><a class="ddghead flex items-center gap-2 ${has ? 'menu-active' : ''}" data-grp-toggle="${gi}"><span class="min-w-0 flex-1 truncate">${escapeHtml(gr.g)}</span><span class="text-xs opacity-60">${num(gr.items.length)}</span><svg class="size-3.5 opacity-70"><use href="${m.dir === 'rtl' ? '#i-chevron-left' : '#i-chevron-right'}"/></svg></a><ul class="ddfly menu menu-sm hidden">${gr.items.map(o => o.disabled ? title(o) : row(o)).join('')}</ul></li>`); });
   const acts = (sel._actions || []).map(([icon, fa, en], k) => `<li class="${k ? '' : 'mt-1 border-t border-base-300 pt-1'}"><a data-act="${k}" class="gap-2"><svg class="size-4"><use href="#i-${icon}"/></svg>${T(fa, en)}</a></li>`).join(''); 
  const search = opts.length > 12 ? `<div class="sticky top-0 z-10 bg-base-200 p-1"><input class="input input-sm w-full" dir="auto" placeholder="${T('جست‌وجو…', 'Search…')}" oninput="filterDD(this.value)"></div>` : '';
   m.innerHTML = search + `<ul class="menu menu-sm w-full p-1">${body.join('')}</ul>` + (acts ? `<div class="sticky bottom-0 z-10 border-t border-base-300 bg-base-200 p-1"><ul class="menu menu-sm w-full p-0">${acts.replace(/mt-1 border-t border-base-300 pt-1/, '')}</ul></div>` : '');   // 167: the actions stay in view
@@ -1089,7 +1107,7 @@ function openDD(sel, b){
   m.style.top = (below ? r.bottom + 4 : Math.max(8, r.top - 4 - Math.min(m.scrollHeight, parseFloat(m.style.maxHeight)))) + 'px';
   const s0 = m.querySelector('input'); if (s0) setTimeout(() => s0.focus(), 0);
   m.onclick = ev => {
-    const gt = ev.target.closest('[data-grp-toggle]'); if (gt){ ev.stopPropagation(); const li = gt.closest('.ddgrp'), ul = li.querySelector('.ddgbody'), ch = gt.querySelector('.ddchev'); const hid = ul.classList.toggle('hidden'); ch.classList.toggle('rotate-90', hid && m.dir === 'rtl'); ch.classList.toggle('-rotate-90', hid && m.dir !== 'rtl'); return; }
+    const gt = ev.target.closest('[data-grp-toggle]'); if (gt){ ev.stopPropagation(); ddFly(gt.closest('.ddgrp'), true); return; }
     const p = ev.target.closest('[data-pick]'), pin = ev.target.closest('[data-pin]'), del = ev.target.closest('[data-del]');
     const act = ev.target.closest('[data-act]'); if (act){ ev.stopPropagation(); const f = (sel._actions || [])[+act.dataset.act]; closeDD(); if (f) f[3](); return; }
  const ur = ev.target.closest('[data-unrecent]'); if (ur){ ev.stopPropagation(); const k = sel.dataset.recent; RECENT[k] = (RECENT[k] || []).filter(x => x !== ur.dataset.unrecent); try { API().settings_set({ ed_recent: RECENT }); } catch (e) {} openDD(sel, sel._btn); openDD(sel, sel._btn); return; }
@@ -1106,7 +1124,7 @@ function openDD(sel, b){
   };
 }
 function filterDD(q){ q = q.trim().toLowerCase(); const m = $('ddMenu'); m.querySelectorAll('li[data-v]').forEach(li => li.classList.toggle('hidden', !!q && !li.textContent.toLowerCase().includes(q)));
-  m.querySelectorAll('.ddgrp').forEach(li => { const ul = li.querySelector('.ddgbody'); if (q){ ul.classList.remove('hidden'); li.classList.toggle('hidden', ![...ul.children].some(x => !x.classList.contains('hidden'))); } else li.classList.remove('hidden'); }); }   // 170: a search opens the groups
+  m.querySelectorAll('.ddgrp').forEach(li => { const ul = li.querySelector('.ddfly'); if (q){ ul.classList.remove('hidden'); ul.classList.add('ddinline'); li.classList.toggle('hidden', ![...ul.children].some(x => !x.classList.contains('hidden'))); } else { ul.classList.add('hidden'); ul.classList.remove('ddinline'); li.classList.remove('hidden'); } }); }   // 171: a search lists matches inline
 document.addEventListener('pointerdown', e => { const m = $('ddMenu'); if (!m.classList.contains('hidden') && !m.contains(e.target) && !(m._sel && m._sel._btn && m._sel._btn.contains(e.target))) closeDD(); });
 
 // =====================================================================================
@@ -1122,7 +1140,7 @@ function togglePreview(key, src){
   const b = document.querySelector(`[data-prev="${key}"]`); if (b) b.innerHTML = '<svg class="size-4"><use href="#i-pause"/></svg>';
 }
 PREV.onended = stopPreview;
-const PROV_LABEL = v => ({ library: T('کتابخانهٔ من', 'My library') })[v] || (MUSIC_PROVIDERS.find(p => p[0] === v) || [v, v])[1].split(' — ')[0];
+const PROV_LABEL = v => ({ library: T('کتابخانهٔ من', 'My library') })[v] || tr((MUSIC_PROVIDERS.find(p => p[0] === v) || [v, v])[1]).split(' — ')[0];
 async function openMusic(){
   if (!MUSIC_STYLES.length){ try { const r = await API().music_presets(); MUSIC_STYLES = (r && r.presets) || []; } catch (e) {} }
   $('mTabs').innerHTML = ['library', ...MUSIC_PROVIDERS.map(p => p[0])].map(v => `<a role="tab" class="tab ${v === mTab ? 'tab-active' : ''}" onclick="musicTab('${v}')">${escapeHtml(PROV_LABEL(v))}</a>`).join('');
@@ -1254,13 +1272,13 @@ function updatePCaret(){
 // =====================================================================================
 async function diacritize(onlySel){
   const all = orderedLines(), ids = (onlySel || sel.size) && sel.size ? all.filter(id => sel.has(id)) : all, text = ids.map(id => S.lines[id].text).join('\n');
-  if (!text.trim()){ say(T('اول یک متن فارسی بنویسید یا بچسبانید.', 'Type or paste a Persian text first.'), 'err'); return; }
+  if (!text.trim()){ say(T('اول یک متن فارسی بنویسید یا بچسبانید.', 'Type or paste some Persian text first.'), 'err'); return; }
   if (busy) return; setBusy(true); say(ids.length < all.length ? T(`دارم ${FA(ids.length)} خطِ انتخاب‌شده را حرکت‌گذاری می‌کنم…`, `Diacritizing ${ids.length} selected line(s)…`) : T('دارم حرکت‌ها را می‌گذارم…', 'Adding diacritics…'), 'ok');
   try {
     const r = await API().ezafe(text, $('ezTool').value, ''); if (!r.ok) throw new Error(r.error || T('خطای ناشناخته', 'Unknown error'));
-    const out = r.text.split('\n'); if (out.length !== ids.length) throw new Error(T('حرکت‌گذاری تعدادِ خط‌ها را عوض کرد؛ چیزی تغییر داده نشد.', 'Diacritization changed the number of lines; nothing was changed.'));
+    const out = r.text.split('\n'); if (out.length !== ids.length) throw new Error(T('حرکت‌گذاری تعدادِ خط‌ها را عوض کرد؛ چیزی تغییر داده نشد.', 'Diacritizing would change the number of lines, so nothing was changed.'));
     remember(); ids.forEach((id, k) => { const L = S.lines[id]; if (out[k] !== L.text){ L.text = out[k]; const [, c] = clipOfLine(id); if (c && !c.unvoiced) L.dirty = true; } });
-    renderScript(); autosave(); say(T('حرکت‌های پیشنهادی توی متن گذاشته شد؛ قبل از ساختن گفتار می‌توانید دستکاری‌شان کنید.', 'Suggested diacritics are in the text; you can adjust them before voicing.'), 'ok');
+    renderScript(); autosave(); say(T('حرکت‌های پیشنهادی توی متن گذاشته شد؛ قبل از ساختن گفتار می‌توانید دستکاری‌شان کنید.', 'Suggested diacritics are in the text — adjust them before generating if you like.'), 'ok');
   } catch (e) { say(e.message || String(e), 'err'); } finally { setBusy(false); }
 }
 
@@ -1280,7 +1298,7 @@ async function loadG38Lists(){
 function voiceOptions(cur, withProj){
   const o = (v, l, extra = '') => `<option value="${escapeHtml(v)}" ${v === cur ? 'selected' : ''} ${extra}>${escapeHtml(l)}</option>`;
   let html = withProj ? `<option value="">${T('— مثلِ پروژه —', '— as the project —')}</option>` : '';
-  html += `<optgroup label="${T('صداهای آمادهٔ گوگل', "Google's prebuilt voices")}">` + G_VOICES.map(([v, l]) => o(v, `${v} — ${l}`)).join('') + '</optgroup>';
+  html += `<optgroup label="${T('صداهای آمادهٔ گوگل', "Google’s built-in voices")}">` + G_VOICES.map(([v, l]) => o(v, `${v} — ${l}`)).join('') + '</optgroup>';
   if (is38()){
     if (LIBV.length) html += `<optgroup label="${T('از کتابخانه', 'From the library')}">` + LIBV.map(v => o('lib:' + v.id, v.name, 'data-del')).join('') + '</optgroup>';
     if (DESIGNS.length) html += `<optgroup label="${T('طراحی‌شده', 'Designed')}">` + DESIGNS.map(d => o('design:' + d.id, d.name)).join('') + '</optgroup>';
@@ -1336,7 +1354,7 @@ async function libSearch(more){
 async function libPreview(k){
   if (prevKey === 'lv' + k && !PREV.paused) return stopPreview();
   say(T('نمونه ساخته می‌شود…', 'Making a sample…'), 'ok');
-  const v = libHits[k], r = await API().g38_preview({ voice: 'lib:' + v.id, style: '', text: T('سلام؛ این نمونه‌ای از صدای من است.', 'Hello; this is a sample of my voice.'), cfg: { ...gFields(lineVoice(orderedLines()[0] || 0)), g38_cast: [] } });
+  const v = libHits[k], r = await API().g38_preview({ voice: 'lib:' + v.id, style: '', text: T('سلام؛ این نمونه‌ای از صدای من است.', 'Hello — this is a sample of my voice.'), cfg: { ...gFields(lineVoice(orderedLines()[0] || 0)), g38_cast: [] } });
   if (!r || !r.ok) return say((r && r.error) || T('نمونه ساخته نشد.', 'Could not make a sample.'), 'err');
   say('', 'ok'); togglePreview('lv' + k, URL.createObjectURL(b64Blob(r.b64, 'audio/mpeg')));
 }
@@ -1379,7 +1397,7 @@ function renderCast(){
   box.querySelectorAll('select').forEach(enh);
 }
 async function castPreview(i){ const c = CAST[i]; say(T('نمونه ساخته می‌شود…', 'Making a sample…'), 'ok');
-  const r = await API().g38_preview({ voice: c.voice, style: c.style || '', text: (c.name ? c.name + ': ' : '') + T('سلام؛ این صدای من است.', 'Hello; this is my voice.'), cfg: { ...gFields(lineVoice(orderedLines()[0] || 0)), g38_cast: [] } });
+  const r = await API().g38_preview({ voice: c.voice, style: c.style || '', text: (c.name ? c.name + ': ' : '') + T('سلام؛ این صدای من است.', 'Hello — this is my voice.'), cfg: { ...gFields(lineVoice(orderedLines()[0] || 0)), g38_cast: [] } });
   if (!r || !r.ok) return say((r && r.error) || '', 'err'); say('', 'ok'); togglePreview('cast' + i, URL.createObjectURL(b64Blob(r.b64, 'audio/mpeg'))); }
 // ---- Fish: library, cloning, design
 function openFishLib(){ $('fishLibDlg').showModal(); if (!flHits.length) fishSearch(1); }
@@ -1399,7 +1417,7 @@ async function fishSearch(page){
 function fishPick(k){ const v = flHits[k], id = v._id || v.id; rememberFish(id, v.title || v.name); stopPreview(); $('fishLibDlg').close(); setEng('fishVoice', id); fillInspector(); }
 async function fishCloneGo(){
   setBusy(true); try { const r = await API().fish_clone($('fcTitle').value.trim(), $('fcTrans').value.trim(), $('fcEnh').checked); if (!r.ok){ if (r.error !== 'cancelled') throw new Error(r.error || ''); return; }
-    await loadEngineLists(); $('fishCloneDlg').close(); if (r.id) setEng('fishVoice', r.id); fillInspector(); say(T('صدا ساخته و انتخاب شد.', 'Voice made and selected.'), 'ok'); }
+    await loadEngineLists(); $('fishCloneDlg').close(); if (r.id) setEng('fishVoice', r.id); fillInspector(); say(T('صدا ساخته و انتخاب شد.', 'Voice created and selected.'), 'ok'); }
   catch (e) { say(e.message || String(e), 'err'); } finally { setBusy(false); }
 }
 async function fishDesignGo(){
@@ -1426,12 +1444,14 @@ async function netTest(){ $('netReport').classList.remove('hidden'); $('netRepor
   const r = await API().net_test(); $('netReport').textContent = (r && r.text) || ''; netStatus(); }
 // ---- document
 async function saveText(){ const text = orderedLines().map(id => S.lines[id].text).join('\n'); const r = await API().save_text(text, 'txt'); if (r && r.ok) say(T('متن ذخیره شد.', 'Text saved.'), 'ok'); else if (r && r.error && r.error !== 'cancelled') say(r.error, 'err'); }
-async function newDoc(){ if (!confirm(T('سندِ فعلی پاک شود و سندِ تازه شروع شود؟', 'Clear the current document and start a new one?'))) return;
-  remember(); try { await API().new_document(); } catch (e) {} S.lines = {}; S.tracks.forEach(t => t.clips = []); selClip = null; sel = new Set(); ensureOneLine(); renderScript(); autosave(); }
+async function newDoc(){ if (!(await askYes(T('پروژهٔ تازه', 'New project'), T('سند و ویدیوی فعلی پاک می‌شوند (پروژه‌ای که ذخیره کرده‌اید سرِ جایش می‌ماند).', 'The current document and video are cleared (a project you saved stays where it is).'), T('شروعِ پروژهٔ تازه', 'Start a new project')))) return;   // 175: the app's dialog, not confirm()
+  remember(); try { await API().new_document(); } catch (e) {} S.lines = {}; S.tracks.forEach(t => t.clips = []); selClip = null; sel = new Set(); S.music.file = null; S.music.name = null; S.projPath = null;
+  if (typeof V0 === 'function'){ V = V0(); vSel = null; if (typeof ensureLayers === 'function') ensureLayers(); if (typeof vDraw === 'function') try { vDraw(); } catch (err) {} }   // 171: the video mode is flushed too
+  ensureOneLine(); renderScript(); showInsp('proj'); autosave(); }
 document.querySelectorAll('#netMode, #lbLang, #lbGender, #lbPitch, #lbCtx, #dsGender, #flLang, #flSort').forEach(el => enh(el));
 
 // 159: after choosing music, land on its settings — the bed clip selected, the music panel open (as before)
-function focusMusic(){ const mt = S.tracks.find(t => t.kind === 'music'); if (mt && mt.clips[0]){ selClip = mt.clips[0].id; sel = new Set(); renderTimeline(); showInsp('music'); showMusicInspector(); } autosave(); }
+function focusMusic(){ const mc0 = musicClips()[0]; if (mc0){ selClip = mc0.id; sel = new Set(); renderTimeline(); showInsp('music'); showMusicInspector(); } autosave(); }
 
 
 // =====================================================================================
@@ -1461,31 +1481,31 @@ addEventListener('keydown', e => {
 });
 // ---- per-track volume, live while playing
 function setTrackVolume(i, v, el){ const t = S.tracks[i]; t.volume = v; const vb = document.querySelector(`[data-vol="${i}"]`); if (vb) vb.classList.toggle('text-primary', Math.abs(v - 1) > 1e-6); const g = trackGain[t.id]; if (g && AC && !t.muted) g.gain.setValueAtTime(v, AC.currentTime);
-  if (el) el.dataset.tip = T('بلندیِ ترک', 'Track volume') + ': ' + Math.round(v * 100) + (lang === 'fa' ? '٪' : '%'); autosave(); }
+  if (el) el.dataset.tip = T('بلندیِ ترک', 'Track volume') + ': ' + Math.round(v * 100) + pctSign(); autosave(); }
 // ---- export: every unmuted voice track, at its volume; music at its track's volume, off when muted
 function timelineSpec(){
   const clips = [];
-  S.tracks.forEach(t => { if (t.kind !== 'speech' || t.muted) return; t.clips.forEach(c => { if (!c.unvoiced && c.gulp != null){ clips.push({ gulp: c.gulp, in: c.in, out: c.out, at: c.at, gain: t.volume ?? 1 }); if (!(S.ovl && S.ovl.muted)) clipOverlays(c).forEach(o => clips.push({ gulp: o.gulp, in: 0, out: o.len, at: o.at, gain: (t.volume ?? 1) * ((S.ovl && S.ovl.volume) ?? 1) })); } }); });
-  S.tracks.forEach(t => { if (t.kind !== 'sfx' || t.muted) return; t.clips.forEach(c => clips.push({ file: c.file, in: c.in, out: c.out, at: c.at, gain: (t.volume ?? 1) * (c.gain ?? 1) })); });   // 170
+  S.tracks.forEach(t => { if (t.muted) return; t.clips.forEach(c => { if ((!c.type || c.type === 'ovl') && !c.unvoiced && c.gulp != null) clips.push({ gulp: c.gulp, in: c.in, out: c.out, at: c.at, gain: (t.volume ?? 1) * (c.gain ?? 1) }); }); });   // 172
+  S.tracks.forEach(t => { if (t.muted) return; t.clips.forEach(c => { if (c.type === 'sfx') clips.push({ file: c.file, in: c.in, out: c.out, at: c.at, gain: (t.volume ?? 1) * (c.gain ?? 1) }); }); });   // 170
   return { clips };
 }
-const musicTrack = () => S.tracks.find(t => t.kind === 'music');
+const musicTrack = () => { const cl = musicClips(); return cl.length ? { clips: cl, muted: cl.every(c => c._track && c._track.muted), volume: 1 } : null; };   // 172: music clips on any track
 async function exportAudio(mode){
   document.activeElement && document.activeElement.blur();
   // 169: the main export is the COMPOSITION exactly as it plays — every unmuted track at its volume, the music
   //      clips when there are any, muted tracks silent; nothing is required (no music → no music)
   const comp = mode !== false && mode !== 'voice';
   const mt = musicTrack(), mVol = mt ? (mt.volume ?? 1) : 1, hasMusic = comp && !!mt && !mt.muted && mVol > 0 && (mt.clips || []).length > 0 && !!S.music.file;
-  if (pending()) say(T(`${FA(pending())} خط تغییر کرده و دوباره ساخته نشده؛ ترکیب همان‌طور که پخش می‌شود ذخیره می‌شود.`, `${pending()} lines are edited and not re-voiced; the composition is exported as it plays.`), 'ok');
-  const spec = timelineSpec(); if (!spec.clips.length){ say(T('هیچ ترکِ گفتارِ شنیدنی‌ای نیست — همه بی‌صدا هستند یا چیزی ساخته نشده.', 'No audible voice track — all are muted or nothing is voiced.'), 'err'); return; }
+  if (pending()) say(T(`${FA(pending())} خط تغییر کرده و دوباره ساخته نشده؛ ترکیب همان‌طور که پخش می‌شود ذخیره می‌شود.`, `${pending()} edited lines aren’t regenerated yet; the export uses what plays now.`), 'ok');
+  const spec = timelineSpec(); if (!spec.clips.length){ say(T('هیچ ترکِ گفتارِ شنیدنی‌ای نیست — همه بی‌صدا هستند یا چیزی ساخته نشده.', 'Nothing to hear — every speech track is muted or nothing is generated yet.'), 'err'); return; }
   if (busy) return; setBusy(true);
   try {
     const cfg = hasMusic ? { on: true, clips: musicClipsSpec(), file: S.music.file, level_db: S.music.level_db + 20 * Math.log10(Math.max(0.01, mVol)), duck: (S.music.duck_db ?? 12) > 0, duck_db: S.music.duck_db ?? 12, fade_in: S.music.fade_in, fade_out: S.music.fade_out } : null;
     const suffix = comp ? '' : 'voice'; let path, secs;
     if (typeof API().timeline_export === 'function'){ const r = await API().timeline_export(spec, cfg, suffix); if (!r.ok){ if (r.error === 'cancelled') return; throw new Error(r.error || T('خطای ناشناخته', 'Unknown error')); } path = r.path; secs = r.seconds; }
     else { const r = await API().timeline_files(spec, cfg); if (!r.ok) throw new Error(r.error || T('خطای ناشناخته', 'Unknown error')); const sv = await API().save_mp3(hasMusic ? r.b64_music : r.b64, suffix); if (!sv.ok) return; path = sv.path; secs = r.seconds; }
-    say(T('ذخیره شد: ', 'Saved: ') + path + ' — ' + num(secs) + T(' ثانیه', ' s') + (comp ? T(' — ترکیبِ کامل', ' — full composition') : T(' — فقط گفتار', ' — voice only')), 'ok');
-  } catch (err) { say(isCancel(err) ? T('لغو شد.', 'Cancelled.') : (err.message || String(err)), isCancel(err) ? 'ok' : 'err'); }
+    say(T('ذخیره شد: ', 'Saved: ') + path + ' — ' + num(secs) + T(' ثانیه', ' s') + (comp ? T(' — ترکیبِ کامل', ' — full composition') : T(' — فقط گفتار', ' — voice only')), 'ok'); doneToast(T('صدا ساخته شد', 'Audio exported'), path);
+  } catch (err) { say(isCancel(err) ? T('لغو شد.', 'Canceled.') : (err.message || String(err)), isCancel(err) ? 'ok' : 'err'); }
   finally { setBusy(false); }
 }
 // ---- LETTER precision: inside a word, time is spread over its letters by weight
@@ -1518,23 +1538,25 @@ async function editOverlap(id, raw){   // 170: clicking an overlap tag opens its
   const L = S.lines[id]; if (!L) return; const o = ovlList(id).find(x => x.raw === raw); if (!o) return;
   const res = await askOverlap(speakerOfLine(id), o); if (!res) return; remember();
   L.text = res.remove ? L.text.replace(raw, '').replace(/\s{2,}/g, ' ') : L.text.replace(raw, ovlTag(res)); afterChange(); }
-function askOverlap(own, cur){ return new Promise(done => {
+function askOverlap(own, cur){ return new Promise(done => {   // 175: the app's form-dialog structure, its own dropdowns, all 3.8 moods
   let d = $('ovlDlg'); if (!d){ d = document.createElement('dialog'); d.id = 'ovlDlg'; d.className = 'modal'; document.body.appendChild(d); }
-  const list = spkList(), dflt = cur && cur.spk ? cur.spk : (list.find(x => x !== own) || null), g38 = S.proj.engine === 'google' && isG38();
-  const PRE = [T('آره', 'Yeah'), T('اوهوم', 'Mm-hmm'), T('واقعاً؟', 'Really?'), T('عجب!', 'Wow!'), T('درسته', 'Right'), T('نه بابا!', 'No way!'), T('خب', 'Well…')];
-  d.innerHTML = `<div class="modal-box ui max-w-md p-6" dir="${lang === 'fa' ? 'rtl' : 'ltr'}"><div class="flex items-center justify-between gap-3"><h3 class="text-lg font-bold">${T('واکنشِ هم‌زمان', 'Overlapping reaction')}</h3><button class="btn btn-ghost btn-circle" data-act="no" aria-label="close"><svg class="size-5"><use href="#i-x"/></svg></button></div>
-    <p class="mt-1 text-xs text-base-content/70">${T('کسِ دیگری وسطِ همین خط، روی صدای گوینده، واکنش نشان می‌دهد؛ خودِ خط مکث نمی‌کند.', "Someone else reacts in the middle of this line, over the speaker's voice; the line itself does not pause.")}</p>
-    <fieldset class="fieldset mt-3"><legend class="fieldset-legend text-xs">${T('چه کسی می‌گوید', 'Who says it')}</legend><select id="ovlSpk" class="select select-sm w-full">${list.length ? list.map((x, k) => `<option value="${k}" ${x === dflt ? 'selected' : ''}>${escapeHtml(x.name)}${x === own ? T(' — گویندهٔ همین خط', " — this line's speaker") : ''}</option>`).join('') : `<option value="">${T('— صدای پروژه —', "— project's voice —")}</option>`}</select></fieldset>
-    <fieldset class="fieldset"><legend class="fieldset-legend text-xs">${T('چه می‌گوید', 'What they say')}</legend><input id="ovlText" class="input input-sm w-full" value="${escapeHtml(cur ? cur.text : '')}" placeholder="${T('مثلاً: واقعاً؟', 'e.g. really?')}"></fieldset>
-    <div class="mt-2 flex flex-wrap gap-1.5">${PRE.map(x => `<button type="button" class="btn btn-xs rounded-full border-base-content/15 bg-base-100" data-ovl="${escapeHtml(x)}">${escapeHtml(x)}</button>`).join('')}</div>
-    ${g38 ? `<fieldset class="fieldset"><legend class="fieldset-legend text-xs">${T('با چه حالی (فقط Gemini 3.8)', 'In what mood (Gemini 3.8 only)')}</legend><select id="ovlMood" class="select select-sm w-full"><option value="">${T('— بی‌حالت —', '— none —')}</option>${G38_TONES.map(t => `<option value="${escapeHtml(t)}" ${cur && cur.mood === t ? 'selected' : ''}>${escapeHtml(toneLabel(t))}</option>`).join('')}</select></fieldset>` : ''}
-    <div class="modal-action mt-4">${cur ? `<button class="btn btn-ghost btn-sm text-error me-auto" data-act="del">${T('حذف', 'Delete')}</button>` : ''}<button class="btn btn-ghost btn-sm" data-act="no">${T('انصراف', 'Cancel')}</button><button class="btn btn-primary btn-sm" data-act="ok">${cur ? T('ذخیره', 'Save') : T('افزودن', 'Add')}</button></div></div><form method="dialog" class="modal-backdrop"><button>close</button></form>`;
+  const list = spkList(), dflt = cur && cur.spk ? cur.spk : (list.find(x => x !== own) || null), dir = lang === 'fa' ? 'rtl' : 'ltr';
+  const PRE = [T('آره', 'Yeah'), T('اوهوم', 'Mm-hmm'), T('آها', 'Aha'), T('واقعاً؟', 'Really?'), T('عجب!', 'Wow!'), T('درسته', 'Right'), T('نه بابا!', 'No way!'), T('خب', 'Well…')];
+  const g38For = sp0 => ((sp0 && sp0.engine) || S.proj.engine) === 'google' && isG38();
+  d.innerHTML = `<div class="modal-box ui flex max-h-[88vh] max-w-xl flex-col overflow-y-auto p-6" dir="${dir}"><div class="mb-5 flex items-start gap-3"><span class="grid size-10 shrink-0 place-items-center rounded-full bg-primary/15 text-primary"><svg class="size-5"><use href="#i-message-circle"/></svg></span><div class="min-w-0 flex-1"><h3 class="text-lg font-bold">${T('واکنشِ هم‌زمان', 'Overlapping reaction')}</h3><p class="text-sm text-base-content/60">${T('کسِ دیگری وسطِ همین خط، روی صدای گوینده، واکنش نشان می‌دهد؛ خودِ خط مکث نمی‌کند.', "Someone reacts in the middle of this line, over the speaker’s voice — the line doesn’t pause.")}</p></div><form method="dialog"><button class="btn btn-ghost btn-circle" aria-label="close"><svg class="size-5"><use href="#i-x"/></svg></button></form></div>
+    <div class="space-y-4"><label class="block"><span class="mb-1.5 block text-sm font-semibold">${T('چه کسی می‌گوید', 'Who says it')}</span><select id="ovlSpk" class="select w-full">${list.length ? list.map((x, k) => `<option value="${k}" ${x === dflt ? 'selected' : ''}>${escapeHtml(x.name)}${x === own ? T(' — گویندهٔ همین خط', " — this line's speaker") : ''}</option>`).join('') : `<option value="">${T('— صدای پروژه —', "— project's voice —")}</option>`}</select></label>
+      <div><label class="block"><span class="mb-1.5 block text-sm font-semibold">${T('چه می‌گوید', 'What they say')}</span><input id="ovlText" class="input w-full" dir="auto" value="${escapeHtml(cur ? cur.text : '')}" placeholder="${T('مثلاً: واقعاً؟', 'e.g. really?')}"></label>
+        <div class="mt-2 flex flex-wrap gap-1.5">${PRE.map(x => `<button type="button" class="badge badge-soft badge-primary h-auto cursor-pointer py-1" data-ovl="${escapeHtml(x)}">${escapeHtml(x)}</button>`).join('')}</div></div>
+      <label class="block" id="ovlMoodRow"><span class="mb-1.5 block text-sm font-semibold">${T('با چه حالی', 'Mood')} <span class="font-normal text-base-content/50">· Gemini 3.8</span></span><select id="ovlMood" class="select w-full"><option value="">${T('— بی‌حالت —', '— none —')}</option>${G38_TONES_ALL.map(t => `<option value="${escapeHtml(t)}" ${cur && cur.mood === t ? 'selected' : ''}>${escapeHtml(toneLabel(t))}</option>`).join('')}</select></label></div>
+    <div class="modal-action">${cur ? `<button class="btn btn-ghost me-auto text-error" data-act="del"><svg class="size-4"><use href="#i-trash-2"/></svg>${T('حذف', 'Delete')}</button>` : ''}<button class="btn" data-act="no">${T('لغو', 'Cancel')}</button><button class="btn btn-primary gap-1.5" data-act="ok"><svg class="size-4"><use href="#i-${cur ? 'check' : 'plus'}"/></svg><span>${cur ? T('ذخیره', 'Save') : T('افزودن', 'Add')}</span></button></div></div><form method="dialog" class="modal-backdrop"><button>close</button></form>`;
   let fin = false; const end = v => { if (fin) return; fin = true; if (d.open) d.close(); done(v); };
+  const moodRow = () => { const k0 = $('ovlSpk').value, s0 = k0 === '' ? null : spkList()[+k0]; $('ovlMoodRow').classList.toggle('hidden', !g38For(s0)); };
   d.querySelectorAll('[data-ovl]').forEach(b => b.onclick = () => { $('ovlText').value = b.dataset.ovl; $('ovlText').focus(); });
   d.querySelectorAll('[data-act=no]').forEach(b => b.onclick = () => end(null));
   const del = d.querySelector('[data-act=del]'); if (del) del.onclick = () => end({ remove: true, text: ' ' });
-  d.querySelector('[data-act=ok]').onclick = () => { const k = $('ovlSpk').value, md = $('ovlMood'); end({ text: $('ovlText').value.trim(), spk: k === '' ? null : spkList()[+k], mood: md ? md.value : '' }); };
+  d.querySelector('[data-act=ok]').onclick = () => { const k0 = $('ovlSpk').value, s0 = k0 === '' ? null : spkList()[+k0]; end({ text: $('ovlText').value.trim(), spk: s0, mood: g38For(s0) ? $('ovlMood').value : '' }); };
   $('ovlText').onkeydown = ev => { if (ev.key === 'Enter'){ ev.preventDefault(); d.querySelector('[data-act=ok]').click(); } };
+  $('ovlSpk').addEventListener('change', moodRow); enh($('ovlSpk')); enh($('ovlMood')); moodRow();
   d.addEventListener('close', () => end(null), { once: true }); d.showModal(); setTimeout(() => $('ovlText').focus(), 30); }); }
 // ---- Google 3.1 two speakers; Fish custom style, age, state and speakers
 function setDuo(path, v){ remember(); const [a, b] = path.split('.'); if (b) S.proj.duo[a][b] = v; else S.proj.duo[a] = v; fillExtras2(); renderScript(); autosave(); }
@@ -1562,7 +1584,7 @@ function renderFishSpk(){
       <select class="select select-xs" onchange="setFishSpk(${i}, 'age', this.value)">${optRows(ages, x.age || '')}</select>
       <select class="select select-xs" onchange="setFishSpk(${i}, 'state', this.value)">${optRows(states, x.state || '')}</select>
       <button class="btn btn-ghost btn-xs gap-1 hover:text-error" onclick="remember(); S.proj.fish.speakers.splice(${i}, 1); renderFishSpk(); autosave()"><svg class="size-3.5"><use href="#i-trash-2"/></svg>${T('حذف', 'Remove')}</button></div>`).join('')
-    || `<p class="text-xs text-base-content/50">${T('یک گوینده؛ برای گفت‌وگو گوینده اضافه کنید.', 'One speaker; add speakers for a dialogue.')}</p>`;
+    || `<p class="text-xs text-base-content/50">${T('یک گوینده؛ برای گفت‌وگو گوینده اضافه کنید.', 'One speaker — add more for a dialogue.')}</p>`;
   box.querySelectorAll('select').forEach(enh);
 }
 // ---- the low-quota warning, as in the old editor (once per session)
@@ -1691,14 +1713,14 @@ function fishOptions(cur){
 }
 
 // 166 · music clips: split, duplicate, delete one (the music itself goes only with its last clip); quick trim visual for music
-const musicClipsSpec = () => ((S.tracks.find(t => t.kind === 'music') || {}).clips || []).map(c => ({ in: c.in, out: c.out, at: c.at }));
-function splitMusic(){ const [t, c] = findClip(selClip); if (!c || (t.kind !== 'music' && t.kind !== 'sfx')) return; const cut = playhead - c.at;
+const musicClipsSpec = () => musicClips().filter(c => !(c._track && c._track.muted)).map(c => ({ gain: ((c._track && c._track.volume) ?? 1) * (c.gain ?? 1), in: c.in, out: c.out, at: c.at }));
+function splitMusic(){ const [t, c] = findClip(selClip); if (!c || (c.type !== 'music' && c.type !== 'sfx')) return; const cut = playhead - c.at;
   if (cut <= 0.1 || cut >= c.out - c.in - 0.1) return say(T('پلی‌هد را روی کلیپِ موسیقی بگذارید.', 'Put the playhead over the music clip.'), 'err');
   remember(); const n = { ...c, id: 'mu' + (++uid), at: c.at + cut, in: c.in + cut }; c.out = c.in + cut; t.clips.push(n); t.clips.sort((a, b) => a.at - b.at); S.music.manual = true; selClip = n.id; renderTimeline(); autosave(); }
-function dupMusic(){ const [t, c] = findClip(selClip); if (!c || (t.kind !== 'music' && t.kind !== 'sfx')) return; remember(); const len = c.out - c.in, end = Math.max(...t.clips.map(x => x.at + x.out - x.in));
+function dupMusic(){ const [t, c] = findClip(selClip); if (!c || (c.type !== 'music' && c.type !== 'sfx')) return; remember(); const len = c.out - c.in, end = Math.max(...t.clips.map(x => x.at + x.out - x.in));
   const free = !t.clips.some(x => x !== c && x.at < c.at + 2 * len && x.at + x.out - x.in > c.at + len);
   const n = { ...c, id: 'mu' + (++uid), at: free ? c.at + len : end }; t.clips.push(n); t.clips.sort((a, b) => a.at - b.at); S.music.manual = true; selClip = n.id; renderTimeline(); autosave(); }
-function delMusicClip(){ const [t, c] = findClip(selClip); if (!c || (t.kind !== 'music' && t.kind !== 'sfx')) return; if (t.kind === 'sfx'){ remember(); t.clips = t.clips.filter(x => x !== c); selClip = null; renderTimeline(); autosave(); return; } if (t.clips.length <= 1) return removeMusic(); remember(); t.clips = t.clips.filter(x => x !== c); S.music.manual = true; selClip = null; renderTimeline(); autosave(); }
+function delMusicClip(){ const [t, c] = findClip(selClip); if (!c || (c.type !== 'music' && c.type !== 'sfx')) return; if (c.type === 'sfx'){ remember(); t.clips = t.clips.filter(x => x !== c); cleanupTracks(); selClip = null; renderTimeline(); autosave(); return; } if (musicClips().length <= 1) return removeMusic(); remember(); t.clips = t.clips.filter(x => x !== c); S.music.manual = true; selClip = null; renderTimeline(); autosave(); }
 const _quickTrimVisual165 = quickTrimVisual;
 quickTrimVisual = function(c){ if (!c.lines) return renderTimeline(); return _quickTrimVisual165(c); };
 
@@ -1753,12 +1775,14 @@ document.addEventListener('click', ev => {
 //       in both modes; the bytes come from the engine, the index is baked into the page.
 // =====================================================================================
 const SFXB = new Map(), SFX_LOADING = new Map();
-function sfxTrack(create){ let t = S.tracks.find(x => x.kind === 'sfx'); if (!t && create){ t = { id: 'fx' + (++uid), name: 'افکت‌ها', en: 'Effects', kind: 'sfx', volume: 1, muted: false, clips: [] }; const mi = S.tracks.findIndex(x => x.kind === 'music'); if (mi >= 0) S.tracks.splice(mi, 0, t); else S.tracks.push(t); } return t || null; }
+function sfxTrack(){ return S.tracks.find(t => t.clips.some(c => c.type === 'sfx')) || null; }
+function sfxTrack_old(create){ let t = S.tracks.find(x => x.kind === 'sfx'); if (!t && create){ t = { id: 'fx' + (++uid), name: 'افکت‌ها', en: 'Effects', kind: 'sfx', volume: 1, muted: false, clips: [] }; const mi = S.tracks.findIndex(x => x.kind === 'music'); if (mi >= 0) S.tracks.splice(mi, 0, t); else S.tracks.push(t); } return t || null; }
 async function loadSfx(file){ if (SFXB.has(file)) return SFXB.get(file); if (SFX_LOADING.has(file)) return SFX_LOADING.get(file);
   const p = (async () => { const r = await API().sfx_read(file); if (!r || !r.ok) throw new Error(r && r.error || 'sfx'); const bin = atob(r.b64), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); const buf = await ac().decodeAudioData(u8.buffer); SFXB.set(file, buf); return buf; })();
   SFX_LOADING.set(file, p); try { return await p; } finally { SFX_LOADING.delete(file); } }
 const sfxIdx = () => (typeof SFX_INDEX !== 'undefined' ? SFX_INDEX : (window.SFX_INDEX || { families: {}, items: [] })), sfxItems = () => sfxIdx().items || [], sfxFams = () => sfxIdx().families || {};
-let SFX_FAM = 'all', SFX_Q = '', SFX_PREV = null;
+let SFX_FAM = 'all', SFX_Q = '', SFX_PREV = null, SFX_REPLACE = null;
+const sfxName = o => { const it = sfxItems().find(x => x.file === o.file); return it ? T(it.fa, it.en) : (o.name || ''); };   // 175: in the language on screen
 function openSfxLib(){ let d = $('sfxDlg'); if (!d){ d = document.createElement('dialog'); d.id = 'sfxDlg'; d.className = 'modal'; document.body.appendChild(d); } renderSfxLib(d); d.showModal(); }
 function renderSfxLib(d){ d = d || $('sfxDlg'); if (!d) return; const fams = sfxFams(), q = SFX_Q.trim().toLowerCase();
   const items = sfxItems().filter(it => (SFX_FAM === 'all' || it.fam === SFX_FAM) && (!q || (it.fa + ' ' + it.en + ' ' + it.key).toLowerCase().includes(q)));
@@ -1766,12 +1790,21 @@ function renderSfxLib(d){ d = d || $('sfxDlg'); if (!d) return; const fams = sfx
     <div class="flex items-center justify-between gap-3 px-5 pt-5"><h3 class="text-lg font-bold">${T('کتابخانهٔ افکت‌های صوتی', 'Sound-effects library')} <span class="text-sm font-normal text-base-content/60">${num(sfxItems().length)}</span></h3><form method="dialog"><button class="btn btn-ghost btn-circle" aria-label="close"><svg class="size-5"><use href="#i-x"/></svg></button></form></div>
     <div class="px-5 pt-3"><input class="input input-sm w-full" placeholder="${T('جست‌وجو…', 'Search…')}" value="${escapeHtml(SFX_Q)}" oninput="SFX_Q = this.value; renderSfxLib(); this.focus(); this.setSelectionRange(this.value.length, this.value.length)"></div>
     <div class="flex flex-wrap gap-1.5 px-5 pt-3">${[['all', T('همه', 'All')], ...Object.entries(fams).map(([k, f]) => [k, T(f.fa, f.en)])].map(([k, nm]) => `<button class="btn btn-xs rounded-full ${SFX_FAM === k ? 'btn-primary' : 'border-base-content/15 bg-base-100'}" onclick="SFX_FAM = '${k}'; renderSfxLib()">${escapeHtml(nm)}</button>`).join('')}</div>
-    <div class="min-h-0 flex-1 overflow-auto px-3 py-3"><ul class="menu menu-sm w-full p-0">${items.map(it => `<li class="flex flex-row items-center gap-1"><a class="min-w-0 flex-1 gap-2" onclick="addSfx('${it.file}')"><span class="min-w-0 flex-1"><span class="block truncate font-semibold">${escapeHtml(lang === 'fa' ? it.fa : it.en)}</span><span class="block truncate text-xs text-base-content/55">${escapeHtml(lang === 'fa' ? it.en : it.fa)} · ${num(it.sec)}${T('ث', 's')}</span></span></a><button class="ddb opacity-80 hover:opacity-100" onclick="previewSfx('${it.file}')" data-tip="${T('شنیدن', 'Hear it')}"><svg class="size-3.5"><use href="#i-play"/></svg></button><button class="ddb text-primary" onclick="addSfx('${it.file}')" data-tip="${T('افزودن در جای پلی‌هد', 'Add at the playhead')}"><svg class="size-4"><use href="#i-plus"/></svg></button></li>`).join('') || `<li class="menu-title">${T('چیزی پیدا نشد.', 'Nothing found.')}</li>`}</ul></div>
-    <p class="px-5 pb-4 text-xs text-base-content/55">${T('کلیک روی نام = افزودن در جای پلی‌هد، روی ترکِ «افکت‌ها». همهٔ این صداها ساختهٔ خودِ برنامه‌اند — بدون ضبط، بدون پروانه.', 'Click a name = add at the playhead, on the «Effects» track. Every sound is synthesised by the app itself — no recordings, nothing licensed.')}</p></div><form method="dialog" class="modal-backdrop"><button>close</button></form>`; }
+    <div class="min-h-0 flex-1 overflow-auto px-3 py-3"><ul class="menu menu-sm w-full p-0">${items.map(it => `<li class="flex flex-row items-center gap-1"><a class="min-w-0 flex-1 gap-2" onclick="addSfx('${it.file}')"><span class="min-w-0 flex-1"><span class="block truncate font-semibold">${escapeHtml(lang === 'fa' ? it.fa : it.en)}</span><span class="block truncate text-xs text-base-content/55">${lang === 'fa' ? escapeHtml(it.en) + ' · ' : ''}${num(it.sec)}${T('ث', ' s')}</span></span></a><button class="ddb opacity-80 hover:opacity-100" onclick="previewSfx('${it.file}')" data-tip="${T('شنیدن', 'Hear it')}"><svg class="size-3.5"><use href="#i-play"/></svg></button><button class="ddb text-primary" onclick="addSfx('${it.file}')" data-tip="${T('افزودن در جای پلی‌هد', 'Add at the playhead')}"><svg class="size-4"><use href="#i-plus"/></svg></button></li>`).join('') || `<li class="menu-title">${T('چیزی پیدا نشد.', 'Nothing found.')}</li>`}</ul></div>
+    <p class="px-5 pb-4 text-xs text-base-content/55">${T('کلیک روی نام = افزودن در جای پلی‌هد. همهٔ این صداها با کد ساخته شده‌اند — در خودِ برنامه، یا در ویرایشگرِ «روباه و ماه» — بدون ضبط، بدون پروانه.', 'Click a sound to add it at the playhead. Every sound here is synthesized in code — by this app or by the Fox and the Moon editor. No recordings, nothing licensed.')}</p></div><form method="dialog" class="modal-backdrop"><button>close</button></form>`; }
 async function previewSfx(file){ try { const buf = await loadSfx(file); if (SFX_PREV){ try { SFX_PREV.stop(); } catch (err) {} } const s = ac().createBufferSource(); s.buffer = buf; s.connect(ac().destination); s.start(); SFX_PREV = s; } catch (err) { say(err.message || String(err), 'err'); } }
-async function addSfx(file){ const it = sfxItems().find(x => x.file === file); if (!it) return; remember(); const t = sfxTrack(true);
-  const c = { id: 'sx' + (++uid), file, name: lang === 'fa' ? it.fa : it.en, in: 0, out: it.sec, at: playhead, gain: 1 }; t.clips.push(c); t.clips.sort((a, b) => a.at - b.at); selClip = c.id;
-  loadSfx(file).catch(err => say(err.message || String(err), 'err')); renderTimeline(); autosave(); say(T('افکت افزوده شد: ', 'Effect added: ') + c.name, 'ok'); }
+async function addSfx(file){ const it = sfxItems().find(x => x.file === file); if (!it) return; remember();
+  const name = lang === 'fa' ? it.fa : it.en, d = $('sfxDlg'), rep = SFX_REPLACE && typeof objById === 'function' ? objById(SFX_REPLACE) : null; SFX_REPLACE = null; if (d && d.open) d.close(); loadSfx(file).catch(err => say(err.message || String(err), 'err'));
+  if (rep && rep.type === 'sfx'){ rep.file = file; rep.name = name; rep.trimIn = 0; rep.end = (rep.start || 0) + it.sec; selectV(rep.id); vChanged(); say(T('افکت عوض شد: ', 'Effect replaced: ') + name, 'ok'); return; }   // 175: Replace in the effect's panel
+  if (typeof mode !== 'undefined' && mode === 'video'){   // 172: in video mode an effect is a video object on a video track — no shared track
+    const o = { id: 'o' + (++uid), type: 'sfx', file, name, x: 0, y: 0, w: 0, h: 0, rot: 0, opacity: 1, start: playhead, end: playhead + it.sec, gain: 1, lock: false, anim: {} };
+    V.objects.push(o); ensureLayers(); selectV(o.id); vChanged(); say(T('افکت افزوده شد: ', 'Effect added: ') + name, 'ok'); return; }
+  const c = { id: 'sx' + (++uid), type: 'sfx', lines: [], file, name, in: 0, out: it.sec, at: playhead, gain: 1 }; freeTrack(c).clips.push(c); selClip = c.id; sel.clear();   // 172: a free spot on a plain track, or a new track
+  renderTimeline(); if (typeof placeClipBar === 'function') placeClipBar(); autosave(); say(T('افکت افزوده شد: ', 'Effect added: ') + name, 'ok'); }
+
+// 171: Delete / Backspace removes a selected effect clip
+document.addEventListener('keydown', ev => { if (!(ev.key === 'Delete' || ev.key === 'Backspace')) return; const tg = ev.target; if (tg && (tg.isContentEditable || /INPUT|TEXTAREA|SELECT/.test(tg.tagName))) return;
+  const [t, c] = findClip(selClip); if (c && t && c.type){ ev.preventDefault(); ev.stopImmediatePropagation(); if (c.type === 'ovl') ovlDel(); else delMusicClip(); } }, true);
 
 // =====================================================================================
 // 170 · THE OVERLAPS ROW — every overlap is separate audio over its line; this row shows each one as a clip
@@ -1779,7 +1812,7 @@ async function addSfx(file){ const it = sfxItems().find(x => x.file === file); i
 // =====================================================================================
 function ovlClips(){ const out = []; S.tracks.forEach(t => { if (t.kind !== 'speech') return; t.clips.forEach(c => { if (c.unvoiced || !c.lines || c.lines.length !== 1) return; const id = c.lines[0], list = ovlList(id); let k = 0;
   clipOverlays(c).forEach(o => { const ov = list.filter(x => x.text)[k++]; out.push({ ...o, id, text: ov ? ov.text : '', spk: ov ? ovlSpeaker(id, ov) : null }); }); }); }); return out; }
-function renderOvlRow(){ if (mode === 'video') return; const rows = ovlClips(), heads = $('heads'), lanes = $('lanes'); document.querySelectorAll('[data-ti="ovl"]').forEach(x => x.remove()); if (!rows.length) return;
+function renderOvlRow(){ return; if (mode === 'video') return; const rows = ovlClips(), heads = $('heads'), lanes = $('lanes'); document.querySelectorAll('[data-ti="ovl"]').forEach(x => x.remove()); if (!rows.length) return;
   S.ovl = S.ovl || { muted: false, volume: 1 }; const pps = zoom, lastSpeech = S.tracks.map((t, i) => t.kind === 'speech' ? i : -1).filter(i => i >= 0).pop();
   const head = document.createElement('div'); head.className = 'flex h-14 items-center pe-2'; head.dataset.ti = 'ovl';
   head.innerHTML = `<div class="flex h-11 w-full items-center gap-1 rounded-box bg-base-100/50 px-2 text-xs"><svg class="size-3.5 shrink-0 opacity-70"><use href="#i-message-circle"/></svg><span class="ui flex-1 truncate font-semibold">${T('واکنش‌ها', 'Reactions')}</span><button class="btn btn-ghost btn-xs btn-square ${S.ovl.muted ? 'bg-error/15 text-error' : ''}" onclick="S.ovl.muted = !S.ovl.muted; renderTimeline(); autosave()" aria-label="mute"><svg class="size-3.5"><use href="#i-volume-x"/></svg></button><button class="btn btn-ghost btn-xs btn-square ${(S.ovl.volume ?? 1) !== 1 ? 'text-primary' : ''}" onclick="ovlVolPop(event)" aria-label="volume"><svg class="size-3.5"><use href="#i-volume-2"/></svg></button></div>`;
@@ -1789,7 +1822,146 @@ function renderOvlRow(){ if (mode === 'video') return; const rows = ovlClips(), 
   const hRef = heads.children[lastSpeech + 1], lRef = lanes.children[lastSpeech + 1 + (lanes.firstElementChild && lanes.firstElementChild.classList.contains('tl-empty') ? 1 : 0)];
   heads.insertBefore(head, hRef || null); lanes.insertBefore(lane, lRef || null); }
 function ovlVolPop(ev){ ev.stopPropagation(); const m = $('trackMenu'), r = ev.currentTarget.getBoundingClientRect(); S.ovl = S.ovl || { muted: false, volume: 1 }; m.dir = lang === 'fa' ? 'rtl' : 'ltr';
-  m.innerHTML = `<li class="menu-title">${T('بلندیِ واکنش‌ها', 'Reactions volume')}</li><li><div class="flex items-center gap-2"><input type="range" min="0" max="200" value="${Math.round((S.ovl.volume ?? 1) * 100)}" class="range range-xs w-40" oninput="S.ovl.volume = +this.value / 100; this.nextElementSibling.textContent = this.value + '٪'" onchange="renderTimeline(); autosave()"><span class="w-10 text-xs tabular-nums">${Math.round((S.ovl.volume ?? 1) * 100)}٪</span></div></li>`;
+  m.innerHTML = `<li class="menu-title">${T('بلندیِ واکنش‌ها', 'Reactions volume')}</li><li><div class="flex items-center gap-2"><input type="range" min="0" max="200" value="${Math.round((S.ovl.volume ?? 1) * 100)}" class="range range-xs w-40" oninput="S.ovl.volume = +this.value / 100; this.nextElementSibling.textContent = num(this.value) + pctSign()" onchange="renderTimeline(); autosave()"><span class="w-10 text-xs tabular-nums">${Math.round((S.ovl.volume ?? 1) * 100)}${pctSign()}</span></div></li>`;
   m.classList.remove('hidden'); m.style.top = (r.bottom + 4) + 'px'; m.style.left = Math.min(innerWidth - m.offsetWidth - 8, Math.max(8, r.left)) + 'px'; }
 const _renderTimeline170 = renderTimeline;
 renderTimeline = function(){ const r = _renderTimeline170.apply(this, arguments); try { renderOvlRow(); } catch (err) { console.warn(err); } return r; };
+
+// 171: an empty click on the timeline clears every selection and brings back the project inspector
+document.addEventListener('pointerdown', ev => { const lanes = $('lanes'); if (!lanes || mode === 'video' || !lanes.contains(ev.target)) return; if (ev.target.closest('.clip, .trimh, [data-ovl-line], .vclip')) return;
+  if (selClip || sel.size){ selClip = null; sel.clear(); paintSel(); showInsp('proj'); if (typeof placeClipBar === 'function') placeClipBar(); } }, true);
+// 171: the caret — transcription timestamps start late; each take is calibrated against the voice's real onset in its audio
+const ONSET = new Map();
+function onsetShift(c, W){ if (!W || !W.length) return 0; const key = c.gulp + ':' + c.in; if (ONSET.has(key)) return ONSET.get(key);
+  const [v0] = voicedSpan(c), d = Math.max(0, Math.min(0.6, W[0].t0 - v0)); ONSET.set(key, d); return d; }
+let CARET_LIVE = false; const _timeToChar171 = timeToChar;
+timeToChar = function(c, text, t){ if (!CARET_LIVE) return _timeToChar171(c, text, t); const W = clipWords(c, text); return _timeToChar171(c, text, W ? t + onsetShift(c, W) : t); };   // the playback caret only — never trims
+const _updatePCaret171 = updatePCaret; updatePCaret = function(){ CARET_LIVE = true; try { return _updatePCaret171.apply(this, arguments); } finally { CARET_LIVE = false; } };
+
+// 171: the side flyout of a voice group (hover or click); it closes when the pointer leaves both
+let DDFLY = null, DDFLY_T = 0;
+function ddFly(li, force){ const m = $('ddMenu'); if (!li || !m) return; const ul = li.querySelector('.ddfly'); if (!ul || ul.classList.contains('ddinline')) return;
+  clearTimeout(DDFLY_T); if (DDFLY && DDFLY !== ul){ DDFLY.classList.add('hidden'); DDFLY.parentElement.querySelector('.ddghead').classList.remove('ddhot'); }
+  ul.classList.remove('hidden'); li.querySelector('.ddghead').classList.add('ddhot'); DDFLY = ul;
+  const mr = m.getBoundingClientRect(), hr = li.getBoundingClientRect(), w = Math.min(320, innerWidth - 16); ul.style.width = w + 'px';
+  const rtl = m.dir === 'rtl', roomL = mr.left - 8, roomR = innerWidth - mr.right - 8, left = (rtl ? roomL >= w || roomL > roomR : !(roomR >= w || roomR > roomL)) ? mr.left - w + 2 : mr.right - 2;
+  ul.style.left = Math.max(8, Math.min(innerWidth - w - 8, left)) + 'px'; const h = Math.min(ul.scrollHeight, innerHeight - 16); ul.style.maxHeight = h + 'px'; ul.style.top = Math.max(8, Math.min(innerHeight - h - 8, hr.top - 6)) + 'px'; }
+document.addEventListener('mouseover', ev => { const m = $('ddMenu'); if (!m || m.classList.contains('hidden')) return; const li = ev.target.closest && ev.target.closest('#ddMenu .ddgrp');
+  if (li){ ddFly(li); return; } if (ev.target.closest && ev.target.closest('#ddMenu .ddfly')){ clearTimeout(DDFLY_T); return; }
+  if (DDFLY && m.contains(ev.target)){ clearTimeout(DDFLY_T); DDFLY_T = setTimeout(() => { if (DDFLY){ DDFLY.classList.add('hidden'); const hd = DDFLY.parentElement.querySelector('.ddghead'); if (hd) hd.classList.remove('ddhot'); DDFLY = null; } }, 260); } });
+// 171: every voice menu gets its ▶ — the line tab's too (they never had the hook)
+const _fillLineInspector171 = fillLineInspector;
+fillLineInspector = function(id){ const r = _fillLineInspector171.apply(this, arguments);
+  { const [, lc] = clipOfLine(id), body = $('lnBody'); if (lc && !lc.unvoiced && body){ const v = Math.round((lc.gain ?? 1) * 100); body.insertAdjacentHTML('beforeend', `<fieldset class="fieldset"><legend class="fieldset-legend flex w-full items-center gap-1 text-xs font-medium text-base-content/70"><svg class="size-3.5"><use href="#i-volume-2"/></svg><span class="flex-1">${T('بلندیِ این خط', "This line's volume")}</span><span class="lnvol tabular-nums">${num(v)}${pctSign()}</span></legend><input type="range" min="0" max="200" value="${v}" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="clipGain('${lc.id}', +this.value); const l = document.querySelector('#lnBody .lnvol'); if (l) l.textContent = num(+this.value) + pctSign()"></fieldset>`); } }   // 173: each TTS clip's own volume
+  [['ln_gVoice', 'google'], ['ln_fishVoice', 'fish'], ['ln_cbxVoice', 'chatterbox']].forEach(([k, eng]) => { const el = $(k); if (el){ el.dataset.preview = eng; el._preview = v => previewVoice(eng, v || null); } }); return r; };
+
+// =====================================================================================
+// 171 · ENGLISH — a translation layer for strings built from Persian labels (options, badges, menus, buttons):
+//       in English mode every known string is replaced where it is rendered; Persian digits become Latin.
+// =====================================================================================
+const EN_FA = { 'بازنشانیِ همهٔ تنظیم‌های این موتور': "Reset all of this engine's settings", '— بدون حالت —': '— no mood —', '— بدون سن —': '— any age —', 'فارسی': 'Persian', 'هر جنسیتی': 'Any gender', 'هر زیر و بمی': 'Any pitch', 'هر کاربردی': 'Any use', 'مهم نیست': "Doesn't matter",
+  'گرم و آرام، مناسبِ کتابِ صوتی': 'Warm and calm, for audiobooks', 'پرانرژی و جوان': 'Energetic and young', 'رسمی و خبری': 'Formal, newsreader', 'مهربان و صمیمی': 'Kind and friendly', 'همهٔ زبان‌ها': 'All languages', 'بهترین‌ها': 'The best', 'خودکار — مسیرِ کارآمد را خودش پیدا می‌کند': 'Automatic — finds a working route itself', 'بستن': 'Close',
+  'انصراف': 'Cancel', 'تأیید': 'OK', 'ذخیره': 'Save', 'حذف': 'Delete', 'افزودن': 'Add', 'بله': 'Yes', 'خیر': 'No', 'پیش‌فرض': 'Default', 'نمونه‌های من': 'My samples', 'صداهای آمادهٔ گوگل': "Google’s built-in voices", 'اخیراً': 'Recent', 'مرد': 'Male', 'زن': 'Female', 'بم': 'Low', 'زیر': 'High', 'میانه': 'Medium' };
+const VOICE_EN = { Zephyr: 'Bright', Puck: 'Upbeat', Charon: 'Informative', Kore: 'Firm', Fenrir: 'Excitable', Leda: 'Youthful', Orus: 'Firm', Aoede: 'Breezy', Callirrhoe: 'Easy-going', Autonoe: 'Bright', Enceladus: 'Breathy', Iapetus: 'Clear', Umbriel: 'Easy-going', Algieba: 'Smooth', Despina: 'Smooth', Erinome: 'Clear', Algenib: 'Gravelly', Rasalgethi: 'Informative', Laomedeia: 'Upbeat', Achernar: 'Soft', Alnilam: 'Firm', Schedar: 'Even', Gacrux: 'Mature', Pulcherrima: 'Forward', Achird: 'Friendly', Zubenelgenubi: 'Casual', Vindemiatrix: 'Gentle', Sadachbia: 'Lively', Sadaltager: 'Knowledgeable', Sulafat: 'Warm' };
+(function(){ try { (DIRECTOR.ages || []).concat(DIRECTOR.states || []).forEach(a => { if (a && a[1] && a[2]) EN_FA[a[1]] = a[2]; }); } catch (err) {} })();
+function enText(t){ if (lang === 'fa' || !t) return t; const s = t.trim(); if (EN_FA[s]) return t.replace(s, EN_FA[s]);
+  const m = /^([A-Z][a-z]+) — (.+)$/.exec(s); if (m && VOICE_EN[m[1]]) return `${m[1]} — ${VOICE_EN[m[1]]}`; return /[\u06F0-\u06F9\u066A-\u066C\u060C\u061B\u061F]/.test(t) && !/[\u0621-\u064A\u066E-\u06D3\u06FA-\u06FF]/.test(t) ? latinize(t) : t; }
+/* 175: Persian digits and punctuation in an otherwise English string (100٪ · 4.3، · Lyria ۳٫۵) */
+const latinize = t => String(t).replace(/[\u06F0-\u06F9]/g, d => String(d.charCodeAt(0) - 0x6F0)).replace(/\u066A/g, '%').replace(/\u066B/g, '.').replace(/\u066C/g, ',').replace(/\u060C\s*/g, ', ').replace(/\u061B\s*/g, '; ').replace(/\u061F/g, '?');
+const KEEP_FA = '#editor, .lt, [data-keep-fa], .spkchip, .ovav, #spkList input, #lanes .clip .ui, #lanes .vclip span, iframe';   /* user content: lines, speaker names, clip labels */
+const EN_SWEPT = [];   /* [node, attribute | null, Persian original] — put back when the interface returns to Persian */
+function enSweep(root){ if (lang === 'fa') return; const fa = /[\u0600-\u06FF]/, w = document.createTreeWalker(root || document.body, NodeFilter.SHOW_TEXT); const todo = [];
+  while (w.nextNode()){ const n = w.currentNode; if (!fa.test(n.textContent) || (n.parentElement && n.parentElement.closest(KEEP_FA))) continue; const t2 = enText(n.textContent); if (t2 !== n.textContent) todo.push([n, t2]); }
+  todo.forEach(([n, t2]) => { EN_SWEPT.push([n, null, n.textContent]); n.textContent = t2; });
+  (root || document.body).querySelectorAll('option').forEach(o => { if (o.closest(KEEP_FA)) return; const t2 = enText(o.text); if (t2 !== o.text){ EN_SWEPT.push([o, null, o.text]); o.text = t2; } });
+  (root || document.body).querySelectorAll('[aria-label], [placeholder], [title]').forEach(el => { if (el.closest(KEEP_FA)) return; ['aria-label', 'placeholder', 'title'].forEach(a => { const v = el.getAttribute(a); if (!v || !fa.test(v)) return; const t2 = enText(v); if (t2 !== v){ EN_SWEPT.push([el, a, v]); el.setAttribute(a, t2); } }); });
+  if (todo.length) document.querySelectorAll('select').forEach(sl => { if (sl._btn) refreshEnh(sl); }); }
+function enUnsweep(){ while (EN_SWEPT.length){ const [n, a, v] = EN_SWEPT.pop(); if (!n.isConnected) continue; if (a) n.setAttribute(a, v); else if (n.tagName === 'OPTION') n.text = v; else n.textContent = v; } }
+let EN_T = 0; new MutationObserver(() => { if (lang === 'fa') return; clearTimeout(EN_T); EN_T = setTimeout(() => enSweep(), 30); }).observe(document.body, { childList: true, subtree: true });
+const _applyLang171 = applyLang; applyLang = function(){ if (lang === 'fa') enUnsweep(); const r = _applyLang171.apply(this, arguments); if (lang !== 'fa') setTimeout(() => enSweep(), 0); return r; };
+
+// 171: export success you can see — a toast in the middle of the window (and the video dialog shows it, then closes)
+function doneToast(title, path){ let t = $('doneToast'); if (!t){ t = document.createElement('div'); t.id = 'doneToast'; document.body.appendChild(t); }
+  t.className = 'fixed left-1/2 top-1/3 z-[2000] -translate-x-1/2 rounded-box bg-success px-6 py-4 text-success-content shadow-2xl transition-opacity duration-300'; t.style.opacity = '1';
+  t.innerHTML = `<div class="flex items-center gap-3"><svg class="size-7"><use href="#i-circle-check"/></svg><div><div class="text-base font-bold">${escapeHtml(title)}</div><div class="max-w-md truncate text-xs opacity-80" dir="ltr">${escapeHtml(path || '')}</div></div></div>`;
+  clearTimeout(t._h); t._h = setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 400); }, 3200); }
+
+// =====================================================================================
+// 172 · ONE KIND OF TRACK — every audio track is «گفتار N»; a clip carries its type (speech · music · sfx · ovl);
+//       never two clips on one spot of one track; everything moves across tracks.
+// =====================================================================================
+const clipLen = c => c.out - c.in;
+function musicClips(){ return S.tracks.flatMap(t => t.clips.filter(c => c.type === 'music').map(c => { Object.defineProperty(c, '_track', { value: t, enumerable: false, configurable: true, writable: true }); return c; })); }   // never serialised (a clip inside its track)
+function trackFree(t, c){ const a = c.at, b = c.at + clipLen(c); return !t.clips.some(x => x !== c && x.at < b - 1e-6 && x.at + clipLen(x) > a + 1e-6); }
+const isTTS = c => !c.type || c.type === 'ovl', kindFor = c => isTTS(c) ? 'speech' : 'track';   // 173: TTS tracks are specialized; everything else is regular
+function renameTracks(){ const tts = S.tracks.filter(t => t.kind === 'speech'), reg = S.tracks.filter(t => t.kind !== 'speech'); S.tracks.length = 0; S.tracks.push(...tts, ...reg);
+  tts.forEach((t, i) => { t.name = 'گفتار ' + FA(i + 1); t.en = 'Speech ' + (i + 1); }); reg.forEach((t, i) => { t.kind = 'track'; t.name = 'ترک ' + FA(i + 1); t.en = 'Track ' + (i + 1); }); }
+function newTrack(at, kind){ kind = kind || 'speech'; const t = { id: (kind === 'speech' ? 's' : 'r') + (++uid), name: '', en: '', kind, gapless: false, clips: [] }; const lastTTS = S.tracks.map(x => x.kind).lastIndexOf('speech');
+  const pos = kind === 'speech' ? (at == null ? lastTTS + 1 : Math.min(at, lastTTS + 1)) : (at == null ? S.tracks.length : Math.max(at, lastTTS + 1)); S.tracks.splice(Math.max(0, pos), 0, t); renameTracks(); return t; }
+function freeTrack(c, from){ const k = kindFor(c); for (let i = from || 0; i < S.tracks.length; i++) if (S.tracks[i].kind === k && trackFree(S.tracks[i], c)) return S.tracks[i]; return newTrack(null, k); }
+function migrateTracks(){   // 173: legacy music/effects tracks → regular; non-TTS clips on TTS tracks move to regular tracks
+  S.tracks.forEach(t => { if (t.kind === 'music' || t.kind === 'sfx'){ t.clips.forEach(c => { c.type = c.type || (t.kind === 'music' ? 'music' : 'sfx'); }); t.kind = 'track'; } t.clips.forEach(c => { if (c.type && !c.lines) c.lines = []; }); });
+  const strays = []; S.tracks.forEach(t => { if (t.kind !== 'speech') return; t.clips.filter(c => !isTTS(c)).forEach(c => strays.push(c)); t.clips = t.clips.filter(c => isTTS(c)); });
+  S.tracks.forEach(t => { if (t.kind === 'speech') return; t.clips.filter(c => isTTS(c)).forEach(c => strays.push(c)); t.clips = t.clips.filter(c => !isTTS(c)); });
+  if (!S.tracks.some(t => t.kind === 'speech')) S.tracks.unshift({ id: 's1', kind: 'speech', gapless: false, clips: [] });
+  renameTracks(); strays.forEach(c => { freeTrack(c).clips.push(c); }); S.tracks.forEach(t => t.clips.sort((a, b) => a.at - b.at));
+  S.tracks = S.tracks.filter((t, i) => t.clips.length || t === S.tracks.find(x => x.kind === 'speech')); renameTracks(); }
+const _restoreSnap172 = restoreSnap; restoreSnap = function(){ const r = _restoreSnap172.apply(this, arguments); try { migrateTracks(); } catch (err) { console.warn(err); } return r; };
+migrateTracks();
+
+// ---- reactions: real clips on normal tracks, derived from their tags (the text stays the source of truth)
+let OVL_DRAG = false; const OVL_PIN = {};
+function syncOvlClips(){ const want = [];
+  S.tracks.forEach((t, ti) => t.clips.forEach(c => { if (c.type || c.unvoiced || !c.lines || c.lines.length !== 1) return; const id = c.lines[0], L = S.lines[id]; if (!L || !L.ovlA) return; let k = 0;
+    ovlList(id).forEach(o => { if (!o.text) return; const key = ovlKey(id, o), g = L.ovlA[key], a = g !== undefined && AUD.get(g), ovid = id + ':' + (k++); if (!a || !a.buf) return; const tt = charTime(c, L.text || '', o.pos); if (tt < c.in - 0.01 || tt > c.out + 0.01) return;
+      want.push({ ovid, line: id, key, gulp: g, at: c.at + Math.max(0, tt - c.in), len: a.buf.duration, text: o.text, ti }); }); }));
+  const old = new Map(); S.tracks.forEach(t => t.clips.forEach(c => { if (c.type === 'ovl') old.set(c.ovid, [t, c]); })); S.tracks.forEach(t => { t.clips = t.clips.filter(c => c.type !== 'ovl'); });
+  want.forEach(w => { const prev = old.get(w.ovid), c = { id: prev ? prev[1].id : 'ov' + (++uid), type: 'ovl', lines: [], ovid: w.ovid, line: w.line, key: w.key, gulp: w.gulp, in: 0, out: w.len, at: w.at, gain: prev ? (prev[1].gain ?? 1) : 1, name: w.text };
+    const pin = OVL_PIN[w.ovid] && S.tracks.find(t => t.id === OVL_PIN[w.ovid]), keep = prev && S.tracks.includes(prev[0]) ? prev[0] : null;
+    let t = [pin, keep].find(x => x && x.kind === 'speech' && trackFree(x, c)); if (!t) for (let i = w.ti + 1; i < S.tracks.length && !t; i++) if (S.tracks[i].kind === 'speech' && trackFree(S.tracks[i], c)) t = S.tracks[i]; if (!t) t = newTrack(w.ti + 1, 'speech');   // 173: reactions live on TTS tracks
+    t.clips.push(c); t.clips.sort((a, b) => a.at - b.at); }); }
+function ovlOf(c){ const L = S.lines[c.line]; if (!L) return null; const list = ovlList(c.line).filter(o => o.text), k = +String(c.ovid).split(':')[1]; return list[k] ? { L, o: list[k] } : null; }
+function ovlDel(){ const [, c] = findClip(selClip); if (!c || c.type !== 'ovl') return; const x = ovlOf(c); if (!x) return; remember(); x.L.text = x.L.text.replace(x.o.raw, '').replace(/\s{2,}/g, ' ').trim(); selClip = null; afterChange(); renderTimeline(); }
+function ovlDup(){ const [, c] = findClip(selClip); if (!c || c.type !== 'ovl') return; const x = ovlOf(c); if (!x) return; remember(); x.L.text = x.L.text.slice(0, x.o.end) + ' ' + x.o.raw + x.L.text.slice(x.o.end); afterChange(); renderTimeline(); }
+async function ovlRegen(){ const [, c] = findClip(selClip); if (!c || c.type !== 'ovl') return; const x = ovlOf(c); if (!x) return; remember(); if (x.L.ovlA) delete x.L.ovlA[c.key];
+  setBusy(true); try { await voiceOverlays([c.line]); markMade([c.line]); say(T('واکنش دوباره ساخته شد.', 'The reaction was regenerated.'), 'ok'); } catch (err) { say(err.message || String(err), 'err'); } finally { setBusy(false); renderTimeline(); autosave(); } }
+function ovlMoveTo(c, T0, ti){ const x = ovlOf(c); if (!x) return;
+  const cands = speechClips().filter(s => !s.unvoiced && s.lines.length === 1 && T0 >= s.at - 0.05 && T0 <= s.at + dur(s) + 0.05);
+  const target = cands.sort((a, b) => Math.abs(a.at + dur(a) / 2 - T0) - Math.abs(b.at + dur(b) / 2 - T0))[0]; if (!target) return renderTimeline();
+  const id2 = target.lines[0], g = (x.L.ovlA || {})[c.key]; remember();
+  x.L.text = x.L.text.replace(x.o.raw, '').replace(/\s{2,}/g, ' ');                             // out of its old place first
+  const L2 = S.lines[id2], text2 = L2.text || ''; let p = Math.max(0, Math.min(text2.length, timeToChar(target, text2, target.in + (T0 - target.at))));
+  while (p > 0 && p < text2.length && !/\s/.test(text2[p - 1])) p--;                               // a word boundary
+  L2.text = text2.slice(0, p) + x.o.raw + ' ' + text2.slice(p);
+  if (g !== undefined){ L2.ovlA = L2.ovlA || {}; L2.ovlA[c.key] = g; }                              // already paid for — no re-voicing
+  const k2 = ovlList(id2).filter(o => o.text).findIndex(o => o.pos === p); if (k2 >= 0 && S.tracks[ti]) OVL_PIN[id2 + ':' + k2] = S.tracks[ti].id;
+  afterChange(); renderTimeline(); }
+// a typed clip dropped on another track moves there when the spot is free; a reaction moves its tag in the text
+addEventListener('pointerup', () => { const d = window.__tdrag; if (!d) return; window.__tdrag = null; const dropTi = window.__dropTi; window.__dropTi = undefined; document.querySelectorAll('#lanes .lane-hot').forEach(x => x.classList.remove('lane-hot'));
+  setTimeout(() => { const c = d.c, [t] = findClip(c.id); if (!t){ OVL_DRAG = false; return; }
+    if (c.type === 'ovl'){ OVL_DRAG = false; ovlMoveTo(c, c.at, dropTi ?? S.tracks.indexOf(t)); return; }
+    if (dropTi !== undefined && S.tracks[dropTi] && S.tracks[dropTi] !== t){ const t2 = S.tracks[dropTi];
+      if (t2.kind !== kindFor(c)){ say(T('این کلیپ روی این نوع ترک نمی‌نشیند (ترک‌های گفتار فقط گفتار و واکنش می‌گیرند).', 'This clip can’t go on that track — speech tracks hold only speech and reactions.'), 'err'); renderTimeline(); return; }
+      if (trackFree(t2, c)){ t.clips = t.clips.filter(x => x !== c); t2.clips.push(c); t2.clips.sort((a, b) => a.at - b.at); cleanupTracks(); renderTimeline(); autosave(); }
+      else { say(T('آن‌جا جا نیست — کلیپِ دیگری همان‌جاست.', 'No room there — another clip is in the way.'), 'err'); renderTimeline(); } } }, 0); });
+const _renderTimeline172 = renderTimeline;
+renderTimeline = function(){ if (!OVL_DRAG) try { syncOvlClips(); } catch (err) { console.warn(err); } const r = _renderTimeline172.apply(this, arguments); try { clipVolBox(); } catch (err) {} return r; };
+
+// ---- every clip's own volume, in the inspector
+function clipVolBox(){ let box = $('clipVol'); const host = $('it-line') && $('it-line').parentElement; if (!host) return;
+  if (!box){ box = document.createElement('div'); box.id = 'clipVol'; box.className = 'hidden border-b border-base-300 px-4 py-3'; host.parentElement.insertBefore(box, host); }
+  let c = selClip ? findClip(selClip)[1] : null; if (!c && sel.size === 1){ const [, c2] = clipOfLine([...sel][0]); c = c2; }
+  if (!c || c.unvoiced || mode === 'video' || !c.type){ box.classList.add('hidden'); return; }   // 173: speech clips show it in «این خط»
+  const kind = c.type === 'music' ? T('موسیقی', 'music') : c.type === 'sfx' ? T('افکت', 'effect') : c.type === 'ovl' ? T('واکنش', 'reaction') : T('گفتار', 'speech'), v = Math.round((c.gain ?? 1) * 100);
+  box.classList.remove('hidden'); box.innerHTML = `<div class="flex items-center gap-2 text-xs font-semibold text-base-content/70"><svg class="size-3.5"><use href="#i-volume-2"/></svg><span class="flex-1">${T('بلندیِ این کلیپ', "This clip's volume")} · ${kind}</span><span class="tabular-nums">${num(v)}${pctSign()}</span></div><input type="range" min="0" max="200" value="${v}" class="range range-xs mt-2 w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="clipGain('${c.id}', +this.value)">`; }
+function clipGain(id, v){ const [, c] = findClip(id); if (!c) return; c.gain = v / 100; const lab = document.querySelector('#clipVol .tabular-nums'); if (lab) lab.textContent = num(v) + pctSign(); autosave(); if (playing){ const t = playhead; stopPlay(); seekVisual(t); startPlay(); } }
+
+// =====================================================================================
+// 175 · the app's own choice dialog — the same shape as «askDlg» (title + round close, hint, actions); never confirm()
+// =====================================================================================
+function askChoice(title, hint, choices){ return new Promise(done => {
+  let d = $('choiceDlg'); if (!d){ d = document.createElement('dialog'); d.id = 'choiceDlg'; d.className = 'modal'; document.body.appendChild(d); }
+  d.innerHTML = `<div class="modal-box ui max-w-md p-6" dir="${lang === 'fa' ? 'rtl' : 'ltr'}"><div class="mb-4 flex items-center justify-between gap-3"><h3 class="text-lg font-bold">${escapeHtml(title)}</h3><form method="dialog"><button class="btn btn-ghost btn-circle" aria-label="close"><svg class="size-5"><use href="#i-x"/></svg></button></form></div>${hint ? `<p class="mb-3 text-sm leading-relaxed text-base-content/70">${escapeHtml(hint)}</p>` : ''}<div class="modal-action flex-wrap">${choices.map(c => `<button class="btn ${c.primary ? 'btn-primary' : ''} ${c.danger ? 'text-error' : ''}" data-k="${escapeHtml(c.k)}">${escapeHtml(c.label)}</button>`).join('')}</div></div><form method="dialog" class="modal-backdrop"><button>close</button></form>`;
+  let fin = false; const end = v => { if (fin) return; fin = true; if (d.open) d.close(); done(v); };
+  d.querySelectorAll('[data-k]').forEach(b => b.onclick = () => end(b.dataset.k)); d.addEventListener('close', () => end(null), { once: true }); d.showModal(); }); }
+const askYes = (title, hint, yes, no) => askChoice(title, hint, [{ k: 'no', label: no || T('لغو', 'Cancel') }, { k: 'yes', label: yes || T('تأیید', 'OK'), primary: true }]).then(k => k === 'yes');

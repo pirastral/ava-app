@@ -453,7 +453,11 @@ def main():
         if not path.exists():
             write_mp3(y, path); made += 1
         idx.append({"fam": fam, "key": key, "fa": fa, "en": en, "sec": round(len(y) / SR, 2), "file": f"sfx/{fam}/{key}.mp3"})
-    (OUT / "index.json").write_text(json.dumps({"families": {k: {"fa": v[0], "en": v[1]} for k, v in FAM.items()}, "items": idx}, ensure_ascii=False, indent=0), encoding="utf-8")
+    # 175: families this script doesn't make (the Fox and the Moon's, from tools/fox_sfx.py) stay in the index
+    prev = json.loads((OUT / "index.json").read_text(encoding="utf-8")) if (OUT / "index.json").exists() else {"families": {}, "items": []}
+    fams = {k: {"fa": v[0], "en": v[1]} for k, v in FAM.items()}; fams.update({k: v for k, v in prev.get("families", {}).items() if k not in FAM})
+    idx += [x for x in prev.get("items", []) if x.get("fam") not in FAM]
+    (OUT / "index.json").write_text(json.dumps({"families": fams, "items": idx}, ensure_ascii=False, indent=0), encoding="utf-8")
     print(f"{len(idx)} sounds ({made} written) → {OUT}")
 
 

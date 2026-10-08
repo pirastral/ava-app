@@ -94,8 +94,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 170
-BUILD_FA = "\u06f1\u06f7\u06f0"
+BUILD = 175
+BUILD_FA = "\u06f1\u06f7\u06f5"
 
 
 def _diag(tag, **kv):
@@ -3323,10 +3323,21 @@ def google_rotate(call, status, what="گوگل", _rerouted=False, only_key_tag=N
                         raise RuntimeError(f"{what}: " + net_status_text(ok, label, report) + " هیچ کلیدی نامعتبر نشد.")
                     raise RuntimeError(f"{what}: " + (_NET_BLOCK_MSG if kind == "network" else _REGION_MSG))
                 if e.code == 429:
-                    if "per minute" in e.msg.lower() or "rpm" in e.msg.lower():
-                        status(f"{what}: به سقف درخواست در دقیقه خوردیم — ۲۰ ثانیه صبر می‌کنیم…"); time.sleep(20); continue
-                    _google_mark(key, "exhausted"); status(f"{what}: سهمیهٔ امروزِ این کلید ته کشید؛ می‌رویم سراغ کلید بعدی…")
-                    break
+                    # 171: the log showed 20 keys condemned for the day while 8 samples were made — every short
+                    # per-minute 429 was taken for a daily one. Daily only when Google's whole answer says so.
+                    full = (e.msg + " " + getattr(e, "raw", "")).lower()
+                    if any(w in full for w in ("perday", "per day", "per_day", "daily", "requestsperday")):
+                        _diag("google_429", kind="daily"); _google_mark(key, "exhausted")
+                        status(f"{what}: سهمیهٔ امروزِ این کلید ته کشید؛ می‌رویم سراغ کلید بعدی…"); break
+                    m = re.search(r'"retrydelay":\s*"(\d+(?:\.\d+)?)s"|retry in (\d+(?:\.\d+)?)\s*s', full)
+                    wait = min(65.0, float(next(g for g in m.groups() if g)) + 1.0) if m else 20.0
+                    _diag("google_429", kind="minute", wait=round(wait, 1), attempt=attempt)
+                    if attempt < 2:
+                        status(f"{what}: به سقفِ درخواست در دقیقه خوردیم — {int(wait)} ثانیه صبر می‌کنیم (کلید سالم است)…")
+                        for _ in range(int(wait * 4)):
+                            _check_cancel(); time.sleep(0.25)
+                        continue
+                    break                                   # the next key — this one is NOT condemned
                 if kind == "key":
                     _google_mark(key, "bad"); status(f"{what}: این کلید را قبول نکرد؛ می‌رویم سراغ کلید بعدی…")
                     _diag("google_key_bad", code=e.code, msg=_google_clean_msg(e.msg))
@@ -3420,8 +3431,8 @@ _REGION_MSG = ("گوگل می‌گوید این سرویس در موقعیتِ �
 
 
 class _GoogleHTTP(Exception):
-    def __init__(self, code, msg):
-        super().__init__(f"HTTP {code}: {msg}"); self.code = code; self.msg = msg
+    def __init__(self, code, msg, raw=""):
+        super().__init__(f"HTTP {code}: {msg}"); self.code = code; self.msg = msg; self.raw = raw or ""
 
 
 def _google_post(url, body, key, timeout=120, revision=True):
@@ -3457,7 +3468,7 @@ def _google_post(url, body, key, timeout=120, revision=True):
             msg = (j.get("error", {}) or {}).get("message", "") if isinstance(j, dict) else ""
         except Exception:
             pass
-        raise _GoogleHTTP(r.status_code, msg or r.text[:200])
+        raise _GoogleHTTP(r.status_code, msg or r.text[:200], r.text[:4000])
     return r.json()
 
 
@@ -3633,7 +3644,7 @@ def _google_stream(url, body, key, expect_sec, status):
                 box["code"] = r.status_code
                 if r.status_code != 200:
                     try:
-                        box["msg"] = r.json().get("error", {}).get("message", "") or r.text[:200]
+                        box["msg"] = r.json().get("error", {}).get("message", "") or r.text[:200]; box["raw"] = r.text[:4000]
                     except Exception:
                         box["msg"] = r.text[:200]
                     return
@@ -3682,7 +3693,7 @@ def _google_stream(url, body, key, expect_sec, status):
     if "e" in box and not box["parts"]:
         raise box["e"]
     if box.get("code") not in (None, 200) and not box["parts"]:
-        raise _GoogleHTTP(box["code"], box.get("msg", ""))
+        raise _GoogleHTTP(box["code"], box.get("msg", ""), box.get("raw", ""))
     if box.get("looping"):
         raise _GoogleHTTP(500, "runaway take: audio far beyond the text")   # retried by the rotation
     if not box["parts"]:
@@ -5027,9 +5038,14 @@ def _bcp47(lang):
     return l if "-" in l else _BCP47.get(l.lower())
 
 
+_PREVIEW_MODE = {"on": False}
+
+
 def google_words(pcm, sr, status, lang=None, text=None):
     """[(word, start_s, end_s)] for a recording, or None. Cached per recording
     AND per text (127) so an edit can never meet a stale transcript."""
+    if _PREVIEW_MODE["on"]:
+        return None                            # 171: a voice sample needs no timings
     if not _G_WORDS_ON["on"] or not _google_usable_keys():
         return None
     import base64, io
@@ -5593,11 +5609,19 @@ def music_fetch(provider, item, status):
     url = item.get("download") or item.get("preview")
     if not url:
         raise RuntimeError("این قطعه نشانی دانلود ندارد.")
-    status("دانلود موسیقی…")
-    r = requests.get(url, timeout=120, headers={"User-Agent": "Ava/100 (narration app)"})
-    if r.status_code != 200:
-        raise RuntimeError(f"دانلود نشد (HTTP {r.status_code}).")
-    pcm, sr = _decode_audio(r.content)
+    import time as _t
+    status("دانلود موسیقی…"); t0 = _t.time()                 # 171: streamed, with progress in the status line and timings in the log
+    with requests.get(url, timeout=(15, 60), stream=True, headers={"User-Agent": "Ava/100 (narration app)"}) as r:
+        if r.status_code != 200:
+            raise RuntimeError(f"دانلود نشد (HTTP {r.status_code}).")
+        total = int(r.headers.get("Content-Length") or 0); buf = bytearray(); last = 0.0
+        for chunk in r.iter_content(65536):
+            _check_cancel(); buf += chunk
+            if _t.time() - last > 0.4:
+                last = _t.time(); got = len(buf) / 1e6
+                status("دانلود موسیقی… " + (f"{got:.1f} از {total / 1e6:.1f} مگابایت" if total else f"{got:.1f} مگابایت"))
+    t1 = _t.time(); status("موسیقی دانلود شد؛ آماده‌اش می‌کنم…")
+    pcm, sr = _decode_audio(bytes(buf)); t2 = _t.time()
     if len(pcm) < sr * 5:
         raise RuntimeError("این قطعه کمتر از پنج ثانیه است؛ برای پس‌زمینه کوتاه است.")
     _MUSIC.update({"pcm": pcm, "sr": sr, "prompt": f"{provider}:{item.get('title', '')}"})
@@ -5608,7 +5632,7 @@ def music_fetch(provider, item, status):
         if e["file"] == entry["file"]:
             e.update({"author": entry["author"], "license": entry["license"], "page": entry["page"]})
     (_MUSIC_DIR / "library.json").write_text(json.dumps(lib, ensure_ascii=False), encoding="utf-8")
-    _diag("music_fetch", provider=provider, seconds=round(len(pcm) / sr, 1), license=entry["license"])
+    _diag("music_fetch", provider=provider, seconds=round(len(pcm) / sr, 1), license=entry["license"], bytes=len(buf), dl_ms=int((t1 - t0) * 1000), decode_ms=int((t2 - t1) * 1000), save_ms=int((_t.time() - t2) * 1000))
     return pcm, sr, entry
 
 
@@ -8051,6 +8075,7 @@ _PREV_DIR = MODELS_DIR / "previews"
 
 def _preview_payload(payload):
     p = dict(payload or {}); p["text"] = PREVIEW_TEXT
+    p["g_continuity"] = False; p["f_continuity"] = False; p["g_lead_in"] = ""   # 171: never the previous sample as a lead-in
     for k in ("g38_cast", "g_speakers", "f_speakers"):
         p[k] = []
     return p
@@ -8067,7 +8092,11 @@ def voice_preview(payload, status=lambda *a, **k: None):
     f = _PREV_DIR / f"{_preview_key(p)}.mp3"
     if f.exists() and f.stat().st_size > 200:
         return f.read_bytes()
-    mp3, gid = generate_gulp(p, status)
+    _PREVIEW_MODE["on"] = True                 # 171: no word timings for a sample (two transcriptions per sample before)
+    try:
+        mp3, gid = generate_gulp(p, status)
+    finally:
+        _PREVIEW_MODE["on"] = False
     _GULP_PCM.pop(gid, None)                                     # a preview is not part of the document
     f.write_bytes(mp3)
     return mp3
@@ -8144,14 +8173,14 @@ def mix_music_clips(voice, vsr, music, msr, clips, level_db=-16.0, duck=True, du
     for c in clips or []:
         a = max(0, int(float(c.get("in", 0)) * vsr)); b = int(float(c.get("out", 0)) * vsr); at = max(0, int(float(c.get("at", 0)) * vsr))
         if b - a > int(vsr * 0.05):
-            spans.append((a, b, at))
+            spans.append((a, b, at, float(c.get("gain", 1.0))))   # 172: the clip's own volume
     if not spans:
         return voice
-    total = max(len(v), max(at + (b - a) for a, b, at in spans))
+    total = max(len(v), max(at + (b - a) for a, b, at, _g in spans))
     bed = np.zeros(total, dtype=np.float32)
-    first = min(at for a, b, at in spans); last = max(at + b - a for a, b, at in spans); edge = int(vsr * 0.03)
-    for a, b, at in spans:
-        n = b - a; seg = m[np.arange(a, b) % len(m)].copy()
+    first = min(at for a, b, at, _g in spans); last = max(at + b - a for a, b, at, _g in spans); edge = int(vsr * 0.03)
+    for a, b, at, g in spans:
+        n = b - a; seg = m[np.arange(a, b) % len(m)].copy() * g
         fi = min(int(vsr * fade_in) if at == first else edge, n // 2); fo = min(int(vsr * fade_out) if at + n == last else edge, n // 2)
         if fi > 0:
             seg[:fi] *= np.linspace(0, 1, fi)

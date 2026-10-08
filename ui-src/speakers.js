@@ -68,10 +68,10 @@ async function buildPreviews(){
   MODELS.forEach(([model]) => G_VOICES.forEach(([v]) => { const p = previewPayload('google', v); p.g_model = model; jobs.push({ rel: `google/${model}/${v}.mp3`, payload: p }); }));
   LIGHT_ENGINES.forEach(e => jobs.push({ rel: `light/${e}.mp3`, payload: previewPayload(e, null) }));
   jobs.push({ rel: 'chatterbox/default.mp3', payload: previewPayload('chatterbox', 'default') }, { rel: 'fish/default.mp3', payload: previewPayload('fish', 'default') });
-  if (!confirm(T(`فقط نمونه‌هایی که در برنامه نیستند ساخته می‌شوند (با کلیدها و مدل‌های همین دستگاه) و بقیه از نسخهٔ برنامه کپی می‌شوند. پوشه‌ای انتخاب کنید؛ بعد آن را با نامِ previews کنارِ پوشهٔ ui در مخزن بگذارید تا در برنامه بسته‌بندی شود.`, `Only the samples the app doesn't have are made (with this machine's keys and models); the rest are copied from the app. Pick a folder; then put it in the repository as ui/previews so it ships inside the app.`))) return;
+  if (!(await askYes(T('ساختنِ نمونه‌صداها', 'Make the voice samples'), T(`فقط نمونه‌هایی که در برنامه نیستند ساخته می‌شوند (با کلیدها و مدل‌های همین دستگاه) و بقیه از نسخهٔ برنامه کپی می‌شوند. پوشه‌ای انتخاب کنید؛ بعد آن را با نامِ previews کنارِ پوشهٔ ui در مخزن بگذارید تا در برنامه بسته‌بندی شود.`, `Only the missing samples are made (with this machine’s keys and models); the rest are copied from the app. Pick a folder, then add it to the repository as ui/previews so it ships with the app.`), T('انتخابِ پوشه و ساختن', 'Choose a folder and make them')))) return;   // 175: the app's dialog
   setBusy(true); try { const r = await API().previews_build(jobs); if (!r.ok){ if (r.error !== 'cancelled') say(r.error || '', 'err'); return; }
     const parts = T(`${FA(r.made)} ساخته شد، ${FA(r.copied || 0)} از نسخهٔ برنامه کپی شد، ${FA(r.kept || 0)} از قبل بود`, `${r.made} made, ${r.copied || 0} copied from the app, ${r.kept || 0} already there`);
-    say(r.stopped ? T(`کلیدها تمام شد؛ ${parts}. ${FA(r.failed.length)} نمونه مانده — بعداً دوباره بزنید، فقط مانده‌ها ساخته می‌شوند. پوشه: ${r.folder}`, `The keys ran out; ${parts}. ${r.failed.length} left — run it again later and only those are made. Folder: ${r.folder}`)
+    say(r.stopped ? T(`کلیدها تمام شد؛ ${parts}. ${FA(r.failed.length)} نمونه مانده — بعداً دوباره بزنید، فقط مانده‌ها ساخته می‌شوند. پوشه: ${r.folder}`, `Out of key quota: ${parts}. ${r.failed.length} left — run it again later to make just those. Folder: ${r.folder}`)
       : T(`${parts}${r.failed.length ? ` — ${FA(r.failed.length)} ساخته نشد` : ''}. پوشه: ${r.folder}`, `${parts}${r.failed.length ? ` — ${r.failed.length} failed` : ''}. Folder: ${r.folder}`), r.stopped || r.failed.length ? 'err' : 'ok'); }
   finally { setBusy(false); }
 }
@@ -86,7 +86,11 @@ const initials = n => { const w = String(n || '').trim().split(/\s+/).filter(Boo
 function speakerOfLine(id){ const L = S.lines[id]; return (L && L.spk && spkList().find(s => s.id === L.spk)) || null; }
 // what is sent: the line tone first (3.8 reads it), then the text; shift maps word offsets back onto the editor text
 const OVL_RE = /\|([^|\n]{1,60})\|/g;
-function spokenInfo(id){ const L = S.lines[id] || {}, t = L.text || '', pre = L.tone ? `{${L.tone}} ` : '', body = t.trim();
+// 171: the line tone in each engine's own form — Gemini {tone}; Fish its bracket cue; Chatterbox and the light voices NONE (they read it aloud)
+const TONE_FISH = { 'شاد': '[happy]', 'آرام': '[calm]', 'غمگین': '[sad]', 'عصبانی': '[angry]', 'ترسیده': '[scared]', 'مضطرب': '[nervous]', 'متفکر': '[curious]', 'عاشقانه و مهربان': '[soft tone]', 'مطمئن': '[confident]', 'خسته و بی‌رمق': '[depressed]', 'در حال گریه': '[sobbing]', 'شیطون و بازیگوش': '[excited]', 'متعجب': '[surprised]', 'مصمم': '[confident]', 'دلتنگِ گذشته': '[nostalgic]', 'حماسی و قهرمانانه': '[very excited]', 'مراقبه‌وار': '[calm]' };
+function tonePrefix(id){ const L = S.lines[id] || {}; if (!L.tone) return ''; const eng = typeof lineEngine === 'function' ? lineEngine(id) : 'google';
+  if (eng === 'google') return `{${L.tone}} `; if (eng === 'fish') return (TONE_FISH[L.tone] || (L.tone.startsWith('[') ? L.tone : '')) + (TONE_FISH[L.tone] || L.tone.startsWith('[') ? ' ' : ''); return ''; }
+function spokenInfo(id){ const L = S.lines[id] || {}, t = L.text || '', pre = tonePrefix(id), body = t.trim();
   // 169: overlaps |…| are NOT read by the line's voice — each is voiced by its own speaker and laid over the line
   const cuts = []; let s = '', last = 0; body.replace(new RegExp(OVL_RE.source, 'g'), (m, inner, off) => { s += body.slice(last, off); cuts.push([pre.length + s.length, m.length]); last = off + m.length; return m; }); s += body.slice(last);
   return { s: pre + s, shift: (t.length - t.trimStart().length) - pre.length, cuts }; }
@@ -98,9 +102,9 @@ function normLine(L){
   if ((m = /^\s*\{([^{}\n]{1,40})\}\s*/.exec(t))){ L.tone = m[1].trim(); t = t.slice(m[0].length); }   // a tone written after the name
   L.text = t;
 }
-function spkSummary(sp){ const e = spkEngine(sp), en = (ENGINES.find(x => x[0] === e) || [e, e])[1].split(' — ')[0];
+function spkSummary(sp){ const e = spkEngine(sp), en = engShort(e);
   const voice = e === 'google' ? (sp.gVoice || S.proj.g_voice) : e === 'fish' ? (((([...($('fishVoice') || { options: [] }).options].find(o => o.value === (sp.fishVoice || S.proj.fish.voice))) || {}).text) || sp.fishVoice || T('صدای پروژه', "project's voice")) : e === 'chatterbox' ? (sp.cbxVoice || S.proj.cbx.voice) : '';
-  const style = sp.gPreset ? ((G_PRESETS.find(p => p[0] === sp.gPreset) || [0, sp.gPreset])[1]) : ''; return [en, voice, style].filter(Boolean).join(' · '); }
+  const style = sp.gPreset ? presetName(sp.gPreset) : ''; return [en, voice, style].filter(Boolean).join(' · '); }
 function setSpk(i, k, v){ remember(); const sp = spkList()[i]; sp[k] = v; markDirty(id => (S.lines[id] || {}).spk === sp.id); renderSpeakers(); renderScript(); autosave(); if (typeof VVER !== 'undefined') VVER++; }
 function delSpeaker(i){ remember(); const sp = spkList()[i]; spkList().splice(i, 1); Object.values(S.lines).forEach(L => { if (L.spk === sp.id){ L.spk = undefined; L.dirty = true; } }); SPK_OPEN = null; renderSpeakers(); renderScript(); autosave(); }
 let SPK_OPEN = null;
@@ -148,7 +152,7 @@ function pills(html){
   return html.split(/(<[^>]+>)/).map(part => part.startsWith('<') ? part : part
     .replace(/&lt;([^&]{1,40}?)&gt;/g, '<span class="tagpill"><span class="tp-x">&lt;</span>$1<span class="tp-x">&gt;</span><span class="tpdel" contenteditable="false" data-tip="حذف" data-tip-en="Delete"><svg><use href="#i-x"/></svg></span></span>')
     .replace(/\|([^|]{1,60}?)\|/g, (m, inner) => { const mm = /^\s*([^:：|]{1,30})[:：]\s*/.exec(inner), s0 = mm && spkByName(mm[1]), k = s0 ? spkList().indexOf(s0) : -1;   // 169
-      const av = `<span class="ovav" contenteditable="false"${k >= 0 ? ` style="${spkBg(k)}"` : ''}>${k >= 0 ? spkFace(s0) : '<svg><use href="#i-user"/></svg>'}</span>`;   // 170: initials or photo
+      const av = `<span class="ovav spkav grid size-5 shrink-0 place-items-center overflow-hidden rounded-full text-[10px] font-bold" contenteditable="false" style="${k >= 0 ? spkVars(k) + ';background:var(--sc);color:var(--so)' : ''}">${k >= 0 ? spkFace(s0) : '<svg class="size-3"><use href="#i-user"/></svg>'}</span>`;   /* 175: the speaker chip's own avatar — same size, same initials */
       const rest = mm && s0 ? inner.slice(mm[0].length) : inner, md = /^(\s*\{[^{}]{1,40}\}\s*)/.exec(rest);
       return `<span class="tagpill pipe" data-ovl="1"><span class="tp-x">|</span>${av}${mm && s0 ? `<span class="tp-x">${mm[0]}</span>` : ''}${md ? `<span class="ovmood">${md[1]}</span>${rest.slice(md[1].length)}` : rest}<span class="tp-x">|</span></span>`; })
     .replace(/(^|\s)\/([^/\s][^/]{0,60}?)\//g, '$1<span class="tagpill ipa"><span class="tp-x">/</span>$2<span class="tp-x">/</span></span>')).join('');
@@ -156,7 +160,7 @@ function pills(html){
 function placeMenu(m, b, w){ const r = b.getBoundingClientRect(); m.style.width = Math.min(w, innerWidth - 16) + 'px'; m.style.maxHeight = Math.min(380, Math.max(160, Math.max(innerHeight - r.bottom, r.top) - 16)) + 'px';
   m.style.left = Math.max(8, Math.min(innerWidth - Math.min(w, innerWidth - 16) - 8, r.right - Math.min(w, innerWidth - 16))) + 'px';
   const below = innerHeight - r.bottom > 220 || innerHeight - r.bottom > r.top; m.style.top = below ? (r.bottom + 4) + 'px' : ''; m.style.bottom = below ? '' : (innerHeight - r.top + 4) + 'px'; }
-function lineMenu(b, html, onPick){ const m = $('ddMenu'); if (m.parentElement !== document.body) document.body.appendChild(m); m._sel = null; m.dir = 'rtl'; m.innerHTML = html; m.classList.remove('hidden'); placeMenu(m, b, 280); m.onclick = e => onPick(e); }
+function lineMenu(b, html, onPick){ const m = $('ddMenu'); if (m.parentElement !== document.body) document.body.appendChild(m); m._sel = null; m.dir = lang === 'fa' ? 'rtl' : 'ltr'; m.innerHTML = html; m.classList.remove('hidden'); placeMenu(m, b, 280); m.onclick = e => onPick(e); }
 function linesFor(id){ return sel.has(+id) && sel.size > 1 ? [...sel] : [+id]; }
 function openSpkMenu(ev, id){
   ev.stopPropagation(); const L = spkList(), cur = (S.lines[id] || {}).spk || '';
@@ -198,7 +202,7 @@ async function voiceOverlays(ids){
   for (const id of ids){ const L = S.lines[id]; if (!L) continue; const keep = {};
     if (ovlList(id).some(o => o.mood && !(ovlVoice(id, o).engine === 'google' && isG38()))){ L.text = L.text.replace(/\|([^|\n]{1,60})\|/g, (m, inner) => '|' + inner.replace(/\{[^{}]{1,40}\}\s*/, '') + '|'); }   // 170: a mood is 3.8-only — other engines drop it on regeneration
     for (const o of ovlList(id)){ if (!o.text) continue; const key = ovlKey(id, o); let g = (L.ovlA || {})[key];
-      if (g === undefined || !AUD.get(g)){ const pl = payloadFor(ovlVoice(id, o), ovlSpoken(id, o)); pl.g38_cast = []; pl.duo = false; pl.g_duo = false; pl.ovl = true;   // 170: one voice, alone
+      if (g === undefined || !AUD.get(g)){ const pl = payloadFor(ovlVoice(id, o), ovlSpoken(id, o)); pl.g38_cast = []; pl.duo = false; pl.g_duo = false; pl.ovl = true; pl.g_continuity = false; pl.f_continuity = false; pl.g_lead_in = '';   // 170/171: one voice, alone — and never the previous line's tail as a lead-in (the stray first word)
         const r = await API().generate_gulp(pl); if (!r.ok) throw new Error(r.error || T('خطای ناشناخته', 'Unknown error')); await storeAudio(r.gulp, r.b64); g = r.gulp; }
       keep[key] = g; }
     L.ovlA = keep; } }
@@ -214,5 +218,110 @@ function clipOverlays(c){ if (!c || c.unvoiced || !c.lines || c.lines.length !==
 // 170: English labels for the tones and tag groups (the values stay Persian — they are what the engine reads)
 const TONE_EN = { 'شاد': 'Happy', 'آرام': 'Calm', 'غمگین': 'Sad', 'عصبانی': 'Angry', 'ترسیده': 'Scared', 'مضطرب': 'Anxious', 'متفکر': 'Thoughtful', 'عاشقانه و مهربان': 'Loving and kind', 'مطمئن': 'Confident', 'خسته و بی‌رمق': 'Tired and listless', 'در حال گریه': 'Crying', 'شیطون و بازیگوش': 'Mischievous and playful', 'متعجب': 'Surprised', 'مصمم': 'Determined', 'دلتنگِ گذشته': 'Nostalgic', 'حماسی و قهرمانانه': 'Epic and heroic', 'مراقبه‌وار': 'Meditative' };
 const GROUP_EN = { 'مکث': 'Pauses', 'مکث و سرعت': 'Pauses and speed', 'خنده': 'Laughter', 'نفس و آه': 'Breaths and sighs', 'حالت و احساس': 'Mood and feeling', 'صداهای دهان': 'Mouth sounds', 'واکنش‌ها': 'Reactions', 'صدا و بلندی': 'Voice and volume', 'لحن': 'Tone', 'آواز': 'Singing', 'اشاره‌ها': 'Cues', 'جلوه‌ها': 'Effects', 'گریه': 'Crying', 'حرکت': 'Movement', 'صدای محیط': 'Environment' };
-function toneLabel(t){ return lang === 'fa' ? t : (TONE_EN[t] || t); }
-function groupLabel(g){ return lang === 'fa' ? g : (GROUP_EN[g] || g); }
+function toneLabel(t){ return lang === 'fa' ? t : (TONE_EN[t] || I18N_EN[t] || t); }   /* 175: all 85 moods */
+function groupLabel(g){ return lang === 'fa' ? g : (GROUP_EN[g] || I18N_EN[g] || g); }
+
+// =====================================================================================
+// 175 · ENGINE-AWARE TONES, TAGS AND VOICES — each line has a profile (Gemini 3.8 / 3.1 / 2.5, Fish, Chatterbox,
+//       light voices). The tone and tag menus list only that profile's own items; when a line's profile changes,
+//       what the new engine cannot do is removed (overlaps stay: their audio is separate and paid for); a voice the new
+//       engine cannot use is replaced by its default, and where a chosen voice does not carry over (or was replaced) the
+//       avatar gets a warning dot, which clears when that engine's voice menu is opened (this line's tab, the project tab,
+//       or the speaker's own). An empty voice slot means the project's voice for that engine and is left empty.
+// =====================================================================================
+const UNIVERSAL_PAUSES = ['[مکث]', '[مکث بلند]', '[short pause]', '[long pause]'];
+function lineProfile(id){ const e = lineEngine(id); if (e === 'google'){ const m = S.proj.g_model || ''; return /3\.8/.test(m) ? 'g38' : /2\.5/.test(m) ? 'g25' : 'g31'; } return e === 'fish' ? 'fish' : e === 'chatterbox' ? 'cbx' : 'light'; }
+const PROFILE_NAME = { g38: ['Gemini 3.8', 'Gemini 3.8'], g31: ['Gemini 3.1', 'Gemini 3.1'], g25: ['Gemini 2.5', 'Gemini 2.5'], fish: ['Fish Audio', 'Fish Audio'], cbx: ['Chatterbox', 'Chatterbox'], light: ['صداهای سبک', 'Light voices'] };
+const G31_TONES = () => ((G_TAGS.find(g => /حالت/.test(g[0])) || [0, []])[1]);
+const FISH_TONES = () => (((DIRECTOR.fish_tags || []).find(g => /احساس/.test(g[0])) || [0, []])[1]);
+function profileTones(p){ return p === 'g38' ? G38_TONES_ALL : p === 'g31' ? G31_TONES() : p === 'fish' ? FISH_TONES() : []; }
+function toneAllowed(t, p){ if (!t) return true; if (p === 'g38') return !/^[\[<]/.test(t); return profileTones(p).includes(t); }
+function tagAllowed(tag, p){ if (UNIVERSAL_PAUSES.includes(tag)) return true; if (tag.startsWith('<')) return p === 'g38';
+  if (tag.startsWith('[')) return p === 'fish' || (p === 'g31' && G_TAGS.some(g => g[1].includes(tag))); return true; }
+function stripTags(text, p){ const keep = []; const masked = String(text || '').replace(/\|[^|\n]{1,60}\|/g, m => { keep.push(m); return `␂${keep.length - 1}␃`; });
+  const out = masked.replace(/<[^<>\n]{1,40}>|\[[^\[\]\n]{1,40}\]/g, tag => tagAllowed(tag, p) ? tag : '␄').replace(/\s*␄\s*/g, ' ').replace(/ {2,}/g, ' ').trim();
+  return out.replace(/␂(\d+)␃/g, (m, k) => keep[+k] || ''); }
+function voiceValid(eng, v){ if (!v) return false;
+  if (eng === 'google'){ if (G_VOICES.some(x => x[0] === v)) return true; if (!isG38()) return false;
+    return v.startsWith('lib:') ? LIBV.some(x => 'lib:' + x.id === v) : v.startsWith('design:') ? DESIGNS.some(x => 'design:' + x.id === v) : v.startsWith('clone:') ? CLONES.some(x => 'clone:' + x.id === v) : false; }
+  if (eng === 'chatterbox') return v === 'default' || (CBX_VOICES || []).some(x => x.id === v); return true; }
+function defaultVoice(eng){ if (eng === 'google') return voiceValid('google', S.proj.g_voice) ? S.proj.g_voice : 'Charon'; if (eng === 'fish') return (S.proj.fish && S.proj.fish.voice) || ''; if (eng === 'chatterbox') return (S.proj.cbx && S.proj.cbx.voice) || 'default'; return ''; }
+const PROF_ENG = { g38: 'google', g31: 'google', g25: 'google', fish: 'fish', cbx: 'chatterbox', light: '' };
+const projVoice = eng => eng === 'google' ? S.proj.g_voice : eng === 'fish' ? (S.proj.fish && S.proj.fish.voice) : eng === 'chatterbox' ? ((S.proj.cbx && S.proj.cbx.voice) || 'default') : '';
+function reconcileEngines(){ let changed = 0; const fixed = new Set(), moved = [], edited = new Set();
+  const todo = Object.keys(S.lines).filter(k => { const L = S.lines[k]; if (!L) return false; const p = lineProfile(+k); if (L.prof === undefined){ L.prof = p; return false; } return L.prof !== p; });
+  if (!todo.length) return 0;
+  /* 175: what a switch changes by itself is not an edit — a line that was clean stays clean (its fingerprint is re-taken),
+     and the overlaps' audio, already paid for, is found again under the new voice; only a removed tag or tone marks it */
+  const clean = {}, ovl = []; Object.keys(S.lines).forEach(k => { const L = S.lines[k]; if (!L) return; if (L.madeSig !== undefined && !L.dirty) clean[k] = lineSig(+k) === L.madeSig;
+    if (L.ovlA) ovlList(+k).forEach(o => { const g = L.ovlA[ovlKey(+k, o)]; if (g) ovl.push([+k, o, g]); }); });
+  todo.forEach(k => { const id = +k, L = S.lines[id], p = lineProfile(id), prevKey = SPK_VKEY[PROF_ENG[L.prof] || ''];
+    if (L.tone && !toneAllowed(L.tone, p)){ L.tone = ''; edited.add(k); }
+    const t2 = stripTags(L.text, p); if (t2 !== (L.text || '').trim()){ L.text = t2; edited.add(k); }
+    const eng = lineEngine(id), key = SPK_VKEY[eng], sp = speakerOfLine(id);
+    if (key){ const own = L.voice && L.voice[key], other = k2 => prevKey && prevKey !== key && k2 && k2[prevKey];
+      /* a voice that the new engine cannot use is replaced by its default; an empty slot already means the project's
+         voice for this engine, so it stays empty — the dot shows only where a chosen voice does not carry over */
+      if (own){ if (!voiceValid(eng, own)){ L.voice[key] = defaultVoice(eng); L.vwarn = eng; } }
+      else if (other(L.voice)) L.vwarn = eng;
+      if (!own && sp){ const sv = sp[key];
+        if (sv && !voiceValid(eng, sv)){ if (!fixed.has(sp.id + ':' + eng)){ sp[key] = defaultVoice(eng); fixed.add(sp.id + ':' + eng); } L.vwarn = eng; }
+        else if (!sv && !voiceValid(eng, projVoice(eng))){ if (!fixed.has(sp.id + ':' + eng)){ sp[key] = defaultVoice(eng); fixed.add(sp.id + ':' + eng); } L.vwarn = eng; }   /* the project's own voice is no good here either */
+        else if (!sv && other(sp)) L.vwarn = eng; } }
+    L.prof = p; moved.push(id); changed++; });
+  moved.forEach(id => { const L = S.lines[id], sp = speakerOfLine(id), eng = lineEngine(id); if (sp && fixed.has(sp.id + ':' + eng)) L.vwarn = eng; });
+  ovl.forEach(([id, o, g]) => { const L = S.lines[id]; if (!L) return; const key = ovlKey(id, o); L.ovlA = L.ovlA || {}; if (!L.ovlA[key]) L.ovlA[key] = g; });
+  Object.keys(clean).forEach(k => { if (!clean[k] || edited.has(k)) return; const L = S.lines[k]; if (!L) return; L.madeSig = lineSig(+k); L.madeMain = mainSig(+k); });
+  return changed; }
+// every render records each line's profile and reconciles the ones whose profile changed (an engine or model switch,
+// a speaker with another engine) — so new lines are known before any switch happens
+const _renderScript175 = renderScript;
+renderScript = function(){ let n = 0; try { n = reconcileEngines(); } catch (err) { console.warn(err); } const r = _renderScript175.apply(this, arguments);
+  if (n){ try { buildTagMenus(); renderSpeakers(); } catch (err) {} autosave(); } return r; };
+// the tone: in each engine's own form (Gemini 3.8 {tone}; Gemini 3.1 and Fish their bracket tag; none for the others)
+tonePrefix = function(id){ const L = S.lines[id] || {}; if (!L.tone) return ''; const p = lineProfile(id);
+  if (p === 'g38') return /^[\[<]/.test(L.tone) ? '' : `{${L.tone}} `; if (p === 'g31') return L.tone.startsWith('[') && toneAllowed(L.tone, p) ? L.tone + ' ' : '';
+  if (p === 'fish') return L.tone.startsWith('[') ? L.tone + ' ' : (TONE_FISH[L.tone] ? TONE_FISH[L.tone] + ' ' : ''); return ''; };
+function toneProfileOf(ids){ const ps = [...new Set(ids.map(lineProfile))]; return ps.length === 1 ? ps[0] : null; }
+setTone = function(tone){ const ids = sel.size ? [...sel] : (lastLine ? [lastLine] : []); if (!ids.length) return; const ok = ids.filter(id => !tone || toneAllowed(tone, lineProfile(id)));
+  if (!ok.length) return say(T('این لحن برای موتورِ این خط نیست.', "That tone doesn’t work with this line’s engine."), 'err'); remember();
+  ok.forEach(id => { const L = S.lines[id]; normLine(L); L.tone = tone || ''; }); renderScript(); autosave(); };
+toneList = function(id){ return profileTones(lineProfile(id || (sel.size ? [...sel][0] : lastLine))); };
+const toneShow = t => t.startsWith('[') ? t : toneLabel(t);
+function toneMenuHtml(id, cur){ const p = lineProfile(id), list = profileTones(p), name = T(...PROFILE_NAME[p]);
+  if (!list.length) return `<li class="menu-title whitespace-normal">${T(`${name} لحن نمی‌گیرد.`, `${name} doesn’t support line tones.`)}</li>`;
+  return `<li class="menu-title">${T('لحنِ این خط', "This line's tone")} · ${escapeHtml(name)}</li>` + list.map(t => `<li><a data-tone-pick="${escapeHtml(t)}" class="${t === cur ? 'menu-active' : ''}" ${t.startsWith('[') ? 'dir="ltr"' : ''}>${escapeHtml(toneShow(t))}</a></li>`).join('')
+    + (p === 'g38' ? `<li class="mt-1 border-t border-base-300 pt-1"><a data-tone-custom="1" class="gap-2"><svg class="size-4"><use href="#i-pencil"/></svg>${T('لحنِ دلخواه…', 'A tone of your own…')}</a></li>` : ''); }
+openToneMenu = function(ev, id){ ev.stopPropagation(); const cur = (S.lines[id] || {}).tone || '';
+  lineMenu(ev.currentTarget, `<ul class="menu menu-sm w-full p-1">${cur ? `<li class="mb-1 border-b border-base-300 pb-1"><a data-tone-pick="" class="gap-2 text-error"><svg class="size-4"><use href="#i-trash-2"/></svg>${T('حذفِ لحن', 'Remove the tone')}</a></li>` : ''}${toneMenuHtml(id, cur)}</ul>`, async e => {
+    const c = e.target.closest('[data-tone-custom]'); if (c){ closeDD(); const t = await askText(T('لحنِ دلخواه', 'A tone of your own'), T('مثلاً: «خسته ولی امیدوار»', 'e.g. "tired but hopeful"'), ''); if (t && t.trim()){ sel = new Set(linesFor(id)); setTone(t.trim()); } return; }
+    const a = e.target.closest('[data-tone-pick]'); if (!a) return; sel = new Set(linesFor(id)); closeDD(); setTone(a.dataset.tonePick); }); };
+// the toolbar's tone and tag menus follow the selected line's profile (the project's when nothing is selected)
+const curProfile = () => sel.size ? (toneProfileOf([...sel]) || lineProfile([...sel][0])) : (lastLine && S.lines[lastLine] ? lineProfile(lastLine) : (S.proj.engine === 'google' ? (isG38() ? 'g38' : /2\.5/.test(S.proj.g_model || '') ? 'g25' : 'g31') : S.proj.engine === 'fish' ? 'fish' : S.proj.engine === 'chatterbox' ? 'cbx' : 'light'));
+buildToneMenu = function(){ const p = curProfile(), m = $('tagMenu');
+  if (m) m.querySelectorAll('[data-x="ipa"], [data-x="ipa-title"], [data-x="ovl"]').forEach(x => x.remove());
+  if (m && p === 'g38') m.insertAdjacentHTML('beforeend', `<li class="menu-title" data-x="ipa-title">${T('تلفظ و هم‌زمانی', 'Pronunciation & overlap')}</li><li data-x="ipa"><a onmousedown="event.preventDefault()" onclick="insertIPA()">${T('تلفظ با IPA: /…/', 'Pronounce with IPA: /…/')}</a></li><li data-x="ovl"><a onmousedown="event.preventDefault()" onclick="insertOverlap()">${T('واکنشِ هم‌زمان: |…|', 'Overlapping reaction: |…|')}</a></li>`);
+  const tm = $('toneMenu'); if (!tm) return; const id = sel.size ? [...sel][0] : lastLine, list = profileTones(p), name = T(...PROFILE_NAME[p]);
+  tm.innerHTML = list.length ? `<li class="menu-title">${escapeHtml(name)}</li>` + list.map(t => `<li><a data-tone="${escapeHtml(t)}" ${t.startsWith('[') ? 'dir="ltr"' : ''}>${escapeHtml(toneShow(t))}</a></li>`).join('') : `<li class="menu-title whitespace-normal">${T(`${name} لحن نمی‌گیرد.`, `${name} doesn’t support line tones.`)}</li>`; };
+const _buildTagMenus175 = buildTagMenus;
+buildTagMenus = function(){ const p = curProfile(), m = $('tagMenu'), item = t => `<li><a dir="ltr" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</a></li>`;
+  if (!m) return; if (p === 'fish'){ m.innerHTML = (DIRECTOR.fish_tags || []).map(([g, list]) => `<li class="menu-title">${escapeHtml(groupLabel(g))}</li>` + list.map(item).join('')).join(''); return buildToneMenu(); }
+  if (p === 'cbx' || p === 'light'){ m.innerHTML = `<li class="menu-title whitespace-normal">${T('این موتور فقط مکث می‌گیرد', 'This engine supports pauses only')}</li>` + ['[مکث]', '[مکث بلند]'].map(item).join(''); return buildToneMenu(); }
+  if (p === 'g25'){ m.innerHTML = `<li class="menu-title whitespace-normal">${T('مدل‌های 2.5 برچسبِ صوتی نمی‌گیرند.', 'Gemini 2.5 models don’t support sound tags.')}</li>`; return buildToneMenu(); }
+  if (p === 'g38') m.innerHTML = G38_TAGS.map(([g, list]) => `<li class="menu-title">${escapeHtml(groupLabel(g))}</li>` + list.map(item).join('')).join('') + `<li class="menu-title">${T('واکنشِ شنونده', 'Listener reactions')}</li>` + G38_BACK.map(item).join('');
+  else m.innerHTML = G_TAGS.map(([g, list]) => `<li class="menu-title">${escapeHtml(groupLabel(g))}</li>` + list.map(item).join('')).join('');
+  buildToneMenu(); };
+// the warning dot on the line's speaker avatar (and on the speaker in the list); it clears when that engine's voice menu opens
+const _spkChip175 = spkChip;
+spkChip = function(id){ const h = _spkChip175.apply(this, arguments), L = S.lines[id]; if (!L || !L.vwarn || !speakerOfLine(id)) return h;
+  return h.replace('<button class="spkchip ', '<button class="spkchip relative ').replace('<span class="spkav ', `<i class="vwarn" title="${escapeHtml(T('صدای این گوینده در این موتور نبود؛ صدای پیش‌فرضِ موتور گذاشته شد.', "This speaker had no voice in this engine; the engine's default voice was set."))}"></i><span class="spkav `); };
+const _renderSpeakers175 = renderSpeakers;
+renderSpeakers = function(){ const r = _renderSpeakers175.apply(this, arguments); const box = $('spkList'); if (!box) return r;
+  spkList().forEach((sp, i) => { if (!Object.values(S.lines).some(L => L && L.vwarn && L.spk === sp.id)) return; const av = box.querySelectorAll('.list-row')[i]; const b = av && av.querySelector('.group\\/av'); if (b && !b.querySelector('.vwarn')) b.insertAdjacentHTML('beforeend', '<i class="vwarn"></i>'); }); return r; };
+const VOICE_SEL = { pVoice: 'google', fishVoice: 'fish', cbxVoice: 'chatterbox', ln_gVoice: 'google', ln_fishVoice: 'fish', ln_cbxVoice: 'chatterbox' };
+function clearVWarn(selEl){ const id0 = selEl && selEl.id, eng = VOICE_SEL[id0], si = selEl && selEl.dataset && selEl.dataset.spkVoice; let n = 0;
+  if (si !== undefined){ const sp = spkList()[+si]; if (sp) Object.values(S.lines).forEach(L => { if (L && L.vwarn && L.spk === sp.id){ delete L.vwarn; n++; } }); }
+  else if (eng && id0.startsWith('ln_')){ const id = [...sel][0], L = id && S.lines[id]; if (L && L.vwarn){ delete L.vwarn; n++; } }
+  else if (eng) Object.values(S.lines).forEach(L => { if (L && L.vwarn === eng){ delete L.vwarn; n++; } });
+  if (n){ renderScript(); renderSpeakers(); autosave(); } }
+const _openDD175 = openDD; openDD = function(s){ try { clearVWarn(s); } catch (err) {} return _openDD175.apply(this, arguments); };
