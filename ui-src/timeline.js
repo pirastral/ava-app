@@ -136,7 +136,8 @@ function vGroupDrag(ev, el){ remember(); const lanes = $('lanes'), x0 = ev.clien
   addEventListener('pointermove', mv); addEventListener('pointerup', up); }
 function vDeleteMany(){ if (VMS.size < 2) return false; remember(); const ids = new Set(VMS), shows = {};
   ids.forEach(id => { const o = objById(id); if (o && o.show && !(o.show in shows)) shows[o.show] = Math.min(...slidesOf(o.show).map(x => x.start || 0)); });
-  V.objects = V.objects.filter(o => !ids.has(o.id)); Object.keys(shows).forEach(s => { if (slidesOf(s).length) layoutSlides(s, shows[s]); });
+  const spans = {}; Object.keys(shows).forEach(s => { spans[s] = Math.max(...slidesOf(s).map(x => x.end || 0)); });
+  V.objects = V.objects.filter(o => !ids.has(o.id)); Object.keys(shows).forEach(s => { if (slidesOf(s).length) keepShowLength(s, shows[s], spans[s]); });   // 177: each slideshow keeps its length
   VMS.clear(); selectV(null); vChanged(); return true; }
 function vMarquee(ev){ const add = multiKey(ev) || ev.shiftKey; if (add && !VMS.size && vSel && objById(vSel)) VMS.add(vSel); const keep = add ? new Set(VMS) : new Set(), lanes = $('lanes');
   marquee(ev, R => { VMS.clear(); keep.forEach(id => VMS.add(id)); lanes.querySelectorAll('.vclip[data-k="obj"]').forEach(el => { if (hits(el, R)) VMS.add(el.dataset.id); el.classList.toggle('tl-ms', VMS.has(el.dataset.id)); }); },
@@ -152,14 +153,19 @@ addEventListener('keydown', e => { if (mode !== 'video' || VMS.size < 2) return;
 function srcLen(o){ if (o.type === 'video' && !o.loop){ const m = MEDIA.get(o.asset), el = m && m.el; return el && isFinite(el.duration) && el.duration > 0 ? el.duration : null; }
   if (o.type === 'sfx'){ const it = sfxItems().find(x => x.file === o.file); return it && it.sec ? it.sec : null; } return null; }
 
+// 177: a slideshow keeps its length when slides go — the time they had is shared equally by the slides left
+function keepShowLength(id, first, endOld){ const rest = slidesOf(id); if (!rest.length) return; const sum = rest.reduce((a, x) => a + ((x.end || 0) - (x.start || 0)), 0), add = (endOld - first - sum) / rest.length;
+  let t = first; rest.forEach((x, i) => { const d = Math.max(0.2, ((x.end || 0) - (x.start || 0)) + add); x.start = t; x.end = i === rest.length - 1 ? endOld : t + d; t = x.end;
+    if (i < rest.length - 1){ if (!x.trans) x.trans = { type: 'fade', dur: 0.8, params: {} }; } else delete x.trans; }); }
 // ---------- background clips: transitions only between two clips that touch; a slide's removal closes the gap
 const bgNextOf = o => { const L = bgClips(), i = L.indexOf(o), nx = i >= 0 ? L[i + 1] : null; return nx && Math.abs((nx.start || 0) - (o.end ?? projEnd())) <= 0.06 ? nx : null; };
 function dropOrphanTrans(){ let n = 0; bgClips().forEach(o => { if (o.trans && !bgNextOf(o)){ delete o.trans; n++; } }); return n; }
 { const _vc176 = vChanged; vChanged = function(){ dropOrphanTrans(); return _vc176.apply(this, arguments); }; }
 { const _vd176 = vDelete; vDelete = function(){ const o = objById(vSel); if (!o || !o.show) return _vd176.apply(this, arguments);
     remember(); const id = o.show, L = slidesOf(id), first = Math.min(...L.map(x => x.start || 0)), endOld = Math.max(...L.map(x => x.end || 0)), len = (o.end || 0) - (o.start || 0);
-    V.objects = V.objects.filter(x => x !== o); if (slidesOf(id).length) layoutSlides(id, first);
-    bgClips().filter(x => x.show !== id && (x.start || 0) >= endOld - 0.06).forEach(x => { x.start = (x.start || 0) - len; if (x.end != null) x.end -= len; });   // what came after the slideshow stays right behind it
+    V.objects = V.objects.filter(x => x !== o); const rest = slidesOf(id);
+    if (rest.length) keepShowLength(id, first, endOld);   // 177: the slideshow keeps its length
+    else bgClips().filter(x => x.show !== id && (x.start || 0) >= endOld - 0.06).forEach(x => { x.start = (x.start || 0) - len; if (x.end != null) x.end -= len; });   // the last slide: what came after closes up
     selectV(null); vChanged(); }; }
 
 // ---------- a background clip's inspector: «کلیپ | گذار»
@@ -167,24 +173,69 @@ const bgTabOf = o => BGTAB && BGTAB.id === o.id ? BGTAB.tab : 'clip';
 function openBgTab(id, tab){ BGTAB = { id, tab }; if (vSel !== id) selectV(id); else showVPanels(); }
 function bgTabsEl(){ let el = $('iv-bgtabs'); if (!el){ el = document.createElement('div'); el.id = 'iv-bgtabs'; el.setAttribute('role', 'tablist'); el.className = 'tabs tabs-border hidden px-2 pt-1'; const host = $('vinsp'); if (host) host.insertBefore(el, host.firstChild); } return el; }
 function bgPipLook(on){ const p = $('iv-pip'); if (!p) return; const o = on ? objById(vSel) : null;
-  [$('pipSize') && $('pipSize').closest('fieldset'), $('pipPos') && $('pipPos').closest('.flex.items-start'), $('pipBorder') && $('pipBorder').closest('.rounded-box'), $('pipShadow') && $('pipShadow').closest('.rounded-box')].forEach(x => x && x.classList.toggle('hidden', !!on));
+  /* 177: a background clip always covers the canvas — no corners, stroke or shadow (the 177 panel's own sections) */
+  [$('pipRad') && $('pipRad').closest('fieldset'), $('pipBorder') && $('pipBorder').closest('.border-t'), $('pipShadow') && $('pipShadow').closest('.border-t')].forEach(x => x && x.classList.toggle('hidden', !!on));
   const t = $('pipTitle'); if (t && o) t.textContent = o.show ? T('اسلاید', 'Slide') : o.type === 'video' ? T('ویدیوی پس‌زمینه', 'Background video') : T('تصویرِ پس‌زمینه', 'Background picture');
   const hint = [...p.children].reverse().find(x => x.tagName === 'P'); if (hint) hint.textContent = on ? T('روی صفحه بکشید تا تصویر داخلِ قاب جابه‌جا شود.', 'Drag on the canvas to move the picture within the frame.') : T('برای جابه‌جایی، روی صفحه بکشیدش.', 'Drag it on the canvas to place it anywhere.'); }
+// 177 · TRANSITIONS LIKE ANIMATIONS: a grid of tiles, each with a picture of the transition half-way between THIS clip and
+//       the next one; hovering a tile loops it on the canvas (the playhead stays where it is), a click chooses it and
+//       plays it once; a choice of a value (direction, corner…) is a row of buttons — never a list inside a list
+var TRPV = null, TRHOV = 0, TRTH = { key: '', urls: {}, busy: 0 };
+const TR_DIRIC = { 180: '#i-arrow-left', 0: '#i-arrow-right', 90: '#i-arrow-down', 270: '#i-arrow-up', 135: '#i-arrow-down-left', 45: '#i-arrow-down-right', 225: '#i-arrow-up-left', 315: '#i-arrow-up-right' };
+function trKeys(){ const LIB = AvaTrans.LIB, keys = Object.keys(LIB).filter(k => !LIB[k].scene);
+  return [[T('ساده', 'Simple'), ['none', 'fade', ...keys.filter(k => k === 'push')]], [T('سینمایی', 'Cinematic'), keys.filter(k => k !== 'push' && !LIB[k].sc)], [T('وایپ و محو', 'Wipes and dissolves'), keys.filter(k => LIB[k].sc)]]; }
+function trTile(k, on){ const url = TRTH.urls[k], name = k === 'none' ? T('بدونِ گذار', 'None') : trName(k);
+  const pic = k === 'none' ? `<span class="grid h-full w-full place-items-center"><svg class="size-4 opacity-70"><use href="#i-ban"/></svg></span>` : url ? `<img src="${url}" alt="" class="block h-full w-full object-cover" draggable="false">` : '';
+  return `<button type="button" class="trtile btn btn-sm h-auto min-h-0 flex-col gap-1 p-1 pb-1.5 text-[11px] font-medium leading-normal ${on ? 'btn-primary' : 'border-base-content/10 bg-base-100'}" data-tr="${k}" onclick="trPick('${k}')" onmouseenter="trHover('${k}')" onmouseleave="trHoverEnd()">`
+    + `<span class="trthumb block aspect-video w-full overflow-hidden rounded-[5px] bg-base-300" data-th="${k}">${pic}</span><span class="block w-full overflow-visible break-words text-center">${escapeHtml(name)}</span></button>`; }
+function trSeg(k, opts, v){ const pick = ov => `setBgTrans('p:${k}', ${+ov})`;
+  if (opts.length === 8 && opts.every(([ov]) => TR_DIRIC[ov])){   // eight directions: arrows on a compass (the way it moves)
+    const by = {}; opts.forEach(o => { by[+o[0]] = o; });
+    return `<div class="trdir grid w-fit grid-cols-3 gap-1" dir="ltr">${[225, 270, 315, 180, null, 0, 135, 90, 45].map(ov => { const o = ov == null ? null : by[ov]; if (!o) return '<span class="grid size-8 place-items-center"><span class="size-1.5 rounded-full bg-base-content/25"></span></span>';
+      return `<button type="button" class="btn btn-sm btn-square ${+ov === +v ? 'btn-primary' : 'border-base-content/15 bg-base-100'}" data-tip="${escapeHtml(T(o[2], o[1]))}" aria-label="${escapeHtml(o[1])}" onclick="${pick(ov)}"><svg class="size-4"><use href="${TR_DIRIC[ov]}"/></svg></button>`; }).join('')}</div>`; }
+  const btn = ([ov, en, fa]) => `<button type="button" class="btn btn-sm h-auto min-h-8 whitespace-normal px-1.5 py-1 text-xs font-medium leading-snug ${opts.length <= 3 ? 'join-item flex-1' : ''} ${+ov === +v ? 'btn-primary' : 'border-base-content/15 bg-base-100'}" onclick="${pick(ov)}">${escapeHtml(T(fa, en))}</button>`;
+  return opts.length <= 3 ? `<div class="join w-full">${opts.map(btn).join('')}</div>` : `<div class="grid grid-cols-2 gap-1">${opts.map(btn).join('')}</div>`; }
 function fillBgTransTab(o){ const box = $('iv-fx'); if (!box) return; const nx = bgNextOf(o);
   const head = `<div class="flex items-center gap-2"><svg class="size-4"><use href="#i-sparkles"/></svg><span class="flex-1 text-sm font-bold">${T('گذار به کلیپِ بعدی', 'Transition to the next clip')}</span></div>`;
   if (!nx){ box.innerHTML = head + `<p class="text-xs leading-relaxed text-base-content/60">${T('هیچ کلیپی درست جایی که این کلیپ تمام می‌شود شروع نمی‌شود. گذار دو کلیپِ پس‌زمینهٔ چسبیده به هم را به هم وصل می‌کند.', 'No clip starts right where this one ends. A transition joins two background clips that touch.')}</p>`; return; }
-  const tr = o.trans || null, LIB = AvaTrans.LIB, keys = Object.keys(LIB).filter(k => !LIB[k].scene), cur = tr ? tr.type : '', opt = k => `<option value="${k}" ${k === cur ? 'selected' : ''}>${escapeHtml(trName(k))}</option>`;
-  const kinds = `<option value="" ${cur ? '' : 'selected'}>${T('بدونِ گذار', 'None')}</option><optgroup label="${T('ساده', 'Simple')}">${opt('fade')}${keys.filter(k => k === 'push').map(opt).join('')}</optgroup>`
-    + `<optgroup label="${T('سینمایی', 'Cinematic')}">${keys.filter(k => k !== 'push' && !LIB[k].sc).map(opt).join('')}</optgroup><optgroup label="${T('وایپ و محو — shaders.com', 'Wipes and dissolves — shaders.com')}">${keys.filter(k => LIB[k].sc).map(opt).join('')}</optgroup>`;
-  let rest = '';
+  const tr = o.trans || null, LIB = AvaTrans.LIB, cur = tr ? tr.type : 'none';
+  let h = head + `<p class="text-xs leading-relaxed text-base-content/60">${T('نشانگر را روی هر گذار ببرید تا روی صفحه ببینیدش؛ با کلیک انتخاب می‌شود.', 'Hover a transition to see it on the canvas; click to choose it.')}</p>`;
+  trKeys().forEach(([g, ks]) => { h += `<div class="space-y-1.5"><p class="text-xs font-semibold text-base-content/60">${escapeHtml(g)}</p><div class="grid grid-cols-3 gap-1.5">${ks.map(k => trTile(k, k === cur)).join('')}</div></div>`; });
   if (tr){ const TP = AvaTrans.TP[tr.type] || [], L = LIB[tr.type], lbl = en => T((AvaTrans.TPFA || {})[en] || en, en), about = tr.type === 'fade' || !L ? T('کلیپِ بعدی آرام روی کلیپِ فعلی پیدا می‌شود.', 'The next clip fades in over the current one.') : T(L.aboutFa || L.about || '', L.aboutEn || L.about || '');
     const ctl = ([k, label, min, max, step, d, , opts]) => { const v = (tr.params || {})[k] ?? d;
-      return `<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${escapeHtml(lbl(label))}</legend>` + (opts
-        ? `<select class="select select-sm w-full" onchange="setBgTrans('p:${k}', +this.value)">${opts.map(([ov, en, fa]) => `<option value="${ov}" ${+ov === +v ? 'selected' : ''}>${escapeHtml(T(fa, en))}</option>`).join('')}</select>`
+      return `<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${escapeHtml(lbl(label))}</legend>` + (opts ? trSeg(k, opts, v)
         : `<input type="range" min="${min}" max="${max}" step="${step}" value="${v}" data-def="${d}" class="${RNG}" onchange="setBgTrans('p:${k}', +this.value)">`) + `</fieldset>`; };
-    rest = `<p class="text-xs leading-relaxed text-base-content/60">${escapeHtml(about)}</p><fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T('مدت', 'Length')}</legend><input type="range" data-unit="s" min="0.2" max="3" step="0.1" value="${tr.dur || 0.8}" data-def="0.8" class="${RNG}" onchange="setBgTrans('dur', +this.value)"></fieldset>${TP.map(ctl).join('')}`; }
-  box.innerHTML = head + `<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T('نوع', 'Kind')}</legend><select class="select select-sm w-full" onchange="setBgTransKind(this.value)">${kinds}</select></fieldset>` + rest;
-  box.querySelectorAll('select').forEach(s => enh(s)); if (typeof rangeLabels === 'function') rangeLabels(box); }
+    /* the chosen transition's options stay in view at the foot of the panel while the tiles scroll (as in Animation) */
+    h += `<div class="sticky bottom-0 z-10 -mx-4 space-y-2 border-t border-base-300 bg-base-200 px-4 pb-3 pt-2 shadow-[0_-8px_16px_-12px_rgba(0,0,0,.5)]"><p class="text-sm font-semibold">${escapeHtml(trName(tr.type))}</p><p class="text-xs leading-relaxed text-base-content/60">${escapeHtml(about)}</p>`
+      + `<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T('مدت', 'Length')}</legend><input type="range" data-unit="s" min="0.2" max="3" step="0.1" value="${tr.dur || 0.8}" data-def="0.8" class="${RNG}" onchange="setBgTrans('dur', +this.value)"></fieldset>${TP.map(ctl).join('')}</div>`; }
+  box.innerHTML = h; if (typeof rangeLabels === 'function') rangeLabels(box); trThumbs(o, nx); }
+// the tiles' pictures: both clips drawn small at the cut, every transition rendered half-way — once per pair of clips,
+// a few at a time so the panel never waits
+async function trThumbs(o, nx){ const cv = $('vcanvas'), W = 160, H = Math.max(40, Math.round(160 * ((cv && cv.height) || 1080) / ((cv && cv.width) || 1920)));
+  const key = [o.id, o.asset || o.type, o.panX, o.panY, nx.id, nx.asset || nx.type, nx.panX, nx.panY, W, H, JSON.stringify(V.pod && { s: V.pod.style, b: V.pod.bg, p: V.pod.pal, c: V.pod.custom, so: V.pod.solid })].join('|');
+  if (TRTH.key !== key){ TRTH = { key, urls: {}, busy: 0 }; } const job = ++TRTH.busy, mine = () => TRTH.key === key && TRTH.busy === job && vSel === o.id;
+  const ks = trKeys().flatMap(x => x[1]).filter(k => k !== 'none' && !TRTH.urls[k]); if (!ks.length) return;
+  const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; }, ca = mk(), cb = mk(), cut = o.end ?? projEnd();
+  try { await drawBgClip(ca.getContext('2d'), o, W, H, Math.max(o.start || 0, cut - 0.04), false, [], V.pod, o.type === 'pod' ? o : null);
+        await drawBgClip(cb.getContext('2d'), nx, W, H, cut + 0.04, false, [], V.pod, nx.type === 'pod' ? nx : null); } catch (err) { console.warn('transition thumbnails', err); return; }
+  for (const k of ks){ if (!mine()) return; const out = mk();
+    try { blendTr(out.getContext('2d'), W, H, ca, cb, 0.5, { type: k, params: {} }, 0.5); TRTH.urls[k] = out.toDataURL('image/jpeg', 0.82); } catch (err) { continue; }
+    const el = document.querySelector(`#iv-fx .trthumb[data-th="${k}"]`); if (el) el.innerHTML = `<img src="${TRTH.urls[k]}" alt="" class="block h-full w-full object-cover" draggable="false">`;
+    await new Promise(r => setTimeout(r, 0)); } }
+function trTrOf(o, k){ if (k === 'none') return null; const tr = o.trans || {}; return { type: k, dur: tr.dur || 0.8, params: tr.type === k ? (tr.params || {}) : {} }; }
+function trHover(k){ clearTimeout(TRHOV); TRHOV = setTimeout(() => { const o = objById(vSel); if (!o || !o.bgl) return; trPreview(o, trTrOf(o, k), true); }, 140); }
+function trHoverEnd(){ clearTimeout(TRHOV); if (TRPV && TRPV.loop) trPreviewStop(); }
+function trPick(k){ clearTimeout(TRHOV); trPreviewStop(true); setBgTransKind(k === 'none' ? '' : k); }
+// the canvas plays the cut ±½ s with this transition and the playhead stays (looping while hovered, once after a choice)
+function trPreview(o, tr, loop){ trPreviewStop(true); if (typeof animPreviewStop === 'function') animPreviewStop(true); if (playing || mode !== 'video') return;
+  const cut = o.end ?? projEnd(), d = tr ? Math.max(0.1, tr.dur || 0.8) : 0.6, t0 = Math.max(0, cut - d / 2 - 0.5), t1 = cut + d / 2 + 0.5;
+  const P = TRPV = { id: o.id, tr, t0, t1, loop, start: performance.now(), raf: 0 };
+  const tick = async () => { if (TRPV !== P) return; if (playing){ trPreviewStop(); return; } const el = (performance.now() - P.start) / 1000, len = t1 - t0, cyc = len + 0.4;
+    await vDrawAt(t0 + Math.min(len, loop ? el % cyc : el)); if (TRPV !== P) return;
+    if (!loop && el >= cyc){ TRPV = null; vDraw(); return; } P.raf = requestAnimationFrame(tick); };
+  P.raf = requestAnimationFrame(tick); }
+function trPreviewStop(silent){ const P = TRPV; if (!P) return; TRPV = null; cancelAnimationFrame(P.raf); if (!silent) vDraw(); }
+previewTrans = function(o){ trPreview(o, o && o.trans && o.trans.type ? o.trans : null, false); };
 function setBgTransKind(k){ const o = objById(vSel); if (!o) return;
   if (!k){ if (o.trans){ remember(); delete o.trans; renderTimeline(); vChanged(); showVPanels(); } return; }
   if (!o.trans){ if (!bgNextOf(o)) return; remember(); o.trans = { type: k, dur: 0.8, params: {} }; renderTimeline(); vChanged(); showVPanels(); previewTrans(o); return; }

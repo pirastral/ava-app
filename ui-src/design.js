@@ -32,7 +32,7 @@ function colorField(key, frame){ const f = CF[key]; if (!f) return ''; const cur
 // the reset icon of a control lives in its legend (sliders, colours and sizes alike)
 function legendReset(holder, cls, tipFa, tipEn){ const fs = holder && holder.closest('fieldset'), lg = fs && fs.querySelector('legend'); if (!lg) return null; let b = lg.querySelector('.' + cls);
   if (!b){ lg.classList.add('flex', 'w-full', 'items-center'); if (!lg.querySelector('.rv, .lgsp')) lg.insertAdjacentHTML('beforeend', '<span class="lgsp flex-1"></span>'); lg.insertAdjacentHTML('beforeend', `<button type="button" class="${cls} btn btn-ghost btn-xs btn-square -my-1 opacity-50 hover:opacity-100" data-tip="${tipFa || 'بازنشانی به پیش‌فرض'}" data-tip-en="${tipEn || 'Reset to default'}" aria-label="reset"><svg class="size-3.5"><use href="#i-rotate-ccw"/></svg></button>`); b = lg.querySelector('.' + cls); }
-  return b; }
+  legendTidy(lg); return b; }
 function cfMount(id, key, frame){ const box = $(id); if (!box) return; box.innerHTML = colorField(key, frame); const el = box.querySelector('.cfield'), f = CF[key]; if (!el || !f) return;
   const b = legendReset(box, 'cfrst'); if (b){ b.dataset.cfk = key; b.classList.toggle('invisible', cdist(hex6(f.get()) || '#ffffff', hex6(f.def) || '#ffffff') < 1); } }
 function cfPaint(el, c){ if (!el) return; const lab = el.querySelector('.cpick'), inp = el.querySelector('input[type=color]'), hx = el.querySelector('.cfhex'), f = CF[el.dataset.cf], fs = el.closest('fieldset'), rs = fs && fs.querySelector('legend .cfrst');
@@ -43,7 +43,7 @@ function cfApply(el, c, live){ const f = CF[el.dataset.cf]; c = hex6(c); if (!f 
 document.addEventListener('click', ev => { const rb = ev.target.closest && ev.target.closest('legend .cfrst'); if (rb){ ev.preventDefault(); const el = rb.closest('fieldset').querySelector('.cfield'), f = el && CF[el.dataset.cf]; if (f) cfApply(el, f.def, false); return; }
   const el = ev.target.closest && ev.target.closest('.cfield'); if (!el) return;
   const s = ev.target.closest('.cfsw'); if (s){ ev.preventDefault(); cfApply(el, s.dataset.c, false); return; }
-  if (ev.target.closest('[data-cfr]')){ ev.preventDefault(); frameColors(true); document.querySelectorAll('.cfield').forEach(x => { if (x.querySelector('.cfsw')) x.outerHTML = colorField(x.dataset.cf, true); }); } });
+  if (ev.target.closest('[data-cfr]')){ ev.preventDefault(); frameColors(true); document.querySelectorAll('.cfield').forEach(x => { if (x.querySelector('.cfsw') && !x.dataset.own) x.outerHTML = colorField(x.dataset.cf, true); }); } });
 document.addEventListener('input', ev => { const t = ev.target; if (t.type !== 'color' || !t.closest('.cfield')) return; cfApply(t.closest('.cfield'), t.value, true); }, true);
 document.addEventListener('change', ev => { const t = ev.target, el = t.closest && t.closest('.cfield'); if (!el) return;
   if (t.type === 'color'){ CF_LIVE = null; autosave(); return; }
@@ -85,7 +85,7 @@ function vResets(root){ (root || $('vinsp') || document).querySelectorAll('input
     const lg = r.closest('fieldset') && r.closest('fieldset').querySelector('legend'); if (!lg) return; let b = lg.querySelector('.vrst');
     if (!b){ lg.classList.add('flex', 'w-full', 'items-center'); lg.insertAdjacentHTML('beforeend', `<button type="button" class="vrst btn btn-ghost btn-xs btn-square -my-1 opacity-50 hover:opacity-100" data-tip="بازنشانی به پیش‌فرض" data-tip-en="Reset to default" aria-label="reset"><svg class="size-3.5"><use href="#i-rotate-ccw"/></svg></button>`); b = lg.querySelector('.vrst');
       b.onclick = ev => { ev.preventDefault(); ev.stopPropagation(); r.value = r.dataset.def; r.dispatchEvent(new Event('input', { bubbles: true })); r.dispatchEvent(new Event('change', { bubbles: true })); r.dispatchEvent(new Event('rangeset')); b.classList.add('invisible'); }; }
-    const sync = () => b.classList.toggle('invisible', Math.abs(+r.value - +r.dataset.def) < 1e-9); sync(); if (!r._vrs){ r._vrs = true; r.addEventListener('input', sync); r.addEventListener('rangeset', sync); } }); }
+    legendTidy(lg); const sync = () => b.classList.toggle('invisible', Math.abs(+r.value - +r.dataset.def) < 1e-9); sync(); if (!r._vrs){ r._vrs = true; r.addEventListener('input', sync); r.addEventListener('rangeset', sync); } }); }
 
 // =====================================================================================
 // 176 · TEXT — the box hugs what it says (auto width), or keeps a width and wraps (fixed width, set by dragging a side
@@ -116,23 +116,37 @@ fillText = function(o){ const p = $('iv-text'); if (!p || !o) return; const tb =
 // the handles: a side sets a width the text wraps in; a corner scales the text (and a set width with it); height always hugs
 { const _svs176 = startVScale; startVScale = function(ev, hd){ const o = objById(vSel); if (!o || o.type !== 'text') return _svs176.apply(this, arguments);
     ev.preventDefault(); ev.stopPropagation(); remember(); const x0 = ev.clientX, y0 = ev.clientY, s = { x: o.x, y: o.y, w: o.w, h: o.h, size: o.size }, a = (o.rot || 0) * Math.PI / 180, corner = hd.length === 2;
-    const mv = e => { const dxs = e.clientX - x0, dys = e.clientY - y0, dx = (dxs * Math.cos(-a) - dys * Math.sin(-a)) / frameW, dy = (dxs * Math.sin(-a) + dys * Math.cos(-a)) / frameH;
-      if (corner){ const kx = (s.w + (hd.includes('e') ? dx : -dx)) / s.w, ky = (s.h + (hd.includes('s') ? dy : -dy)) / s.h, k = Math.max(0.15, Math.abs(kx - 1) >= Math.abs(ky - 1) ? kx : ky); o.size = Math.max(8 / 1080, s.size * k); if (o.autoW !== true) o.w = s.w * k; }
-      else { o.autoW = false; o.w = Math.max(0.03, s.w + (hd.includes('e') ? dx : -dx)); }
-      hugText(o); o.x = hd.includes('w') ? s.x + s.w - o.w : s.x; o.y = hd.includes('n') ? s.y + s.h - o.h : s.y; VVER++; vChanged(); };
+    const mv = e => { const dxs = e.clientX - x0, dys = e.clientY - y0, m = e.altKey ? 2 : 1, dx = m * (dxs * Math.cos(-a) - dys * Math.sin(-a)) / frameW, dy = m * (dxs * Math.sin(-a) + dys * Math.cos(-a)) / frameH;   /* 177: Option = around the centre */
+      if (corner && !e.shiftKey){ const kx = (s.w + (hd.includes('e') ? dx : -dx)) / s.w, ky = (s.h + (hd.includes('s') ? dy : -dy)) / s.h, k = Math.max(0.15, Math.abs(kx - 1) >= Math.abs(ky - 1) ? kx : ky); o.size = Math.max(8 / 1080, s.size * k); o.w = s.w * k; }
+      else { o.autoW = false; o.size = s.size; o.w = Math.max(0.03, s.w + (hd.includes('e') ? dx : -dx)); }   /* a side, or Shift on a corner: the width alone (the words re-wrap) */
+      hugText(o); if (e.altKey){ o.x = s.x + (s.w - o.w) / 2; o.y = s.y + (s.h - o.h) / 2; } else { o.x = hd.includes('w') ? s.x + s.w - o.w : s.x; o.y = hd.includes('n') ? s.y + s.h - o.h : s.y; } VVER++; vChanged(); };
     const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); fillText(o); autosave(); };
     addEventListener('pointermove', mv); addEventListener('pointerup', up); }; }
 { const _psb176d = placeSelBox; placeSelBox = function(){ const r = _psb176d.apply(this, arguments); const o = mode === 'video' && vSel && vSel !== 'SUB' && vSel !== 'MIX' ? objById(vSel) : null, sb = $('selbox');
     if (sb && o && o.type === 'text') sb.querySelectorAll('[data-h="n"], [data-h="s"]').forEach(x => x.classList.add('hidden'));   // its height follows the words
     if (sb) sb.classList.toggle('opacity-0', !!VEDIT); return r; }; }
 { const _xf176 = xfApply; xfApply = function(k){ const o = objById(vSel); if (o && o.type === 'text' && k === 'w') o.autoW = false; const r = _xf176.apply(this, arguments); if (o && o.type === 'text'){ hugText(o); vChanged(); } return r; }; }
+// 177 · TYPING ON THE CANVAS WORKS LIKE A TEXT BOX IN KEYNOTE OR FIGMA — a double-click puts the caret where it was
+//       clicked (nothing selected); click, drag, double-click (a word) and triple-click (a line) select as anywhere;
+//       ⌘Z / ⌘⇧Z undo and redo the typing while editing; Esc or a click outside finishes, and one ⌘Z afterwards takes
+//       the whole edit back. The words on the canvas are the real render, live, as they are typed.
+var VED_PT = null;
+function edCaretAt(ed, pt){ const sel = document.getSelection(); let r = null;
+  if (pt){ try { if (document.caretRangeFromPoint) r = document.caretRangeFromPoint(pt[0], pt[1]); else if (document.caretPositionFromPoint){ const c = document.caretPositionFromPoint(pt[0], pt[1]); if (c){ r = document.createRange(); r.setStart(c.offsetNode, c.offset); r.collapse(true); } } } catch (e) { r = null; } }
+  if (!r || !ed.contains(r.startContainer)){ r = document.createRange(); r.selectNodeContents(ed); r.collapse(false); }   // outside the words: at their end
+  sel.removeAllRanges(); sel.addRange(r); }
+{ const ov = document.getElementById('vover'); if (ov){
+    ov.addEventListener('dblclick', e => { VED_PT = [e.clientX, e.clientY]; }, true);
+    ov.addEventListener('pointerdown', e => { const ed = document.getElementById('vtextEd'); if (!VEDIT || !ed) return;
+      if (ed.contains(e.target)){ e.stopImmediatePropagation(); return; }   // inside the words: the caret and the selection, natively
+      ed.blur(); }, true); } }   // outside: the edit is finished first, then the click does what it does
 // typing on the canvas: the words appear in the frame as they are typed (the box and its background follow)
 function txtEdStyle(ed, o){ const H = frameH, px = o.size * H, bg = !!(o.bg && o.bg.on), pad = bg ? (o.bg.pad || 0) * H : 0, auto = o.autoW === true;
   Object.assign(ed.style, { left: o.x * frameW + 'px', top: o.y * frameH + 'px', width: auto ? 'max-content' : o.w * frameW + 'px', minWidth: Math.max(8, o.w * frameW) + 'px', minHeight: o.h * frameH + 'px', padding: `${pad}px ${bg ? pad * 1.6 : px * 0.1}px`,
-    fontFamily: `"${fontFam(o.font)}", Vazirmatn, sans-serif`, fontWeight: fontW(fontFam(o.font), o.weight || 700), fontSize: px + 'px', lineHeight: '1.35', color: o.color || '#fff', caretColor: o.color || '#fff', textAlign: o.align || 'center', transform: `rotate(${o.rot || 0}deg)`, transformOrigin: 'center', background: 'transparent', borderRadius: '0', whiteSpace: auto ? 'pre' : 'pre-wrap' }); }
+    fontFamily: `"${fontFam(o.font)}", Vazirmatn, sans-serif`, fontWeight: fontW(fontFam(o.font), o.weight || 700), fontSize: px + 'px', lineHeight: '1.35', color: 'transparent', caretColor: o.color || '#fff', textAlign: o.align || 'center', transform: `rotate(${o.rot || 0}deg)`, transformOrigin: 'center', background: 'transparent', borderRadius: '0', whiteSpace: auto ? 'pre' : 'pre-wrap' }); }
 { const _etip176 = editTextInPlace; editTextInPlace = function(){ const o = vSel && vSel !== 'SUB' ? objById(vSel) : null; if (!o || o.type !== 'text') return _etip176.apply(this, arguments);
     const ed = $('vtextEd'), t0 = o.text; remember(); VEDIT = o; ed.classList.remove('hidden'); ed.innerText = o.text || ''; txtEdStyle(ed, o); placeSelBox(); VVER++; vDraw();
-    ed.focus(); document.getSelection().selectAllChildren(ed);
+    ed.focus(); edCaretAt(ed, VED_PT);   /* 177: the caret where the double-click was — never everything selected */
     ed.oninput = () => { o.text = ed.innerText.replace(/\n$/, ''); hugText(o); txtEdStyle(ed, o); VVER++; vDraw(); placeSelBox(); fillXformOnly(); };
     ed.onkeydown = e => { if (e.key === 'Escape'){ e.preventDefault(); ed.blur(); } e.stopPropagation(); };
     ed.onblur = () => { o.text = ed.innerText.replace(/\n$/, '').trim() || t0; VEDIT = null; ed.classList.add('hidden'); ed.oninput = null; if (o.text === t0) hist.past.pop(); hugText(o); vChanged(); renderTimeline(); showVPanels(); }; }; }
@@ -171,21 +185,46 @@ SUB_PRESETS.forEach(p => { if (p[0] === 'bold'){ p[1] = 'درشت'; p[2] = 'Bold
 // the panel: one design for every subtitle
 fillSub = function(){ const s = V.subs, cues = cuesNow(), q = cues[V.subSel]; $('subTime').textContent = q ? `${fmt(q.at)} → ${fmt(q.at + q.dur)}` : '';
   $('subFixRow').innerHTML = q && q.fixed ? `<div class="flex items-center gap-2 rounded-box border border-warning/40 bg-warning/10 px-3 py-2 text-xs"><svg class="size-3.5 shrink-0 text-warning"><use href="#i-pencil"/></svg><span class="flex-1">${T('نوشتهٔ این زیرنویس را دستی اصلاح کرده‌اید.', "You corrected this subtitle's wording by hand.")}</span><button class="btn btn-ghost btn-xs gap-1" onclick="clearSubFix(V.subSel)"><svg class="size-3.5"><use href="#i-rotate-ccw"/></svg>${T('متنِ خط', "The line's text")}</button></div>` : '';
-  $('subPresets').innerHTML = SUB_PRESETS.map(([k, fa, en, p]) => `<button class="btn h-auto flex-col gap-1 p-1 ${s.preset === k ? 'btn-primary' : 'border-base-content/10 bg-base-100'}" onclick="subPreset('${k}')"><span class="grid h-9 w-full place-items-center rounded-field bg-[#0c1230]"><span class="rounded px-1 text-[11px] leading-tight" style="font-weight:${p.weight};color:${p.color};${p.bgOn ? `background:rgba(0,0,0,${p.bgOp})` : ''};${p.outline ? 'text-shadow:0 0 2px #000,0 0 2px #000' : ''}">${T('سلام', 'Hello')} <b style="color:${p.hiMode !== 'none' ? p.hi : p.color}">${T('دوست', 'friend')}</b></span></span><span class="text-[11px]">${T(fa, en)}</span></button>`).join('');
+  $('subPresets').innerHTML = SUB_PRESETS.map(([k, fa, en, p]) => `<button class="btn h-auto flex-col gap-1 p-1 ${s.preset === k ? 'btn-primary' : 'border-base-content/10 bg-base-100'}" onclick="subPreset('${k}')"><span class="grid h-9 w-full place-items-center rounded-field bg-[#0c1230]"><span class="rounded px-1 text-[11px] leading-normal" style="font-weight:${p.weight};color:${p.color};${p.bgOn ? `background:rgba(0,0,0,${p.bgOp})` : ''};${p.outline ? 'text-shadow:0 0 2px #000,0 0 2px #000' : ''}">${T('سلام', 'Hello')} <b style="color:${p.hiMode !== 'none' ? p.hi : p.color}">${T('دوست', 'friend')}</b></span></span><span class="text-[11px]">${T(fa, en)}</span></button>`).join('');
   fillFontPick($('subFont'), $('subWeight'), fontFam(s.font), s.weight || 700, f => { subSet('font', f); fillSub(); }, w => subSet('weight', w));
   NF.subSize = { get: () => V.subs.sizePx || 46, set: v => { V.subs.sizePx = v; requestAnimationFrame(placeSelBox); }, def: 46, min: 12, max: 200, unit: 'px' }; nfMount('subSizeF', 'subSize');
   document.querySelectorAll('#iv-sub input[name=sp]').forEach(r => { r.checked = r.value === (s.place || 'bottom'); r.onchange = () => { if (!r.checked) return; remember(); V.subs.place = r.value; V.subs.off = { x: 0, y: 0 }; VVER++; vDraw(); autosave(); requestAnimationFrame(placeSelBox); fillSub(); }; });
   { const lg = document.querySelector('#iv-sub input[name=sp]').closest('fieldset').querySelector('legend'), moved = s.off && (Math.abs(s.off.x) > 1e-4 || Math.abs(s.off.y) > 1e-4); let b = lg.querySelector('.vrst');
-    if (!b){ lg.classList.add('flex', 'w-full', 'items-center'); lg.insertAdjacentHTML('beforeend', `<span class="flex-1"></span><button type="button" class="vrst btn btn-ghost btn-xs btn-square -my-1 opacity-50 hover:opacity-100" data-tip="برگرداندن به جای خودش" data-tip-en="Back to its place" aria-label="reset"><svg class="size-3.5"><use href="#i-rotate-ccw"/></svg></button>`); b = lg.querySelector('.vrst'); b.onclick = () => { remember(); V.subs.off = { x: 0, y: 0 }; VVER++; vDraw(); autosave(); requestAnimationFrame(placeSelBox); fillSub(); }; }
-    b.classList.toggle('invisible', !moved); }
+    if (!b){ lg.classList.add('flex', 'w-full', 'items-center'); lg.insertAdjacentHTML('beforeend', `<span class="flex-1"></span><button type="button" class="vrst btn btn-ghost btn-xs btn-square -my-1 opacity-50 hover:opacity-100" data-tip="برگرداندن به جای خودش" data-tip-en="Back to its place" aria-label="reset"><svg class="size-3.5"><use href="#i-rotate-ccw"/></svg></button>`); b = lg.querySelector('.vrst'); b.onclick = () => { remember(); V.subs.off = { x: 0, y: 0 }; V.subs.place = 'bottom'; VVER++; vDraw(); autosave(); requestAnimationFrame(placeSelBox); fillSub(); }; }
+    b.classList.toggle('invisible', !moved && (s.place || 'bottom') === 'bottom'); }   // 178: the reset icon also brings a chosen place back to the bottom
   CF.subColor = { get: () => V.subs.color || '#ffffff', set: c => { V.subs.color = c; }, def: '#ffffff' }; cfMount('subColorF', 'subColor', true);
   CF.subHi = { get: () => V.subs.hi || '#e9603b', set: c => { V.subs.hi = c; }, def: '#e9603b' }; cfMount('subHiColorF', 'subHi', true); $('subHiColorBox').classList.toggle('hidden', (s.hiMode || 'none') === 'none');
   const an = $('subAnim'); an.value = [...an.options].some(o => o.value === s.anim) ? s.anim : 'none'; an.onchange = () => subSet('anim', an.value); enh(an);
   const op = $('subBgOp'); op.value = Math.round((s.bgOp ?? 0.55) * 100); op.oninput = () => subSet('bgOp', +op.value / 100, true); op.onchange = () => autosave(); op.dispatchEvent(new Event('rangeset'));
   [['subChunk', 'chunk', 0], ['subHiMode', 'hiMode', 'none'], ['subBgMode', 'bgMode', 'box']].forEach(([id, key, d]) => { const el = $(id); if (!el) return; el.value = String(s[key] ?? d);
     el.onchange = () => { if (key === 'chunk'){ remember(); V.subs.chunk = +el.value; V.subs.fixes = {}; VVER++; V.subSel = 0; renderTimeline(); vDraw(); autosave(); fillSub(); return; } subSet(key, el.value); if (key === 'hiMode') $('subHiColorBox').classList.toggle('hidden', el.value === 'none'); }; enh(el); });
-  [['subBgOn', 'bgOn'], ['subOutline', 'outline'], ['subShadow', 'shadow'], ['subGlow', 'glow'], ['subSpk', 'spk']].forEach(([id, key]) => { const el = $(id); if (!el) return; el.checked = !!s[key]; el.onchange = () => { subSet(key, el.checked); if (key === 'bgOn') $('subBgOpts').classList.toggle('hidden', !el.checked); }; });
+  [['subBgOn', 'bgOn'], ['subOutline', 'outline'], ['subShadow', 'shadow'], ['subGlow', 'glow'], ['subSpk', 'spk']].forEach(([id, key]) => { const el = $(id); if (!el) return; el.checked = key === 'spk' ? subSpkOn(s) : !!s[key]; el.onchange = () => { subSet(key, el.checked); if (key === 'bgOn') $('subBgOpts').classList.toggle('hidden', !el.checked); }; });
   $('subBgOpts').classList.toggle('hidden', !s.bgOn); };
+// 177 · SPEAKER NAMES ARE ON WHEN THE SCRIPT HAS SPEAKERS — until the switch is set by hand (then it is what was set)
+function subSpkOn(s){ s = s || V.subs; if (s.spk === true || s.spk === false) return s.spk;
+  try { const ids = new Set(spkList().map(z => z.id)); return orderedLines().some(id => { const L = S.lines[id]; return L && L.spk && ids.has(L.spk); }); } catch (e) { return false; } }
+// 177 · A REACTION HAS ITS OWN CAPTION — a second, smaller line above the main caption while it is heard (held long
+//       enough to read), with its speaker's name when it has one; in the captions' own design
+function reactAt(t){ let best = null;
+  for (const id of orderedLines()) for (const r of reactsOf(id)){ if (!String(r.text || '').trim()) continue; const a = rAt(id, r); if (a == null) continue;
+    const e = a + Math.max(rLen(r) + 0.3, 1.1); if (t >= a && t < e && (!best || a > best.a)) best = { id, r, a, e }; }
+  return best; }
+function drawReactCaption(ctx, W, H, t){ const s = V.subs; if (!s.on || s.reacts === false) return; const hit = reactAt(t); if (!hit) return; const r = hit.r, sp = rSpk(r);
+  const px0 = (s.sizePx || Math.round((s.size || 0.042) * 1080)) / 1080 * H, px = px0 * 0.82, lh = px * 1.45, padX = px * 0.45, prim = s.hi || '#f2b233', k = Math.min(1, (t - hit.a) / 0.2);
+  ctx.save(); ctx.font = FONT(s.weight || 700, px, s.font); ctx.direction = 'rtl'; ctx.textBaseline = 'middle'; ctx.textAlign = 'right';
+  const name = sp && sp.name ? sp.name + ':' : '', text = cleanCue(r.text) || String(r.text), gap = ctx.measureText(' ').width, nw = name ? ctx.measureText(name).width : 0, tw = ctx.measureText(text).width, w = nw + (name ? gap : 0) + tw;
+  const off = s.off || { x: 0, y: 0 }, cx = (0.5 + (off.x || 0)) * W, mode = s.bgOn ? (s.bgMode || 'box') : 'none';
+  let cy = SUBRECT ? SUBRECT.y * H - lh / 2 - px0 * 0.22 : (s.place === 'top' ? (0.08 + (off.y || 0)) * H + lh / 2 : s.place === 'middle' ? (0.5 + (off.y || 0)) * H : (0.92 + (off.y || 0)) * H - lh / 2);
+  if (SUBRECT && cy - lh / 2 < H * 0.02) cy = (SUBRECT.y + SUBRECT.h) * H + lh / 2 + px0 * 0.22;   // no room above a caption at the very top: just below it
+  ctx.globalAlpha *= k; const bx = cx - w / 2 - padX, bw = w + 2 * padX;
+  if (mode === 'box' || mode === 'bar'){ ctx.fillStyle = rgba('#000000', s.bgOp ?? 0.55); rrect(ctx, bx, cy - lh / 2, bw, lh, px * 0.25); ctx.fill(); }
+  else if (mode === 'capsule'){ ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#e9603b'; rrect(ctx, bx, cy - lh / 2, bw, lh, lh / 2); ctx.fill(); }
+  else if (mode === 'card'){ ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = px * 0.5; ctx.shadowOffsetY = px * 0.12; ctx.fillStyle = rgba('#ffffff', s.bgOp ?? 0.95); rrect(ctx, bx, cy - lh / 2, bw, lh, px * 0.35); ctx.fill(); ctx.restore(); }
+  const put = (str, right, fill) => { ctx.save(); if (s.glow){ ctx.shadowColor = prim; ctx.shadowBlur = px * 0.55; } else if (s.shadow){ ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = px * 0.25; ctx.shadowOffsetY = px * 0.08; }
+    if (s.outline){ ctx.lineWidth = Math.max(2, px * 0.12); ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.lineJoin = 'round'; ctx.strokeText(str, right, cy); } ctx.fillStyle = fill; ctx.fillText(str, right, cy); ctx.restore(); };
+  let x = cx + w / 2; if (name){ put(name, x, prim); x -= nw + gap; } put(text, x, s.color || '#ffffff');
+  ctx.restore(); }
+{ const _drawSubs177 = drawSubs; drawSubs = function(ctx, W, H, t){ const r = _drawSubs177.apply(this, arguments); try { drawReactCaption(ctx, W, H, t); } catch (err) { console.warn('reaction caption', err); } return r; }; }
 // moving them: drag the one on the canvas, or the arrow keys — all of them move (their place is one for all)
 { const _svm176 = startVMove; startVMove = function(ev){ if (vSel !== 'SUB') return _svm176.apply(this, arguments);
     ev.preventDefault(); remember(); const s = V.subs, o0 = { x: (s.off || {}).x || 0, y: (s.off || {}).y || 0 }, x0 = ev.clientX, y0 = ev.clientY; let moved = false;
@@ -216,7 +255,7 @@ VADD.sub = [];   // no subtitle of its own: they come from the script
 var VDRAW_WAIT = [];
 { const _vDraw176 = vDraw; vDraw = async function(){ const r = await _vDraw176.apply(this, arguments); if (!drawing && VDRAW_WAIT.length){ const w = VDRAW_WAIT; VDRAW_WAIT = []; w.forEach(f => f()); } return r; }; }
 const vDrawIdle = () => new Promise(res => { if (!drawing) return res(); VDRAW_WAIT.push(res); setTimeout(res, 1500); });
-function refreshFrameSwatches(){ const key = FRAME_SW.key; vDrawIdle().then(() => { if (FRAME_SW.key !== key) return; frameColors(true); document.querySelectorAll('#vinsp .cfield').forEach(x => { if (x.querySelector('.cfsw')) x.outerHTML = colorField(x.dataset.cf, true); }); }); }
+function refreshFrameSwatches(){ const key = FRAME_SW.key; vDrawIdle().then(() => { if (FRAME_SW.key !== key) return; frameColors(true); document.querySelectorAll('#vinsp .cfield').forEach(x => { if (x.querySelector('.cfsw') && !x.dataset.own) x.outerHTML = colorField(x.dataset.cf, true); }); }); }
 { const _svp176d = showVPanels; showVPanels = function(anim){ const key = String(vSel) + '|' + (vSel === 'SUB' ? V.subSel : ''), fresh = key !== LAST_PANEL; if (fresh){ LAST_PANEL = key; FRAME_SW.key = null; }
     const r = _svp176d.apply(this, arguments); try { const root = $('vinsp'); enhColors(root); syncColors(root); vResets(root); if (fresh && root.querySelector('.cfsw')) refreshFrameSwatches(); } catch (err) { console.warn(err); } return r; }; }
 { const _sp176 = subPreset; subPreset = function(k){ const c0 = +(V.subs.chunk || 0), r = _sp176.apply(this, arguments); if (+(V.subs.chunk || 0) !== c0){ V.subs.fixes = {}; V.subSel = 0; renderTimeline(); vDraw(); } return r; }; }   // a new number of words per caption clears the corrections
@@ -228,15 +267,20 @@ function refreshFrameSwatches(){ const key = FRAME_SW.key; vDrawIdle().then(() =
 // =====================================================================================
 // 176 · THE PREVIEW — larger (less margin around the frame), its bar folds away, and a full-screen player
 // =====================================================================================
-fitFrame = function(){ const st = $('stage'); if (!st) return; const full = document.body.classList.contains('vfull'), m = full ? 0 : 6, [ow, oh] = outSize(), ar = ow / oh;
-  const aw = st.clientWidth - m * 2, ah = st.clientHeight - m * 2 - (full ? 76 : 0); frameW = Math.max(120, Math.min(aw, ah * ar)); frameH = frameW / ar;
+fitFrame = function(){ const st = $('stage'); if (!st) return; const full = document.body.classList.contains('vfull'), m = full ? 0 : 6, [ow, oh] = outSize(), ar = ow / oh, fold = !full && !!st.closest('.stfold');
+  const aw = st.clientWidth - m * 2, ah = st.clientHeight - (fold ? m : m * 2) - (full ? 76 : 0);   /* 178: folded, the canvas starts at the top (no margin above it) */ frameW = Math.max(120, Math.min(aw, ah * ar)); frameH = frameW / ar;
   const fr = $('frame'); fr.style.width = frameW + 'px'; fr.style.height = frameH + 'px'; if (full) fr.style.marginBottom = '76px'; else fr.style.marginBottom = '';
   const cv = $('vcanvas'), dpr = Math.min(2, devicePixelRatio || 1); cv.width = Math.round(frameW * dpr); cv.height = Math.round(frameH * dpr); placeSelBox(); };
-function stageBar(show){ const b = $('stageBar'), mini = $('stageMini'); if (!b) return; b.classList.toggle('hidden', !show); if (mini) mini.classList.toggle('hidden', !!show);
-  try { API().settings_set({ ed_stagebar: !!show }); } catch (err) {} try { localStorage.setItem('ava_stagebar', show ? '1' : '0'); } catch (err) {}
+// 177 · the bar above the preview starts folded — a slim row that still has the canvas size (the select moves into it),
+//       full screen and unfold
+function stageBar(show, quiet){ const b = $('stageBar'), mini = $('stageMini'), res = $('res'), slot = $('resMini'); if (!b) return; b.classList.toggle('hidden', !show); if (mini){ mini.classList.toggle('hidden', !!show); mini.classList.toggle('flex', !show); }
+  { const box = $('stageBox'); if (box) box.classList.toggle('stfold', !show); }   /* 178: folded, no room is left above the canvas (the stylesheet drops the top paddings) */
+  if (res && slot){ if (show){ const ic = b.querySelector('svg'); if (res.parentElement !== b) (ic ? ic.after(res) : b.prepend(res)); res.classList.remove('select-xs', 'w-52'); res.classList.add('select-sm', 'w-64'); }
+    else { if (res.parentElement !== slot) slot.appendChild(res); } }   /* 178: folded, the list sits invisible over its icon (the stylesheet) — the same list, opened by the icon */
+  if (!quiet){ try { API().settings_set({ ed_stagebar177: !!show }); } catch (err) {} try { localStorage.setItem('ava_stagebar177', show ? '1' : '0'); } catch (err) {} }
   requestAnimationFrame(() => { fitFrame(); vDraw(); }); }
-(async () => { let show = true; try { const v = localStorage.getItem('ava_stagebar'); if (v === '0') show = false; } catch (err) {}
-  try { const st = await API().settings_get(); if (st && st.ed_stagebar === false) show = false; } catch (err) {} if (!show) stageBar(false); })();
+(async () => { let show = false; try { const v = localStorage.getItem('ava_stagebar177'); if (v === '1') show = true; } catch (err) {}
+  try { const st = await API().settings_get(); if (st && st.ed_stagebar177 === true) show = true; } catch (err) {} stageBar(show, true); })();
 function vfBar(){ let b = $('vfullBar'); if (b) return b; b = document.createElement('div'); b.id = 'vfullBar'; b.dir = 'ltr';
   b.className = 'ui fixed inset-x-0 bottom-0 z-[1600] hidden items-center gap-3 bg-black/80 px-6 py-4 text-white';
   b.innerHTML = `<button class="btn btn-circle btn-secondary btn-sm" data-vf="play" aria-label="play"><svg class="size-4"><use href="#i-play"/></svg></button><span id="vfTime" class="w-28 shrink-0 text-sm tabular-nums"></span>`
@@ -271,7 +315,7 @@ function showClipPanel(c){ const p = clipPanelEl(); ['line', 'proj', 'music'].fo
   if (c.type === 'sfx'){ const it = sfxItems().find(x => x.file === c.file) || {}, fam = sfxFams()[it.fam] || {};
     p.innerHTML = `<div class="flex items-center gap-2"><svg class="size-4 text-primary"><use href="#i-audio-lines"/></svg><span class="text-sm font-bold">${T('افکتِ صوتی', 'Sound effect')}</span></div>
       <div class="flex items-center gap-2 rounded-box border border-base-300 p-2"><button class="btn btn-ghost btn-sm btn-circle" onclick="previewSfx('${escapeHtml(c.file)}')" aria-label="${T('شنیدن', 'Listen')}"><svg class="size-4"><use href="#i-play"/></svg></button>
-        <div class="min-w-0 flex-1"><div class="truncate text-sm font-semibold">${escapeHtml(sfxName(c))}</div><div class="truncate text-xs text-base-content/60">${escapeHtml([fam.fa ? T(fam.fa, fam.en) : '', it.sec ? num(it.sec) + T('ث', ' s') : ''].filter(Boolean).join(' · '))}</div></div></div>
+        <div class="min-w-0 flex-1"><div class="truncate text-sm font-semibold">${escapeHtml(sfxName(c))}</div><div class="truncate text-xs text-base-content/60">${escapeHtml([fam.fa ? T(fam.fa, fam.en) : '', it.sec ? secs(it.sec) : ''].filter(Boolean).join(' · '))}</div></div></div>
       ${clipVolField(c)}
       <button class="btn btn-sm w-full gap-1.5 border-base-content/15 bg-base-100" onclick="replaceSfxClip('${c.id}')"><svg class="size-4"><use href="#i-replace"/></svg>${T('جایگزینی با صدای دیگر…', 'Replace with another sound…')}</button>`; }
   else if (c.type === 'ovl'){ const [, r] = rFind(c.rid || c.id); if (!r){ p.classList.add('hidden'); return; } const sp = rSpk(r), k = sp ? spkList().indexOf(sp) : -1;

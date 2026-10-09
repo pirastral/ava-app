@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist
 ======================================================================
-This zip is the COMPLETE application source as of update 176.
+This zip is the COMPLETE application source as of update 178.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -16,7 +16,7 @@ Replace these files in the repo (paths identical):
   builtin_keys.json – NEW (101): Freesound / Jamendo keys shipped with the app
   en_strings.py     – NEW (107): English renderings of engine messages (116: Fish added)
   requirements.txt  – 116: + msgpack
-  voices/           – NOW POPULATED (107): 63 clips + voices.json — 175/176: NOT in this zip (byte-identical to 170's, so the
+  voices/           – NOW POPULATED (107): 63 clips + voices.json — 175–177: NOT in this zip (byte-identical to 170's, so the
                       zip stays under the 30 MB upload limit); it comes as its own zip: leave the repo's voices/ folder as it is
   ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold); 176: + latin/ — 29 English Google-font files (≈1 MB),
                       fetched by the page the first time a text uses one (never embedded)
@@ -28,6 +28,116 @@ Replace these files in the repo (paths identical):
                       make_sfx.py, protect.py / verify_protection.py (176: fox_sfx.py + fox_render.js removed)
   176 — DELETE FROM THE REPO (no longer used): ui/sfx/fox/ · tools/fox_sfx.py · tools/fox_render.js ·
                       tools/ui-build/.input-editor.css (an old temporary file)
+
+  177 — DELETE FROM THE REPO (no longer used): ui-src/orblab.js (the orb lab belongs to the commercial product, not here)
+  177 — NEW: ui-src/controls.js (the daisyUI controls: selects, menus, size and colour fields, Coloris, undo marks),
+              tools/level_previews.py (levels the shipped voice samples to one loudness); package.json adds
+              @melloware/coloris 0.25.0 (MIT) — run npm install in tools/ui-build before building the page
+  177 — ui/previews/ is COMPLETE now (the founder's samples, levelled): 77 chatterbox/, 77 fish/, 3 light/, 30 per Google model
+  178 — ui/previews/ REPLACED: the same 247 files at 128 kb/s (copy the whole folder over the repo's)
+
+WHAT CHANGED IN 178 (on top of 177) — the founder's checks of 177 and his new requests
+  · VIDEO STARTS EMPTY: a new project's video has no podcast and no title until you add them.
+  · THE WORK AREA AND THE TIMELINE SHARE THE HEIGHT, in both editors: a handle between them (it shows on hover) moves the
+    line by up to 30 % of the timeline's default height either way. A timeline shorter than its default packs its tracks —
+    56 px tracks down to 44 px at −30 % (clips 38 px, the founder's option C), no clip titles, slimmer track headers, less
+    space between tracks; at the default height or taller nothing changes. A right-click on the handle puts both back;
+    the size is kept on the Mac. The canvas refits as you drag; a selected clip's bar follows its clip.
+  · THE FOLDED BAR ABOVE THE CANVAS is as in 176: three small icons in the corner — unfold, full screen, canvas size — and
+    no row, so the canvas grows into it; the size icon opens the same list as the full bar's. «1920×1080» now reads in
+    order in Persian (it showed «1080×1920»), in the export dialog too.
+  · A RESET ICON ON EVERY VARIABLE (the founder, 176): the 79 switches, lists and button rows that had none get one —
+    text (font, weight, alignment, width, background, its shape), picture (stroke, shadow, stroke style), sticker
+    (background, shape, emoji), podcast (ring, names, gradient overlay, sound style, background type, fit, position,
+    layout, name style, name weight, gradient direction), subtitles (background, outline, shadow, glow, speaker name,
+    font, weight, words per caption, spoken word, animation), Fish's five switches, the voices' continuity, the line's
+    volume, the frame rate. It shows once the value is off its default; a click chooses the default in the control
+    itself (one undo step); the speaker name goes back to «automatic»; the subtitles' position icon also brings a chosen
+    place back to the bottom. Fields that had no label (font · weight, alignment · width, background shape and type,
+    fit, emoji) have one now, like every other field — their reset icons sit there.
+  · THE CARET ON THE FOUNDER'S OWN LETTER TIMINGS: a number the timing model skips («۲۰۲۶») is walked through as it is
+    read, and a sound tag («<chuckle>») holds the caret on its chip until the next word starts — 177's fix only worked
+    when the app estimated the word times itself.
+  · UNDO FOR COLOURS: a colour typed as hex or picked in the picker is one undo step (the step was recorded after the colour
+    had changed, so ⌘Z brought nothing back). An audit now changes every control in every inspector and undoes it.
+  · TRIM HANDLES: the white bar sits inside the clip's edge again; only the grab area is outside (a tiny clip still drags
+    by its body).
+  · Subtitles start Bold (700): the list showed «Black» while the captions were drawn at 600.
+  · VOICE SAMPLES AT THE FOUNDER'S OWN QUALITY: the same 247 samples (every one of his set, full length) levelled again from
+    his originals and written at 128 kb/s like his files (177 wrote them at 48 kb/s): ui/previews is 12 MB, the build zip
+    about 23 MB (under the 30 MB upload limit). tools/level_previews.py takes the bit rate as a third argument.
+  Tests: t36 (empty video, the handle in both editors, option C, the folded bar, the caret on the founder's line),
+  vis_control_audit (every control acts and comes back with one undo), vis_reset_audit (every control has a reset icon
+  that restores it), vis178_sizes / vis178_stagebar (the pictures shown to the founder) + every earlier suite + the
+  engine checks and test sets 146–160.
+
+WHAT CHANGED IN 177 (on top of 176) — the founder's 14:37 feedback (48 points restated and confirmed) in one build
+  · MEMORY (the 44 GB freeze): the Chatterbox worker's ceiling scaled with the Mac's size (20–40 % of RAM: a 128 GB Mac let
+    it reach 25–51 GB) and the samples tool made 73 Chatterbox takes in a row. Now ONE absolute ceiling on every machine:
+    it retires past 9 GB after a job, and a guard watching it every second stops it at once past 12 GB (or when the Mac
+    runs out of free memory) in the middle of a job; memory is measured as Activity Monitor does (phys_footprint); the
+    app logs its own memory (engine, worker, window) on every change and warns past 10 GB. The samples tool is gone.
+  · CONTROLS ARE DAISYUI'S OWN (14:47): every choice of a value is daisyUI's select — the system's own list, which fits
+    what it lists, flips at the window's edges, closes on a second click — with ▶ / pin / trash beside it in a join where
+    a voice list needs them, recent picks and «More…» actions as entries of the list; every list of actions is daisyUI's
+    dropdown (opens toward the room, a second click / a click outside / Esc closes it); a size is − [number] + with no
+    browser arrows; a colour is a round swatch + hex that opens Coloris (one picker on every platform) right beside it,
+    with the frame's colours as swatches, and a typed hex moves it. Native lists follow the app's day/night theme. Every
+    slider legend: label, value at the far end, reset icon.
+  · UNDO: every action is one step — the inspectors included (a slider's drag, a run of typing, a pick); 200 steps kept.
+  · DIGITS: English digits everywhere (status line, rulers, inspectors, engine messages, help), «s» for seconds (12.6s).
+  · ENGLISH: switching the language redraws whatever is open (the inspectors stayed Persian); Fish's tag groups and model
+    labels have English names. Audit: no Persian left in English mode outside the user's own words.
+  · INSPECTOR MAP: the podcast's own settings only (designs as flat pictures — no orbs —, layout, waves, avatar size and
+    ring, names, sensitivity); background and overlay only on the background track; a background type shows only its
+    own settings; the orb lab, glass/water/signature orbs, the glass sphere and their named palettes are gone; picture
+    adjustments are a normal open section; a background clip has no corners, stroke or shadow; Size & position is the
+    last section everywhere; every section open (except what a switch reveals); the video panel's background is a
+    colour field; the project's file name sits beside «Project»; saving says so in green.
+  · CANVAS: a new text hugs its words at once; Option resizes around the centre and Shift frees the ratio on EVERY object
+    (Shift on a text's corner sets its width alone); typing on the canvas like Keynote/Figma — the caret where you double-
+    clicked, nothing selected, normal selection, ⌘Z/⇧⌘Z undo the typing, Esc or a click outside ends it, one ⌘Z after
+    takes the edit back, and the canvas draws the words live; Bring forward only when the object can come forward;
+    the object bar never covers the app's top bar.
+  · TRANSITIONS LIKE ANIMATIONS: tiles with a picture of each transition half-way between YOUR two clips; hover loops it on
+    the canvas (the playhead stays), a click chooses and plays it once; values are rows of buttons (directions on a
+    compass) — no list inside a list. The lists that «did nothing» (transitions, fonts) were 176's home-made lists; every
+    list is now the system's own, and an audit changes every list in every panel and dialog and checks that it acts (the
+    libraries' filters, which waited for «Search», now search at once).
+  · TIMELINES: trim handles sit OUTSIDE a selected clip (a tiny effect drags by its body); zoom to 600 px/s with a ruler
+    that keeps its labels ~72 px apart (tenths of a second at full zoom); Shift while moving the playhead snaps to every
+    clip edge on every track (both editors); the podcast clip splits; deleting a slide keeps the slideshow's length (its
+    time shared by the slides left); the preview's bar starts folded, with the canvas size in the folded row.
+  · REACTIONS: the badge 90% above the line with its apron (its width, from its middle to the line's foot, the ruler's
+    tint, solid to 80% then fading); one without audio — a ready-made one from the tags menu, one typed with |…|, an old
+    document's — opens the dialog and «Add» voices it (after a line is re-made, its waiting reactions ask in turn); the
+    timeline's selection marks the same badge in the text; a reaction has its own caption — a second, smaller line above
+    the main caption with its speaker's name; speaker names in subtitles are on by default when the script has speakers.
+  · THE VOICE NEVER WAITS UNDER A REACTION (the founder's project: 0.78 s after «شد که», under «نه بابا!»): no-break-space
+    runs (left where badges and chips once sat) were sent to Google and read as hesitations — every kind of space is now
+    one plain space for Google (3.1 and 3.8); a line with reactions asks for one continuous flow; a take that still leaves
+    a mid-sentence gap under a reaction is taken again (twice at most), and then the silence itself is cut out of the part
+    (engine: gulp_cut — only a pause, never speech; a 12 ms crossfade; the spans and words follow).
+  · AUDIO EDITOR: a sound tag is the line tone's own chip (daisyUI badge) and its menu — Delete first, the other tags of the
+    line's engine, no ✕; the caret holds on a tag's chip while it sounds; Gemini 3.1 lines take tones (sent as the line's
+    own direction tag); the line's Duplicate is an icon with a hint; the keys list marks the last key used and the next.
+  · VOICE SAMPLES: every built-in voice's sample ships with the app (the founder's set, levelled to one loudness: speech at
+    −18 dB, peaks under −1 dBFS, 48 kb/s mono); a voice of your own gets its sample once, when it is made, and keeps it
+    (the cache now belongs to the voice — engine, voice, model — and 176's samples are kept under the new names).
+  · Also found while re-testing: every voice list has its ▶ from the start (it appeared only after a first pick), and in
+    «This line» ▶ on «as the speaker» plays the voice the line gets from there (it was greyed out); «— as the speaker:
+    unchanged —» instead of nested dashes; the «More…» entries follow the model (library, design and clone on 3.8 only)
+    and the line's own voice list has them too;
+    speakers made by a paste show in the Speakers list and its count at once; a tag dropped when its line is re-made
+    with an engine that cannot say it takes its spaces with it (a no-break space was left behind); the «Voice orb» scene
+    left the effect kinds with the other orbs.
+  · The activation page shows the real build number (it said 126).
+  Tests: t31 (reaction captions, speaker names), t32 (canvas: hug, Option/Shift, typing), t33 (slideshow, playhead snap,
+  folded bar), t34 (badge apron, no-pause pipeline on the founder's project, presets and pending reactions), t35 (tag
+  chips, caret on tags, 3.1 tones, trim handles, zoom 600, keys marks), vis177c (transition tiles, podcast split, bring
+  forward), audits vis_en_audit (English, also after switching with panels open) and vis_select_audit (every list),
+  e177_mem (ceilings, live guard, admission gate, memory log), e177_cut (silence cut on the founder's part; speech
+  refused), e177_samples (sample cache, bundled set) + every earlier suite + engine 146–160.
 
 WHAT CHANGED IN 176 (on top of 175) — the founder's 69 points, in one build
   · LINES: Enter/split carries every setting of the line (speaker, tone, engine, voice, model); «لحنِ خط» sits before «تگ صوتی»;
@@ -86,8 +196,7 @@ WHAT CHANGED IN 176 (on top of 175) — the founder's 69 points, in one build
   multi-selection, clips, transitions), t30 (text, subtitles, controls, preview, clip panels), e176/e176_keys/e176_lib
   (timing model, keys, library) + every earlier suite updated to 176's behaviour + engine 146–160 (test147's key file
   now restarts the key cursor too).
-  TO DO ON THE MAC: «Connection and quota» → «Make all voice samples…» once, to make the Chatterbox and Fish «نمونه»
-  samples (chatterbox/ and fish/); the timing model downloads by itself on the first start.
+  (176's to-do — making the samples on the Mac — is done: the founder's set ships in 177.)
 
 WHAT CHANGED IN 175 (on top of 174) — everything asked for since 174, in one build (none of 171–174 was deployed)
   · TOOLING: the page's build tools live in the tree (tools/ui-build: build-editor.py, package.json, the Tailwind input).

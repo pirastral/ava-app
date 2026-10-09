@@ -94,8 +94,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 176
-BUILD_FA = "\u06f1\u06f7\u06f6"
+BUILD = 178
+BUILD_FA = "178"
 
 
 def _diag(tag, **kv):
@@ -199,7 +199,7 @@ def _download(url: str, dest: Path, status, label: str):
                 f.write(chunk)
                 done += len(chunk)
                 if total:
-                    status(f"دانلود {label}… {int(done*100/total)}٪", pct=int(done * 100 / total))
+                    status(f"دانلود {label}… {int(done*100/total)}%", pct=int(done * 100 / total))
     tmp.rename(dest)
 
 
@@ -225,7 +225,7 @@ def _hook_hf_progress(status):
                     if self.total and self.total > 1024 * 1024:  # only real files
                         pct = int(self.n * 100 / self.total)
                         name = (self.desc or "مدل").split("/")[-1][:40]
-                        status(f"دانلود {name}… {pct}٪", pct=pct)
+                        status(f"دانلود {name}… {pct}%", pct=pct)
                 except Exception:
                     pass
 
@@ -334,7 +334,7 @@ def _load_ezafe(status):
     if _ezafe is not None:
         return _ezafe
     _hook_hf_progress(status)
-    status("مدل محلیِ حرکت‌گذاری دارد آماده می‌شود… (بار اول حدود ۷۰ مگابایت دانلود دارد)")
+    status("مدل محلیِ حرکت‌گذاری دارد آماده می‌شود… (بار اول حدود 70 مگابایت دانلود دارد)")
     from transformers import AutoTokenizer, AutoModelForTokenClassification
     tok = AutoTokenizer.from_pretrained("abreza/persian-ezafe-albert")
     mdl = AutoModelForTokenClassification.from_pretrained("abreza/persian-ezafe-albert")
@@ -846,7 +846,7 @@ def _voice_config_guard(voice_key, onnx, url, status):
             p.unlink()
         except OSError:
             pass
-    _download(url, onnx, status, f"صدای {voice_key} (~۶۰ مگابایت)")
+    _download(url, onnx, status, f"صدای {voice_key} (~60 مگابایت)")
     _download(url + ".json", cfg, status, "پیکربندی صدا")
     d, sr = declared()
     if sr != want:
@@ -859,7 +859,7 @@ def _voice_config_guard(voice_key, onnx, url, status):
 def piper_pcm(voice_key, segments, speed, noise_scale, noise_w, status):
     url = PIPER_VOICES[voice_key]
     onnx = MODELS_DIR / url.rsplit("/", 1)[-1]
-    _download(url, onnx, status, f"صدای {voice_key} (~۶۰ مگابایت)")
+    _download(url, onnx, status, f"صدای {voice_key} (~60 مگابایت)")
     _download(url + ".json", Path(str(onnx) + ".json"), status, "پیکربندی صدا")
     _voice_config_guard(voice_key, onnx, url, status)
 
@@ -929,7 +929,7 @@ def _wav_pcm(wf):
     """Read a worker WAV defensively: reject exotic widths, downmix stereo —
     misreading interleaved channels as mono is pure high-frequency garbage."""
     if wf.getsampwidth() != 2:
-        raise RuntimeError("قالب صدای موتور را نمی‌شناسم (نمونه‌ها ۱۶بیتی نیستند).")
+        raise RuntimeError("قالب صدای موتور را نمی‌شناسم (نمونه‌ها 16بیتی نیستند).")
     pcm = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
     if wf.getnchannels() == 2:
         pcm = pcm.reshape(-1, 2).astype(np.float32).mean(axis=1).astype(np.int16)
@@ -1007,7 +1007,7 @@ def _load_chatterbox(status):
     if _hf_cached("chatterbox"):
         status("مدل چترباکس دارد از روی دستگاه بارگذاری می‌شود… (یکی دو دقیقه)")
     else:
-        status("فقط همین یک بار: مدل چترباکس (حدود ۲ گیگابایت) دانلود می‌شود و از این به بعد روی دستگاه می‌ماند.")
+        status("فقط همین یک بار: مدل چترباکس (حدود 2 گیگابایت) دانلود می‌شود و از این به بعد روی دستگاه می‌ماند.")
 
     _orig_load = torch.load
     def _patched(*a, **k):
@@ -1032,7 +1032,7 @@ def _load_chatterbox(status):
 
 
 def faDigits(n):
-    return str(n).translate(str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹"))
+    return str(n)   # 177: every number the app shows is in English digits
 
 
 _PAUSE_RE = re.compile(r"\[\s*(مکث بلند|مکث)\s*\]")
@@ -1311,7 +1311,7 @@ def chatterbox_pcm(text, exaggeration, cfg_weight, temperature, status, speed=1.
             pass
         try:
             import psutil
-            _rss = psutil.Process().memory_info().rss // (1024 * 1024)
+            _rss = _footprint_mb()
             _avail = psutil.virtual_memory().available // (1024 * 1024)
             # rss is the honest signal: macOS compresses/swaps to keep "avail"
             # looking fine while a leaking process swells — brake on OURSELVES
@@ -1370,8 +1370,48 @@ def _swap_hot(threshold_mb, avail_mb):
     return growth > threshold_mb and avail_mb is not None and avail_mb < 6000
 
 
+# 177 · MEMORY IS MEASURED AS ACTIVITY MONITOR MEASURES IT. On macOS a leaking process's pages are compressed
+#       and do not count in rss, so rss under-reports exactly when it matters; the phys_footprint that Activity
+#       Monitor shows (libproc proc_pid_rusage) counts them. Elsewhere rss is the honest number.
+_CBX_RETIRE_MB = 9000    # after a job: past this the worker retires (the model needs 5–6 GB; the rest is the leak)
+_CBX_KILL_MB = 12000     # during a job: the engine stops the worker at once past this, on every machine
+_FP_LIB = None
+
+
+def _footprint_mb(pid=None):
+    """Memory of a process in MB, the way Activity Monitor counts it (macOS phys_footprint; rss elsewhere)."""
+    global _FP_LIB
+    pid = int(pid or os.getpid())
+    if sys.platform == "darwin":
+        try:
+            import ctypes
+            if _FP_LIB is None:
+                _FP_LIB = ctypes.CDLL("/usr/lib/libproc.dylib")
+
+            class _RU2(ctypes.Structure):   # struct rusage_info_v2 (sys/resource.h)
+                _fields_ = [("uuid", ctypes.c_uint8 * 16)] + [(n, ctypes.c_uint64) for n in (
+                    "user_time", "system_time", "pkg_idle_wkups", "interrupt_wkups", "pageins", "wired_size",
+                    "resident_size", "phys_footprint", "proc_start_abstime", "proc_exit_abstime", "child_user_time",
+                    "child_system_time", "child_pkg_idle_wkups", "child_interrupt_wkups", "child_pageins",
+                    "child_elapsed_abstime", "diskio_bytesread", "diskio_byteswritten")]
+            ru = _RU2()
+            if _FP_LIB.proc_pid_rusage(ctypes.c_int(pid), ctypes.c_int(2), ctypes.byref(ru)) == 0 and ru.phys_footprint:
+                return int(ru.phys_footprint // (1024 * 1024))
+        except Exception:
+            pass
+    try:
+        import psutil
+        return int(psutil.Process(pid).memory_info().rss // (1024 * 1024))
+    except Exception:
+        return 0
+
+
 def _cbx_ceiling_mb(rss_mb, avail_mb):
-    """Two ceilings, whichever is LOWER wins.
+    """177: ONE absolute ceiling on every machine (9 GB), lowered on a busy Mac — never scaled up with the
+    machine's size. 176 and earlier let the fences grow with total memory (20–40 % of it): on a big Mac the
+    worker could reach 25–51 GB before retiring, and the samples tool's 73 Chatterbox takes in a row took
+    it past 44 GB and froze the Mac. History of the rule, kept for the record:
+    Two ceilings, whichever is LOWER wins.
     (1) The adaptive pool ceiling: 75% of (avail + rss) — shrinks on busy
         machines. Alone it is leak-unsafe: it only retires at rss > 3x avail,
         which on a 48 GB Mac authorizes ~36 GB of growth (measured: 57 GB
@@ -1380,24 +1420,11 @@ def _cbx_ceiling_mb(rss_mb, avail_mb):
     (2) The absolute leak cap: the model itself needs 5-6 GB; anything much
         past that is leaked memory the process holds hostage. Retire near
         10 GB and the OS reclaims it for the price of a few-second respawn."""
-    lo_fence, hi_fence = 9000, 19000
-    try:
-        import psutil
-        total = psutil.virtual_memory().total // (1024 * 1024)
-        # the fences scale with the machine: never retire a warm model below
-        # ~20% of total (respawn churn), never let a leak past 40% of total
-        # (the honest signal — macOS "available" flatters under pressure)
-        lo_fence = max(9000, int(0.20 * total))
-        hi_fence = max(lo_fence + 1000, int(0.40 * total))
-    except Exception:
-        pass
     if avail_mb is None:
-        return lo_fence
-    # inside the band, the documented pool rule governs: 75% of what the
-    # machine would have if the worker retired right now — an idle machine
-    # grants headroom (fewer respawns), a busy one pulls the ceiling down
-    pool = int(0.75 * (avail_mb + rss_mb))
-    return min(max(pool, lo_fence), hi_fence)
+        return _CBX_RETIRE_MB
+    # a busy machine pulls the ceiling down (75 % of what it would have if the worker retired now), never below
+    # what the model itself needs, never above the absolute ceiling
+    return min(_CBX_RETIRE_MB, max(6500, int(0.75 * (avail_mb + rss_mb))))
 _cbx_proc = None
 _cbx_stderr = None
 _cbx_lock = threading.Lock()
@@ -1438,12 +1465,7 @@ def chatterbox_worker_main():
                 wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(sr)
                 wf.writeframes(pcm.tobytes())
             Path(f.name + ".offsets.json").write_text(json.dumps(offs), encoding="utf-8")
-            rss = 0
-            try:
-                import psutil
-                rss = psutil.Process().memory_info().rss // (1024 * 1024)
-            except Exception:
-                pass
+            rss = _footprint_mb()   # 177: Activity Monitor's number (compressed pages included)
             avail_mb = None
             try:
                 import psutil
@@ -1526,49 +1548,118 @@ def chatterbox_via_worker(req, status):
             _cbx_proc = None
             p = _cbx_ensure()
             p.stdin.write(line); p.stdin.flush()
-        for out in p.stdout:
-            out = out.strip()
-            try:
-                msg = json.loads(out)
-            except Exception:
-                continue  # stray library print — not ours
-            t = msg.get("type")
-            if t == "status":
-                status(msg.get("msg", ""), pct=msg.get("pct"))
-            elif t == "error":
-                raise RuntimeError(msg.get("error", "خطای نامشخص"))
-            elif t == "result":
-                _cbx_last_rss = int(msg.get("rss_mb") or 0)
-                with wave.open(msg["path"], "rb") as wf:
-                    sr = wf.getframerate()
-                    pcm = _wav_pcm(wf)
-                offs = None
+        # 177 · the other half of the guard: while the worker works, the engine watches it every second and stops it
+        #       at once past 12 GB (or when the Mac runs out of free memory) — a leak never waits for the job's end
+        guard = {"on": True, "why": None, "mb": 0}
+
+        def _watch(proc=p):
+            while guard["on"] and proc.poll() is None:
+                mb = _footprint_mb(proc.pid)
                 try:
-                    offs = json.loads(Path(msg["path"] + ".offsets.json").read_text(encoding="utf-8"))
+                    import psutil
+                    av = psutil.virtual_memory().available // (1024 * 1024)
+                except Exception:
+                    av = None
+                if mb > _CBX_KILL_MB or (av is not None and av < 1200 and mb > 3000):
+                    guard["why"], guard["mb"] = ("ceiling" if mb > _CBX_KILL_MB else "low_avail"), mb
+                    _diag("mem_guard", role="cbx", action="kill", mb=mb, avail=av, why=guard["why"])
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                    return
+                time.sleep(1.0)
+        threading.Thread(target=_watch, daemon=True).start()
+        try:
+            return _cbx_read(p, status, guard)
+        finally:
+            guard["on"] = False
+
+
+def _cbx_read(p, status, guard):
+    """Reads the worker's answer for one job (status lines, then the result)."""
+    global _cbx_proc, _cbx_last_rss
+    for out in p.stdout:
+        out = out.strip()
+        try:
+            msg = json.loads(out)
+        except Exception:
+            continue  # stray library print — not ours
+        t = msg.get("type")
+        if t == "status":
+            status(msg.get("msg", ""), pct=msg.get("pct"))
+        elif t == "error":
+            raise RuntimeError(msg.get("error", "خطای نامشخص"))
+        elif t == "result":
+            _cbx_last_rss = int(msg.get("rss_mb") or 0)
+            with wave.open(msg["path"], "rb") as wf:
+                sr = wf.getframerate()
+                pcm = _wav_pcm(wf)
+            offs = None
+            try:
+                offs = json.loads(Path(msg["path"] + ".offsets.json").read_text(encoding="utf-8"))
+            except Exception:
+                pass
+            for pth in (msg["path"], msg["path"] + ".offsets.json"):
+                try:
+                    os.unlink(pth)
+                except OSError:
+                    pass
+            if msg.get("recycle"):
+                freed = msg.get("rss_mb") or 0
+                status(f"حافظهٔ چترباکس خالی شد ({faDigits(freed // 1024)} گیگابایت آزاد شد)؛ دفعهٔ بعد چند ثانیه بیشتر طول می‌کشد."
+                       if freed else
+                       "حافظهٔ چترباکس خالی شد؛ دفعهٔ بعد چند ثانیه بیشتر طول می‌کشد.")
+                _cbx_proc = None
+                _cbx_last_rss = 0
+            if offs is not None:
+                return pcm, sr, [pcm[a:a + n].copy() for a, n in offs]
+            return pcm, sr
+    # stdout closed: the worker died mid-job
+    _cbx_proc = None
+    _cbx_last_rss = 0
+    if guard.get("why"):   # 177: our own guard stopped it
+        raise RuntimeError(f"چترباکس به {faDigits(guard['mb'] // 1024)} گیگابایت حافظه رسید و برای اینکه دستگاه قفل نکند متوقف شد؛ "
+                           "دفعهٔ بعد یک نسخهٔ تازه از آن ساخته می‌شود — همین بخش را دوباره بسازید.")
+    _check_cancel()
+    tail = "\n".join(list(_cbx_stderr or [])[-8:])
+    raise RuntimeError("موتور چترباکس یکهو بسته شد" +
+                       (":\n" + tail if tail else " — یک بار دیگر امتحان کنید."))
+
+
+# 177 · THE WHOLE APP'S MEMORY, every 30 s: the engine, the Chatterbox worker and the window's web process (Activity
+#       Monitor's numbers). A change or every 10 minutes goes to the log, so a runaway always leaves a trace; past 10 GB
+#       in the window or the engine the page is told once every 10 minutes (with the numbers).
+def mem_watch(get_web_pid=None, warn=None, every=30.0):
+    def run():
+        last_log, last_warn, prev = 0.0, 0.0, None
+        while True:
+            try:
+                main = _footprint_mb()
+                wk = _footprint_mb(_cbx_proc.pid) if (_cbx_proc is not None and _cbx_proc.poll() is None) else 0
+                web = 0
+                try:
+                    wp = get_web_pid() if get_web_pid else None
+                    if wp:
+                        web = _footprint_mb(wp)
                 except Exception:
                     pass
-                for pth in (msg["path"], msg["path"] + ".offsets.json"):
-                    try:
-                        os.unlink(pth)
-                    except OSError:
-                        pass
-                if msg.get("recycle"):
-                    freed = msg.get("rss_mb") or 0
-                    status(f"حافظهٔ چترباکس خالی شد ({faDigits(freed // 1024)} گیگابایت آزاد شد)؛ دفعهٔ بعد چند ثانیه بیشتر طول می‌کشد."
-                           if freed else
-                           "حافظهٔ چترباکس خالی شد؛ دفعهٔ بعد چند ثانیه بیشتر طول می‌کشد.")
-                    _cbx_proc = None
-                    _cbx_last_rss = 0
-                if offs is not None:
-                    return pcm, sr, [pcm[a:a + n].copy() for a, n in offs]
-                return pcm, sr
-        # stdout closed: the worker died mid-job
-        _cbx_proc = None
-        _cbx_last_rss = 0
-        _check_cancel()
-        tail = "\n".join(list(_cbx_stderr or [])[-8:])
-        raise RuntimeError("موتور چترباکس یکهو بسته شد" +
-                           (":\n" + tail if tail else " — یک بار دیگر امتحان کنید."))
+                try:
+                    import psutil
+                    av = psutil.virtual_memory().available // (1024 * 1024)
+                except Exception:
+                    av = None
+                now, cur = time.time(), (main, wk, web)
+                if prev is None or now - last_log > 600 or any(abs(c - q) > max(300, 0.15 * q) for c, q in zip(cur, prev)):
+                    _diag("mem", main=main, worker=wk, web=web, avail=av)
+                    last_log, prev = now, cur
+                if warn and (web > 10000 or main > 10000) and now - last_warn > 600:
+                    last_warn = now
+                    warn(main, web)
+            except Exception:
+                pass
+            time.sleep(every)
+    threading.Thread(target=run, daemon=True).start()
 
 
 def _synth_clauses(items, payload, status):
@@ -1688,7 +1779,7 @@ def _mem_preflight(status):
         total_mb = None
     if total_mb is not None and total_mb < 7000:
         raise RuntimeError(
-            f"چترباکس روی این دستگاه اجرا نمی‌شود؛ دست‌کم ۸ گیگابایت رم می‌خواهد "
+            f"چترباکس روی این دستگاه اجرا نمی‌شود؛ دست‌کم 8 گیگابایت رم می‌خواهد "
             f"(این دستگاه {total_mb // 1024} گیگابایت دارد). به‌جایش از صداهای سبک — مانا، ژیرو یا امیر — استفاده کنید.")
     try:
         import psutil
@@ -2056,7 +2147,7 @@ def _load_aligner(status):
         raise
     except Exception:
         pass
-    status("فقط همین یک بار: مدل هم‌ترازی واژه‌ها (حدود ۱٫۲ گیگابایت) دانلود می‌شود…")
+    status("فقط همین یک بار: مدل هم‌ترازی واژه‌ها (حدود 1.2 گیگابایت) دانلود می‌شود…")
     _hook_hf_progress(status)
     from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
     repo = "jonatasgrosman/wav2vec2-large-xlsr-53-persian"
@@ -3350,7 +3441,7 @@ def google_rotate(call, status, what="گوگل", _rerouted=False, only_key_tag=N
                     break
                 if e.code >= 500:
                     _diag("google_5xx", code=e.code, msg=e.msg[:120])
-                    status(f"{what}: سرور گوگل موقتاً خطا داد ({e.code}) — تلاش {attempt + 2} از ۳…")
+                    status(f"{what}: سرور گوگل موقتاً خطا داد ({e.code}) — تلاش {attempt + 2} از 3…")
                     for _ in range(4 * (2 + attempt * 2)):
                         _check_cancel(); time.sleep(0.25)
                     continue
@@ -3359,7 +3450,7 @@ def google_rotate(call, status, what="گوگل", _rerouted=False, only_key_tag=N
                 last = e; net_fail = True
                 why = type(e).__name__
                 _diag("google_net", err=why + ": " + str(e)[:90])
-                status(f"{what}: اتصال به گوگل برقرار نشد — تلاش {attempt + 2} از ۳…")
+                status(f"{what}: اتصال به گوگل برقرار نشد — تلاش {attempt + 2} از 3…")
                 for _ in range(4 * (2 + attempt * 2)):
                     _check_cancel(); time.sleep(0.25)
         # 147: two keys in a row that never reached Google means the network, not the keys
@@ -3422,7 +3513,7 @@ def _google_clean_msg(msg):
     return m[:200]
 
 
-_NET_BLOCK_MSG = ("گوگل از این شبکه درخواست نمی‌پذیرد (خطای ۴۰۳ یا قطع اتصال). "
+_NET_BLOCK_MSG = ("گوگل از این شبکه درخواست نمی‌پذیرد (خطای 403 یا قطع اتصال). "
                   "این مشکل از کلیدها نیست و هیچ کلیدی نامعتبر نشد. معمولاً یکی از این سه است: "
                   "فیلترشکن قطع شده، سرورِ فیلترشکن از طرف گوگل مسدود است (سرور یا کشورِ دیگری انتخاب کنید)، "
                   "یا فیلترشکن فقط مرورگر را پوشش می‌دهد (آن را روی حالتِ TUN بگذارید).")
@@ -3487,13 +3578,19 @@ def _is_g38(model_or_cfg):
     return bool(GOOGLE_MODELS.get(m or "", {}).get("g38"))
 
 
+_G_SPACES = re.compile(r"[\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]")
+
+
 def google_text(text, model):
     """The text as Google should see it (105: pauses are the MODEL's again).
     The app's [مکث] markers become Google's pause tags on 3.1, punctuation on
     2.5 (which reads tags aloud). A pause tag at the very end of a part is
     dropped — nothing follows it inside the part, and a trailing tag gets
     spoken as words; the splice adds the breath between parts."""
-    t = text.strip()
+    # 177 · every kind of space is one plain space for Google: a run of no-break spaces (left in the line where a
+    #       reaction badge or a tag chip once sat) was read as a hesitation — the voice stopped under the reaction.
+    #       The Persian half-space (ZWNJ, U+200C) is a letter joiner, not a space, and stays.
+    t = _G_SPACES.sub(" ", text).strip()
     t = re.sub(r"(?:\s*\[(?:short pause|long pause|مکث بلند|مکث)\]\s*)+$", "", t)
     if GOOGLE_MODELS.get(model, {}).get("tags", True):
         t = _G_PAUSE_LONG.sub(" [long pause] ", t)
@@ -3534,9 +3631,12 @@ def google_prompt(text, cfg):
         note = _director_note(sp.get("age"), sp.get("age_custom"), sp.get("state"), sp.get("state_custom"))
         if note and sp.get("name"):
             duo += f"{sp['name']}: {note}\n"
+    # 177 · a line with reactions laid over it: the voice must not wait for them — they are added afterwards
+    steady = ("Pacing: keep one continuous, even flow through every sentence; never stop, wait or leave a gap in the "
+              "middle of a sentence — pause only where the punctuation asks for it. " if cfg.get("g_steady") else "")
     head = ("Narrator: one consistent voice, same identity in every recording. "
             + (f"{persona} " if persona else "")
-            + f"Reading format: {style} "
+            + f"Reading format: {style} " + steady
             + f"Language: {lang_note} " + duo +
             "Read ONLY the transcript below, exactly as written; do not read these instructions; perform bracketed tags, never say them.\n"
             "TRANSCRIPT:\n")
@@ -4100,7 +4200,7 @@ def _complete_take(chunk, pcm, sr, cfg, status, lang, call):
         if miss == last_miss and attempt > 0:
             break                                   # the same clause twice: re-rolling will not fix it
         last_miss = miss
-        status(f"جملهٔ {faDigits(miss + 1)}اُم خوانده نشد — برداشت دوباره ({faDigits(attempt + 2)}/۳)…")
+        status(f"جملهٔ {faDigits(miss + 1)}اُم خوانده نشد — برداشت دوباره ({faDigits(attempt + 2)}/3)…")
         pcm2, sr2 = call(chunk, cfg, status)
         w2 = transcribe_words(pcm2, sr2, status, lang, chunk, cfg)
         sc2 = _take_score(chunk, w2)
@@ -4802,7 +4902,7 @@ def _google_clause_patch(entry, new_text, sel_start, sel_end, cfg, status):
         """One try at the whole span: every run, in order, joined. 131: a take
         that splits or cuts badly is a BAD TAKE, not a reason to rebuild."""
         status(f"گوگل: {faDigits(j1 - j0)} جمله را همراه جمله‌های کناری‌اش دوباره می‌سازد…"
-               if n == 0 else f"برشِ جمله جا نیفتاد؛ برداشت دوباره ({faDigits(n + 1)}/۳)…")
+               if n == 0 else f"برشِ جمله جا نیفتاد؛ برداشت دوباره ({faDigits(n + 1)}/3)…")
         pieces = []
         for a, b, voice in runs:
             seg_, why_ = make_run(a, b, voice, n)
@@ -5297,7 +5397,7 @@ def lyria_music(preset, custom, seconds, status):
     if data is None:
         if not _google_usable_keys():
             raise RuntimeError("هنوز کلید گوگل ندارید؛ از دکمهٔ «کلیدهای گوگل» یک کلید وارد کنید.")
-        raise RuntimeError("ساخت موسیقی با لیریا فقط با کلیدِ پولی (پروژه‌ای که صورت‌حساب دارد) کار می‌کند؛ لیریا طرح رایگان ندارد — هر قطعه حدود ۸ سنت. "
+        raise RuntimeError("ساخت موسیقی با لیریا فقط با کلیدِ پولی (پروژه‌ای که صورت‌حساب دارد) کار می‌کند؛ لیریا طرح رایگان ندارد — هر قطعه حدود 8 سنت. "
                            + ("پاسخ گوگل: " + denied[-1] if denied else ""))
     found = _find_audio_b64(data)
     if not found:
@@ -5661,14 +5761,14 @@ def music_credit(entry):
 # ===========================================================================
 DIRECTOR_AGES = [
     ("", "— بدون تغییر —", "— unchanged —", "", ""),
-    ("toddler", "نوپا (۲–۴ ساله)", "Toddler (2–4)", "Voice: a toddler of about three — tiny, very high-pitched, babbling cadence, simple words stretched out, giggly and unsteady.", "[voice of a toddler, tiny, very high-pitched, babbling]"),
-    ("child", "بچه (۵–۹ ساله)", "Child (5–9)", "Voice: a child of about seven — high, bright, breathy, eager, sing-song schoolroom rhythm.", "[voice of a young child around seven, high and bright, sing-song]"),
-    ("teen", "نوجوان (۱۳–۱۷ ساله)", "Teenager (13–17)", "Voice: a teenager — youthful, light, a touch of attitude, energy that comes and goes mid-sentence.", "[teenage voice, youthful with a touch of attitude]"),
-    ("young", "جوان (۲۰ تا ۳۰ ساله)", "Young adult (20s)", "Voice: a young adult in their twenties — fresh, quick, energetic.", "[young adult voice, fresh and energetic]"),
-    ("adult", "بزرگسال (۳۰ تا ۴۵ ساله)", "Adult (30s–40s)", "Voice: an adult in their thirties or forties — settled, full, confident.", "[adult voice, settled and confident]"),
-    ("middle", "میان‌سال (۵۰ تا ۶۰ ساله)", "Middle-aged (50s)", "Voice: a middle-aged person in their fifties — fuller, slower, a little gravel, unhurried authority.", "[middle-aged voice, fuller, unhurried, a little gravel]"),
-    ("elderly", "سالخورده (۷۰ ساله)", "Elderly (70s)", "Voice: an elderly person around seventy — slower, softer, slightly hoarse, small pauses for breath, words landing gently.", "[elderly voice around seventy, slower, softer, slightly hoarse]"),
-    ("very_old", "خیلی پیر (۹۰ به بالا)", "Very old (90+)", "Voice: a very old person past ninety — NOT young, NOT smooth. Thin, cracked and wobbly; hoarse, gravelly and breathy; wheezing between phrases; slow, halting, with long pauses; pitch unsteady; every word an effort. Keep this frailty on every sentence.", "[voice of a ninety-year-old, hoarse, cracked, trembling and breathy, slow and halting, wheezing between phrases]"),
+    ("toddler", "نوپا (2–4 ساله)", "Toddler (2–4)", "Voice: a toddler of about three — tiny, very high-pitched, babbling cadence, simple words stretched out, giggly and unsteady.", "[voice of a toddler, tiny, very high-pitched, babbling]"),
+    ("child", "بچه (5–9 ساله)", "Child (5–9)", "Voice: a child of about seven — high, bright, breathy, eager, sing-song schoolroom rhythm.", "[voice of a young child around seven, high and bright, sing-song]"),
+    ("teen", "نوجوان (13–17 ساله)", "Teenager (13–17)", "Voice: a teenager — youthful, light, a touch of attitude, energy that comes and goes mid-sentence.", "[teenage voice, youthful with a touch of attitude]"),
+    ("young", "جوان (20 تا 30 ساله)", "Young adult (20s)", "Voice: a young adult in their twenties — fresh, quick, energetic.", "[young adult voice, fresh and energetic]"),
+    ("adult", "بزرگسال (30 تا 45 ساله)", "Adult (30s–40s)", "Voice: an adult in their thirties or forties — settled, full, confident.", "[adult voice, settled and confident]"),
+    ("middle", "میان‌سال (50 تا 60 ساله)", "Middle-aged (50s)", "Voice: a middle-aged person in their fifties — fuller, slower, a little gravel, unhurried authority.", "[middle-aged voice, fuller, unhurried, a little gravel]"),
+    ("elderly", "سالخورده (70 ساله)", "Elderly (70s)", "Voice: an elderly person around seventy — slower, softer, slightly hoarse, small pauses for breath, words landing gently.", "[elderly voice around seventy, slower, softer, slightly hoarse]"),
+    ("very_old", "خیلی پیر (90 به بالا)", "Very old (90+)", "Voice: a very old person past ninety — NOT young, NOT smooth. Thin, cracked and wobbly; hoarse, gravelly and breathy; wheezing between phrases; slow, halting, with long pauses; pitch unsteady; every word an effort. Keep this frailty on every sentence.", "[voice of a ninety-year-old, hoarse, cracked, trembling and breathy, slow and halting, wheezing between phrases]"),
     ("custom", "سفارشی…", "Custom…", "", ""),
 ]
 DIRECTOR_STATES = [
@@ -5804,10 +5904,10 @@ def _director_cues(age, age_custom, state, state_custom):
 # ===========================================================================
 FISH_API = "https://api.fish.audio"
 FISH_MODELS = {
-    "s2.1-pro-free": {"paid": False, "label": "S2.1 Pro — رایگان"},
-    "s2.1-pro": {"paid": True, "label": "S2.1 Pro — پولی ($15 / M بایت)"},
-    "s2-pro": {"paid": True, "label": "S2 Pro — نسل قبل (پولی)"},
-    "s1": {"paid": True, "label": "S1 — قدیمی (پولی، بدون چندگوینده)"},
+    "s2.1-pro-free": {"paid": False, "label": "S2.1 Pro — رایگان", "en": "S2.1 Pro — free"},
+    "s2.1-pro": {"paid": True, "label": "S2.1 Pro — پولی ($15 / M بایت)", "en": "S2.1 Pro — paid ($15 / M bytes)"},
+    "s2-pro": {"paid": True, "label": "S2 Pro — نسل قبل (پولی)", "en": "S2 Pro — previous generation (paid)"},
+    "s1": {"paid": True, "label": "S1 — قدیمی (پولی، بدون چندگوینده)", "en": "S1 — old (paid, no multi-speaker)"},
 }
 # reading-style presets rendered as Fish cues (free-form natural language works on S2)
 FISH_STYLE_CUES = {
@@ -7011,7 +7111,7 @@ def g38_text(text):
     become 3.8's angle-bracket vocal tags; bracket tags that are DELIVERY rather
     than a sound ([slow], [excited]…) are removed — on 3.8 they belong in style,
     and in the text they would be read aloud."""
-    t = (text or "").strip()
+    t = _G_SPACES.sub(" ", text or "").strip()   # 177: no-break space runs read as hesitations (as in google_text)
     t = re.sub(r"(?:\s*\[(?:short pause|long pause|مکث بلند|مکث)\]\s*)+$", "", t)
     t = re.sub(r"(?:\s*<(?:short pause|long pause)>\s*)+$", "", t)
     t = _G_PAUSE_LONG.sub(" <long pause> ", t)   # 159: documented in Google's prompting guide
@@ -7036,6 +7136,8 @@ def g38_style(cfg):
     base = _g38_preset_style(cfg.get("g_preset") or "neutral", cfg.get("g_style"))
     mood = _g38_state_style(cfg.get("g_state") or "", cfg.get("g_state_custom"))
     parts = [p for p in (base, mood) if p]
+    if cfg.get("g_steady"):   # 177: a line with reactions laid over it never waits for them
+        parts.insert(0, "one continuous flow, no pauses mid-sentence")
     return ", ".join(parts)[:160]
 
 
@@ -7147,7 +7249,7 @@ def g38_clone_create(name, ref_path, consent_path, status=lambda *a, **k: None):
     import uuid
     ref_bytes, ref_s = _to_wav24k_mono(Path(ref_path).read_bytes(), max_s=30)
     if ref_s < 10:
-        raise RuntimeError(f"صدای نمونه باید دست‌کم ۱۰ ثانیه باشد؛ این {faDigits(round(ref_s, 1))} ثانیه است.")
+        raise RuntimeError(f"صدای نمونه باید دست‌کم 10 ثانیه باشد؛ این {faDigits(round(ref_s, 1))} ثانیه است.")
     con_bytes, con_s = _to_wav24k_mono(Path(consent_path).read_bytes(), max_s=30)
     if con_s < 3:
         raise RuntimeError("صدای اجازه‌نامه خیلی کوتاه است؛ جملهٔ اجازه را کامل بخوانید.")
@@ -7163,7 +7265,7 @@ def g38_clone_create(name, ref_path, consent_path, status=lambda *a, **k: None):
     _diag("g38_clone", action="stored", ref_s=round(ref_s, 1))
     out = {"id": cid, "name": ix["clones"][cid]["name"], "ref_s": round(ref_s, 1)}
     if ref_s < 30:                        # 155: Google recreates a voice from about 30 seconds of speech
-        out["note"] = f"نمونه {round(ref_s)} ثانیه است؛ گوگل برای ساختنِ صدا حدودِ ۳۰ ثانیه صدا می‌خواهد. با نمونهٔ کوتاه‌تر ممکن است شبیه‌سازی رد شود یا صدا کمتر شبیه شود."
+        out["note"] = f"نمونه {round(ref_s)} ثانیه است؛ گوگل برای ساختنِ صدا حدودِ 30 ثانیه صدا می‌خواهد. با نمونهٔ کوتاه‌تر ممکن است شبیه‌سازی رد شود یا صدا کمتر شبیه شود."
     return out
 
 
@@ -7649,7 +7751,7 @@ def gulp_audio(gid):
 # 155 · paid-only features, the library fallback, the protection stamp
 # ===========================================================================
 _TIER_MSG = ("گوگل می‌گوید این کار — شبیه‌سازیِ صدا — فقط با کلیدِ پروژه‌ای انجام می‌شود که پرداختش فعال است "
-             "(سطحِ ۱ به بالا)؛ کلیدهای رایگان این امکان را ندارند، پس کلیدهای دیگر امتحان نشدند. یکی از صداهای "
+             "(سطحِ 1 به بالا)؛ کلیدهای رایگان این امکان را ندارند، پس کلیدهای دیگر امتحان نشدند. یکی از صداهای "
              "آماده یا طراحی‌شده را انتخاب کنید، یا کلیدِ یک پروژهٔ پرداختی اضافه کنید. گوگل این امکان را در "
              "منطقهٔ اقتصادیِ اروپا هم فعلاً در دسترس نمی‌گذارد.")
 _google_fault_base = _google_fault
@@ -8081,9 +8183,19 @@ def _preview_payload(payload):
     return p
 
 
-def _preview_key(p):
+def _preview_key_176(p):
     keep = {k: p.get(k) for k in sorted(p) if k not in ("text",) and (k == "engine" or k.startswith(("g_", "f_", "cbx", "exag", "cfg", "temp", "speed", "noise")))}
     return _hl_p.sha1(_json_v.dumps(keep, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:20]
+
+
+def _preview_key(p):
+    """177: a sample belongs to the VOICE (engine, voice, model) — not to the project's other settings, which made a
+    voice of your own lose its sample whenever a slider moved."""
+    e = p.get("engine")
+    keep = ({"engine": e, "v": p.get("g_voice"), "m": p.get("g_model"), "l": p.get("g_lang")} if e == "google" else
+            {"engine": e, "v": p.get("f_voice"), "m": p.get("f_model")} if e == "fish" else
+            {"engine": e, "v": p.get("cbx_voice")} if e == "chatterbox" else {"engine": e})
+    return "v177_" + _hl_p.sha1(_json_v.dumps(keep, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:20]
 
 
 def voice_preview(payload, status=lambda *a, **k: None):
@@ -8092,6 +8204,9 @@ def voice_preview(payload, status=lambda *a, **k: None):
     f = _PREV_DIR / f"{_preview_key(p)}.mp3"
     if f.exists() and f.stat().st_size > 200:
         return f.read_bytes()
+    old = _PREV_DIR / f"{_preview_key_176(p)}.mp3"   # a sample made by 176 for this voice: kept, under its new name
+    if old.exists() and old.stat().st_size > 200:
+        data = old.read_bytes(); f.write_bytes(data); return data
     _PREVIEW_MODE["on"] = True                 # 171: no word timings for a sample (two transcriptions per sample before)
     try:
         mp3, gid = generate_gulp(p, status)
@@ -8278,7 +8393,7 @@ def _ctc_fetch(status):
                 if total:
                     pct = int(done * 100 / total); _CTC["pct"] = pct
                     if pct // 10 != shown:
-                        shown = pct // 10; status(f"مدلِ زمان‌بندیِ واژه‌ها: {pct}٪", pct=pct)
+                        shown = pct // 10; status(f"مدلِ زمان‌بندیِ واژه‌ها: {pct}%", pct=pct)
     tmp.replace(arc)
     _CTC["state"] = "unpacking"
     with _tar_c.open(arc, "r:bz2") as t:
@@ -8966,7 +9081,7 @@ def google_rotate(call, status, what="گوگل", _rerouted=False, only_key_tag=N
             except requests.RequestException as e:
                 last = e; net_fail = True
                 _diag("google_net", err=type(e).__name__ + ": " + str(e)[:90])
-                status(f"{what}: اتصال به گوگل برقرار نشد — تلاش {attempt + 2} از ۳…")
+                status(f"{what}: اتصال به گوگل برقرار نشد — تلاش {attempt + 2} از 3…")
                 for _ in range(4 * (2 + attempt * 2)):
                     _check_cancel(); time.sleep(0.25)
         net_keys = net_keys + 1 if net_fail and not isinstance(last, _GoogleHTTP) else 0
@@ -8986,14 +9101,35 @@ def google_rotate(call, status, what="گوگل", _rerouted=False, only_key_tag=N
                        _google_clean_msg(getattr(last, "msg", None) or str(last) or "؟"))
 
 
+def _g_peek_next(keys):
+    """177: the key the next request will try first — _g_order's choice, without taking it."""
+    if not keys:
+        return None
+    with _G_RR["lock"]:
+        last = _G_RR["last"]
+    start = (keys.index(last) + 1) % len(keys) if last in keys else 0
+    order = keys[start:] + keys[:start]; now = time.time()
+    fresh = [k for k in order if _G_COOL.get(k, 0) <= now]
+    return fresh[0] if fresh else sorted(order, key=lambda k: _G_COOL.get(k, 0))[0]
+
+
 def google_keys_status():
     """176: «ok» counts every key that still has today's quota (a key resting from its per-minute limit is still
-    there in a moment); the header badge shows that number and updates whenever a key's state changes."""
+    there in a moment); the header badge shows that number and updates whenever a key's state changes.
+    177: «last» marks the key that served the last request, «next» the one the next request tries first."""
     now = time.time(); out = []
+    try:
+        usable = _google_usable_keys()
+    except Exception:
+        usable = []
+    with _G_RR["lock"]:
+        last = _G_RR["last"]
+    nxt = _g_peek_next(usable)
     for k in google_keys():
         state = "bad" if k.get("bad") else ("exhausted" if k.get("until", 0) > now else "ok")
         out.append({"key": k["key"], "masked": k["key"][:6] + "•" * 8 + k["key"][-4:] if len(k["key"]) > 12 else "••••",
-                    "state": state, "until": k.get("until", 0), "resting": max(0, int(_G_COOL.get(k["key"], 0) - now))})
+                    "state": state, "until": k.get("until", 0), "resting": max(0, int(_G_COOL.get(k["key"], 0) - now)),
+                    "last": k["key"] == last, "next": k["key"] == nxt})
     return out
 
 
@@ -9053,3 +9189,60 @@ def music_delete(file):
         return music_list()                         # a built-in track stays
     _music_delete_175(file)
     return music_list()
+
+
+# ===========================================================================
+# 177 · A PAUSE UNDER A REACTION IS TAKEN OUT — when the voice still leaves a gap mid-sentence where a reaction is laid
+#       over it after two takes, the editor asks for the part with that silence removed: the audio closes up with a
+#       short crossfade, every line span after it moves up, and the words are timed again on the new audio.
+# ===========================================================================
+def gulp_cut(gid, t0, t1):
+    e = _GULP_PCM.get(int(gid))
+    if not e:
+        raise RuntimeError("این بخش دیگر در حافظه نیست؛ دوباره تبدیل به گفتار کنید.")
+    sr = int(e["sr"]); raw = _assemble_raw(e)
+    t0, t1 = float(t0), float(t1)
+    a, b = max(0, int(round(t0 * sr))), min(len(raw), int(round(t1 * sr)))
+    if b - a < int(0.05 * sr):
+        raise RuntimeError("گپی برای برداشتن نیست.")
+    # only a pause is taken out (silence, perhaps a breath): in 20 ms frames, almost none reach a fifth of the part's
+    # typical speech level (measured on the founder's take: speech 1000–11000, the pause 12–250 with one breath)
+    fl = max(1, int(0.02 * sr))
+    def frames(x):
+        n = len(x) // fl
+        return np.sqrt(np.mean(x[:n * fl].astype(np.float32).reshape(n, fl) ** 2, axis=1)) if n else np.array([0.0])
+    allr = frames(raw); sp_lvl = float(np.median(allr[allr > 200])) if np.any(allr > 200) else 2000.0
+    rms = frames(raw[a:b])
+    if np.mean(rms > max(330.0, 0.2 * sp_lvl)) > 0.12:
+        raise RuntimeError("این فاصله ساکت نیست؛ برداشته نشد.")
+    h = max(0, min(int(0.006 * sr), a, len(raw) - b))   # a 12 ms crossfade centred on the cut: exactly b − a goes
+    hp, tp = raw[:a + h].astype(np.float32), raw[b - h:].astype(np.float32)
+    if h:
+        w = np.linspace(0.0, 1.0, 2 * h, dtype=np.float32)
+        out = np.concatenate([hp[:-2 * h], hp[-2 * h:] * (1 - w) + tp[:2 * h] * w, tp[2 * h:]])
+    else:
+        out = np.concatenate([hp, tp])
+    out = np.clip(out, -32768, 32767).astype(np.int16)
+    d = (len(raw) - len(out)) / sr                     # exactly what the audio lost
+    cut_end = t0 + d
+
+    def sh(x):
+        x = float(x)
+        return x - d if x >= cut_end - 1e-6 else (min(x, t0) if x > t0 else x)
+    spans = []
+    for sp in gulp_lines(gid) or []:
+        s2 = {k: v for k, v in sp.items() if k != "words"}
+        s2["t0"], s2["t1"] = round(sh(sp["t0"]), 3), round(sh(sp["t1"]), 3)
+        if sp.get("words"):
+            s2["words"] = [dict(w, t0=round(sh(w["t0"]), 3), t1=round(sh(w["t1"]), 3)) if isinstance(w, dict) and "t0" in w else w for w in sp["words"]]
+        spans.append(s2)
+    gid2 = next(_gulp_ids)
+    entry = {"sr": sr, "items": [{"kind": "t", "text": e.get("text") or "", "pcm": out}], "text": e.get("text") or "",
+             "engine": e.get("engine"), "payload": dict(e.get("payload") or {}), "born": time.time(),
+             "saved_spans": spans, "cut_from": int(gid)}
+    for k in ("gain", "lead_in"):
+        if k in e:
+            entry[k] = e[k]
+    _GULP_PCM[gid2] = entry
+    _diag("gulp_cut", gulp=int(gid), new=gid2, t0=round(t0, 3), sec=round(d, 3))
+    return pcm_to_mp3(_assemble(entry), sr), gid2

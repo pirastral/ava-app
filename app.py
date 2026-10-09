@@ -140,6 +140,25 @@ class Api:
 
     _keys_seen = 0
 
+    def set_appearance(self, dark):
+        """177: the native lists (daisyUI selects are the system's menus) follow the app's day/night theme."""
+        if sys.platform != "darwin":
+            return {"ok": True}
+        try:
+            from AppKit import NSApplication, NSAppearance
+            from PyObjCTools import AppHelper
+            name = "NSAppearanceNameDarkAqua" if dark else "NSAppearanceNameAqua"
+
+            def go():
+                try:
+                    NSApplication.sharedApplication().setAppearance_(NSAppearance.appearanceNamed_(name))
+                except Exception:
+                    pass
+            AppHelper.callAfter(go)
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     def _status(self, msg, pct=None):
         if Api._lang == "en":
             msg = _tr_en(msg)
@@ -214,6 +233,16 @@ class Api:
         except Exception as e:
             if type(e).__name__ != "Cancelled":
                 traceback.print_exc()
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def gulp_cut(self, req):
+        """177: the part with one stretch of silence taken out (a pause the voice left under a reaction)."""
+        try:
+            import engines
+            mp3, new_gid = engines.gulp_cut(req["gulp"], req["t0"], req["t1"])
+            return {"ok": True, "b64": base64.b64encode(mp3).decode("ascii"), "gulp": new_gid, "lines": engines.gulp_lines(new_gid)}
+        except Exception as e:
+            traceback.print_exc()
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
     def timeline_files(self, spec, music=None):
@@ -542,7 +571,7 @@ class Api:
         import engines
         return {"ok": True, "ages": [[a[0], a[1], a[2]] for a in engines.DIRECTOR_AGES],
                 "states": [[a[0], a[1], a[2]] for a in engines.DIRECTOR_STATES],
-                "fish_tags": engines.FISH_TAGS, "fish_models": [[k, v["label"], v["paid"]] for k, v in engines.FISH_MODELS.items()],
+                "fish_tags": engines.FISH_TAGS, "fish_models": [[k, v["label"], v["paid"], v.get("en", v["label"])] for k, v in engines.FISH_MODELS.items()],
                 "fish_library_tags": engines.FISH_LIBRARY_TAGS}
 
     # ---- 151: Gemini 3.8 voices ------------------------------------------------
@@ -996,6 +1025,46 @@ def main():
         js_api=api, width=win_w if licensed else 720, height=win_h if licensed else 760,
         min_size=(420, 640))
     api._window = window
+    # 177 · the window's own process (WKWebView's web content on macOS) is watched with the engine and the Chatterbox
+    #       worker: every 30 s into the log, and a warning on the page past 10 GB
+    web = {"pid": None}
+
+    def _grab_web_pid():
+        if sys.platform != "darwin":
+            return
+        try:
+            from webview.platforms.cocoa import BrowserView
+            from PyObjCTools import AppHelper
+
+            def grab():
+                try:
+                    for bv in list(BrowserView.instances.values()):
+                        wk = getattr(bv, "webview", None) or getattr(bv, "webkit", None)
+                        f = getattr(wk, "_webProcessIdentifier", None) if wk is not None else None
+                        if f:
+                            web["pid"] = int(f()) or None
+                            return
+                except Exception:
+                    pass
+            AppHelper.callAfter(grab)
+        except Exception:
+            pass
+    try:
+        window.events.loaded += _grab_web_pid
+    except Exception:
+        pass
+
+    def _mem_warn(main_mb, web_mb):
+        big = max(main_mb, web_mb) / 1024
+        if Api._lang == "en":
+            msg = f"The app is using {big:.1f} GB of memory — save the project and reopen the app."
+        else:
+            msg = f"برنامه {big:.1f} گیگابایت حافظه گرفته — پروژه را ذخیره کنید و برنامه را دوباره باز کنید."
+        try:
+            window.evaluate_js(f"window.avaStatus({json.dumps({'msg': msg, 'pct': None, 'kind': 'err'})})")
+        except Exception:
+            pass
+    engines.mem_watch(lambda: web["pid"], _mem_warn)
     if licensed:   # 176: the letter-timing model — fetched once in the background, then the page re-times what it shows
         def _timing_ready():
             try:

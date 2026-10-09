@@ -13,11 +13,12 @@ function wrapBig(){ const api = window.pywebview && window.pywebview.api; if (!a
   ['music_load', 'music_fetch', 'music_import', 'music_generate'].forEach(n => { const f = api[n]; if (typeof f !== 'function') return; api[n] = async (...a) => { const r = await f.apply(api, a); if (r && r.ok && r.blob && !r.b64) r.b64 = await readBlob(r.blob, r.size); return r; }; });
   api.__big = true; }
 window.addEventListener('pywebviewready', wrapBig); setTimeout(wrapBig, 0); setTimeout(wrapBig, 1500);
-const FA = s => String(s).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+const FA = s => String(s);   // 177: every number in the interface in English digits (the founder's rule; the script keeps what he types)
 let lang = 'fa';
 const T = (fa, en) => lang === 'fa' ? fa : en;
-const num = s => lang === 'fa' ? FA(s) : String(s);
-const pctSign = () => lang === 'fa' ? '٪' : '%';   /* 175: 100% in English, ۱۰۰٪ in Persian */
+const num = s => String(s);
+const pctSign = () => '%';   /* 177: English digits and signs in both languages */
+const secs = (v, d = 1) => `${(+v || 0).toFixed(d)}s`;   /* 177: seconds are «12.6s», never «12.6ث» */
 const fmt = t => `${String(Math.floor(t / 60)).padStart(2, '0')}:${(t % 60).toFixed(1).padStart(4, '0')}`;
 const escapeHtml = x => String(x ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');   // 160: quotes too — attributes broke on them
 const PAD = 18, SNAP_PX = 8, GAP = 0.12;            // margin before 0:00; snapping; the breath between parts
@@ -26,7 +27,7 @@ let uid = Date.now() % 100000, zoom = 22, playhead = 0, playing = false, snapOn 
 // ---------------- state ----------------
 const S = {
   lines: {},                                         // id -> { text, dirty, voice: {gVoice,gPreset,gState} | null }
-  tracks: [ { id: 's1', name: 'گفتار ۱', en: 'Speech 1', kind: 'speech', gapless: false, clips: [] } ],
+  tracks: [ { id: 's1', name: 'گفتار 1', en: 'Speech 1', kind: 'speech', gapless: false, clips: [] } ],
   proj: { engine: 'google', g_model: 'gemini-3.1-flash-tts-preview', g_voice: 'Charon', g_preset: 'neutral', g_state: '', g_age: '', g_lang: 'fa', g_continuity: true, g_style: '',
           duo: { on: false, a: { name: '', voice: 'Charon' }, b: { name: '', voice: 'Kore' } },
           cbx: { voice: 'default', speed: 1, exag: 0.8, cfg: 1, temp: 0 }, light: { speed: 1, noise: 0.667, noisew: 0.8 },
@@ -48,8 +49,8 @@ const lineEngine = id => lineVoice(id).engine;
 
 // ---------------- status, busy, cancel ----------------
 const enDigits = t => String(t ?? '').replace(/[۰-۹]/g, d => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).replace(/[٠-٩]/g, d => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).replace(/٫/g, '.');   // 176: the status line speaks in English digits
-function say(msg, kind){ const s = $('status'); s.textContent = enDigits(msg || ''); s.className = 'min-w-0 flex-1 truncate ' + (kind === 'err' ? 'text-error' : 'text-primary'); }
-window.avaStatus = ({ msg, pct }) => { say(msg, 'ok'); const p = $('prog'); if (pct === undefined || pct === null) p.removeAttribute('value'); else p.value = pct; };
+function say(msg, kind){ const s = $('status'); s.textContent = enDigits(msg || ''); s.className = 'min-w-0 flex-1 truncate ' + (kind === 'err' ? 'text-error' : kind === 'success' ? 'text-success' : 'text-primary'); }   /* 177: «success» is green */
+window.avaStatus = ({ msg, pct, kind }) => { say(msg, kind || 'ok'); const p = $('prog'); if (pct === undefined || pct === null) p.removeAttribute('value'); else p.value = pct; };
 function setBusy(on){ busy = on; $('prog').classList.toggle('hidden', !on); $('cancelBtn').classList.toggle('hidden', !on); $('genBtn').disabled = on; if (!on && typeof refreshKeys === 'function') setTimeout(() => refreshKeys(), 0); }   // 176: the key badge counts again after every job
 window.avaKeysChanged = () => { if (typeof refreshKeys === 'function') refreshKeys(); };   // 176: the engine says a key ran out or came back
 setInterval(() => { if (typeof refreshKeys === 'function' && document.visibilityState !== 'hidden') refreshKeys(); }, 60000);   // keys come back at Pacific midnight
@@ -58,16 +59,19 @@ const isCancel = e => /cancel|لغو/i.test(String(e && e.message || e));
 
 // ---------------- persistence: the document survives switching interfaces ----------------
 let SESSION = null, saveTimer = null;
-function snapshot(){ return JSON.parse(JSON.stringify({ lines: S.lines, tracks: S.tracks.map(t => ({ ...t, clips: t.clips.map(({ _ti, _track, ...c }) => c) })), proj: S.proj, music: S.music })); }
+function snapRaw(){ return { lines: S.lines, tracks: S.tracks.map(t => ({ ...t, clips: t.clips.map(({ _ti, _track, ...c }) => c) })), proj: S.proj, music: S.music }; }
+function snapshot(){ return JSON.parse(JSON.stringify(snapRaw())); }
 const MUSIC0 = { level_db: -16, fade_in: 1.5, fade_out: 1.5, duck: true, duck_db: 12, file: null, name: null, credit: '' };
 function restoreSnap(sn){ S.lines = sn.lines; S.tracks = sn.tracks; const base = JSON.parse(JSON.stringify(S.proj)); S.proj = Object.assign(base, sn.proj || {}); ['cbx', 'light', 'fish', 'duo'].forEach(k => S.proj[k] = Object.assign({}, base[k], (sn.proj || {})[k] || {})); S.music = Object.assign({}, MUSIC0, sn.music || {}); }   // replace, never merge: a missing key means 'none'
 function autosave(){ if (typeof VVER !== 'undefined') VVER++; clearTimeout(saveTimer); saveTimer = setTimeout(() => { /* 164: no autosaved document — projects are saved as .ava files */ }, 800); }
 
 // ---------------- undo / redo: snapshots; parts referenced by history are kept in memory ----------------
 const hist = { past: [], future: [] };
-function remember(){ hist.past.push(snapshot()); if (hist.past.length > 60) hist.past.shift(); hist.future = []; }
-function undo(){ if (!hist.past.length) return; hist.future.push(snapshot()); restoreSnap(hist.past.pop()); afterChange(true); }
-function redo(){ if (!hist.future.length) return; hist.past.push(snapshot()); restoreSnap(hist.future.pop()); afterChange(true); }
+// 177: 200 steps (each a few KB — media are referenced, never copied); a step that changes nothing is not recorded twice
+var HIST_MAX = 200;
+function remember(){ const js = JSON.stringify(snapRaw()); if (js === hist._last) return; hist._last = js; hist.past.push(JSON.parse(js)); if (hist.past.length > HIST_MAX) hist.past.shift(); hist.future = []; }
+function undo(){ if (!hist.past.length) return; hist.future.push(snapshot()); restoreSnap(hist.past.pop()); hist._last = null; afterChange(true); }
+function redo(){ if (!hist.future.length) return; hist.past.push(snapshot()); restoreSnap(hist.future.pop()); hist._last = null; afterChange(true); }
 function gcParts(){
   const keep = new Set();
   [snapshot(), ...hist.past, ...hist.future].forEach(sn => { sn.tracks.forEach(t => t.clips.forEach(c => { if (c.gulp !== null && c.gulp !== undefined) keep.add(c.gulp); }));
@@ -76,31 +80,8 @@ function gcParts(){
 }
 function afterChange(noHist){ renderScript(); autosave(); }
 
-// ---------------- the app's custom dropdown for every select (build 110: native popups can't follow theme/RTL) ----------------
-function enh(sel){
-  if (sel._btn) return refreshEnh(sel);
-  sel.classList.add('hidden');
-  const b = document.createElement('button'); b.type = 'button';
-  b.className = sel.className.replace('hidden', '').replace('select ', 'select ') + ' justify-between text-start';
-  b.setAttribute('dir', sel.closest('[dir]') ? sel.closest('[dir]').getAttribute('dir') : 'rtl');
-  b.onclick = ev => { ev.stopPropagation(); openDD(sel, b); };
-  sel.insertAdjacentElement('afterend', b); sel._btn = b;
-  sel.addEventListener('change', () => refreshEnh(sel));
-  refreshEnh(sel);
-}
-function refreshEnh(sel){ if (!sel._btn) return; const o = sel.options[sel.selectedIndex]; sel._btn.innerHTML = `<span class="truncate">${o ? escapeHtml(o.text) : ''}</span>`; }
-function openDD(sel, b){
-  const m = $('ddMenu'), r = b.getBoundingClientRect();
-  m.dir = b.getAttribute('dir') || 'rtl';
-  m.innerHTML = [...sel.options].map((o, i) => o.disabled ? `<li class="menu-title">${escapeHtml(o.text)}</li>`
-    : `<li><a class="${i === sel.selectedIndex ? 'menu-active' : ''}" data-i="${i}">${escapeHtml(o.text)}</a></li>`).join('');
-  m.style.minWidth = r.width + 'px'; m.classList.remove('hidden');
-  const h = m.offsetHeight, below = innerHeight - r.bottom - 8;
-  m.style.top = (below >= h ? r.bottom + 4 : Math.max(8, r.top - h - 4)) + 'px';
-  m.style.left = Math.min(innerWidth - m.offsetWidth - 8, Math.max(8, r.left)) + 'px';
-  m.querySelectorAll('[data-i]').forEach(a => a.onclick = () => { sel.selectedIndex = +a.dataset.i; sel.dispatchEvent(new Event('change')); m.classList.add('hidden'); });
-}
-addEventListener('pointerdown', ev => { if (!ev.target.closest('#ddMenu') && !ev.target.closest('#ddFly')){ $('ddMenu').classList.add('hidden'); if (typeof ddFlyClose === 'function') ddFlyClose(); } if (!ev.target.closest('#trackMenu') && !ev.target.closest('[aria-label="add"]')) $('trackMenu').classList.add('hidden'); });
+// 177: the selects are daisyUI's own (the native list) — see controls.js
+addEventListener('pointerdown', ev => { if (!ev.target.closest('#trackMenu') && !ev.target.closest('[aria-label="add"]')) $('trackMenu').classList.add('hidden'); });
 
 // ---------------- inspector: the same lists as the classic interface ----------------
 let DIRECTOR = { ages: [], states: [] };
@@ -120,7 +101,7 @@ function fillInspector(){
   $('pAge').innerHTML = optList(DIRECTOR.ages.filter(a => a[0] !== 'custom').map(a => [a[0], a[1]]), S.proj.g_age);
   $('pLang').innerHTML = optList(LANGS, S.proj.g_lang); $('pCont').checked = !!S.proj.g_continuity;
   $('ezTool').innerHTML = optList(EZ_TOOLS, $('ezTool').value || 'gemini'); enh($('ezTool'));
-  $('pEngine').innerHTML = optList([['google', 'گوگل (Gemini TTS) — آنلاین، ۳۰ صدا']], 'google');
+  $('pEngine').innerHTML = optList([['google', 'گوگل (Gemini TTS) — آنلاین، 30 صدا']], 'google');
   $('pAgeWrap').classList.toggle('hidden', isG38());               // 3.8: age is a voice trait, not an instruction
   $('pEngine').innerHTML = optList(ENGINES, S.proj.engine);
   const eng = S.proj.engine, light = ['mana', 'gyro', 'amir'].includes(eng);
@@ -131,7 +112,7 @@ function fillInspector(){
    ['fishSpeed', f.speed], ['fishVolume', f.volume], ['fishTemp', f.temp], ['fishTopP', f.top_p]].forEach(([id, v]) => setRange(id, v));
   [['fishCont', f.cont], ['fishCondPrev', f.condPrev], ['fishNormLoud', f.normLoud], ['fishNormalize', f.normalize], ['fishQuality', f.quality]].forEach(([id, v]) => $(id).checked = !!v);
   $('cbxVoice').innerHTML = cbxOptions(c.voice);   // 164: bundled voices grouped by voice (never deletable), your samples deletable
-  $('fishModel').innerHTML = optList((DIRECTOR.fish_models || []).map(([k, lab]) => [k, lab]), f.model || ((DIRECTOR.fish_models || [])[0] || [''])[0]);
+  $('fishModel').innerHTML = optList((DIRECTOR.fish_models || []).map(([k, lab, , en]) => [k, T(lab, en || lab)]), f.model || ((DIRECTOR.fish_models || [])[0] || [''])[0]);
   if (!f.model && (DIRECTOR.fish_models || []).length) f.model = DIRECTOR.fish_models[0][0];
   $('fishLatency').value = f.latency;
   $('fishVoice').innerHTML = optList([['default', T('پیش‌فرض Fish Audio', 'Fish Audio default')]].concat(FISH_VOICES.map(v => [v._id || v.id, v.title || v.name || v._id || v.id])), f.voice);
@@ -192,7 +173,7 @@ function fillLineInspector(id){
   const engName = engShort;
   const set = k => v[k] !== undefined && v[k] !== '' && v[k] !== null;
   const lab = (t, k) => `<legend class="fieldset-legend flex w-full items-center gap-1 text-xs font-medium text-base-content/70"><span class="flex-1">${t}</span>${set(k) ? `<span class="ddb text-primary" role="button" onclick="setLineOpt('${k}', null)" data-tip="${T('برگشت: ', 'Back: ')}${from}" aria-label="reset"><svg><use href="#i-rotate-ccw"/></svg></span>` : ''}</legend>`;
-  const inh = txt => `<option value="">— ${from}${txt ? ': ' + escapeHtml(String(txt)) : ''} —</option>`;
+  const inh = txt => { const t = String(txt || '').replace(/^[—–-]\s*|\s*[—–-]$/g, '').trim(); return `<option value="">— ${from}${t ? ': ' + escapeHtml(t) : ''} —</option>`; };   // 177: «— as the speaker: unchanged —», not nested dashes
   const sel = (t, k, html) => `<fieldset class="fieldset">${lab(t, k)}<select id="ln_${k}" class="select select-sm w-full" onchange="setLineOpt('${k}', this.value)">${html}</select></fieldset>`;
   const rng = (t, k, min, max, step, cur) => `<fieldset class="fieldset">${lab(t, k)}<div class="flex items-center gap-2"><input id="ln_${k}" type="range" min="${min}" max="${max}" step="${step}" value="${cur}" class="range range-xs flex-1 text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] ${set(k) ? '' : 'opacity-60'}" oninput="this.nextElementSibling.textContent = num(this.value); this.classList.remove('opacity-60')" onchange="setLineOpt('${k}', +this.value)"><span class="w-10 text-end text-xs tabular-nums text-base-content/70">${num(cur)}</span></div></fieldset>`;
   const pres = G_PRESETS.map(p => [p[0], p[1]]), states = DIRECTOR.states.filter(a => a[0] !== 'custom').map(a => [a[0], lang === 'fa' ? a[1] : (a[2] || a[1])]), lbl = (list, k) => tr((list.find(r => r[0] === k) || [k, k])[1]);
@@ -218,7 +199,7 @@ function fillLineInspector(id){
     out += rng(T('سرعت', 'Speed'), 'lightSpeed', 0.5, 2, 0.05, v.lightSpeed ?? l.speed) + rng(T('آهنگ و حالتِ گفتار', 'Intonation'), 'lightNoise', 0.1, 1.3, 0.05, v.lightNoise ?? l.noise) + rng(T('کشش و تن', 'Stretch and timbre'), 'lightNoiseW', 0.1, 1.5, 0.05, v.lightNoiseW ?? l.noisew);
   }
   $('lnBody').innerHTML = out; $('lnBody').querySelectorAll('select').forEach(s => enh(s));
-  const lv = $('ln_gVoice'); if (lv){ lv.dataset.recent = 'gvoice'; lv._onDel = delVoice; }
+  const lv = $('ln_gVoice'); if (lv){ lv.dataset.recent = 'gvoice'; lv._onDel = delVoice; lv._actions = () => gVoiceActs('line', v.gModel || base.gModel || S.proj.g_model); refreshEnh(lv); }   // 177: the same «More» entries as the project's list
 }
 
 // =====================================================================================
@@ -267,9 +248,9 @@ function lineBar(){
     <button class="btn btn-primary btn-xs join-item gap-1" onclick="revoiceSelected()"><svg class="size-3.5"><use href="#i-refresh-cw"/></svg>${T('بازتولید', 'Regenerate')}</button>
     <button class="${b}" onclick="playLine()"><svg class="size-3.5"><use href="#i-play"/></svg>${T('شنیدن', 'Play')}</button>
     <button class="${b}" onclick="newLineAfter()"><svg class="size-3.5"><use href="#i-plus"/></svg>${T('خطِ تازه', 'New line')}</button>
-    <button class="${b}" onclick="dupLine()"><svg class="size-3.5"><use href="#i-copy"/></svg>${T('تکثیر', 'Duplicate')}</button>
+    <button class="btn btn-xs join-item btn-square border-base-content/15 bg-base-100" onclick="dupLine()" data-tip="تکثیرِ این خط" data-tip-en="Duplicate this line" aria-label="duplicate"><svg class="size-3.5"><use href="#i-copy"/></svg></button>
     <button class="btn btn-xs join-item btn-square border-base-content/15 bg-base-100" onclick="diacritize(true)" data-tip="حرکت‌گذاریِ همین خط" data-tip-en="Diacritize this line" aria-label="diacritize"><svg class="size-3.5"><use href="#i-wand-sparkles"/></svg></button>
-    <button class="btn btn-xs join-item btn-square border-base-content/15 bg-base-100" onclick="deleteLine()" aria-label="delete"><svg class="size-3.5"><use href="#i-trash-2"/></svg></button></div></div>`;
+    <button class="btn btn-xs join-item btn-square border-base-content/15 bg-base-100" onclick="deleteLine()" data-tip="حذفِ این خط" data-tip-en="Delete this line" aria-label="delete"><svg class="size-3.5"><use href="#i-trash-2"/></svg></button></div></div>`;
 }
 function paintSel(){ sel.forEach(id => { if (!S.lines[id]) sel.delete(id); });
   if (sel.size && selClip && String(selClip).startsWith('mu')){ selClip = null; if (typeof placeClipBar === 'function') placeClipBar(); }   // 169: one selection at a time
@@ -283,14 +264,14 @@ function paintSel(){ sel.forEach(id => { if (!S.lines[id]) sel.delete(id); });
     ln.querySelector('.lnbar').innerHTML = one ? lineBar() : '';
   });
   $('it-line').classList.toggle('hidden', sel.size !== 1);
-  $('tagBtn').classList.toggle('btn-disabled', sel.size !== 1); buildTagMenus(); $('toneBtn').classList.toggle('btn-disabled', !sel.size || !isG38());
+  $('tagBtn').classList.toggle('btn-disabled', sel.size !== 1); buildTagMenus(); $('toneBtn').classList.toggle('btn-disabled', !sel.size || !(typeof toneOk === 'function' ? toneOk() : isG38()));   /* 177: 3.1 and Fish take tones too */
   { const mb0 = $('multiRevoice'); if (mb0 && sel.size < 2) mb0.classList.add('hidden'); }
   if (sel.size === 1){
     const id = [...sel][0], L = S.lines[id], [, c] = clipOfLine(id);
     $('lineTitle').textContent = T(`خطِ ${FA(orderedLines().indexOf(id) + 1)}`, `Line ${orderedLines().indexOf(id) + 1}`);
     $('lineState').innerHTML = L.dirty ? `<span class="badge badge-soft badge-warning badge-sm gap-1"><svg class="size-3"><use href="#i-pencil"/></svg>${T('تغییر کرده', 'edited')}</span>`
       : c && c.unvoiced ? `<span class="badge badge-ghost badge-sm">${T('ساخته نشده', 'not generated')}</span>`
-      : c ? `<span class="badge badge-soft badge-success badge-sm gap-1"><svg class="size-3"><use href="#i-check"/></svg>${T('ساخته‌شده', 'generated')}${T('، ', ', ')}${num(dur(c).toFixed(1))} ${T('ثانیه', 's')}</span>` : '';
+      : c ? `<span class="badge badge-soft badge-success badge-sm gap-1"><svg class="size-3"><use href="#i-check"/></svg>${T('ساخته‌شده', 'generated')} · ${secs(dur(c))}</span>` : '';
     fillLineInspector(id);
     if (selKey !== lastSelKey) showInsp('line');            // only a NEW selection moves the inspector
   } else if (!$('insp-music').classList.contains('hidden') && selClip && String(selClip).startsWith('mu')){ /* keep the music panel */ }
@@ -518,10 +499,7 @@ function renderTimeline(){
       <button class="btn btn-ghost btn-xs btn-square ${t.muted ? 'bg-error/15 text-error' : ''}" onclick="toggleMute(${i})" aria-label="mute" aria-pressed="${t.muted ? 'true' : 'false'}" data-tip="${t.muted ? T('بی‌صدا است — برای شنیدن کلیک کنید', 'Muted — click to hear it') : T('بی‌صدا کردن', 'Mute')}"><svg class="size-3.5"><use href="#i-volume-x"/></svg></button><button class="btn btn-ghost btn-xs btn-square ${(t.volume ?? 1) !== 1 ? 'text-primary' : ''}" data-vol="${i}" onclick="openVolPop(event, ${i})" data-tip="${T('بلندیِ ترک', 'Track volume')}: ${Math.round((t.volume ?? 1) * 100)}${pctSign()}" aria-label="volume"><svg class="size-3.5"><use href="#i-volume-2"/></svg></button>
       <button class="btn btn-ghost btn-xs btn-square" aria-label="add" onclick="openTrackMenu(event, ${i})"><svg class="size-4"><use href="#i-plus"/></svg></button>
     </div></div>`).join('');
-  const step = pps < 16 ? 10 : 5, dot = step / (step === 5 ? 5 : 4); let ticks = '';
-  for (let k = 0; k * dot <= span + (typeof tailPx === 'function' ? tailPx() / pps : 0); k++){ const tt = k * dot, x = PAD + tt * pps;
-    ticks += Math.abs(tt % step) < 1e-6 ? `<span class="absolute top-1 text-[11px] leading-none tabular-nums text-base-content/55" style="left:${x}px">${num(Math.floor(tt / 60))}:${num(String(Math.round(tt % 60)).padStart(2, '0'))}</span>`
-      : `<span class="absolute top-[11px] size-[3px] -translate-x-1/2 rounded-full bg-base-content/30" style="left:${x}px"></span>`; }
+  const ticks = rulerTicks(span + (typeof tailPx === 'function' ? tailPx() / pps : 0), pps);
   $('ruler').style.width = W + 'px';
   $('ruler').innerHTML = `<div class="tl-empty pointer-events-none absolute inset-y-0 z-0" style="left:${PAD + (typeof compEnd === 'function' ? compEnd() : total()) * pps}px;right:0;background:color-mix(in oklab, var(--color-primary) 10%, transparent)"></div>` + ticks + `<span id="phStem" class="pointer-events-none absolute bottom-0 top-3 w-0.5 bg-secondary" style="left:${PAD + playhead * pps}px"></span><span id="phLabel" class="absolute top-0 z-10 cursor-ew-resize rounded-sm bg-secondary px-1 text-[10px] font-bold tabular-nums text-secondary-content" style="left:${PAD + playhead * pps - 22}px">${num(fmt(playhead))}</span>`;
   const order = orderedLines(); let lanes = '';
@@ -540,12 +518,16 @@ function renderTimeline(){
         <span class="ui pointer-events-none absolute inset-x-1.5 top-0.5 truncate text-[11px] font-semibold" dir="rtl">${label}</span>
         ${dirty ? `<span class="badge badge-warning badge-xs pointer-events-none absolute bottom-1 left-1 gap-0.5"><svg class="size-2.5"><use href="#i-pencil"/></svg></span>` : ''}
         ${(c.trimIn > 0.05 || c.trimOut > 0.05) ? `<span class="badge badge-error badge-xs pointer-events-none absolute bottom-1 ${dirty ? 'left-6' : 'left-1'}"><svg class="size-2.5"><use href="#i-scissors"/></svg></span>` : ''}
-        ${selClip === c.id && w > 130 ? `<span class="pointer-events-none absolute bottom-1 right-6 rounded-md bg-black/60 px-1.5 text-[10px] font-semibold tabular-nums text-white">${num(dur(c).toFixed(1))}${T('ث', 's')}</span>` : ''}
+        ${selClip === c.id && w > 130 ? `<span class="pointer-events-none absolute bottom-1 right-6 rounded-md bg-black/60 px-1.5 text-[10px] font-semibold tabular-nums text-white">${secs(dur(c))}</span>` : ''}
       </div>`;
       if (selClip === c.id && ((!c.type && !c.unvoiced) || c.type === 'music' || c.type === 'sfx')){
         const xl = PAD + c.at * pps, xr = xl + w;
-        const hdl = (x, edge) => `<span class="trimh absolute z-20 w-[18px] cursor-ew-resize ${pos}" style="left:${x}px" data-edge="${edge}" data-cid="${c.id}" data-ti="${ti}"><span class="pointer-events-none absolute top-1/2 h-[55%] w-[3px] -translate-y-1/2 rounded-full bg-white shadow-[0_0_4px_rgba(0,0,0,.55)] ${edge === 'l' ? 'left-[10px]' : 'left-[5px]'}"></span></span>`;
-        clips += hdl(xl - 5, 'l') + hdl(xr - 13, 'r');
+        // 177: the handles sit OUTSIDE the clip (a tiny effect's body still drags), their white bar right at its edge;
+        //      beside a neighbour that touches it a handle narrows (≥ 6 px) so the neighbour's own body stays clickable
+        const srt = [...t.clips].sort((a, b) => a.at - b.at), k0 = srt.indexOf(c), pv = srt[k0 - 1], nx = srt[k0 + 1];
+        const wl = Math.max(6, Math.min(16, pv ? (c.at - (pv.at + dur(pv))) * pps : 16)), wr = Math.max(6, Math.min(16, nx ? (nx.at - (c.at + dur(c))) * pps : 16));
+        const hdl = (x, edge, hw) => `<span class="trimh absolute z-20 cursor-ew-resize ${pos}" style="left:${x}px;width:${hw}px" data-edge="${edge}" data-cid="${c.id}" data-ti="${ti}"><span class="pointer-events-none absolute top-1/2 h-[60%] w-[4px] -translate-y-1/2 rounded-full bg-white shadow-[0_0_4px_rgba(0,0,0,.6)] ${edge === 'l' ? 'right-[-6px]' : 'left-[-6px]'}"></span></span>`;   /* 178: the white bar sits inside the clip's edge; only the grab area is outside */
+        clips += hdl(xl - wl, 'l', wl) + hdl(xr, 'r', wr);
       }
     });
     lanes += `<div class="lane relative h-14" style="width:${W}px" data-ti="${ti}">${clips}</div>`;
@@ -559,20 +541,33 @@ const compEnd = () => Math.max(0, ...S.tracks.flatMap(t => t.clips.map(c => c.at
 const speechEnd = () => Math.max(0, ...speechClips().map(c => c.at + dur(c)));
 function syncRuler(){}   // 169: the ruler scrolls with the lanes (one coordinate system)
 function wireTimeline(){
-  $('ruler').onpointerdown = ev => { seekFromX(ev.clientX); scrubbing(); };
+  $('ruler').onpointerdown = ev => { seekFromX(ev.clientX, ev.shiftKey); scrubbing(); };
   $('phLabel').onpointerdown = ev => { ev.stopPropagation(); scrubbing(); };
   document.querySelectorAll('#lanes .clip').forEach(el => el.addEventListener('pointerdown', ev => startClipDrag(ev, el)));
   document.querySelectorAll('#lanes .trimh').forEach(el => el.addEventListener('pointerdown', ev => startTrim(ev, el)));
   $('lanes').onpointerdown = ev => { if (ev.target.id === 'lanes' || ev.target.classList.contains('lane')){ selClip = null; sel = new Set(); paintSel(); renderTimeline(); } };
 }
-function seekFromX(cx){ const r = $('lanes').getBoundingClientRect(); seek(Math.max(0, (cx - r.left - PAD) / zoom)); }
+// 177: the ruler's labels stay ~72 px apart at every zoom (8–600 px/s): minutes down to tenths of a second, dots between
+function rulerTicks(span, pps){ const steps = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300], step = steps.find(s => s * pps >= 72) || 600, sub = [0.2, 1, 2, 5, 10].includes(step) ? 4 : 5, dot = step / sub;
+  const lab = tt => { const m = Math.floor(tt / 60 + 1e-9), s = tt - m * 60; return step < 1 ? `${m}:${s.toFixed(1).padStart(4, '0')}` : `${m}:${String(Math.round(s)).padStart(2, '0')}`; };
+  let out = ''; const n = Math.min(20000, Math.floor(span / dot + 1e-6));
+  for (let k = 0; k <= n; k++){ const tt = +(k * dot).toFixed(4), x = PAD + tt * pps, major = Math.abs(tt / step - Math.round(tt / step)) < 1e-6;
+    out += major ? `<span class="absolute top-1 text-[11px] leading-none tabular-nums text-base-content/55" style="left:${x}px">${lab(tt)}</span>` : `<span class="absolute top-[11px] size-[3px] -translate-x-1/2 rounded-full bg-base-content/30" style="left:${x}px"></span>`; }
+  return out; }
+function seekFromX(cx, snap){ const r = $('lanes').getBoundingClientRect(); let t = Math.max(0, (cx - r.left - PAD) / zoom); if (snap) t = snapToEdges(t); seek(t); }
+// 177: Shift while moving the playhead snaps it to every clip edge on every track (both editors), within 10 px
+function clipEdgesAll(){ const out = [0]; try {
+    S.tracks.forEach(tk => tk.clips.forEach(c => { out.push(c.at); out.push(c.at + dur(c)); }));
+    if (typeof mode !== 'undefined' && mode === 'video'){ (V.objects || []).forEach(o => { out.push(o.start || 0); out.push(o.end == null ? projEnd() : o.end); }); if (V.subs && V.subs.on) cuesNow().forEach(q => { out.push(q.at); out.push(q.at + q.dur); }); }
+  } catch (e) {} return out.filter(x => isFinite(x)); }
+function snapToEdges(t){ const lim = 10 / zoom; let best = t, bd = lim; clipEdgesAll().forEach(x => { const d = Math.abs(x - t); if (d < bd){ bd = d; best = x; } }); return best; }
 function scrubbing(){
   const sc = $('tlScroll'); let lastX = null, raf = 0;
   const edges = () => { const r = sc.getBoundingClientRect(), hw = $('heads').offsetWidth || 0; return [r.left + hw + 4, r.right - 28]; };
   const step = () => { raf = 0; if (lastX === null) return; const [L, Rr] = edges(); let d = 0;
     if (lastX > Rr) d = Math.min(26, (lastX - Rr) / 2 + 3); else if (lastX < L && sc.scrollLeft > 0) d = -Math.min(26, (L - lastX) / 2 + 3);
-    if (d){ const before = sc.scrollLeft; sc.scrollLeft = Math.max(0, before + d); seekFromX(Math.min(Math.max(lastX, L), Rr)); if (sc.scrollLeft !== before) raf = requestAnimationFrame(step); } };
-  const mv = e => { lastX = e.clientX; const [L, Rr] = edges(); seekFromX(Math.min(Math.max(e.clientX, L), Rr)); if (!raf) raf = requestAnimationFrame(step); };
+    if (d){ const before = sc.scrollLeft; sc.scrollLeft = Math.max(0, before + d); seekFromX(Math.min(Math.max(lastX, L), Rr), lastShift); if (sc.scrollLeft !== before) raf = requestAnimationFrame(step); } };
+  let lastShift = false; const mv = e => { lastX = e.clientX; lastShift = e.shiftKey; const [L, Rr] = edges(); seekFromX(Math.min(Math.max(e.clientX, L), Rr), e.shiftKey); if (!raf) raf = requestAnimationFrame(step); };
   const up = () => { lastX = null; if (raf) cancelAnimationFrame(raf); raf = 0; removeEventListener('pointermove', mv); removeEventListener('pointerup', up); };
   addEventListener('pointermove', mv); addEventListener('pointerup', up);
 }
@@ -623,7 +618,7 @@ function quickTrimVisual(c){
   const xl = PAD + c.at * zoom, w = Math.max(6, dur(c) * zoom - 2);
   el.style.left = xl + 'px'; el.style.width = w + 'px';
   const hl = document.querySelector(`#lanes .trimh[data-edge="l"][data-cid="${c.id}"]`), hr = document.querySelector(`#lanes .trimh[data-edge="r"][data-cid="${c.id}"]`);
-  if (hl) hl.style.left = (xl - 5) + 'px'; if (hr) hr.style.left = (xl + w - 13) + 'px';
+  if (hl) hl.style.left = (xl - (hl.offsetWidth || 16)) + 'px'; if (hr) hr.style.left = (xl + w) + 'px';   // 177: outside the clip
   cancelAnimationFrame(trimRaf); trimRaf = requestAnimationFrame(() => {
     const lt = document.querySelector(`#editor .ln[data-id="${c.lines[0]}"] .lt`); if (lt && c.lines.length === 1) lt.innerHTML = trimmedHtml(S.lines[c.lines[0]].text || '', c); });
 }
@@ -697,7 +692,7 @@ async function loadEngineLists(){
 }
 async function saveFishKey(k){ try { await API().fish_key_set(k.trim()); say(T('کلیدِ Fish Audio ذخیره شد.', 'Fish Audio key saved.'), 'ok'); await loadEngineLists(); fillInspector(); } catch (e) { say(String(e), 'err'); } }
 async function probeFish(){ say(T('دارم Fish Audio را می‌آزمایم…', 'Testing Fish Audio…'), 'ok'); try { const r = await API().fish_probe(); say(r.ok ? T('Fish Audio وصل است.', 'Fish Audio is connected.') : (r.error || T('وصل نشد.', 'Could not connect.')), r.ok ? 'ok' : 'err'); } catch (e) { say(String(e), 'err'); } }
-async function addCbxVoice(){ const r = await API().cbx_voice_add(); if (!r || !r.ok){ if (r && r.error !== 'cancelled') say(r.error, 'err'); return; } await loadEngineLists(); const nv = r.voice || r.name || r.id; if (nv) setEng('cbxVoice', nv); fillInspector(); }
+async function addCbxVoice(){ const r = await API().cbx_voice_add(); if (!r || !r.ok){ if (r && r.error !== 'cancelled') say(r.error, 'err'); return; } await loadEngineLists(); const nv = r.voice || r.name || r.id; if (nv){ setEng('cbxVoice', nv); makeSampleNow('chatterbox', nv); } fillInspector(); }   // 177: its sample, once, now
 
 async function searchMusic(){
   const prov = $('mProv').value, q = $('mQuery').value.trim(); if (!q && prov !== 'lyria') return;
@@ -761,7 +756,6 @@ async function generateAll(){
       if (runs[k].patch) await revoice(runs[k].patch, null); else await voiceRun(runs[k]);
       renderScript();
     }
-    if (typeof voicePendingReacts === 'function' && await voicePendingReacts()) renderTimeline();   // 176: reactions waiting for their audio
     gcParts(); say(T('ساخته شد. با دکمهٔ پخش بشنوید؛ «فایل نهایی» فایل را از روی خطِ زمان می‌سازد.', 'Done. Press Play to listen — Export builds the file from your timeline.'), 'ok');
   } catch (e) { say(isCancel(e) ? T('لغو شد.', 'Canceled.') : (e.message || String(e)), isCancel(e) ? 'ok' : 'err'); }
   finally { setBusy(false); renderScript(); autosave(); }
@@ -769,7 +763,8 @@ async function generateAll(){
 async function voiceRun(run){
   const ids = run.clips.flatMap(c => c.lines.filter(id => speakableLine(id))); if (!ids.length) return;   // 166: nothing to speak → nothing is sent
  const text = ids.map(id => spoken(id)).join('\n');
-  const r = await API().generate_gulp(payloadFor(lineVoice(ids[0]), text));
+  const pl0 = payloadFor(lineVoice(ids[0]), text); if (typeof rxSteady === 'function' && rxSteady(ids)) pl0.g_steady = true;   // 177: lines with reactions over them: no waiting
+  const r = await API().generate_gulp(pl0);
   if (!r.ok) throw new Error(r.error || T('خطای ناشناخته', 'Unknown error'));
   await storeAudio(r.gulp, r.b64);
   const t = run.track, anchor = run.clips[0].at, oldEnd = Math.max(...run.clips.map(c => c.at + dur(c)));
@@ -801,7 +796,8 @@ async function revoice(c, selectOnly){
   const first = ids.indexOf(targets[0]), last = ids.indexOf(targets[targets.length - 1]);
   const sel_start = ids.slice(0, first).reduce((s, id) => s + spoken(id).length + 1, 0);
   const sel_end = sel_start + ids.slice(first, last + 1).map(id => spoken(id)).join('\n').length;
-  const r = await API().patch_gulp({ gulp: c.gulp, text, sel_start, sel_end, payload: payloadFor(lineVoice(targets[0]), text) });
+  const plP = payloadFor(lineVoice(targets[0]), text); if (typeof rxSteady === 'function' && rxSteady(targets)) plP.g_steady = true;   // 177
+  const r = await API().patch_gulp({ gulp: c.gulp, text, sel_start, sel_end, payload: plP });
   if (!r.ok) throw new Error(r.error || T('خطای ناشناخته', 'Unknown error'));
   await storeAudio(r.gulp, r.b64);
   const spans = r.lines || [];
@@ -919,7 +915,7 @@ async function exportAudio(withMusic){
     const r = await API().timeline_files(timelineSpec(), withMusic ? { on: true, file: S.music.file, level_db: S.music.level_db, duck: (S.music.duck_db ?? 12) > 0, duck_db: S.music.duck_db ?? 12, fade_in: S.music.fade_in, fade_out: S.music.fade_out } : null);
     if (!r.ok) throw new Error(r.error || T('خطای ناشناخته', 'Unknown error'));
     const s = await API().save_mp3(withMusic ? r.b64_music : r.b64, withMusic ? 'music' : '');
-    if (s.ok) say(T('ذخیره شد: ', 'Saved: ') + s.path + ' — ' + num(r.seconds) + T(' ثانیه', ' s'), 'ok');
+    if (s.ok) say(T('ذخیره شد: ', 'Saved: ') + s.path + ' — ' + secs(r.seconds), 'ok');
   } catch (e) { say(isCancel(e) ? T('لغو شد.', 'Canceled.') : (e.message || String(e)), isCancel(e) ? 'ok' : 'err'); }
   finally { setBusy(false); }
 }
@@ -958,11 +954,12 @@ function removeMusic(){ remember(); S.music.file = null; S.music.name = null; mu
 function setMusic(k, v){ S.music[k] = v; autosave(); if (playing){ const t = playhead; stopPlay(); seekVisual(t); startPlay(); } }
 function showMusicInspector(){ ['line', 'proj'].forEach(k => $('insp-' + k).classList.add('hidden')); $('insp-music').classList.remove('hidden'); const tl = $('it-line').parentElement; if (tl) tl.classList.add('hidden');   // 169: a music clip has only its own panel
   $('musicName').textContent = S.music.name || ''; $('musicCredit').textContent = S.music.credit || ''; setRange('mLevel', S.music.level_db); setRange('mFadeIn', S.music.fade_in); setRange('mFadeOut', S.music.fade_out); setRange('mDuckDb', S.music.duck_db ?? 12); }
-const UNIT_FA = { '%': '٪', px: 'px', dB: 'دسی‌بل', s: 'ثانیه', '°': '°', '': '' };
-function rvText(el){ const v = +el.value, u = el.dataset.unit || '', n = Number.isInteger(v) ? String(v) : v.toFixed(1); return (lang === 'fa' ? FA(n).replace('.', '٫').replace('-', '−') : n) + (u ? ' ' + (lang === 'fa' ? (UNIT_FA[u] ?? u) : u) : ''); }
-function wireRangeValues(){ document.querySelectorAll('aside input[type=range]').forEach(el => { if (el._rv) return; const b = document.createElement('span'); b.className = 'rv shrink-0 text-xs font-medium tabular-nums text-base-content/80';
-  const leg = el.closest('fieldset') && el.closest('fieldset').querySelector('legend'); if (leg){ leg.classList.add('flex', 'w-full', 'items-center', 'justify-between'); leg.appendChild(b); } else el.insertAdjacentElement('afterend', b);
-  el._rv = b; b.textContent = rvText(el); el.addEventListener('input', () => b.textContent = rvText(el)); }); }
+const UNIT_FA = { '%': '%', px: 'px', dB: 'dB', s: 's', '°': '°', '': '' };   // 177: units as they are written in English
+function rvText(el){ const v = +el.value, u = el.dataset.unit || '', n = Number.isInteger(v) ? String(v) : v.toFixed(1); return '\u2066' + n.replace('-', '−') + (u ? (u === 'dB' ? ' ' : '') + u : '') + '\u2069'; }   /* 177: a left-to-right island («0°», «−6 dB») that still sits at the legend's far end in Persian */   // 177: «12.6s», «35%» — English digits and units in both languages
+function wireRangeValues(){ document.querySelectorAll('aside input[type=range]').forEach(el => { if (el._rv) return;
+  const leg = el.closest('fieldset') && el.closest('fieldset').querySelector('legend'), b = (leg && leg.querySelector(':scope > .rv')) || document.createElement('span'); if (!b.className) b.className = 'rv shrink-0 text-xs font-medium tabular-nums text-base-content/80';
+  if (leg){ if (!b.parentElement) leg.appendChild(b); } else el.insertAdjacentElement('afterend', b);
+  el._rv = b; b.textContent = rvText(el); el.addEventListener('input', () => b.textContent = rvText(el)); if (leg) legendTidy(leg); }); }
 function setRange(id, v){ const el = $(id); if (!el) return; el.value = v; if (el._rv) el._rv.textContent = rvText(el); }
 
 // =====================================================================================
@@ -973,7 +970,8 @@ const KSTATE = { ok: ['فعال', 'Active', 'badge-success'], exhausted: ['سه�
 async function refreshKeys(){ try { const r = await API().google_keys(); KEYS = (r && r.keys) || []; } catch (e) { KEYS = []; }
   const ok = KEYS.filter(k => k.state === 'ok').length; $('keysBadge').textContent = num(ok) + '/' + num(KEYS.length); $('keysBadge').className = 'badge badge-sm ' + (ok ? 'badge-secondary' : 'badge-error');
   $('keyList').innerHTML = KEYS.length ? KEYS.map((k, i) => { const [fa, en, cls] = KSTATE[k.state] || KSTATE.ok;
-    return `<li class="list-row items-center py-2"><code class="text-xs" dir="ltr">${escapeHtml(k.masked)}</code><span class="badge badge-sm ${cls}">${T(fa, en)}</span><button class="btn btn-ghost btn-xs btn-square" onclick="removeKey(${i})" aria-label="remove"><svg class="size-3.5"><use href="#i-trash-2"/></svg></button></li>`; }).join('')
+    const marks = (k.last ? `<span class="badge badge-xs badge-outline badge-secondary" data-tip="کلیدی که آخرین درخواست را جواب داد" data-tip-en="The key that answered the last request">${T('آخرین', 'Last')}</span>` : '') + (k.next ? `<span class="badge badge-xs badge-primary" data-tip="درخواستِ بعدی اول با این کلید فرستاده می‌شود" data-tip-en="The next request tries this key first">${T('بعدی', 'Next')}</span>` : '');   /* 177 */
+    return `<li class="list-row items-center py-2"><code class="text-xs" dir="ltr">${escapeHtml(k.masked)}</code><span class="flex items-center gap-1"><span class="badge badge-sm ${cls}">${T(fa, en)}</span>${marks}</span><button class="btn btn-ghost btn-xs btn-square" onclick="removeKey(${i})" aria-label="remove"><svg class="size-3.5"><use href="#i-trash-2"/></svg></button></li>`; }).join('')
     : `<li class="p-3 text-sm text-base-content/60">${T('هنوز کلیدی اضافه نشده.', 'No keys yet.')}</li>`; }
 function openKeys(){ refreshKeys(); $('keysDlg').showModal(); }
 async function saveKeys(){ const add = $('keyNew').value.split(/\s+/).map(x => x.trim()).filter(Boolean); if (!add.length) return;
@@ -997,7 +995,7 @@ function applyLang(){
   const ed = $('editor'); if (ed) ed.setAttribute('dir', 'rtl');
   [['aria-label', 'ariaEn', 'ariaFa'], ['placeholder', 'phEn', 'phFa'], ['title', 'titleEn', 'titleFa']].forEach(([a, en, fa]) => document.querySelectorAll(`[data-${a === 'aria-label' ? 'aria' : a === 'placeholder' ? 'ph' : 'title'}-en]`).forEach(el => {   /* 175 */
     if (el.dataset[fa] === undefined) el.dataset[fa] = el.getAttribute(a) || ''; el.setAttribute(a, lang === 'fa' ? el.dataset[fa] : el.dataset[en]); }));
-  document.querySelectorAll('select').forEach(sl => { if (sl._btn) refreshEnh(sl); });
+  document.querySelectorAll('select').forEach(sl => { if (sl._n177) refreshEnh(sl); });
 }
 $('langBtn').onclick = () => { lang = lang === 'fa' ? 'en' : 'fa'; { const st = $('status'); if (st) st.textContent = ''; }   /* 175: the last message was in the other language */ try { localStorage.setItem('ava-lang', lang); } catch (e) {} try { API().set_lang(lang); } catch (e) {} applyLang(); fillInspector(); renderScript(); refreshKeys(); seekVisual(playhead); showBuild(); document.querySelectorAll('aside input[type=range]').forEach(el => { if (el._rv) el._rv.textContent = rvText(el); }); };
 $('themeChk').onchange = e => { document.documentElement.dataset.theme = e.target.checked ? 'ava-day' : 'ava-night'; try { localStorage.setItem('ava-ed-theme', e.target.checked ? 'ava-day' : 'ava-night'); } catch (x) {} };   // 176: by attribute
@@ -1041,7 +1039,7 @@ init();
 let typingSnap = false, typingTimer = 0;
 function noteTyping(){ if (!typingSnap){ remember(); typingSnap = true; } clearTimeout(typingTimer); typingTimer = setTimeout(() => { typingSnap = false; }, 1200); }
 addEventListener('keydown', e => {
-  const mod = e.metaKey || e.ctrlKey, k = e.key.toLowerCase(), t = e.target, inText = /INPUT|TEXTAREA|SELECT/.test(t.tagName);
+  const mod = e.metaKey || e.ctrlKey, k = e.key.toLowerCase(), t = e.target, inText = /INPUT|TEXTAREA|SELECT/.test(t.tagName) || !!(t.closest && t.closest('#vtextEd'));   /* 177: the canvas text editor undoes its own typing */
   if (mod && !inText && (k === 'z' || k === 'y')){
     e.preventDefault(); e.stopPropagation(); typingSnap = false; if (k === 'y' || e.shiftKey) redo(); else undo(); return;
   }
@@ -1075,70 +1073,7 @@ document.addEventListener('pointerdown', () => tipEl.classList.add('hidden'));
 // =====================================================================================
 let RECENT = {};
 function noteRecent(key, v){ if (!key || !v) return; const a = (RECENT[key] || []).filter(x => x !== v); a.unshift(v); RECENT[key] = a.slice(0, 5); try { API().settings_set({ ed_recent: RECENT }); } catch (e) {} }
-function enh(sel){
-  if (sel._btn) return refreshEnh(sel);
-  const b = document.createElement('button'); b.type = 'button';
-  b.className = sel.className.replace(/\bhidden\b/g, '') + (sel.dataset.compact !== undefined ? ' justify-between gap-2 text-start' : ' ddtrig justify-between gap-2 text-start');
-  b.setAttribute('dir', sel.closest('[dir]') ? sel.closest('[dir]').getAttribute('dir') : 'rtl');
-  b.onclick = ev => { ev.stopPropagation(); openDD(sel, b); };
-  sel.insertAdjacentElement('afterend', b); sel._btn = b; sel.classList.add('hidden');
-  const j = sel.parentElement; if (j && j.classList.contains('join')){ b.classList.add('join-item'); j.after(sel); }   // rounding follows the visible button
-  sel.addEventListener('change', () => { refreshEnh(sel); noteRecent(sel.dataset.recent, sel.value); });
-  refreshEnh(sel);
-}
-function refreshEnh(sel){ if (!sel._btn) return; const o = sel.options[sel.selectedIndex]; sel._btn.innerHTML = sel.dataset.compact !== undefined ? `<span class="min-w-0 flex-1 truncate" dir="auto">${o ? escapeHtml(o.text.split(' — ')[0]) : ''}</span>` : `<span class="ddlbl min-w-0 flex-1" ${o && o.dataset.font ? `style="font-family:'${escapeHtml(o.dataset.font)}', Vazirmatn"` : ''}>${o ? escapeHtml(o.text) : ''}</span>`; }   /* 175: a font shows in itself */
-function closeDD(){ const m = $('ddMenu'); m.classList.add('hidden'); m._sel = null; ddFlyClose(); }
-function openDD(sel, b){
-  const m = $('ddMenu'); if (m._sel === sel && !m.classList.contains('hidden')) return closeDD(); const host = b.closest('dialog[open]') || document.body; if (m.parentElement !== host) host.appendChild(m); m._sel = sel; m.dir = b.getAttribute('dir') || 'rtl';
-  const opts = [...sel.options], recent = (RECENT[sel.dataset.recent] || []).map(v => opts.find(o => o.value === v && !o.disabled)).filter(Boolean);
-  const row = o => `<li class="flex flex-row items-center gap-0.5" data-v="${escapeHtml(o.value)}"><a class="min-w-0 flex-1 ${o.selected ? 'menu-active' : ''}" data-pick="${escapeHtml(o.value)}"><span class="whitespace-normal break-words" ${o.dataset.font ? `style="font-family:'${escapeHtml(o.dataset.font)}', Vazirmatn; font-size:15px"` : ''}>${escapeHtml(o.text)}</span></a>`
-    + (sel.dataset.preview !== undefined && o.value !== '' ? `<button class="ddb opacity-80 hover:opacity-100" data-pv="${escapeHtml(o.value)}" data-tip="شنیدنِ صدا" data-tip-en="Hear the voice"><svg class="size-3.5"><use href="#i-play"/></svg></button>` : '')
-    + (o.dataset.pin !== undefined ? `<button class="ddb ${o.dataset.pinned !== undefined ? 'text-primary' : 'opacity-50'}" data-pin="${escapeHtml(o.value)}" data-tip="${o.dataset.pinned !== undefined ? 'پیش‌فرض' : 'پیش‌فرض کن'}" data-tip-en="${o.dataset.pinned !== undefined ? 'Default' : 'Make default'}"><svg class="size-3.5"><use href="#i-${o.dataset.pinned !== undefined ? 'pin' : 'pin-off'}"/></svg></button>` : '')
-    + (o.dataset.del !== undefined ? `<button class="ddb opacity-60 hover:text-error" data-del="${escapeHtml(o.value)}" data-tip="حذف" data-tip-en="Delete"><svg class="size-3.5"><use href="#i-trash-2"/></svg></button>` : '') + '</li>';
-  const body = [];
-  if (recent.length) body.push(`<li class="menu-title">${T('اخیراً', 'Recent')}</li>`, ...recent.map(o => row(o).replace('</li>', `<button class="ddb opacity-60 hover:text-error" data-unrecent="${escapeHtml(o.value)}" data-tip="حذف از اخیراً" data-tip-en="Remove from recent"><svg class="size-3.5"><use href="#i-x"/></svg></button></li>`)));
-  // 170: the old editor's nesting — groups are collapsible sections; the selected option's group opens; a header shows its count
-  const groups = []; let cur = null;
-  opts.forEach(o => { const g = o.parentElement.tagName === 'OPTGROUP' ? o.parentElement.label : null; if (!cur || cur.g !== g){ cur = { g, items: [] }; groups.push(cur); } cur.items.push(o); });
-  const nested = groups.filter(x => x.g).length >= 2, title = o => `<li class="menu-title">${escapeHtml(o.text)}</li>`; m._fly = [];
-  groups.forEach((gr, gi) => { if (!gr.g){ gr.items.forEach(o => body.push(o.disabled ? title(o) : row(o))); return; }
-    if (!nested){ body.push(`<li class="menu-title">${escapeHtml(gr.g)}</li>`); gr.items.forEach(o => body.push(o.disabled ? title(o) : row(o))); return; }
-    // 171: like the old editor — a group opens to the SIDE on hover (click also opens it), its rows keep their ▶
-    const has = gr.items.some(o => o.selected), rows = gr.items.map(o => o.disabled ? title(o) : row(o)).join(''); m._fly[gi] = rows;   // 176: the group opens in a layer of its own (WebKit clipped a layer inside the scrolling list)
-    body.push(`<li class="ddgrp" data-grp="${gi}"><a class="ddghead flex items-center gap-2 ${has ? 'menu-active' : ''}" data-grp-toggle="${gi}"><span class="min-w-0 flex-1 truncate">${escapeHtml(gr.g)}</span><span class="text-xs opacity-60">${num(gr.items.length)}</span><svg class="ddchev size-3.5 opacity-70"><use href="#i-chevron-left"/></svg></a><ul class="ddin menu menu-sm hidden">${rows}</ul></li>`); });
-  const acts = (sel._actions || []).map(([icon, fa, en], k) => `<li class="${k ? '' : 'mt-1 border-t border-base-300 pt-1'}"><a data-act="${k}" class="gap-2"><svg class="size-4"><use href="#i-${icon}"/></svg>${T(fa, en)}</a></li>`).join(''); 
- const search = opts.length > 12 ? `<div class="sticky top-0 z-10 bg-base-200 p-1"><input class="input input-sm w-full" dir="auto" placeholder="${T('جست‌وجو…', 'Search…')}" oninput="filterDD(this.value)"></div>` : '';
-  m.innerHTML = search + `<ul class="menu menu-sm w-full p-1">${body.join('')}</ul>` + (acts ? `<div class="sticky bottom-0 z-10 border-t border-base-300 bg-base-200 p-1"><ul class="menu menu-sm w-full p-0">${acts.replace(/mt-1 border-t border-base-300 pt-1/, '')}</ul></div>` : '');   // 167: the actions stay in view
-  m.classList.remove('hidden'); ddFlyClose();
-  // 176: as wide as what it lists (never narrower than its button, never wider than the window allows), as tall as it is (a long list scrolls inside the room there is)
-  const r = b.getBoundingClientRect(); m.style.width = 'max-content'; m.style.maxHeight = 'none'; const nat = m.offsetWidth, w = Math.min(460, innerWidth - 16, Math.max(r.width, nat));
-  m.style.width = w + 'px'; const natH = m.scrollHeight, roomB = innerHeight - r.bottom - 12, roomT = r.top - 12, below = roomB >= Math.min(natH, 260) || roomB >= roomT;
-  m.style.maxHeight = Math.max(120, Math.min(natH, below ? roomB : roomT)) + 'px';
-  const rtl = m.dir === 'rtl'; m.style.left = Math.max(8, Math.min(innerWidth - w - 8, rtl ? r.right - w : r.left)) + 'px';
-  m.style.top = (below ? r.bottom + 4 : Math.max(8, r.top - 4 - parseFloat(m.style.maxHeight))) + 'px';
-  { const mr = m.getBoundingClientRect(), wf = Math.min(320, innerWidth - 16), roomL = mr.left - 8, roomR = innerWidth - mr.right - 8;   // the side a group opens to — and its chevron points there
-    m._side = (rtl ? roomL >= wf || roomL >= roomR : !(roomR >= wf || roomR >= roomL)) ? 'left' : 'right'; m.querySelectorAll('.ddchev use').forEach(u => u.setAttribute('href', m._side === 'left' ? '#i-chevron-left' : '#i-chevron-right')); }
-  const s0 = m.querySelector('input'); if (s0) setTimeout(() => s0.focus(), 0);
-  m.onclick = ev => {
-    const gt = ev.target.closest('[data-grp-toggle]'); if (gt){ ev.stopPropagation(); ddFly(gt.closest('.ddgrp'), true); return; }
-    const p = ev.target.closest('[data-pick]'), pin = ev.target.closest('[data-pin]'), del = ev.target.closest('[data-del]');
-    const act = ev.target.closest('[data-act]'); if (act){ ev.stopPropagation(); const f = (sel._actions || [])[+act.dataset.act]; closeDD(); if (f) f[3](); return; }
- const ur = ev.target.closest('[data-unrecent]'); if (ur){ ev.stopPropagation(); const k = sel.dataset.recent; RECENT[k] = (RECENT[k] || []).filter(x => x !== ur.dataset.unrecent); try { API().settings_set({ ed_recent: RECENT }); } catch (e) {} openDD(sel, sel._btn); openDD(sel, sel._btn); return; }
-    const pv = ev.target.closest('[data-pv]'); if (pv){ ev.stopPropagation(); if (sel._preview) sel._preview(pv.dataset.pv); return; }
-    if (pin){ ev.stopPropagation(); if (sel._onPin) sel._onPin(pin.dataset.pin); closeDD(); return; }
-    if (del){ ev.stopPropagation(); if (sel._onDel) sel._onDel(del.dataset.del); closeDD(); return; }
-    if (p){ sel.value = p.dataset.pick; sel.dispatchEvent(new Event('change', { bubbles: true })); closeDD(); }
-  };
-  m.onkeydown = ev => {
-    const items = [...m.querySelectorAll('li:not(.hidden) [data-pick]')], i = items.indexOf(document.activeElement);
-    if (ev.key === 'Escape'){ closeDD(); b.focus(); }
-    else if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp'){ ev.preventDefault(); const n = items[(i + (ev.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]; n && (n.tabIndex = 0, n.focus()); }
-    else if (ev.key === 'Enter' && i >= 0){ ev.preventDefault(); items[i].click(); }
-  };
-}
-function filterDD(q){ q = q.trim().toLowerCase(); const m = $('ddMenu'); m.querySelectorAll('li[data-v]').forEach(li => li.classList.toggle('hidden', !!q && !li.textContent.toLowerCase().includes(q)));
-  if (q) ddFlyClose(); m.querySelectorAll('.ddgrp').forEach(li => { const ul = li.querySelector('.ddin'), hd = li.querySelector('.ddghead'); if (q){ ul.classList.remove('hidden'); hd.classList.add('hidden'); li.classList.toggle('hidden', ![...ul.children].some(x => !x.classList.contains('hidden'))); } else { ul.classList.add('hidden'); hd.classList.remove('hidden'); li.classList.remove('hidden'); } }); }   // 171: a search lists matches inline
-document.addEventListener('pointerdown', e => { const m = $('ddMenu'); if (!m.classList.contains('hidden') && !m.contains(e.target) && !(m._sel && m._sel._btn && m._sel._btn.contains(e.target))) closeDD(); });
+// 177: enh/refreshEnh/closeDD/openDD live in controls.js (daisyUI select = the native list; menus = daisyUI dropdowns)
 
 // =====================================================================================
 // 159 · MUSIC — library + providers + Lyria as tabs, style chips that search at once,
@@ -1173,7 +1108,7 @@ const styleLabel = st => T(({ ambient: 'آرام و فضایی', piano: 'پیا�
 function pickStyle(st){ mStyle = st; musicTab(mTab); }
 async function loadMusicLib(){
   const r = await API().music_list(); MUSIC_LIB = (r && r.items) || [];
-  $('musicResults').innerHTML = MUSIC_LIB.length ? MUSIC_LIB.map((it, k) => musicRow('lib' + k, it.builtin ? T(it.title, it.title_en || it.title) : (it.title || it.name || it.file), [it.seconds ? num(Math.round(it.seconds)) + T(' ثانیه', ' s') : '', it.credit || it.license || ''],
+  $('musicResults').innerHTML = MUSIC_LIB.length ? MUSIC_LIB.map((it, k) => musicRow('lib' + k, it.builtin ? T(it.title, it.title_en || it.title) : (it.title || it.name || it.file), [it.seconds ? secs(it.seconds, 0) : '', it.credit || it.license || ''],
       `musicPreviewLib(${k})`, `useLib(${k})`, `delLib(${k})`)).join('')
     : `<li class="p-4 text-sm text-base-content/60">${T('هنوز موسیقی‌ای در کتابخانه نیست؛ از زبانه‌های دیگر پیدا کنید یا فایلی وارد کنید.', 'No music yet; find some in the other tabs or import a file.')}</li>`;
 }
@@ -1191,7 +1126,7 @@ async function searchMusic(page){
   try {
     const r = await API().music_search(mTab, $('mQuery').value.trim(), '', mStyle, page); if (!r.ok) throw new Error(r.error || '');
     MUSIC_HITS = r.items || []; mPage = r.page || page;
-    $('musicResults').innerHTML = MUSIC_HITS.length ? MUSIC_HITS.map((it, k) => musicRow('hit' + k, it.title, [it.author, it.seconds ? num(Math.round(it.seconds)) + T(' ثانیه', ' s') : '', it.license], `togglePreview('hit${k}', MUSIC_HITS[${k}].preview)`, `chooseHit(${k})`)).join('')
+    $('musicResults').innerHTML = MUSIC_HITS.length ? MUSIC_HITS.map((it, k) => musicRow('hit' + k, it.title, [it.author, it.seconds ? secs(it.seconds, 0) : '', it.license], `togglePreview('hit${k}', MUSIC_HITS[${k}].preview)`, `chooseHit(${k})`)).join('')
       : `<li class="p-4 text-sm text-base-content/60">${T('چیزی پیدا نشد؛ سبک یا واژهٔ دیگری امتحان کنید.', 'Nothing found; try another style or word.')}</li>`;
     $('mPager').classList.toggle('hidden', !(mPage > 1 || r.has_more)); $('mPager').classList.toggle('flex', mPage > 1 || !!r.has_more);
     $('mPageNo').textContent = T('صفحهٔ ', 'Page ') + num(mPage); $('mPrev').disabled = mPage <= 1; $('mNext').disabled = !r.has_more;
@@ -1333,6 +1268,7 @@ function fillExtras(){
   $('pEngine')._onPin = async v => { DEFAULTS.engine = v; try { await API().settings_set({ default_engine: v }); } catch (e) {} say(T('موتورِ پیش‌فرض: ', 'Default engine: ') + ($('pEngine').selectedOptions[0] || {}).text, 'ok'); fillInspector(); };
   [...$('pModel').options].forEach(o => { o.dataset.pin = ''; if (o.value === DEFAULTS.model) o.dataset.pinned = ''; else delete o.dataset.pinned; });
   $('pModel')._onPin = async v => { DEFAULTS.model = v; try { await API().settings_set({ default_g_model: v }); } catch (e) {} say(T('مدلِ پیش‌فرضِ گوگل: ', 'Default Google model: ') + v, 'ok'); fillInspector(); };
+  refreshEnh($('pEngine')); refreshEnh($('pModel'));   // 177: their pin buttons
   // Chatterbox samples you added can be deleted
   const cv = $('cbxVoice'); /* 164: bundled voices are never deletable — only your samples carry data-del (cbxOptions) */
   cv._onDel = async id => { const r = await API().cbx_voice_delete(id); if (r && r.ok){ if (S.proj.cbx.voice === id) S.proj.cbx.voice = 'default'; await loadEngineLists(); fillInspector(); } else say((r && r.error) || '', 'err'); };
@@ -1356,8 +1292,12 @@ async function libSearch(more){
               contexts: $('lbCtx').value ? [$('lbCtx').value] : [], search: $('lbSearch').value.trim(), page_size: 60 };
   const r = await API().g38_voices({ filters: f, page_token: more ? libNext : '' });
   if (!r || !r.ok){ $('lbList').innerHTML = `<li class="p-4 text-sm text-error">${escapeHtml((r && r.error) || '')}</li>`; return; }
-  libHits = libHits.concat(r.voices || []); libNext = r.next || '';
-  $('lbNote').classList.toggle('hidden', !r.fell_back); $('lbNote').textContent = T('صدایی با این زبان در کتابخانه برچسب نخورده؛ همهٔ صداها نشان داده می‌شوند — مدل زبانِ متن را خودش تشخیص می‌دهد.', 'No voices are tagged with this language; showing the whole library — the model detects the text language itself.');
+  libHits = libHits.concat(r.voices || []); libNext = r.next || ''; LIB_FB = !!r.fell_back; renderLibList();
+}
+// 177: the list draws itself again in the language on screen (the language switch with the dialog open)
+var LIB_FB = false;
+function renderLibList(){
+  $('lbNote').classList.toggle('hidden', !LIB_FB); $('lbNote').textContent = T('صدایی با این زبان در کتابخانه برچسب نخورده؛ همهٔ صداها نشان داده می‌شوند — مدل زبانِ متن را خودش تشخیص می‌دهد.', 'No voices are tagged with this language; showing the whole library — the model detects the text language itself.');
   $('lbList').innerHTML = libHits.length ? libHits.map((v, k) => `<li class="list-row items-center py-2"><button class="btn btn-ghost btn-sm btn-circle" data-prev="lv${k}" onclick="libPreview(${k})" aria-label="preview"><svg class="size-4"><use href="#i-play"/></svg></button>
       <div class="min-w-0"><div class="truncate text-sm" dir="auto">${escapeHtml(v.name || v.id)}</div><div class="truncate text-xs text-base-content/60" dir="auto">${escapeHtml([v.language, v.accent, v.gender, v.pitch, v.description].filter(Boolean).join(' · '))}</div></div>
       <button class="btn btn-sm border-base-content/15 bg-base-100" onclick="libPick(${k})">${T('انتخاب', 'Choose')}</button></li>`).join('')
@@ -1384,15 +1324,15 @@ async function createDesign(){
   const name = $('dsName').value.trim(), prompt = $('dsPrompt').value.trim(); if (!prompt) return say(T('توضیحِ صدا را بنویسید.', 'Describe the voice.'), 'err');
   setBusy(true); say(T('صدا طراحی می‌شود…', 'Designing the voice…'), 'ok');
   try { const r = await API().g38_design({ name, prompt, gender: $('dsGender').value }); if (!r.ok) throw new Error(r.error || '');
-    await loadG38Lists(); $('designDlg').close(); setProj('g_voice', 'design:' + r.design.id); say(T('صدا طراحی و انتخاب شد.', 'Voice designed and selected.'), 'ok'); }
+    await loadG38Lists(); $('designDlg').close(); setProj('g_voice', 'design:' + r.design.id); makeSampleNow('google', 'design:' + r.design.id); say(T('صدا طراحی و انتخاب شد.', 'Voice designed and selected.'), 'ok'); }
   catch (e) { say(e.message || String(e), 'err'); } finally { setBusy(false); }
 }
 function openClone(){ clPick = {}; $('clRef').textContent = ''; $('clCon').textContent = ''; $('clConsent').textContent = CONSENT; $('cloneDlg').showModal(); }
-async function pickClone(kind){ const r = await API().g38_pick_audio({ kind }); if (!r || !r.ok) return; clPick[kind] = r; $(kind === 'ref' ? 'clRef' : 'clCon').textContent = (r.name || '') + (r.seconds ? ` — ${num(Math.round(r.seconds))} ${T('ثانیه', 's')}` : ''); }
+async function pickClone(kind){ const r = await API().g38_pick_audio({ kind }); if (!r || !r.ok) return; clPick[kind] = r; $(kind === 'ref' ? 'clRef' : 'clCon').textContent = (r.name || '') + (r.seconds ? ` — ${secs(r.seconds, 0)}` : ''); }
 async function createClone(){
   if (!clPick.ref || !clPick.consent) return say(T('هر دو فایل لازم است.', 'Both files are needed.'), 'err');
   setBusy(true); try { const r = await API().g38_clone_create({ name: $('clName').value.trim(), ref: clPick.ref, consent: clPick.consent }); if (!r.ok) throw new Error(r.error || '');
-    await loadG38Lists(); $('cloneDlg').close(); setProj('g_voice', 'clone:' + r.clone.id); if (r.clone.note) say(r.clone.note, 'ok'); else say(T('صدا ذخیره و انتخاب شد.', 'Voice saved and selected.'), 'ok'); }
+    await loadG38Lists(); $('cloneDlg').close(); setProj('g_voice', 'clone:' + r.clone.id); makeSampleNow('google', 'clone:' + r.clone.id); if (r.clone.note) say(r.clone.note, 'ok'); else say(T('صدا ذخیره و انتخاب شد.', 'Voice saved and selected.'), 'ok'); }
   catch (e) { say(e.message || String(e), 'err'); } finally { setBusy(false); }
 }
 // ---- characters (a line «Name: …» is read in that character's voice)
@@ -1418,19 +1358,21 @@ async function fishSearch(page){
   flPage = Math.max(1, page || 1); $('flList').innerHTML = `<li class="p-4 text-sm text-base-content/60">${T('در حال جست‌وجو…', 'Searching…')}</li>`;
   const r = await API().fish_library($('flQuery').value.trim(), '', $('flLang').value, false, $('flSort').value, flPage, '', 'curated');
   if (!r || !r.ok){ $('flList').innerHTML = `<li class="p-4 text-sm text-error">${escapeHtml((r && r.error) || '')}</li>`; return; }
-  flHits = r.items || r.voices || [];
+  flHits = r.items || r.voices || []; FL_MORE = !!(r.has_more || (r.total && flPage * 20 < r.total)); renderFishList();
+}
+var FL_MORE = false;
+function renderFishList(){   // 177: drawn again in the language on screen
   $('flList').innerHTML = flHits.length ? flHits.map((v, k) => { const sample = v.sample || v.preview || (v.samples && v.samples[0] && (v.samples[0].audio || v.samples[0].url)) || '';
       return `<li class="list-row items-center py-2">${sample ? `<button class="btn btn-ghost btn-sm btn-circle" data-prev="fl${k}" onclick="togglePreview('fl${k}', ${escapeHtml(JSON.stringify(sample))})" aria-label="preview"><svg class="size-4"><use href="#i-play"/></svg></button>` : '<span></span>'}
       <div class="min-w-0"><div class="truncate text-sm" dir="auto">${escapeHtml(v.title || v.name || v.id || v._id)}</div><div class="truncate text-xs text-base-content/60" dir="auto">${escapeHtml([(v.author && (v.author.nickname || v.author)) || '', (v.languages || []).join(', '), v.description || ''].filter(Boolean).join(' · '))}</div></div>
       <button class="btn btn-sm border-base-content/15 bg-base-100" onclick="fishPick(${k})">${T('انتخاب', 'Choose')}</button></li>`; }).join('')
     : `<li class="p-4 text-sm text-base-content/60">${T('چیزی پیدا نشد.', 'Nothing found.')}</li>`;
-  const more = !!(r.has_more || (r.total && flPage * 20 < r.total));
-  $('flPager').classList.toggle('hidden', !(flPage > 1 || more)); $('flPager').classList.toggle('flex', flPage > 1 || more); $('flPageNo').textContent = T('صفحهٔ ', 'Page ') + num(flPage); $('flNext').disabled = !more;
+  const more = FL_MORE; $('flPager').classList.toggle('hidden', !(flPage > 1 || more)); $('flPager').classList.toggle('flex', flPage > 1 || more); $('flPageNo').textContent = T('صفحهٔ ', 'Page ') + num(flPage); $('flNext').disabled = !more;
 }
 function fishPick(k){ const v = flHits[k], id = v._id || v.id; rememberFish(id, v.title || v.name); stopPreview(); $('fishLibDlg').close(); setEng('fishVoice', id); fillInspector(); }
 async function fishCloneGo(){
   setBusy(true); try { const r = await API().fish_clone($('fcTitle').value.trim(), $('fcTrans').value.trim(), $('fcEnh').checked); if (!r.ok){ if (r.error !== 'cancelled') throw new Error(r.error || ''); return; }
-    await loadEngineLists(); $('fishCloneDlg').close(); if (r.id) setEng('fishVoice', r.id); fillInspector(); say(T('صدا ساخته و انتخاب شد.', 'Voice created and selected.'), 'ok'); }
+    await loadEngineLists(); $('fishCloneDlg').close(); if (r.id){ setEng('fishVoice', r.id); makeSampleNow('fish', r.id); } fillInspector(); say(T('صدا ساخته و انتخاب شد.', 'Voice created and selected.'), 'ok'); }
   catch (e) { say(e.message || String(e), 'err'); } finally { setBusy(false); }
 }
 async function fishDesignGo(){
@@ -1447,12 +1389,13 @@ async function fishKeep(k){
   catch (e) { say(e.message || String(e), 'err'); } finally { setBusy(false); }
 }
 // ---- connection and quota
-async function openSettings(){
-  $('settingsDlg').showModal(); $('netReport').classList.add('hidden');
+async function openSettings(){ $('settingsDlg').showModal(); return fillSettings(); }
+async function fillSettings(){   // 177: also when the language switches with the dialog open
+  $('netReport').classList.add('hidden');
   try { const r = await API().net_get(); if (r && r.ok){ $('netMode').value = r.mode || 'auto'; refreshEnh($('netMode')); $('netCustom').value = r.custom || ''; $('netCustomRow').classList.toggle('hidden', r.mode !== 'custom'); $('netRoute').textContent = r.route ? T('مسیرِ فعلی: ', 'Current route: ') + r.route : ''; } } catch (e) {}
   try { const q = await API().quota_headroom(); if (q && q.ok) $('quotaLine').textContent = q.total ? T(`از ${FA(q.total)} کلیدِ گوگل، ${FA(q.usable)} کلید هنوز سهمیه دارد.`, `${q.usable} of ${q.total} Google keys still have quota.`) : T('هنوز کلیدِ گوگلی اضافه نشده.', 'No Google keys yet.'); } catch (e) {}
   try { const ts = typeof API().timing_state === 'function' ? await API().timing_state() : null; const el = $('timingLine'); if (el && ts && ts.ok)   // 176
-    el.textContent = ts.state === 'ready' ? T('زمان‌بندیِ واژه‌ها: روی همین دستگاه — بدونِ درخواست به گوگل.', 'Word timing: on this machine — no requests to Google.') : ts.state === 'downloading' || ts.state === 'unpacking' ? T(`زمان‌بندیِ واژه‌ها: مدل دارد دانلود می‌شود (${ts.pct}٪).`, `Word timing: the model is downloading (${ts.pct}%).`) : ts.state === 'failed' ? T('زمان‌بندیِ واژه‌ها: مدل آماده نشد؛ فعلاً با گوگل.', 'Word timing: the model could not be prepared; Google is used for now.') : T('زمان‌بندیِ واژه‌ها: مدل هنوز دانلود نشده؛ فعلاً با گوگل.', 'Word timing: the model is not downloaded yet; Google is used for now.'); } catch (e) {}
+    el.textContent = ts.state === 'ready' ? T('زمان‌بندیِ واژه‌ها: روی همین دستگاه — بدونِ درخواست به گوگل.', 'Word timing: on this machine — no requests to Google.') : ts.state === 'downloading' || ts.state === 'unpacking' ? T(`زمان‌بندیِ واژه‌ها: مدل دارد دانلود می‌شود (${ts.pct}%).`, `Word timing: the model is downloading (${ts.pct}%).`) : ts.state === 'failed' ? T('زمان‌بندیِ واژه‌ها: مدل آماده نشد؛ فعلاً با گوگل.', 'Word timing: the model could not be prepared; Google is used for now.') : T('زمان‌بندیِ واژه‌ها: مدل هنوز دانلود نشده؛ فعلاً با گوگل.', 'Word timing: the model is not downloaded yet; Google is used for now.'); } catch (e) {}
 }
 async function netSave(){ await API().net_set({ mode: $('netMode').value, custom: $('netCustom').value }); say(T('مسیرِ اتصال ذخیره شد.', 'Route saved.'), 'ok'); netStatus(); }
 async function netTest(){ $('netReport').classList.remove('hidden'); $('netReport').textContent = T('در حال آزمایش…', 'Testing…'); await API().net_set({ mode: $('netMode').value, custom: $('netCustom').value });
@@ -1460,10 +1403,13 @@ async function netTest(){ $('netReport').classList.remove('hidden'); $('netRepor
 // ---- document
 async function saveText(){ const text = orderedLines().map(id => S.lines[id].text).join('\n'); const r = await API().save_text(text, 'txt'); if (r && r.ok) say(T('متن ذخیره شد.', 'Text saved.'), 'ok'); else if (r && r.error && r.error !== 'cancelled') say(r.error, 'err'); }
 async function newDoc(){ if (!(await askYes(T('پروژهٔ تازه', 'New project'), T('سند و ویدیوی فعلی پاک می‌شوند (پروژه‌ای که ذخیره کرده‌اید سرِ جایش می‌ماند).', 'The current document and video are cleared (a project you saved stays where it is).'), T('شروعِ پروژهٔ تازه', 'Start a new project')))) return;   // 175: the app's dialog, not confirm()
-  remember(); try { await API().new_document(); } catch (e) {} S.lines = {}; S.tracks.forEach(t => t.clips = []); selClip = null; sel = new Set(); S.music.file = null; S.music.name = null; S.projPath = null;
+  remember(); try { await API().new_document(); } catch (e) {} S.lines = {}; S.tracks.forEach(t => t.clips = []); selClip = null; sel = new Set(); S.music.file = null; S.music.name = null; S.projPath = null; projFileShow(); document.title = 'آوای جاوید شاه';
   if (typeof V0 === 'function'){ V = V0(); vSel = null; if (typeof ensureLayers === 'function') ensureLayers(); if (typeof vDraw === 'function') try { vDraw(); } catch (err) {} }   // 171: the video mode is flushed too
   ensureOneLine(); renderScript(); showInsp('proj'); autosave(); }
 document.querySelectorAll('#netMode, #lbLang, #lbGender, #lbPitch, #lbCtx, #dsGender, #flLang, #flSort').forEach(el => enh(el));
+// 177: a library's filters search at once (they waited for the Search button, so choosing one seemed to do nothing)
+['lbLang', 'lbGender', 'lbPitch', 'lbCtx'].forEach(id => { const el = $(id); if (el) el.addEventListener('change', () => libSearch()); });
+['flLang', 'flSort'].forEach(id => { const el = $(id); if (el) el.addEventListener('change', () => fishSearch(1)); });
 
 // 159: after choosing music, land on its settings — the bed clip selected, the music panel open (as before)
 function focusMusic(){ const mc0 = musicClips()[0]; if (mc0){ selClip = mc0.id; sel = new Set(); renderTimeline(); showInsp('music'); showMusicInspector(); } autosave(); }
@@ -1519,18 +1465,38 @@ async function exportAudio(mode){
     const suffix = comp ? '' : 'voice'; let path, secs;
     if (typeof API().timeline_export === 'function'){ const r = await API().timeline_export(spec, cfg, suffix); if (!r.ok){ if (r.error === 'cancelled') return; throw new Error(r.error || T('خطای ناشناخته', 'Unknown error')); } path = r.path; secs = r.seconds; }
     else { const r = await API().timeline_files(spec, cfg); if (!r.ok) throw new Error(r.error || T('خطای ناشناخته', 'Unknown error')); const sv = await API().save_mp3(hasMusic ? r.b64_music : r.b64, suffix); if (!sv.ok) return; path = sv.path; secs = r.seconds; }
-    say(T('ذخیره شد: ', 'Saved: ') + path + ' — ' + num(secs) + T(' ثانیه', ' s') + (comp ? T(' — ترکیبِ کامل', ' — full composition') : T(' — فقط گفتار', ' — voice only')), 'ok'); doneToast(T('صدا ساخته شد', 'Audio exported'), path);
+    say(T('ذخیره شد: ', 'Saved: ') + path + ' — ' + (+secs || 0).toFixed(1) + 's' + (comp ? T(' — ترکیبِ کامل', ' — full composition') : T(' — فقط گفتار', ' — voice only')), 'ok'); doneToast(T('صدا ساخته شد', 'Audio exported'), path);
   } catch (err) { say(isCancel(err) ? T('لغو شد.', 'Canceled.') : (err.message || String(err)), isCancel(err) ? 'ok' : 'err'); }
   finally { setBusy(false); }
 }
 // ---- LETTER precision: inside a word, time is spread over its letters by weight
 //      (diacritics and joiners take no time; long vowels a little more)
 const letterW = ch => /[\u064B-\u0655\u0670\u200c\u200d\s]/.test(ch) ? 0 : (/[اآوی]/.test(ch) ? 1.3 : 1);
+// 177: the gap between two timed words: the words the timing model skipped (a number read aloud, «۲۰۲۶») and the sound tags
+//      there («<chuckle>») share its time in order — the words at a speaking pace (at most 60% of the gap when a tag is
+//      there too), each tag the rest; the caret walks through a word and holds on a tag's chip (moving through its label)
+//      while it sounds. Punctuation alone is not timed: the caret waits at the next word as before.
+const gapWordSec = w => { const d = w.replace(/[^0-9۰-۹٠-٩]/g, '').length; return d ? 0.3 * d + 0.1 : Math.max(0.15, 0.075 * w.length); };
+function gapChar(text, a, ta, b, tb, t){
+  const seg = text.slice(a, b), re = /<[^<>\n]{1,40}>|\[[^\[\]\n]{1,40}\]|[^\s<\[]+/g, items = []; let m;
+  while ((m = re.exec(seg))){ const tag = /^[<\[]/.test(m[0]); if (!tag && !/[\p{L}\p{N}]/u.test(m[0])) continue; items.push({ a: a + m.index, b: a + m.index + m[0].length, tag, sec: tag ? 0 : gapWordSec(m[0]) }); }
+  const gap = tb - ta; if (!items.length || gap < 0.05) return null;
+  const nTag = items.filter(x => x.tag).length, wSum = items.reduce((s, x) => s + x.sec, 0), wTot = nTag ? Math.min(wSum, gap * 0.6) : gap, k = wSum > 0 ? wTot / wSum : 0, tagSec = nTag ? (gap - (wSum > 0 ? wTot : 0)) / nTag : 0;
+  let cur = ta;
+  for (let j = 0; j < items.length; j++){ const x = items[j], d = x.tag ? tagSec : x.sec * k;
+    if (t < cur + d || j === items.length - 1){ const f = d > 0 ? Math.min(1, Math.max(0, (t - cur) / d)) : 1;
+      if (x.tag){ const n = Math.max(1, x.b - x.a - 2); return x.a + 1 + Math.min(n - 1, Math.floor(f * n)); }
+      return x.a + Math.min(x.b - x.a, Math.floor(f * (x.b - x.a))); }
+    cur += d; }
+  return null; }
 function timeToChar(c, text, t){
   const W = clipWords(c, text);
   if (!W) return timeToCharEst(c, text, t);
   for (let i = 0; i < W.length; i++){ const w = W[i];
-    if (t < w.t0) return w.c0;
+    if (t < w.t0){   // 177: between two words — what sounds there (a sound tag, a number the timing model skipped) holds the caret
+      const a = i ? W[i - 1].c1 : 0, ta = i ? W[i - 1].t1 : (c.src ? c.src[0] : c.in);
+      if (t >= ta){ const g = gapChar(text, a, ta, w.c0, w.t0, t); if (g != null) return g; }
+      return w.c0; }
     if (t <= w.t1){ const tot = [...text.slice(w.c0, w.c1)].reduce((a, ch) => a + letterW(ch), 0) || 1; let target = (t - w.t0) / Math.max(0.01, w.t1 - w.t0) * tot, k = w.c0;
       while (k < w.c1 && target > 0){ target -= letterW(text[k]); if (target >= 0) k++; } return k; } }
   return text.length;
@@ -1631,7 +1597,7 @@ const SECTION_RESET = {
 const rstBtn = (attr, tip, tipEn) => `<button type="button" class="rst btn btn-ghost btn-xs btn-square opacity-50 hover:opacity-100" ${attr} data-tip="${tip}" data-tip-en="${tipEn}" aria-label="reset"><svg class="size-3.5"><use href="#i-rotate-ccw"/></svg></button>`;
 function addResetButtons(){
   Object.keys(RESETS).forEach(id => { const el = $(id); if (!el) return; const fs = el.closest('fieldset'); const lg = fs && fs.querySelector('legend'); if (!lg || lg.querySelector('.rst')) return;
-    lg.classList.add('flex', 'w-full', 'items-center', 'justify-between'); lg.insertAdjacentHTML('beforeend', rstBtn(`data-rst="${id}"`, 'بازنشانی به پیش‌فرض', 'Reset to default')); });
+    lg.insertAdjacentHTML('beforeend', rstBtn(`data-rst="${id}"`, 'بازنشانی به پیش‌فرض', 'Reset to default')); legendTidy(lg); });
   Object.keys(SECTION_RESET).forEach(id => { const box = $(id); if (!box || box.querySelector(':scope > .rstsec')) return;
     box.insertAdjacentHTML('afterbegin', `<div class="rstsec flex justify-end"><button type="button" class="btn btn-ghost btn-xs gap-1 opacity-70 hover:opacity-100" data-rstsec="${id}"><svg class="size-3.5"><use href="#i-rotate-ccw"/></svg>${T('بازنشانیِ همهٔ تنظیم‌های این موتور', "Reset all of this engine's settings")}</button></div>`); });
 }
@@ -1641,9 +1607,12 @@ document.addEventListener('click', e => {
   if (s2){ e.preventDefault(); remember(); SECTION_RESET[s2.dataset.rstsec](); fillInspector(); renderScript(); autosave(); say(T('تنظیم‌های این موتور به پیش‌فرض برگشت.', "This engine's settings are back to default."), 'ok'); }
 }, true);
 // ---- PROJECT FILES (.ava): save and reopen exactly as it was
+// 177: the project's file name sits beside «Project» in the inspectors (the full path on hover); «Not saved yet» before
+const projFileName = () => S.projPath ? (String(S.projPath).split(/[\\/]/).pop() || '') : '';
+function projFileShow(){ document.querySelectorAll('.projfile').forEach(el => { const n = projFileName(); el.textContent = n || T('ذخیره‌نشده', 'Not saved yet'); el.title = S.projPath || ''; el.classList.toggle('badge-primary', !!n); el.classList.toggle('badge-soft', !!n); el.classList.toggle('badge-ghost', !n); }); }
 async function projectSave(as){   // 170: Save writes over the project's own file; Save As asks for a new one; the status line reports
   const path = !as && S.projPath ? S.projPath : null, r = await API().project_save(snapshot(), path);
-  if (r && r.ok){ S.projPath = r.path; say(T('پروژه ذخیره شد: ', 'Project saved: ') + r.path, 'ok'); document.title = (r.path.split('/').pop() || '') + ' — آوای جاوید شاه'; }
+  if (r && r.ok){ S.projPath = r.path; say(T('پروژه با موفقیت ذخیره شد: ', 'Project saved successfully: ') + projFileName(), 'success'); document.title = projFileName() + ' — آوای جاوید شاه'; projFileShow(); }
   else if (r && r.error !== 'cancelled') say((r && r.error) || '', 'err'); }
 function projectSaveAs(){ return projectSave(true); }
 document.addEventListener('keydown', ev => { if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && ev.key.toLowerCase() === 's'){ ev.preventDefault(); projectSave(ev.shiftKey); } });
@@ -1655,7 +1624,7 @@ async function projectOpen(){
     for (const g of gids){ const a = await API().gulp_audio(g); if (a && a.ok) await storeAudio(g, a.b64); }
     for (const L of Object.values(S.lines)) for (const g of [...Object.values(L.ovlA || {}), ...(L.reacts || []).map(r => r.gulp)]) if (g != null && !AUD.get(g)){ const a = await API().gulp_audio(g); if (a && a.ok) await storeAudio(g, a.b64); }   // 176: the reactions' own recordings
     if (r.music && r.music.b64){ await setMusicTrack(r.music.b64, null, r.music.name); if (musicCfg) Object.assign(S.music, musicCfg, { file: null }); }
-    renderScript(); fillInspector(); autosave(); say(T('پروژه باز شد.', 'Project opened.'), 'ok'); retimeWords().catch(() => {}); }
+    renderScript(); fillInspector(); autosave(); projFileShow(); document.title = projFileName() + ' — آوای جاوید شاه'; say(T('پروژه باز شد: ', 'Project opened: ') + projFileName(), 'ok'); retimeWords().catch(() => {}); }
   catch (e) { say(e.message || String(e), 'err'); } finally { setBusy(false); }
 }
 
@@ -1680,7 +1649,7 @@ function reflowSentences(text, ...rest){
 
 // 162 · ▶ on every voice menu row
 function previewHooks(){
-  const set = (id, eng) => { const el = $(id); if (!el) return; el.dataset.preview = eng; el._preview = v => previewVoice(eng, v || null); };
+  const set = (id, eng) => { const el = $(id); if (!el) return; el.dataset.preview = eng; el._preview = v => previewVoice(eng, v || null); try { refreshEnh(el); } catch (e) {} };   // 177: ▶ is there from the start
   set('pVoice', 'google'); set('lnVoice', 'google'); set('fishVoice', 'fish'); set('cbxVoice', 'chatterbox');
 }
 
@@ -1705,7 +1674,7 @@ function openVolPop(ev, i){
   const t = S.tracks[i], v = t.volume ?? 1, r = ev.currentTarget.getBoundingClientRect();
   p.innerHTML = `<div class="mb-2 flex items-center justify-between text-xs font-semibold"><span>${T('بلندیِ', 'Volume of')} ${escapeHtml(T(t.name, t.en))}</span><span id="volVal" class="tabular-nums text-base-content/70" dir="ltr">${Math.round(v * 100)}%</span></div>
     <div class="flex items-center gap-2"><input type="range" min="0" max="2" step="0.05" value="${v}" class="range range-xs flex-1 text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="setTrackVolume(${i}, +this.value, this); $('volVal').textContent = Math.round(this.value * 100) + '%'">
-    <button class="btn btn-ghost btn-xs btn-square" onclick="setTrackVolume(${i}, 1, null); openVolPop({ stopPropagation(){}, currentTarget: document.querySelector('[data-ti=&quot;${i}&quot;] [aria-label=volume]') || this }, ${i})" data-tip="بازنشانی به ۱۰۰٪" data-tip-en="Reset to 100%"><svg class="size-3.5"><use href="#i-rotate-ccw"/></svg></button></div>`;
+    <button class="btn btn-ghost btn-xs btn-square" onclick="setTrackVolume(${i}, 1, null); openVolPop({ stopPropagation(){}, currentTarget: document.querySelector('[data-ti=&quot;${i}&quot;] [aria-label=volume]') || this }, ${i})" data-tip="بازنشانی به 100%" data-tip-en="Reset to 100%"><svg class="size-3.5"><use href="#i-rotate-ccw"/></svg></button></div>`;
   p.classList.remove('hidden'); p.style.top = Math.min(innerHeight - 110, r.bottom + 6) + 'px'; p.style.left = Math.max(8, Math.min(innerWidth - 232, r.left - 100)) + 'px';
 }
 
@@ -1748,11 +1717,14 @@ function speakableLine(id){ const L = S.lines[id]; if (!L || !(L.text || '').tri
   return /[\p{L}\p{N}]/u.test(spoken(id).replace(/<[^>]*>|\|[^|]*\||\{[^}]*\}|\/[^/\s][^/]*\//g, '')); }
 
 // 167 · voice library / design / cloning live at the bottom of the voice menu (no more row of truncated buttons)
+function gVoiceActs(target, model){ if (!/3\.8/.test(model || '')) return [];
+  return [['library-big', 'کتابخانهٔ صداهای گوگل…', 'Google voice library…', () => openLib(target)], ['wand-sparkles', 'طراحیِ صدا…', 'Design a voice…', () => $('designDlg').showModal()], ['audio-lines', 'شبیه‌سازیِ صدا…', 'Clone a voice…', () => openClone()]]; }
 const _previewHooks166 = previewHooks;
 previewHooks = function(){ _previewHooks166();
-  const g = is38() ? [['library-big', 'کتابخانهٔ صداهای گوگل…', 'Google voice library…', null], ['wand-sparkles', 'طراحیِ صدا…', 'Design a voice…', () => $('designDlg').showModal()], ['audio-lines', 'شبیه‌سازیِ صدا…', 'Clone a voice…', () => openClone()]] : [];
-  ['pVoice', 'lnVoice'].forEach(id => { if ($(id)) $(id)._actions = g.map(a => a[3] ? a : [a[0], a[1], a[2], () => openLib(id === 'pVoice' ? 'proj' : 'line')]); });
+  // 177: asked each time the list is drawn (a switch of model adds or removes them); the line's list gets them in fillLineInspector
+  if ($('pVoice')) $('pVoice')._actions = () => gVoiceActs('proj', S.proj.g_model);
   if ($('fishVoice')) $('fishVoice')._actions = [['library-big', 'کتابخانهٔ Fish Audio…', 'Fish Audio library…', () => openFishLib()], ['audio-lines', 'شبیه‌سازیِ صدا…', 'Clone a voice…', () => $('fishCloneDlg').showModal()], ['wand-sparkles', 'طراحیِ صدا…', 'Design a voice…', () => $('fishDesignDlg').showModal()]];
+  ['pVoice', 'fishVoice'].forEach(id => { try { refreshEnh($(id)); } catch (e) {} });   // 177: the lists show these entries from the start
 };
 
 // 169: without word timings the caret spread the letters over the WHOLE clip, silences included, and fell behind the voice.
@@ -1806,7 +1778,7 @@ function renderSfxLib(d){ d = d || $('sfxDlg'); if (!d) return; const fams = sfx
     <div class="flex items-center justify-between gap-3 px-5 pt-5"><h3 class="text-lg font-bold">${T('کتابخانهٔ افکت‌های صوتی', 'Sound-effects library')} <span class="text-sm font-normal text-base-content/60">${num(sfxItems().length)}</span></h3><form method="dialog"><button class="btn btn-ghost btn-circle" aria-label="close"><svg class="size-5"><use href="#i-x"/></svg></button></form></div>
     <div class="px-5 pt-3"><input class="input input-sm w-full" placeholder="${T('جست‌وجو…', 'Search…')}" value="${escapeHtml(SFX_Q)}" oninput="SFX_Q = this.value; renderSfxLib(); this.focus(); this.setSelectionRange(this.value.length, this.value.length)"></div>
     <div class="flex flex-wrap gap-1.5 px-5 pt-3">${[['all', T('همه', 'All')], ...Object.entries(fams).map(([k, f]) => [k, T(f.fa, f.en)])].map(([k, nm]) => `<button class="btn btn-xs rounded-full ${SFX_FAM === k ? 'btn-primary' : 'border-base-content/15 bg-base-100'}" onclick="SFX_FAM = '${k}'; renderSfxLib()">${escapeHtml(nm)}</button>`).join('')}</div>
-    <div class="min-h-0 flex-1 overflow-auto px-3 py-3"><ul class="menu menu-sm w-full p-0">${items.map(it => `<li class="flex flex-row items-center gap-1"><a class="min-w-0 flex-1 gap-2" onclick="addSfx('${it.file}')"><span class="min-w-0 flex-1"><span class="block truncate font-semibold">${escapeHtml(lang === 'fa' ? it.fa : it.en)}</span><span class="block truncate text-xs text-base-content/55">${lang === 'fa' ? escapeHtml(it.en) + ' · ' : ''}${num(it.sec)}${T('ث', ' s')}</span></span></a><button class="ddb opacity-80 hover:opacity-100" onclick="previewSfx('${it.file}')" data-tip="${T('شنیدن', 'Hear it')}"><svg class="size-3.5"><use href="#i-play"/></svg></button><button class="ddb text-primary" onclick="addSfx('${it.file}')" data-tip="${T('افزودن در جای پلی‌هد', 'Add at the playhead')}"><svg class="size-4"><use href="#i-plus"/></svg></button></li>`).join('') || `<li class="menu-title">${T('چیزی پیدا نشد.', 'Nothing found.')}</li>`}</ul></div>
+    <div class="min-h-0 flex-1 overflow-auto px-3 py-3"><ul class="menu menu-sm w-full p-0">${items.map(it => `<li class="flex flex-row items-center gap-1"><a class="min-w-0 flex-1 gap-2" onclick="addSfx('${it.file}')"><span class="min-w-0 flex-1"><span class="block truncate font-semibold">${escapeHtml(lang === 'fa' ? it.fa : it.en)}</span><span class="block truncate text-xs text-base-content/55">${lang === 'fa' ? escapeHtml(it.en) + ' · ' : ''}${secs(it.sec)}</span></span></a><button class="ddb opacity-80 hover:opacity-100" onclick="previewSfx('${it.file}')" data-tip="${T('شنیدن', 'Hear it')}"><svg class="size-3.5"><use href="#i-play"/></svg></button><button class="ddb text-primary" onclick="addSfx('${it.file}')" data-tip="${T('افزودن در جای پلی‌هد', 'Add at the playhead')}"><svg class="size-4"><use href="#i-plus"/></svg></button></li>`).join('') || `<li class="menu-title">${T('چیزی پیدا نشد.', 'Nothing found.')}</li>`}</ul></div>
     <p class="px-5 pb-4 text-xs text-base-content/55">${T('کلیک روی نام = افزودن در جای پلی‌هد. همهٔ این صداها با کد ساخته شده‌اند — بدون ضبط، بدون پروانه.', 'Click a sound to add it at the playhead. Every sound here is synthesized in code — no recordings, nothing licensed.')}</p></div><form method="dialog" class="modal-backdrop"><button>close</button></form>`; }
 async function previewSfx(file){ try { const buf = await loadSfx(file); if (SFX_PREV){ try { SFX_PREV.stop(); } catch (err) {} } const s = ac().createBufferSource(); s.buffer = buf; s.connect(ac().destination); s.start(); SFX_PREV = s; } catch (err) { say(err.message || String(err), 'err'); } }
 async function addSfx(file){ const it = sfxItems().find(x => x.file === file); if (!it) return; remember(); if (SFX_PREV){ try { SFX_PREV.stop(); } catch (err) {} SFX_PREV = null; }   // 176: the preview stops when the sound is added
@@ -1851,7 +1823,10 @@ document.addEventListener('pointerdown', ev => { const lanes = $('lanes'); if (!
 const ltOk = w => w && Array.isArray(w.lt) && w.lt.length === w.c1 - w.c0;
 const _timeToChar175 = timeToChar;
 timeToChar = function(c, text, t){ const W = clipWords(c, text); if (!W || !W.some(ltOk)) return _timeToChar175(c, text, t);
-  for (const w of W){ if (t < w.t0) return w.c0; if (t <= w.t1){ if (!ltOk(w)) return _timeToChar175(c, text, t); let k = w.c0; for (let i = 0; i < w.lt.length; i++) if (w.lt[i] <= t) k = w.c0 + i + 1; return k; } }
+  for (let i = 0; i < W.length; i++){ const w = W[i];
+    if (t < w.t0){ const a = i ? W[i - 1].c1 : 0, ta = i ? W[i - 1].t1 : (c.src ? c.src[0] : c.in);   // 177: a sound tag or a skipped number holds the caret
+      if (t >= ta){ const g = gapChar(text, a, ta, w.c0, w.t0, t); if (g != null) return g; } return w.c0; }
+    if (t <= w.t1){ if (!ltOk(w)) return _timeToChar175(c, text, t); let k = w.c0; for (let i = 0; i < w.lt.length; i++) if (w.lt[i] <= t) k = w.c0 + i + 1; return k; } }
   return text.length; };
 const _charTime175 = charTime;
 charTime = function(c, text, pos){ const W = clipWords(c, text); if (!W || !W.some(ltOk)) return _charTime175(c, text, pos);   // a character's moment: the letter's own time
@@ -1868,29 +1843,13 @@ async function retimeWords(){ if (typeof API().gulp_words !== 'function') return
   return n; }
 window.avaTimingReady = () => { retimeWords().catch(() => {}); };
 
-// 171: the side flyout of a voice group (hover or click); it closes when the pointer leaves both
-var DDFLY = null, DDFLY_T = 0;   // var: closeDD may run before this line
-// 176: the group's rows live in a layer of their own beside the menu (#ddFly), toward the side its chevron points; moving to it
-//      on a slant over another group does not switch it (a short pause first), and leaving it does not close it
-function ddFlyHost(){ let f = document.getElementById('ddFly'); if (!f){ f = document.createElement('div'); f.id = 'ddFly'; f.className = 'hidden'; } const m = $('ddMenu'), host = (m && m.parentElement) || document.body; if (f.parentElement !== host) host.appendChild(f); return f; }
-function ddFlyClose(){ clearTimeout(DDFLY_T); const f = document.getElementById('ddFly'); if (f){ f.classList.add('hidden'); f._gi = null; } document.querySelectorAll('#ddMenu .ddghead.ddhot').forEach(h => h.classList.remove('ddhot')); DDFLY = null; }
-function ddFly(li, force){ const m = $('ddMenu'); if (!li || !m || m.classList.contains('hidden') || m.querySelector('.ddin:not(.hidden)')) return; const gi = +li.dataset.grp, f = ddFlyHost();
-  clearTimeout(DDFLY_T); if (f._gi === gi && !f.classList.contains('hidden')) return;
-  f.innerHTML = `<ul class="menu menu-sm w-full p-0">${(m._fly || [])[gi] || ''}</ul>`; f._gi = gi; f.dir = m.dir; f.onclick = m.onclick; f.onkeydown = m.onkeydown;
-  m.querySelectorAll('.ddghead.ddhot').forEach(h => h.classList.remove('ddhot')); li.querySelector('.ddghead').classList.add('ddhot'); DDFLY = f; f.classList.remove('hidden');
-  const mr = m.getBoundingClientRect(), hr = li.getBoundingClientRect(); f.style.width = 'max-content'; f.style.maxHeight = 'none'; const w = Math.min(320, innerWidth - 16, Math.max(200, f.offsetWidth)); f.style.width = w + 'px';
-  const left = m._side === 'left' ? mr.left - w + 2 : mr.right - 2; f.style.left = Math.max(8, Math.min(innerWidth - w - 8, left)) + 'px';
-  const h = Math.min(f.scrollHeight, innerHeight - 16); f.style.maxHeight = h + 'px'; f.style.top = Math.max(8, Math.min(innerHeight - h - 8, hr.top - 6)) + 'px'; }
-document.addEventListener('mouseover', ev => { const m = $('ddMenu'); if (!m || m.classList.contains('hidden')) return; const t = ev.target; if (!t.closest) return;
-  if (t.closest('#ddFly')){ clearTimeout(DDFLY_T); return; }
-  const li = t.closest('#ddMenu .ddgrp');
-  if (li){ clearTimeout(DDFLY_T); const f = document.getElementById('ddFly'), open = f && !f.classList.contains('hidden'); if (!open) return ddFly(li); if (f._gi === +li.dataset.grp) return; DDFLY_T = setTimeout(() => ddFly(li), 180); return; }
-  if (DDFLY && m.contains(t)){ clearTimeout(DDFLY_T); DDFLY_T = setTimeout(ddFlyClose, 400); } });
 // 171: every voice menu gets its ▶ — the line tab's too (they never had the hook)
 const _fillLineInspector171 = fillLineInspector;
 fillLineInspector = function(id){ const r = _fillLineInspector171.apply(this, arguments);
   { const [, lc] = clipOfLine(id), body = $('lnBody'); if (lc && !lc.unvoiced && body){ const v = Math.round((lc.gain ?? 1) * 100); body.insertAdjacentHTML('beforeend', `<fieldset class="fieldset"><legend class="fieldset-legend flex w-full items-center gap-1 text-xs font-medium text-base-content/70"><svg class="size-3.5"><use href="#i-volume-2"/></svg><span class="flex-1">${T('بلندیِ این خط', "This line's volume")}</span><span class="lnvol tabular-nums">${num(v)}${pctSign()}</span></legend><input type="range" min="0" max="200" value="${v}" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="clipGain('${lc.id}', +this.value); const l = document.querySelector('#lnBody .lnvol'); if (l) l.textContent = num(+this.value) + pctSign()"></fieldset>`); } }   // 173: each TTS clip's own volume
-  [['ln_gVoice', 'google'], ['ln_fishVoice', 'fish'], ['ln_cbxVoice', 'chatterbox']].forEach(([k, eng]) => { const el = $(k); if (el){ el.dataset.preview = eng; el._preview = v => previewVoice(eng, v || null); } }); return r; };
+  // 177: with «as the speaker / project» chosen, ▶ plays the voice the line gets from there
+  const inh = vk => lineVoice(id)[vk] || (vk === 'fishVoice' ? S.proj.fish.voice : vk === 'cbxVoice' ? S.proj.cbx.voice : S.proj.g_voice) || null;
+  [['ln_gVoice', 'google', 'gVoice'], ['ln_fishVoice', 'fish', 'fishVoice'], ['ln_cbxVoice', 'chatterbox', 'cbxVoice']].forEach(([k, eng, vk]) => { const el = $(k); if (el){ el.dataset.preview = eng; el._pvAny = true; el._preview = v => previewVoice(eng, v || inh(vk)); try { refreshEnh(el); } catch (e) {} } }); return r; };
 
 // =====================================================================================
 // 171 · ENGLISH — a translation layer for strings built from Persian labels (options, badges, menus, buttons):
@@ -1903,7 +1862,7 @@ const VOICE_EN = { Zephyr: 'Bright', Puck: 'Upbeat', Charon: 'Informative', Kore
 (function(){ try { (DIRECTOR.ages || []).concat(DIRECTOR.states || []).forEach(a => { if (a && a[1] && a[2]) EN_FA[a[1]] = a[2]; }); } catch (err) {} })();
 function enText(t){ if (lang === 'fa' || !t) return t; const s = t.trim(); if (EN_FA[s]) return t.replace(s, EN_FA[s]);
   const m = /^([A-Z][a-z]+) — (.+)$/.exec(s); if (m && VOICE_EN[m[1]]) return `${m[1]} — ${VOICE_EN[m[1]]}`; return /[\u06F0-\u06F9\u066A-\u066C\u060C\u061B\u061F]/.test(t) && !/[\u0621-\u064A\u066E-\u06D3\u06FA-\u06FF]/.test(t) ? latinize(t) : t; }
-/* 175: Persian digits and punctuation in an otherwise English string (100٪ · 4.3، · Lyria ۳٫۵) */
+/* 175: Persian digits and punctuation in an otherwise English string (100% · 4.3، · Lyria 3.5) */
 const latinize = t => String(t).replace(/[\u06F0-\u06F9]/g, d => String(d.charCodeAt(0) - 0x6F0)).replace(/\u066A/g, '%').replace(/\u066B/g, '.').replace(/\u066C/g, ',').replace(/\u060C\s*/g, ', ').replace(/\u061B\s*/g, '; ').replace(/\u061F/g, '?');
 const KEEP_FA = '#editor, .lt, [data-keep-fa], .spkchip, .ovav, #spkList input, #lanes .clip .ui, #lanes .vclip span, iframe';   /* user content: lines, speaker names, clip labels */
 const EN_SWEPT = [];   /* [node, attribute | null, Persian original] — put back when the interface returns to Persian */
@@ -1912,7 +1871,7 @@ function enSweep(root){ if (lang === 'fa') return; const fa = /[\u0600-\u06FF]/,
   todo.forEach(([n, t2]) => { EN_SWEPT.push([n, null, n.textContent]); n.textContent = t2; });
   (root || document.body).querySelectorAll('option').forEach(o => { if (o.closest(KEEP_FA)) return; const t2 = enText(o.text); if (t2 !== o.text){ EN_SWEPT.push([o, null, o.text]); o.text = t2; } });
   (root || document.body).querySelectorAll('[aria-label], [placeholder], [title]').forEach(el => { if (el.closest(KEEP_FA)) return; ['aria-label', 'placeholder', 'title'].forEach(a => { const v = el.getAttribute(a); if (!v || !fa.test(v)) return; const t2 = enText(v); if (t2 !== v){ EN_SWEPT.push([el, a, v]); el.setAttribute(a, t2); } }); });
-  if (todo.length) document.querySelectorAll('select').forEach(sl => { if (sl._btn) refreshEnh(sl); }); }
+  if (todo.length) document.querySelectorAll('select').forEach(sl => { if (sl._n177) refreshEnh(sl); }); }
 function enUnsweep(){ while (EN_SWEPT.length){ const [n, a, v] = EN_SWEPT.pop(); if (!n.isConnected) continue; if (a) n.setAttribute(a, v); else if (n.tagName === 'OPTION') n.text = v; else n.textContent = v; } }
 let EN_T = 0; new MutationObserver(() => { if (lang === 'fa') return; clearTimeout(EN_T); EN_T = setTimeout(() => enSweep(), 30); }).observe(document.body, { childList: true, subtree: true });
 const _applyLang171 = applyLang; applyLang = function(){ if (lang === 'fa') enUnsweep(); const r = _applyLang171.apply(this, arguments); if (lang !== 'fa') setTimeout(() => enSweep(), 0); return r; };

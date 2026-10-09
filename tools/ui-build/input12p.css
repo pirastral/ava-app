@@ -74,7 +74,9 @@
 }
 
 @theme {
-  --font-sans:"Noto Sans", "Vazirmatn", ui-sans-serif, system-ui, sans-serif;
+  /* 177: the interface is Vazirmatn alone — Latin letters and digits too (Noto Sans stays only as a text font) */
+  --font-sans:"Vazirmatn", ui-sans-serif, system-ui, sans-serif;
+  --font-mono:"Vazirmatn", ui-sans-serif, system-ui, sans-serif;
 }
 
 /* ---- custom rules (168–174), recovered from the compiled build 174 */
@@ -98,11 +100,13 @@
 .spkchip:not(.spkph){border-color:color-mix(in oklab,var(--sc) var(--b-stroke),transparent)}
 .spkchip:not(.spkph){color:var(--si)}
 .spkchip .spkav{background:var(--sc);color:var(--so)}
-.tagpill{white-space:nowrap;background-color:var(--color-accent);border-radius:9999px;margin-inline:.1em;padding:.05em .5em;font-size:.82em;font-weight:600;display:inline}
-@supports (color:color-mix(in lab, red, red)){.tagpill{background-color:color-mix(in oklab,var(--color-accent) var(--b-tint),transparent)}
+/* 177: a sound tag is the line tone's own chip (daisyUI badge-soft badge-accent); these colours are only the pipe/IPA pills' */
+.tagpill:not(.badge){white-space:nowrap;background-color:var(--color-accent);border-radius:9999px;margin-inline:.1em;padding:.05em .5em;font-size:.82em;font-weight:600;display:inline}
+@supports (color:color-mix(in lab, red, red)){.tagpill:not(.badge){background-color:color-mix(in oklab,var(--color-accent) var(--b-tint),transparent)}
 }
-.tagpill{border:1px solid color-mix(in oklab,var(--color-accent) var(--b-stroke),transparent)}
-.tagpill{color:var(--ink-accent)}
+.tagpill:not(.badge){border:1px solid color-mix(in oklab,var(--color-accent) var(--b-stroke),transparent)}
+.tagpill:not(.badge){color:var(--ink-accent)}
+.tagpill.badge{cursor:pointer}
 .tp-x{font-size:0}
 .ln .badge,.ln .tagpill,.ln .spkchip:not(.spkph),#lineState .badge{vertical-align:middle;white-space:nowrap;border-style:solid;border-width:1px;border-radius:9999px;align-items:center;gap:.25rem;height:1.375rem;min-height:0;padding-block:0;padding-inline:.5rem;font-size:.75rem;font-weight:600;line-height:1.5;display:inline-flex}
 .ln .badge svg,.ln .tagpill svg,#lineState .badge svg{flex:none;width:.75rem;height:.75rem}
@@ -134,12 +138,6 @@ input[type=color]::-moz-color-swatch{border:none;border-radius:9999px}
 .tagpill .tpdel svg{width:9px;height:9px}
 .tagpill .ovmood{opacity:.55;margin-inline-end:3px;font-size:.85em}
 .tagpill.pipe{cursor:pointer}
-#ddFly{z-index:1300;border-radius:var(--radius-box);background:var(--color-base-200);border:1px solid var(--color-base-content);padding:.25rem;position:fixed;overflow:auto;box-shadow:0 14px 40px #0006}
-@supports (color:color-mix(in lab, red, red)){#ddFly{border:1px solid color-mix(in oklab,var(--color-base-content) 12%,transparent)}
-}
-#ddFly.hidden{display:none}
-#ddMenu .ddin{padding:0;margin:0}
-#ddMenu .ddghead.ddhot{background:color-mix(in oklab,var(--color-base-content) 10%,transparent)}
 .bg-primary,.bg-primary svg,.btn-primary,.btn-primary svg{color:var(--color-primary-content)!important}
 #lanes .vclip .trbadge{background:var(--color-primary);color:var(--color-primary-content);box-shadow:0 1px 4px #0006}
 #lanes .tl-ms{outline:2px solid var(--color-primary)!important}
@@ -155,11 +153,54 @@ body.vfull #selbox,body.vfull #objBar{display:none!important}
 .ln .tagpill.pipe{gap:0;padding-inline:2px .55rem}.ln .tagpill.pipe .ovav{margin-inline-end:.35rem}
 
 /* 176: a line with reactions keeps room above it — their badges float over the text, raised above the line */
-.ln.rxroom{padding-top:1.1rem}
+.ln.rxroom{padding-top:1.25rem}
 .rxbadge{z-index:20}
+/* 177 · a reaction's apron: the ruler's outside-composition tint, solid to 80% and fading out at the line's foot */
+.rxapron{z-index:19;border-radius:0 0 3px 3px;background:linear-gradient(to bottom,color-mix(in oklab,var(--color-primary) 10%,transparent) 0%,color-mix(in oklab,var(--color-primary) 10%,transparent) 80%,transparent 100%)}
 
 /* 176: every slider runs low → high from left to right, in Persian too */
 input[type="range"]{direction:ltr}
 
 /* 176: a tag the line's engine cannot do waits, dimmed, until the line is regenerated with it */
 .ln .tagpill.tp-off{opacity:.45;text-decoration:line-through}
+
+/* 177: daisyUI's details dropdown — no disclosure triangle on its button */
+details.dropdown>summary{list-style:none}
+details.dropdown>summary::-webkit-details-marker{display:none}
+details.dropdown>summary::marker{content:""}
+/* 177: Coloris in the daisyUI theme — the panel, its field and its swatches look like the rest of the app */
+.clr-picker{background:var(--color-base-200);border:1px solid color-mix(in oklab,var(--color-base-content) 12%,transparent);border-radius:var(--radius-box);box-shadow:0 14px 40px #0006;font-family:inherit;z-index:1400;width:224px;color:var(--color-base-content)}
+.clr-picker .clr-gradient{border-radius:calc(var(--radius-box) - 1px) calc(var(--radius-box) - 1px) 0 0}
+.clr-picker input.clr-color{background:var(--color-base-100);color:var(--color-base-content);border:1px solid color-mix(in oklab,var(--color-base-content) 15%,transparent);border-radius:var(--radius-field);font-family:inherit;font-variant-numeric:tabular-nums;text-transform:uppercase}
+.clr-picker input.clr-color:focus{border-color:var(--color-primary);box-shadow:none}
+.clr-picker .clr-swatches button{border-radius:9999px}
+.clr-picker .clr-swatches button:after{box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--color-base-content) 25%,transparent)}
+.clr-picker .clr-preview{border-radius:9999px}
+.cpk{appearance:none;padding:0;font-size:0;line-height:0}
+.cpk:focus{outline:2px solid var(--color-primary);outline-offset:2px}
+/* 177: no browser arrows on number fields anywhere (sizes are − / + joins; X · Y · W · H are typed) */
+input[type=number]{appearance:textfield;-moz-appearance:textfield}
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+
+/* 177 · typing on the canvas: the words are drawn by the canvas (the real render, live); the editor above holds the caret
+   and shows the selection as a tint over them */
+#vtextEd { color: transparent; -webkit-text-fill-color: transparent; }
+#vtextEd::selection, #vtextEd *::selection { background: color-mix(in oklab, var(--color-primary) 40%, transparent); color: transparent; -webkit-text-fill-color: transparent; }
+
+/* 178 · a timeline made shorter than its default packs its tracks: lower tracks and clips (no titles), slimmer track
+   headers, less space between tracks (--trk is set by the split handle; at the default height nothing changes) */
+#tlSec.tl-compact #heads > [data-ti]{height:var(--trk)}
+#tlSec.tl-compact #heads > [data-ti] > div{height:calc(var(--trk) - 6px);padding-inline:.25rem}
+#tlSec.tl-compact #lanes .lane{height:var(--trk)}
+#tlSec.tl-compact #lanes .top-1\.5{top:3px}
+#tlSec.tl-compact #lanes .bottom-1\.5{bottom:3px}
+#tlSec.tl-compact #lanes .clip > span.truncate{display:none}
+#tlSec.tl-compact #lanes .clip > span.top-5,#tlSec.tl-compact #lanes .clip > span.top-6{top:3px}
+body.splitting,body.splitting *{cursor:row-resize!important;user-select:none!important}
+/* 178 · the folded bar's canvas-size icon: the size list itself lies invisible over the icon, so a click opens the same list */
+#resMini > select{position:absolute;inset:0;width:100%;height:100%;min-height:0;padding:0;margin:0;opacity:0;cursor:pointer;border:0}
+/* 178 · the bar folded: nothing between the panel's top and the canvas (the icons sit in the corner beside it) */
+#stageBox.stfold{padding-top:0}
+#stageBox.stfold #stage{padding-top:0}
+/* 178 · two fields side by side: each reset icon stays by its own label (at the far end it sat next to the other field's) */
+.grid-cols-2 > fieldset > legend > .xrst,.flex:not(.flex-col) > fieldset > legend > .xrst{margin-inline-start:.25rem!important}

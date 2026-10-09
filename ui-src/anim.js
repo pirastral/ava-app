@@ -272,7 +272,6 @@ function unitXf(g, s, ux, uy, uh){ const pv = s.pivot === 'bottom' ? uh / 2 : 0;
   const sc = s.s ?? 1, sx = (s.sx ?? 1) * sc, sy = (s.sy ?? 1) * sc; if (sx !== 1 || sy !== 1) g.scale(Math.max(1e-4, sx), Math.max(1e-4, sy)); g.translate(-ux, -uy - pv); }
 /* the glyphs, plain or one unit at a time; plan = { by, st(i) → state | null (at rest), clip, block } */
 function drawTextGlyphs(g, o, L, plan, glow){
-  if (typeof VEDIT !== 'undefined' && VEDIT === o) return;   // 176: being typed on the canvas — the editor shows the words
   g.font = L.font; g.fillStyle = o.color || '#fff'; g.textBaseline = 'middle'; g.textAlign = 'left';
   const fw = wd => { g.direction = wd.dir === 'r' ? 'rtl' : 'ltr'; g.fillText(wd.text, wd.x, wd.cy); };
   const lit = (lvl, fn) => { if (lvl > 0.01){ g.save(); g.shadowColor = rgba(o.color || '#ffffff', Math.min(1, 0.95 * lvl)); g.shadowBlur = L.px * 0.6 * lvl; fn(); g.shadowBlur = L.px * 0.22 * lvl; fn(); g.restore(); } else fn(); };
@@ -328,7 +327,7 @@ function followExt(L, plan, U){ let x0 = Infinity, y0 = Infinity, x1 = -Infinity
   U.forEach(u => { const s = plan.st(u.i); if (s !== null && (s.block != null ? s.block <= 0 : s.a != null && s.a <= 0.02)) return; x0 = Math.min(x0, u.x0); y0 = Math.min(y0, u.y0); x1 = Math.max(x1, u.x1); y1 = Math.max(y1, u.y1); });
   return x1 > x0 ? [x0, y0, x1, y1] : 'none'; }
 function drawText(ctx, o, W, H){
-  const kd = o.type === 'pod' ? 'p' : 't', a = animOf(o) || ANNONE, T = animTimes(o, a, kd), t = RT, ph = animPhase(o, a, T, t, kd), C = animCtx(o, W, H, ph ? ph.dir : null);
+  const kd = o.type === 'pod' ? 'p' : 't', a = (typeof VEDIT !== 'undefined' && VEDIT === o) ? ANNONE : (animOf(o) || ANNONE),   /* 177: being typed: drawn at rest, live */ T = animTimes(o, a, kd), t = RT, ph = animPhase(o, a, T, t, kd), C = animCtx(o, W, H, ph ? ph.dir : null);
   const L1 = a.loop && ANL[a.loop] && ANL[a.loop].k.includes(kd) ? ANL[a.loop] : null, lp = L1 ? loopAt(L1, o, a, T, t, W, H) : null;
   const bgOn = !!(o.bg && o.bg.on), bgPr = ph && bgOn ? ((ph.which === 'in' ? a.bgIn : a.bgOut) || 'follow') : 'follow', sep = bgPr !== 'follow';
   let pt = ph ? ph.p : 1, pb = pt; if (sep){ const at = (ph.which === 'in' ? a.bgInAt : a.bgOutAt) || 'with'; if (at === 'before'){ pb = ac01(ph.p / 0.6); pt = ac01((ph.p - 0.4) / 0.6); } else if (at === 'after'){ pt = ac01(ph.p / 0.6); pb = ac01((ph.p - 0.4) / 0.6); } }
@@ -364,11 +363,11 @@ var ANTAB = 'in'; let ANHOV = 0, ANSLIDE = false;
 const RNG_CLS = 'range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]';
 function animName(P, tab){ return tab === 'out' && P.ofa ? T(P.ofa, P.oen) : T(P.fa, P.en); }
 function animList(kd, tab){ const src = tab === 'loop' ? ANL : AN; return Object.keys(src).filter(id => src[id].k.includes(kd)); }
-const numd = v => lang === 'fa' ? FA(v).replace('.', '٫') : String(v);
-const durTxt = v => T(`${numd(v.toFixed(1))} ثانیه`, `${v.toFixed(1)} s`);
+const numd = v => String(v);
+const durTxt = v => secs(v);
 const spdTxt = v => `${numd(String(Math.round(v * 100) / 100))}×`;
 function animSeg(label, opts, cur, call, ltr){ return `<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${label}</legend><div class="join w-full" ${ltr ? 'dir="ltr"' : ''}>${opts.map(([v, txt]) => `<button class="join-item btn btn-sm flex-1 ${cur === v ? 'btn-primary' : 'border-base-content/15 bg-base-100'}" onclick="${call.replace('#', v)}">${txt}</button>`).join('')}</div></fieldset>`; }
-function animTile(id, name, ic, on, pick, hov){ return `<button class="btn btn-sm h-auto min-h-0 flex-col gap-1 px-1 py-2 text-[11px] font-medium leading-tight ${on ? 'btn-primary' : 'border-base-content/10 bg-base-100'}" data-an="${id}" onclick="${pick}('${id}')" onmouseenter="${hov}('${id}')" onmouseleave="animHoverEnd()"><svg class="size-4"><use href="${ic}"/></svg><span class="line-clamp-2">${escapeHtml(name)}</span></button>`; }
+function animTile(id, name, ic, on, pick, hov){ return `<button class="btn btn-sm h-auto min-h-0 flex-col gap-1 px-1 py-2 text-[11px] font-medium leading-normal ${on ? 'btn-primary' : 'border-base-content/10 bg-base-100'}" data-an="${id}" onclick="${pick}('${id}')" onmouseenter="${hov}('${id}')" onmouseleave="animHoverEnd()"><svg class="size-4"><use href="${ic}"/></svg><span class="block w-full overflow-visible break-words text-center">${escapeHtml(name)}</span></button>`; }
 function fillAnim(o){
   const box = $('animBody'); if (!box || !o) return; const kd = animKind(o), tn = TYPE_NAME[o.type] || [o.type, o.type];
   $('animTarget').textContent = o.bgl ? T('کلیپِ پس‌زمینه', 'Background clip') : T(tn[0], tn[1]);

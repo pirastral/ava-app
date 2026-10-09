@@ -41,7 +41,7 @@ html[dir=ltr] .code,html[dir=ltr] textarea{text-align:left}
 </style></head><body>
 <div class="tools"><button id="themeBtn" title="روشن / تاریک">◑</button><button id="langBtn" title="Language">EN</button></div>
 <div class="gate">
-  <div class="band"><span>فعال‌سازی برنامه</span><small id="ver">نسخهٔ ۱۲۶</small></div>
+  <div class="band"><span>فعال‌سازی برنامه</span><small id="ver">نسخهٔ 178</small></div>
   <div class="body">
     <h2>این دستگاه هنوز فعال نشده است</h2>
     <p>این برنامه شخصی است و روی هر دستگاه جداگانه فعال می‌شود. کدِ درخواست زیر را از راهی که خودتان امن می‌دانید بفرستید تا کدِ فعال‌سازیِ مخصوصِ همین دستگاه برایتان ساخته شود. آن کد روی هیچ دستگاه دیگری کار نمی‌کند. هیچ نام و مشخصه‌ای از شما در برنامه ذخیره نمی‌شود و برنامه به هیچ سروری وصل نمی‌شود.</p>
@@ -93,7 +93,7 @@ html[dir=ltr] .code,html[dir=ltr] textarea{text-align:left}
   };
   const t = s => LANG === "en" ? (EN[s] || s) : s;
   const FA_D = "۰۱۲۳۴۵۶۷۸۹";
-  const faNum = s => LANG === "en" ? String(s) : String(s).replace(/\d/g, d => FA_D[+d]);
+  const faNum = s => String(s);   // 177: English digits in both languages
 
   function applyLang(){
     root.setAttribute("dir", LANG === "en" ? "ltr" : "rtl");
@@ -101,8 +101,11 @@ html[dir=ltr] .code,html[dir=ltr] textarea{text-align:left}
     $("langBtn").textContent = LANG === "en" ? "FA" : "EN";
     document.querySelectorAll("[data-fa]").forEach(el => el.textContent = t(el.dataset.fa));
     const ta = $("act"); ta.placeholder = t(ta.dataset.fa || "کد فعال‌سازی را اینجا بچسبانید");
-    $("ver").textContent = (LANG === "en" ? "version " : "نسخهٔ ") + faNum(126);
+    $("ver").textContent = (LANG === "en" ? "version " : "نسخهٔ ") + faNum(BUILD_NO);
   }
+  // 177: the app's own build number (it said 126 since build 126)
+  let BUILD_NO = 178;
+  window.addEventListener("pywebviewready", async () => { try { const b = await window.pywebview.api.build(); if (b && b.n){ BUILD_NO = b.n; applyLang(); } } catch (e) {} });
   // tag every translatable node once
   document.querySelectorAll(".gate h2, .gate p, .gate label span, .gate label small, .gate .btn, .gate .foot, .band span").forEach(el => {
     if(!el.dataset.fa && el.childElementCount === 0) el.dataset.fa = el.textContent.trim();

@@ -1,7 +1,7 @@
 {
   "name": "ava-ui-build",
   "private": true,
-  "description": "Builds ui/index.html from ui-src/ — run: npm install, then python3 build-editor.py (176: + the English Google fonts, written beside the page as ui/fonts/latin/)",
+  "description": "Builds ui/index.html from ui-src/ — run: npm install, then python3 build-editor.py (176: + the English Google fonts, written beside the page as ui/fonts/latin/; 177: + Coloris, the colour picker)",
   "dependencies": {
     "tailwindcss": "4.3.3",
     "@tailwindcss/cli": "4.3.3",
@@ -35,6 +35,7 @@
     "@fontsource/anton": "^5",
     "@fontsource/abril-fatface": "^5",
     "@fontsource/pacifico": "^5",
-    "lucide-static": "^1"
+    "lucide-static": "^1",
+    "@melloware/coloris": "0.25.0"
   }
 }

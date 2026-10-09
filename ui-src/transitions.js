@@ -678,55 +678,6 @@ vec4 tr(vec2 uv) {
   float m = smoothstep(0.4, 0.6, p + (rnd - 0.5) * 0.3);
   return vec4(mix(ca / 14.0, cb / 14.0, m), 1.0);
 }` },
-  orb: { name: 'Voice orb', scene: true, overlap: 0, about: 'The voice orb.', src: `
-vec3 lin2lab(vec3 c) {
-  float l = 0.4122214708 * c.x + 0.5363325363 * c.y + 0.0514459929 * c.z;
-  float m = 0.2119034982 * c.x + 0.6806995451 * c.y + 0.1073969566 * c.z;
-  float s = 0.0883024619 * c.x + 0.2817188376 * c.y + 0.6299787005 * c.z;
-  float l3 = pow(max(l, 0.0), 0.3333333);
-  float m3 = pow(max(m, 0.0), 0.3333333);
-  float s3 = pow(max(s, 0.0), 0.3333333);
-  return vec3(0.2104542553 * l3 + 0.793617785 * m3 - 0.0040720468 * s3, 1.9779984951 * l3 - 2.428592205 * m3 + 0.4505937099 * s3, 0.0259040371 * l3 + 0.7827717662 * m3 - 0.808675766 * s3);
-}
-vec3 lab2lin(vec3 c) {
-  float l3 = c.x + 0.3963377774 * c.y + 0.2158037573 * c.z;
-  float m3 = c.x - 0.1055613458 * c.y - 0.0638541728 * c.z;
-  float s3 = c.x - 0.0894841775 * c.y - 1.291485548 * c.z;
-  float l = l3 * l3 * l3;
-  float m = m3 * m3 * m3;
-  float s = s3 * s3 * s3;
-  return vec3(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s);
-}
-vec3 srgb2lab(vec3 c) { return lin2lab(pow(clamp(c, vec3(0.0), vec3(1.0)), vec3(2.2))); }
-vec3 lab2srgb(vec3 c) { return pow(clamp(lab2lin(c), vec3(0.0), vec3(1.0)), vec3(0.4545)); }
-
-vec3 orbA(float k) { return mix(mix(vec3(0.62, 0.57, 1.0), vec3(1.0, 0.58, 0.42), step(0.5, k)), mix(vec3(0.3, 0.72, 0.7), mix(vec3(0.72, 0.74, 0.8), vec3(0.95, 0.55, 0.75), step(3.5, k)), step(2.5, k)), step(1.5, k)); }
-vec3 orbB(float k) { return mix(mix(vec3(0.66, 0.84, 1.0), vec3(1.0, 0.86, 0.72), step(0.5, k)), mix(vec3(0.72, 0.95, 0.88), mix(vec3(0.96, 0.97, 1.0), vec3(0.8, 0.76, 1.0), step(3.5, k)), step(2.5, k)), step(1.5, k)); }
-vec4 tr(vec2 uv) {
-  vec2 q = (uv - 0.5) * 2.0;
-  float r = length(q);
-  float energy = pb.x;
-  float tm = t * (0.35 + energy * 0.6) * pa.x;
-  float z = sqrt(max(1.0 - r * r, 0.0));
-  vec3 n = vec3(q.x, -q.y, z);
-  vec2 sp = q / (0.6 + 0.4 * z);
-  vec2 wq = vec2(sp.x * 0.8 - sp.y * 0.6, sp.x * 0.6 + sp.y * 0.8) * 0.9;
-  vec2 sr = vec2(sp.x * 0.34 + sp.y * 0.94, -sp.x * 0.94 + sp.y * 0.34);
-  vec2 warp = vec2(vnoise(wq * 1.2 + vec2(tm * 0.35, 1.7)), vnoise(wq * 1.2 + vec2(4.3, -tm * 0.3))) - 0.5;
-  float f = vnoise(wq * 1.1 + warp * 1.6 + vec2(-tm * 0.25, tm * 0.2)) * 0.7 + vnoise(wq * 2.3 - warp + vec2(tm * 0.4, 0.0)) * 0.3;
-  vec3 lab = mix(srgb2lab(orbA(pb.y)), srgb2lab(orbB(pb.y)), smoothstep(0.25, 0.75, f));
-  float cloud = smoothstep(0.45, 0.8, vnoise(sr * 1.4 + vec2(tm * 0.3, -tm * 0.2) + warp * 0.8) * 0.75 + vnoise(sp * 0.9 + vec2(-tm * 0.2, 5.0)) * 0.25);
-  lab = mix(lab, srgb2lab(vec3(0.97, 0.97, 1.0)), cloud * 0.55 * pa.y);
-  vec3 col = lab2srgb(lab);
-  vec2 gc = q - vec2(-0.15, -0.25);
-  col = mix(col, vec3(1.0, 1.0, 1.0), exp(-dot(gc, gc) * 1.6) * 0.22 * pa.z);
-  col = col * (0.9 + 0.1 * z);
-  col = mix(col, vec3(0.96, 0.97, 1.0), pow(1.0 - z, 4.0) * 0.5 * pa.w);
-  vec3 L = normalize(vec3(-0.4, 0.55, 0.73));
-  col = col + vec3(pow(max(dot(reflect(vec3(0.0, 0.0, -1.0), n), L), 0.0), 18.0) * 0.22);
-  col = col * (1.0 + energy * 0.06);
-  return vec4(col, 1.0);
-}` },
   water: { name: 'Liquid glass blob', scene: true, overlap: 0, about: 'A raymarched blob of water refracts the type behind it, with dispersion.', src: `
 float smin(float a, float b, float k) { float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0); return mix(b, a, h) - k * h * (1.0 - h); }
 float map(vec3 q0, float tm, float spl, vec4 Bp, float cnt) {
@@ -1072,7 +1023,7 @@ Object.assign(TP, {
   noise: [['scale', 'Pattern scale', 0.5, 10, 0.1, 3, 'b2'], SOFT(0.25, 0.6), ['seed', 'Variation', 0, 20, 1, 0, 'b3']],
   peel: [['corner', 'Corner', 0, 3, 1, 3, 'b0', [[3, 'Bottom right', 'پایین راست'], [2, 'Bottom left', 'پایین چپ'], [1, 'Top right', 'بالا راست'], [0, 'Top left', 'بالا چپ']]],
     ['radius', 'Curl size', 0.05, 0.5, 0.01, 0.2, 'b2'], ['shading', 'Shading', 0, 1.8, 0.01, 1, 'c0'], ['shine', 'Highlight', 0, 2.5, 0.01, 1, 'c1'], ['shadow', 'Shadow', 0, 2, 0.01, 1, 'b3']],
-  clock: [['start', 'Starts at', 0, 270, 90, 270, 'b0', [[270, '12 o’clock', 'ساعتِ ۱۲'], [0, '3 o’clock', 'ساعتِ ۳'], [90, '6 o’clock', 'ساعتِ ۶'], [180, '9 o’clock', 'ساعتِ ۹']]],
+  clock: [['start', 'Starts at', 0, 270, 90, 270, 'b0', [[270, '12 o’clock', 'ساعتِ 12'], [0, '3 o’clock', 'ساعتِ 3'], [90, '6 o’clock', 'ساعتِ 6'], [180, '9 o’clock', 'ساعتِ 9']]],
     ['way', 'Direction', 0, 2, 1, 0, 'b2', [[0, 'Clockwise', 'ساعتگرد'], [1, 'Counterclockwise', 'پادساعتگرد'], [2, 'Both ways', 'به هر دو سو']]], CX, CY, SOFT(0.1)],
   bars: [['dir', 'Bars', 0, 90, 90, 0, 'b0', [[0, 'Vertical', 'عمودی'], [90, 'Horizontal', 'افقی']]], ['count', 'Bar count', 2, 40, 1, 12, 'b2'], SOFT(0.15)],
   ripple: [['rings', 'Ring count', 2, 24, 1, 8, 'b2'], CX, CY, SOFT(0.2)],

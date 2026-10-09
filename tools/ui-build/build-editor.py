@@ -14,8 +14,8 @@ HERE = pathlib.Path(__file__).resolve().parent
 B = HERE.parent.parent                                   # the build tree (…/b153)
 U = B / "ui-src"
 NODE_DIR = pathlib.Path(os.environ.get("AVA_NODE_DIR", HERE / "node_modules"))
-JS_FILES = ("editor.js", "video-lib.js", "transitions.js", "orblab.js", "muxers.js", "video.js", "anim.js", "speakers.js", "timeline.js", "design.js")
-CSS_SOURCES = ("editor.src.html", "editor.js", "video.js", "anim.js", "speakers.js", "video-lib.js", "lists.js", "timeline.js", "design.js")
+JS_FILES = ("editor.js", "video-lib.js", "transitions.js", "muxers.js", "video.js", "anim.js", "speakers.js", "timeline.js", "design.js", "controls.js")
+CSS_SOURCES = ("editor.src.html", "editor.js", "video.js", "anim.js", "speakers.js", "video-lib.js", "lists.js", "timeline.js", "design.js", "controls.js")
 # icons the code builds from parts (`#i-${name}`) — the scanner below cannot see them
 DYNAMIC_ICONS = {"mic", "music", "volume-2", "volume-x", "pause", "play", "layers", "pencil", "scissors", "check", "refresh-cw",
                  "copy", "trash-2", "plus", "grip-vertical", "captions", "clapperboard", "audio-lines", "sparkles", "chevron-left",
@@ -30,6 +30,10 @@ def main():
     js = ("const SFX_INDEX = " + (sfx.read_text(encoding="utf-8").strip() if sfx.exists() else '{"families":{},"items":[]}') + ";\n") + js
     lists = (U / "lists.js").read_text(encoding="utf-8")
     mp4 = (U / "mp4-muxer.js").read_text(encoding="utf-8")
+    # 177: Coloris (MIT, @melloware/coloris) — one colour picker, the same on every platform; its stylesheet goes first
+    #      so the app's own rules (input12p.css) restyle it in the daisyUI theme
+    clr_dir = NODE_DIR / "@melloware" / "coloris" / "dist"
+    clr_js, clr_css = (clr_dir / "umd" / "coloris.min.js").read_text(encoding="utf-8"), (clr_dir / "coloris.min.css").read_text(encoding="utf-8")
 
     # ---- styles: Tailwind 4 + daisyUI, the palette themes and the custom rules (input12p.css)
     theme = (HERE / "input12p.css").read_text(encoding="utf-8")
@@ -60,10 +64,10 @@ def main():
 
     fav = (U / "favicon.txt").read_text().strip(); logo = (U / "logo.txt").read_text().strip(); av = (U / "avatar.txt").read_text().strip()
     out = (src.replace("<!--FAVICON-->", f'<link rel="icon" type="image/png" href="{fav}">')
-              .replace("<!--FONTS-->", fonts).replace("<!--CSS-->", "<style>\n" + css + "\n</style>").replace("<!--ICONS-->", sprite)
+              .replace("<!--FONTS-->", fonts).replace("<!--CSS-->", "<style>\n" + clr_css + "\n" + css + "\n</style>").replace("<!--ICONS-->", sprite)
               .replace("<!--LOGO-->", f'<img src="{logo}" alt="" class="h-8 w-auto shrink-0 -translate-y-px object-contain">')
               .replace("<!--XAVATAR-->", av)
-              .replace("</head>", "<script>" + mp4 + "</script>\n</head>", 1)
+              .replace("</head>", "<script>" + mp4 + "</script>\n<script>" + clr_js + "</script>\n</head>", 1)
               .replace("/*@CLASSIC*/", lists).replace("/*@EDITOR*/", js))
     (B / "ui/index.html").write_text(out, encoding="utf-8")
     ext = re.findall(r'(?:src|href)="(https?://[^"]+)', out)
