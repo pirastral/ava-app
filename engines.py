@@ -94,8 +94,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 175
-BUILD_FA = "\u06f1\u06f7\u06f5"
+BUILD = 176
+BUILD_FA = "\u06f1\u06f7\u06f6"
 
 
 def _diag(tag, **kv):
@@ -8222,3 +8222,834 @@ def _sfx_pcm(file):
     pcm, sr = _decode_audio(p.read_bytes())
     _SFX_CACHE[file] = (pcm, sr)
     return _SFX_CACHE[file]
+
+
+# ===========================================================================
+# 176 · LETTER-PRECISE TIMING ON THIS MAC — Meta's Omnilingual ASR (300M CTC, int8 ONNX, Apache-2.0),
+#   downloaded once (~290 MB) into AvaModels/timing. One pass over a take gives
+#   (1) a transcript with word times — what the lead-in cut, the completeness audit and the line index
+#       asked Google for (two requests per line before; none now), and
+#   (2) a forced alignment of each line's OWN text: the moment every letter is heard. The caret, trims,
+#       splits, reactions and subtitles follow the voice instead of a loudness guess (measured on the
+#       founder's project: the guess was off by up to 0.7 s — 3 to 8 letters).
+#   Until the model is on disk everything works as before (Google's transcript, the loudness estimate).
+# ===========================================================================
+import hashlib as _hl_c, tarfile as _tar_c
+from collections import OrderedDict as _OD_c
+_CTC_URL = ("https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/"
+            "sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12.tar.bz2")
+_CTC_DIR = MODELS_DIR / "timing"
+_CTC_FILES = ("model.int8.onnx", "tokens.txt")
+_CTC = {"sess": None, "tok": None, "ids": None, "state": "idle", "pct": 0, "err": "", "cache": _OD_c(),
+        "lock": _threading.Lock(), "run": _threading.Lock()}
+_CTC_HOP = 320                        # samples per frame at 16 kHz → 20 ms
+_CTC_FR = _CTC_HOP / 16000.0
+_CTC_LEAD = 0.02                      # a letter fires ~20–40 ms into its sound: the caret passes it as it starts
+_CTC_WIN, _CTC_CTX = 30 * 16000, 16000   # long recordings in 30 s windows with 1 s of context each side
+_CTC_TAG = re.compile(r"<[^<>\n]{0,40}>|\[[^\[\]\n]{0,40}\]|\{[^{}\n]{0,60}\}|\|[^|\n]{0,60}\||(?<!\S)/[^/\s][^/\n]{0,60}/")
+_CTC_TAGTOK = re.compile(r"^(<[^>]*>|\[[^\]]*\]|\{[^}]*\}|\|[^|]*\|)$")
+_CTC_MARK = re.compile(r"[ً-ٰٟۖ-ۭ‌‍‎‏ـ]")
+_CTC_FOLD = str.maketrans({"ك": "ک", "ي": "ی", "ى": "ی", "ة": "ه", "ۀ": "ه", "أ": "ا", "إ": "ا", "ٱ": "ا", "ؤ": "و", "ئ": "ی"})
+
+
+def _ctc_have():
+    return all((_CTC_DIR / f).exists() and (_CTC_DIR / f).stat().st_size > 1000 for f in _CTC_FILES)
+
+
+def ctc_state():
+    st = _CTC["state"]
+    if st == "idle" and _ctc_have():
+        st = "ready"
+    return {"state": st, "pct": int(_CTC["pct"]), "error": (_CTC["err"] or "")[:160]}
+
+
+def _ctc_fetch(status):
+    """The archive once; only the model and its letter list are kept (nothing else is unpacked)."""
+    _CTC_DIR.mkdir(parents=True, exist_ok=True)
+    arc, tmp = _CTC_DIR / "model.tar.bz2", _CTC_DIR / "model.tar.bz2.part"
+    _CTC["state"], _CTC["pct"] = "downloading", 0
+    status("دارم مدلِ زمان‌بندیِ واژه‌ها را یک بار دانلود می‌کنم (290 مگابایت)…")
+    with requests.get(_CTC_URL, stream=True, timeout=(20, 120)) as r:
+        r.raise_for_status()
+        total, done, shown = int(r.headers.get("Content-Length") or 0), 0, -1
+        with open(tmp, "wb") as f:
+            for chunk in r.iter_content(1024 * 1024):
+                f.write(chunk); done += len(chunk)
+                if total:
+                    pct = int(done * 100 / total); _CTC["pct"] = pct
+                    if pct // 10 != shown:
+                        shown = pct // 10; status(f"مدلِ زمان‌بندیِ واژه‌ها: {pct}٪", pct=pct)
+    tmp.replace(arc)
+    _CTC["state"] = "unpacking"
+    with _tar_c.open(arc, "r:bz2") as t:
+        for m in t.getmembers():
+            name = m.name.rsplit("/", 1)[-1]
+            if m.isfile() and name in _CTC_FILES:
+                part = _CTC_DIR / (name + ".part")
+                with t.extractfile(m) as src, open(part, "wb") as out:
+                    shutil.copyfileobj(src, out, 1024 * 1024)
+                part.replace(_CTC_DIR / name)
+    try:
+        arc.unlink()
+    except OSError:
+        pass
+    if not _ctc_have():
+        raise RuntimeError("the timing model's archive did not hold its files")
+    _CTC["state"] = "idle"
+
+
+def _ctc_sess():
+    if _CTC["sess"] is None:
+        with _CTC["lock"]:
+            if _CTC["sess"] is None:
+                import onnxruntime as ort
+                so = ort.SessionOptions(); so.log_severity_level = 3
+                so.intra_op_num_threads = max(1, min(8, (os.cpu_count() or 4) - 1))
+                tok = {}
+                for ln in (_CTC_DIR / "tokens.txt").read_text(encoding="utf-8").split("\n"):
+                    k = ln.rfind(" ")
+                    if k > 0 and ln[k + 1:].strip().isdigit():
+                        tok[ln[:k]] = int(ln[k + 1:])
+                sess = ort.InferenceSession(str(_CTC_DIR / "model.int8.onnx"), sess_options=so, providers=["CPUExecutionProvider"])
+                _CTC["tok"], _CTC["ids"] = tok, {v: k for k, v in tok.items()}
+                _CTC["sess"] = sess
+    return _CTC["sess"]
+
+
+def ctc_ready():
+    """True when letters can be timed on this machine (the model is on disk and loads)."""
+    if os.environ.get("AVA_TIMING_OFF"):          # the engine test batteries pin the older behaviour
+        return False
+    if _CTC["sess"] is not None:
+        return True
+    if _CTC["state"] in ("downloading", "unpacking", "failed") or not _ctc_have():
+        return False
+    try:
+        _ctc_sess(); _CTC["state"] = "ready"
+        return True
+    except Exception as e:
+        _CTC["state"], _CTC["err"] = "failed", str(e)
+        _diag("ctc_load_err", err=str(e)[:160])
+        return False
+
+
+def ctc_warm(status=lambda *a, **k: None, notify=None):
+    """At launch, in the background: fetch the model when it is missing, load it, tell the page."""
+    def go():
+        try:
+            if not _ctc_have():
+                try:
+                    ensure_route()
+                except Exception:
+                    pass
+                _ctc_fetch(status)
+                status("مدلِ زمان‌بندیِ واژه‌ها آماده است.")
+            if ctc_ready():
+                _diag("ctc_ready", threads=max(1, min(8, (os.cpu_count() or 4) - 1)))
+                if notify:
+                    notify()
+        except Exception as e:
+            _CTC["state"], _CTC["err"] = "failed", str(e)
+            _diag("ctc_fetch_err", err=str(e)[:160])
+    _threading.Thread(target=go, daemon=True).start()
+
+
+def _ctc_logp(pcm, sr):
+    """Per-frame log-probabilities of every letter (frames × letters), cached by the recording's bytes."""
+    pcm = np.ascontiguousarray(pcm)
+    key = _hl_c.sha1(pcm.tobytes()).hexdigest() + f":{sr}"
+    c = _CTC["cache"]
+    if key in c:
+        c.move_to_end(key)
+        return c[key]
+    x = (_resample(pcm, sr, 16000) if sr != 16000 else pcm).astype(np.float32) / 32768.0
+    sess = _ctc_sess()
+
+    def run(seg):
+        if len(seg) < 800:
+            seg = np.pad(seg, (0, 800 - len(seg)))
+        with _CTC["run"]:
+            return sess.run(None, {"x": seg[None, :].astype(np.float32)})[0][0]
+    n = len(x)
+    if n <= _CTC_WIN + 2 * _CTC_CTX:
+        lg = run(x)
+    else:
+        parts, pos = [], 0
+        while pos < n:
+            a, b = max(0, pos - _CTC_CTX), min(n, pos + _CTC_WIN + _CTC_CTX)
+            l = run(x[a:b]); f0 = (pos - a) // _CTC_HOP; f1 = f0 + max(1, (min(n, pos + _CTC_WIN) - pos) // _CTC_HOP)
+            parts.append(l[f0:min(f1, len(l))]); pos += _CTC_WIN
+        lg = np.concatenate(parts)
+    m = lg.max(axis=1, keepdims=True)
+    lp = (lg - m - np.log(np.exp(lg - m).sum(axis=1, keepdims=True))).astype(np.float32)
+    c[key] = lp
+    while len(c) > 12:
+        c.popitem(last=False)
+    return lp
+
+
+def ctc_words(pcm, sr):
+    """The recording's words and their times [(word, start_s, end_s)] — the shape Google's transcript had."""
+    lp = _ctc_logp(pcm, sr); ids = lp.argmax(axis=1); ID = _CTC["ids"]; sp = _CTC["tok"].get(" ", -1)
+    words, cur, prev = [], None, -1
+    for f, i in enumerate(ids.tolist()):
+        if i != 0 and i != prev:
+            if i == sp:
+                if cur:
+                    words.append(cur); cur = None
+            else:
+                ch = ID.get(i, "")
+                if ch and not (ch.startswith("<") and ch.endswith(">")):
+                    if cur is None:
+                        cur = [ch, f, f]
+                    else:
+                        cur[0] += ch; cur[2] = f
+        elif i != 0 and i == prev and cur is not None and i != sp:
+            cur[2] = f
+        prev = i
+    if cur:
+        words.append(cur)
+    return [(w, round(a * _CTC_FR, 3), round((b + 1) * _CTC_FR, 3)) for w, a, b in words]
+
+
+def _ctc_char(ch):
+    tok = _CTC["tok"]
+    if _CTC_MARK.match(ch):
+        return None
+    c = ch.translate(_CTC_FOLD)
+    for cand in (c, c.lower()):
+        if cand in tok:
+            return cand
+    return None
+
+
+def _ctc_units(text):
+    """[(kind, letter_id, c0, c1)] — 'L' a letter (≥ 1 frame), 'W' the word gap (optional), 'S' anything at all
+    (a number, a sound tag, an IPA pronunciation; may be empty). Tones, overlaps and a leading «Name:» are skipped."""
+    tok, out, n, i = _CTC["tok"], [], len(text), 0
+    m = re.match(r"^\s*[^:：\n.!?؟«»\"]{1,24}[:：]\s+", text)
+    if m and len(m.group(0).split()) <= 3:
+        i = m.end()
+    tags = {mm.start(): mm.end() for mm in _CTC_TAG.finditer(text)}
+    sp = tok.get(" ")
+    while i < n:
+        if i in tags:
+            j = tags[i]
+            if text[i] in "<[/":
+                out.append(("S", -1, i, j))
+            i = j; continue
+        ch = text[i]
+        if ch.isspace():
+            if out and out[-1][0] != "W" and sp is not None:
+                out.append(("W", sp, i, i + 1))
+            i += 1; continue
+        if ch.isdigit():
+            j = i
+            while j < n and (text[j].isdigit() or text[j] in "٫٬,./:-٪%"):
+                j += 1
+            out.append(("S", -1, i, j)); i = j; continue
+        c = _ctc_char(ch)
+        if c is not None:
+            out.append(("L", tok[c], i, i + 1))
+        i += 1
+    while out and out[-1][0] == "W":
+        out.pop()
+    while out and out[0][0] == "W":
+        out.pop(0)
+    return out
+
+
+def _ctc_spans(lp, units, star_pen=0.1, edge_pen=0.6):
+    """Viterbi over [S?, B?, u1, B?, u2, …, B?, S?] (B = CTC blank, S edges absorb a neighbour's stray speech).
+    Returns each unit's (first_frame, last_frame), or None for a skipped optional unit."""
+    T = lp.shape[0]
+    us = [("E", -1, -1, -1)] + list(units) + [("E", -1, -1, -1)]
+    S = 2 * len(us) + 1
+    emi = np.empty((S, T), dtype=np.float32); lab = np.full(S, -1); opt = np.ones(S, dtype=bool)
+    best_any = lp.max(axis=1)
+    for s in range(S):
+        if s % 2 == 0:
+            emi[s] = lp[:, 0]; continue
+        kind, tid = us[s // 2][0], us[s // 2][1]
+        if kind == "S":
+            emi[s] = best_any - star_pen
+        elif kind == "E":
+            emi[s] = best_any - edge_pen
+        else:
+            emi[s] = lp[:, tid]; lab[s] = tid; opt[s] = kind == "W"
+    NEG = -1e9
+    run_opt, longest = 0, 1
+    for s in range(S):
+        run_opt = run_opt + 1 if opt[s] else 0; longest = max(longest, run_opt)
+    allow = []
+    for d in range(1, longest + 2):
+        a = np.zeros(S, dtype=bool)
+        for s in range(d, S):
+            if all(opt[s - q] for q in range(1, d)) and not (d > 1 and lab[s] >= 0 and lab[s] == lab[s - d]):
+                a[s] = True
+        if a.any():
+            allow.append((d, a))
+    req = np.flatnonzero(~opt)
+    first_req = int(req[0]) if len(req) else S - 1
+    last_req = int(req[-1]) if len(req) else 0
+    dp = np.full(S, NEG, dtype=np.float64); dp[:first_req + 1] = emi[:first_req + 1, 0]
+    bp = np.empty((T, S), dtype=np.int32); idx = np.arange(S)
+    bp[0] = idx
+    for t in range(1, T):
+        best = dp.copy(); arg = idx.copy()
+        for d, a in allow:
+            cand = np.full(S, NEG); cand[d:] = dp[:-d]; cand[~a] = NEG
+            mk = cand > best; best[mk] = cand[mk]; arg[mk] = idx[mk] - d
+        dp = best + emi[:, t]; bp[t] = arg
+    s = int(np.argmax(np.where(idx >= last_req, dp, NEG)))
+    path = np.empty(T, dtype=np.int32)
+    for t in range(T - 1, -1, -1):
+        path[t] = s; s = int(bp[t, s])
+    spans = [None] * len(us)
+    for t in range(T):
+        st = int(path[t])
+        if st % 2 == 1:
+            k = st // 2
+            spans[k] = [t, t] if spans[k] is None else [spans[k][0], t]
+    return spans[1:-1]
+
+
+def _ctc_env(pcm, sr, hop_s=0.01):
+    hop = max(1, int(sr * hop_s)); n = len(pcm) // hop
+    if n < 1:
+        return np.zeros(1), hop_s
+    x = pcm[:n * hop].astype(np.float32).reshape(n, hop)
+    return np.sqrt((x * x).mean(axis=1) + 1e-6), hop_s
+
+
+def ctc_align(pcm, sr, text, a=0, b=None, lp=None):
+    """Each word of `text` (spoken inside samples a…b of the recording) with its sound's start/end and the
+    moment every letter is heard: [{"w", "c0", "c1", "t0", "t1", "lt": [per character], "src": "ctc"}].
+    Times are seconds inside the whole recording; tags carry no time (the page skips them)."""
+    b = len(pcm) if b is None else int(b); a = max(0, int(a))
+    if b - a < sr * 0.1 or not (text or "").strip():
+        return None
+    lp = _ctc_logp(pcm, sr) if lp is None else lp
+    f0, f1 = int(a / sr / _CTC_FR), min(lp.shape[0], int(np.ceil(b / sr / _CTC_FR)) + 1)
+    units = _ctc_units(text)
+    if not units or f1 - f0 < 3 or not any(u[0] == "L" for u in units):
+        return None
+    sp = _ctc_spans(lp[f0:f1], units)
+    t_off = f0 * _CTC_FR
+    at, spike_end = [None] * len(text), [None] * len(text)
+    for (kind, tid, c0, c1), s in zip(units, sp):
+        if s is None or kind == "W":
+            continue
+        if kind == "S":
+            m = max(1, c1 - c0)
+            for q in range(c0, c1):
+                at[q] = t_off + (s[0] + (s[1] + 1 - s[0]) * (q - c0) / m) * _CTC_FR
+                spike_end[q] = t_off + (s[0] + (s[1] + 1 - s[0]) * (q - c0 + 1) / m) * _CTC_FR
+        else:
+            at[c0] = t_off + max(0.0, s[0] * _CTC_FR - _CTC_LEAD); spike_end[c0] = t_off + (s[1] + 1) * _CTC_FR
+    env, hs = _ctc_env(pcm, sr)
+    seg = env[int(a / sr / hs):max(int(a / sr / hs) + 1, int(b / sr / hs))]
+    floor = max(30.0, float(seg.max()) * 0.06) if len(seg) else 30.0
+    words = []
+    for m in re.finditer(r"\S+", text):
+        w, c0, c1 = m.group(0), m.start(), m.end()
+        if _CTC_TAGTOK.match(w):
+            continue
+        ts = [at[i] for i in range(c0, c1) if at[i] is not None]
+        if not ts:
+            continue
+        lt, cur = [], None
+        for i in range(c0, c1):
+            if at[i] is not None:
+                cur = at[i]
+            lt.append(cur)
+        first = next(x for x in lt if x is not None); lt = [round(first if x is None else x, 3) for x in lt]
+        ends = [spike_end[i] for i in range(c0, c1) if spike_end[i] is not None]
+        words.append({"w": w, "c0": c0, "c1": c1, "t0": min(ts), "t1": max(ends) if ends else max(ts) + _CTC_FR, "lt": lt, "src": "ctc"})
+    if not words:
+        return None
+    # the sound's own edges: back from the first letter to where the voice begins, on from the last letter
+    # to where it fades — never into the next word, never past the span
+    lo_s, hi_s = a / sr, b / sr
+    for k, w in enumerate(words):
+        prev_end = words[k - 1]["t1"] if k else lo_s
+        nxt = words[k + 1]["t0"] if k + 1 < len(words) else hi_s
+        i = int(w["t0"] / hs); lim = max(int(prev_end / hs), int((w["t0"] - 0.15) / hs), 0)
+        while i - 1 >= lim and i - 1 < len(env) and env[i - 1] > floor:
+            i -= 1
+        if i < len(env) and env[i] <= floor:              # a stop's silent closure: the word is heard from its burst
+            nxt_l = sorted(set(w["lt"]))[1] if len(set(w["lt"])) > 1 else w["t1"]
+            while i + 1 < len(env) and env[i] <= floor and (i + 1) * hs < nxt_l:
+                i += 1
+        w["t0"] = round(max(prev_end, lo_s, i * hs), 3)
+        j = int(w["t1"] / hs); lim2 = min(int(nxt / hs) - 1, int((w["t1"] + 0.35) / hs), len(env) - 1)
+        while j + 1 <= lim2 and env[j + 1] > floor:
+            j += 1
+        w["t1"] = round(min(hi_s, max(w["t1"], (j + 1) * hs), nxt if k + 1 < len(words) else hi_s), 3)
+        w["lt"] = [round(max(w["t0"], x), 3) for x in w["lt"]]
+    return words
+
+
+def _ctc_line_spans(e, pcm, sr, text):
+    """Per-line spans of a part whose line map is missing: one alignment of the whole text, cut in each gap."""
+    lp = _ctc_logp(pcm, sr)
+    words = ctc_align(pcm, sr, text.replace("\n", " "), 0, len(pcm), lp=lp)
+    if not words:
+        return None
+    starts, pos, lines = [], 0, text.split("\n")
+    for raw in lines:
+        starts.append(pos); pos += len(raw) + 1
+    per = [[w for w in words if starts[k] <= w["c0"] < starts[k] + len(lines[k])] for k in range(len(lines))]
+    keep = [k for k in range(len(lines)) if lines[k].strip()]
+    if any(not per[k] for k in keep):
+        return None
+    env, hs = _ctc_env(pcm, sr); total = len(pcm) / sr; out = []
+    for n_, k in enumerate(keep):
+        t0 = 0.0 if n_ == 0 else out[-1]["t1"]
+        if n_ + 1 < len(keep):
+            g0, g1 = per[k][-1]["t1"], per[keep[n_ + 1]][0]["t0"]
+            i0, i1 = int(g0 / hs), max(int(g0 / hs) + 1, int(g1 / hs))
+            cut = (i0 + int(np.argmin(env[i0:i1]))) * hs if i1 <= len(env) and i1 > i0 else (g0 + g1) / 2
+            t1 = round(max(g0, min(g1, cut)), 3)
+        else:
+            t1 = round(total, 3)
+        out.append({"text": lines[k].strip(), "t0": round(t0, 3), "t1": t1, "_k": k})
+    return out
+
+
+_gulp_lines_175 = gulp_lines
+
+
+def gulp_lines(gid):
+    """176: the same spans, their words timed letter by letter on this machine when the model is here;
+    a part without a line map is cut into its lines from the alignment instead of coming back whole."""
+    spans = _gulp_lines_175(gid)
+    e = _GULP_PCM.get(int(gid)) if gid is not None else None
+    if not e or not spans or not ctc_ready() or e.get("engine") in ("silence", "file"):
+        return spans
+    try:
+        pcm, sr = _assemble(e), int(e["sr"]); memo = e.setdefault("_ctc_w", {})
+        text = (e.get("text") or "").strip()
+        if len(spans) == 1 and spans[0].get("whole") and "\n" in text:
+            key = ("lines", text)
+            if key not in memo:
+                memo[key] = _ctc_line_spans(e, pcm, sr, text)
+            if memo[key]:
+                spans = [{k2: v for k2, v in s.items() if k2 != "_k"} for s in memo[key]]
+        for sp in spans:
+            if not (sp.get("text") or "").strip():
+                continue
+            key = (round(float(sp["t0"]), 3), round(float(sp["t1"]), 3), sp["text"])
+            if key not in memo:
+                ws = ctc_align(pcm, sr, sp["text"], int(float(sp["t0"]) * sr), int(float(sp["t1"]) * sr))
+                memo[key] = ws or None               # words are relative to the span's own text
+            if memo[key]:
+                sp["words"] = [dict(w) for w in memo[key]]
+    except Exception as ex:
+        _diag("ctc_align_err", err=str(ex)[:160])
+    return spans
+
+
+def _ctc_snap(words, text):
+    """The local transcript, spelled the way the text spells it: each heard word that is close to the expected
+    word in the same place takes the text's spelling, and the words heard where the text has a number become
+    that number (Google wrote «۲۰۲۶»; the local model writes «بیست بیست و شش»). So the completeness audit and the
+    boundary finders compare like with like and never call a take incomplete for a spelling."""
+    import difflib
+    toks = [t for t in re.findall(r"\S+", re.sub(r"\{[^{}\n]{0,60}\}|\|[^|\n]{0,60}\||<[^<>\n]{0,40}>|\[[^\[\]\n]{0,40}\]", " ", text or "")) if _norm_word(t)]
+    if not words or not toks:
+        return words
+    A = [_norm_word(t) for t in toks]; B = [_norm_word(w) for w, _, _ in words]
+    n, m = len(A), len(B); GAP = -0.45
+    sim = lambda i, j: (difflib.SequenceMatcher(None, A[i], B[j]).ratio() if A[i] and B[j] else 0.0)
+    sc = [[0.0] * (m + 1) for _ in range(n + 1)]; bk = [[0] * (m + 1) for _ in range(n + 1)]
+    for i in range(1, n + 1):
+        sc[i][0] = i * GAP; bk[i][0] = 1
+    for j in range(1, m + 1):
+        sc[0][j] = j * GAP; bk[0][j] = 2
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            r = sim(i - 1, j - 1); d = sc[i - 1][j - 1] + (r if r >= 0.6 else -1.0)
+            u, l = sc[i - 1][j] + GAP, sc[i][j - 1] + GAP
+            sc[i][j], bk[i][j] = max((d, 0), (u, 1), (l, 2))
+    pairs, i, j = [], n, m
+    while i > 0 or j > 0:
+        k = bk[i][j]
+        if i > 0 and j > 0 and k == 0:
+            pairs.append((i - 1, j - 1)); i -= 1; j -= 1
+        elif i > 0 and (j == 0 or k == 1):
+            pairs.append((i - 1, None)); i -= 1
+        else:
+            pairs.append((None, j - 1)); j -= 1
+    pairs.reverse()
+    match = {ti: wj for ti, wj in pairs if ti is not None and wj is not None and sim(ti, wj) >= 0.6}
+    used, merged = set(match.values()), {}
+    anchors = sorted(match.items())
+    for ti, tok in enumerate(toks):
+        if ti in match or not re.search(r"\d", tok):
+            continue
+        lo = max([wj for t2, wj in anchors if t2 < ti], default=-1)
+        hi = min([wj for t2, wj in anchors if t2 > ti], default=m)
+        heard = [j for j in range(lo + 1, hi) if j not in used]
+        if heard:
+            merged[heard[0]] = (tok, words[heard[0]][1], words[heard[-1]][2]); used.update(heard)
+    out = []
+    for j, w in enumerate(words):
+        if j in merged:
+            out.append(merged[j])
+        elif j in used:
+            ti = next((t2 for t2, wj in match.items() if wj == j), None)
+            if ti is not None:
+                out.append((toks[ti], w[1], w[2]))
+        else:
+            out.append(w)
+    return out
+
+
+_google_words_175 = google_words
+
+
+def google_words(pcm, sr, status, lang=None, text=None):
+    """176: the transcript comes from this machine when the timing model is here — no request."""
+    if _PREVIEW_MODE["on"]:
+        return None
+    if ctc_ready():
+        try:
+            w = ctc_words(pcm, sr)
+            if w and text:
+                w = _ctc_snap(w, text)
+            _diag("ctc_words", n=len(w), audio_s=round(len(pcm) / sr, 1))
+            if w:
+                return w
+        except Exception as ex:
+            _diag("ctc_words_err", err=str(ex)[:160])
+    return _google_words_175(pcm, sr, status, lang, text)
+
+
+_word_times_175 = _word_times
+
+
+def _word_times(pcm, sr, a, b, text):
+    """176: the loudness estimate (no timing model yet) no longer gives a tone or a sound tag the time of
+    a spoken word (a line with {غمگین} was timed 0.7 s late), and a number weighs what it takes to say."""
+    toks = list(re.finditer(r"\S+", text or ""))
+    if not toks:
+        return []
+    keep = [m for m in toks if not _CTC_TAGTOK.match(m.group(0))]
+    if not keep:
+        return []
+    spoken = " ".join((("ـ" * (len(m.group(0)) * 4)) if re.search(r"\d", m.group(0)) else m.group(0)) for m in keep)
+    est = _word_times_175(pcm, sr, a, b, spoken)
+    if len(est) != len(keep):
+        return _word_times_175(pcm, sr, a, b, text)
+    out = []
+    for m, w in zip(keep, est):
+        out.append({"w": m.group(0), "c0": m.start(), "c1": m.end(), "t0": w["t0"], "t1": w["t1"]})
+    return out
+
+
+# 176 · a reaction's recording is found again after a project is reopened: the reaction kept the OLD part number
+#       (only the clips were renumbered), so it vanished, its badge stayed and the line looked edited. Every saved
+#       reaction recording is packed (not only the ones with a clip on screen) and renumbered with the rest.
+_project_unpack_175 = project_unpack
+
+
+def _ovl_gids(doc):
+    out = set()
+    for L in ((doc or {}).get("lines") or {}).values():
+        for g in [*((L or {}).get("ovlA") or {}).values(), *[r.get("gulp") for r in ((L or {}).get("reacts") or []) if isinstance(r, dict)]]:
+            try:
+                if g is not None and int(g) in _GULP_PCM:
+                    out.add(int(g))
+            except (TypeError, ValueError):
+                pass
+    for t in (doc or {}).get("tracks", []) or []:
+        for c in t.get("clips", []) or []:
+            if c.get("type") == "ovl" and c.get("gulp") is not None:
+                try:
+                    if int(c["gulp"]) in _GULP_PCM:
+                        out.add(int(c["gulp"]))
+                except (TypeError, ValueError):
+                    pass
+    return out
+
+
+def _project_pack_176(doc):
+    """160's project file, now also carrying every reaction recording the document refers to."""
+    import zipfile, io as _io, json as _json, wave as _wave
+    buf = _io.BytesIO()
+    gids = sorted({int(c["gulp"]) for t in (doc or {}).get("tracks", []) for c in t.get("clips", [])
+                   if c.get("gulp") is not None and int(c["gulp"]) in _GULP_PCM} | _ovl_gids(doc))
+    parts = {}
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("project.json", _json.dumps({"format": "ava-project", "version": 1, "build": BUILD, "doc": doc}, ensure_ascii=False))
+        for g in gids:
+            e = _GULP_PCM[g]; pcm = _assemble(e).astype(np.int16); sr = int(e["sr"])
+            wb = _io.BytesIO(); w = _wave.open(wb, "wb"); w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr); w.writeframes(pcm.tobytes()); w.close()
+            z.writestr(f"parts/{g}.wav", wb.getvalue())
+            parts[str(g)] = {"sr": sr, "text": e.get("text", ""), "lines": e.get("lines") or [], "words_ts": e.get("words_ts"),
+                             "engine": e.get("engine"), "spans": gulp_lines(g)}
+        z.writestr("parts.json", _json.dumps(parts, ensure_ascii=False, default=lambda o: list(o) if isinstance(o, tuple) else (o.item() if hasattr(o, "item") else str(o))))
+        if _MUSIC.get("pcm") is not None:
+            z.writestr("music.mp3", pcm_to_mp3(_MUSIC["pcm"], _MUSIC["sr"]))
+            z.writestr("music.json", _json.dumps({"name": _MUSIC.get("name") or "music"}, ensure_ascii=False))
+    _diag("project_pack", parts=len(gids), music=_MUSIC.get("pcm") is not None)
+    return buf.getvalue()
+
+
+_project_pack_160 = _project_pack_176          # 161's wrapper (assets) calls this name
+
+
+def project_unpack(data):
+    """176: the reactions' part numbers are renumbered exactly like the clips'."""
+    out = _project_unpack_175(data)
+    remap = {int(k): v for k, v in (out.get("remap") or {}).items()}
+    lost = 0
+    for L in ((out.get("doc") or {}).get("lines") or {}).values():
+        for r in ((L or {}).get("reacts") or []):                 # 176: reactions as records carry their own part
+            if isinstance(r, dict) and r.get("hostGulp") is not None:   # … and the take of the line they were timed in
+                try:
+                    hg = int(r["hostGulp"])
+                    r["hostGulp"] = remap.get(hg, None)
+                except (TypeError, ValueError):
+                    r["hostGulp"] = None
+            if isinstance(r, dict) and r.get("gulp") is not None:
+                try:
+                    g = int(r["gulp"])
+                except (TypeError, ValueError):
+                    continue
+                if g in remap:
+                    r["gulp"] = remap[g]
+                else:
+                    r["gulp"] = None; r["made"] = None; lost += 1
+        ov = (L or {}).get("ovlA")
+        if not ov:
+            continue
+        for k in list(ov.keys()):
+            try:
+                g = int(ov[k])
+            except (TypeError, ValueError):
+                continue
+            if g in remap:
+                ov[k] = remap[g]
+            else:
+                del ov[k]; lost += 1                 # its recording is not in the file: the reaction is voiced again
+    if lost:
+        _diag("project_unpack_ovl_missing", n=lost)
+    return out
+
+
+# ===========================================================================
+# 176 · ONE REQUEST, ONE KEY — every Google request starts at the key after the one the last request used, so
+#   the founder's 48 keys share the per-minute limit and it is virtually never reached (each key sees one request
+#   in 48). A per-minute 429 no longer waits a minute on the same key: that key rests (in memory) and the very next
+#   key answers. A daily 429 retires the key until Pacific midnight. Google's 503 «overloaded» is about Google, not
+#   a key: a short back-off with a message, and after a few tries a clear «try again in a minute» (175 retried it
+#   three times on EVERY key — with 48 keys that was up to 144 waits). The header's key badge is told whenever a
+#   key's state changes.
+# ===========================================================================
+_G_RR = {"last": None, "lock": _threading.Lock()}
+_G_COOL = {}                                   # key → when its per-minute limit lifts (never written to disk)
+_KEYS_CHANGED = {"n": 0}
+_google_mark_175 = _google_mark
+
+
+def _google_mark(key, state):
+    _google_mark_175(key, state)
+    _KEYS_CHANGED["n"] += 1
+
+
+def _g_order(keys):
+    """This request's key order: the key after the last one used first; resting keys at the back."""
+    with _G_RR["lock"]:
+        last = _G_RR["last"]
+        start = (keys.index(last) + 1) % len(keys) if last in keys else 0
+        order = keys[start:] + keys[:start]
+        _G_RR["last"] = order[0]
+    now = time.time()
+    return [k for k in order if _G_COOL.get(k, 0) <= now] + sorted([k for k in order if _G_COOL.get(k, 0) > now], key=lambda k: _G_COOL[k])
+
+
+def google_rotate(call, status, what="گوگل", _rerouted=False, only_key_tag=None):
+    keys = _google_usable_keys()
+    if only_key_tag:
+        keys = [k for k in keys if _key_tag(k) == only_key_tag]
+        if not keys:
+            raise RuntimeError("این صدای طراحی‌شده فقط با کلیدی کار می‌کند که آن را ساخته، و سهمیهٔ امروزِ آن کلید تمام شده یا آن کلید حذف شده است. فردا دوباره امتحان کنید یا صدای دیگری انتخاب کنید.")
+    if not keys:
+        if google_keys():
+            raise RuntimeError("سهمیهٔ امروزِ همهٔ کلیدهای گوگل تمام شده یا کلیدها معتبر نیستند؛ یک کلید تازه اضافه کنید یا فردا سر بزنید.")
+        raise RuntimeError("هنوز کلید گوگل ندارید؛ از دکمهٔ «کلیدهای گوگل» یک کلید رایگان وارد کنید.")
+    try:
+        ensure_route(status)
+    except Exception as e:
+        _diag("net_route_err", msg=str(e)[:80])
+    queue = _g_order(keys)
+    first_key = queue[0] if queue else None
+    last, net_keys, busy_tries, waits = None, 0, 0, 0
+    while queue:
+        key = queue.pop(0)
+        if key not in _google_usable_keys():
+            continue                                   # retired during this request (daily quota or refused)
+        rest = _G_COOL.get(key, 0) - time.time()
+        if rest > 0:                                   # every fresher key already met its per-minute limit
+            if waits >= 2:
+                break
+            waits += 1
+            status(f"{what}: همهٔ کلیدها به سقفِ درخواست در دقیقه خورده‌اند — {int(rest) + 1} ثانیه صبر می‌کنیم…")
+            _diag("google_429_all_resting", wait=round(rest, 1))
+            for _ in range(int(rest * 4) + 1):
+                _check_cancel(); time.sleep(0.25)
+        net_fail = False
+        for attempt in range(3):
+            _check_cancel()
+            try:
+                out = call(key)
+                with _G_RR["lock"]:
+                    _G_RR["last"] = key            # the next request starts after the key that served this one
+                _G_COOL.pop(key, None)
+                if any(k.get("key") == key and k.get("bad") for k in google_keys()):
+                    _google_mark(key, "ok")
+                return out
+            except Cancelled:
+                raise
+            except _GoogleHTTP as e:
+                last = e
+                kind = _google_fault(e.code, e.msg)
+                if kind == "tier":
+                    _diag("google_tier_stop", code=e.code)
+                    raise RuntimeError(f"{what}: " + _TIER_MSG)
+                if kind in ("network", "region"):
+                    _diag("google_blocked", kind=kind, code=e.code, msg=_google_clean_msg(e.msg))
+                    if not _rerouted:
+                        _bench(_NET["route"] or "direct")
+                        ok, label, report = ensure_route(status, force=True)
+                        if ok:
+                            status(f"{what}: مسیرِ شبکه عوض شد («{label}»)؛ دوباره امتحان می‌کنم…")
+                            with _G_RR["lock"]:                    # 176: the network was the problem, not the key — the retry goes through the same key
+                                _G_RR["last"] = keys[(keys.index(key) - 1) % len(keys)] if key in keys else None
+                            return google_rotate(call, status, what, _rerouted=True, only_key_tag=only_key_tag)
+                        raise RuntimeError(f"{what}: " + net_status_text(ok, label, report) + " هیچ کلیدی نامعتبر نشد.")
+                    raise RuntimeError(f"{what}: " + (_NET_BLOCK_MSG if kind == "network" else _REGION_MSG))
+                if e.code == 429:
+                    full = (e.msg + " " + getattr(e, "raw", "")).lower()
+                    if any(w in full for w in ("perday", "per day", "per_day", "daily", "requestsperday")):
+                        _diag("google_429", kind="daily"); _google_mark(key, "exhausted")
+                        status(f"{what}: سهمیهٔ امروزِ این کلید ته کشید؛ کلیدِ بعدی…")
+                        break
+                    m = re.search(r'"retrydelay":\s*"(\d+(?:\.\d+)?)s"|retry in (\d+(?:\.\d+)?)\s*s', full)
+                    wait = min(65.0, float(next(g for g in m.groups() if g)) + 1.0) if m else 30.0
+                    _G_COOL[key] = time.time() + wait      # it rests; the next key answers right away
+                    queue.append(key)                       # …and can serve again after its rest
+                    _diag("google_429", kind="minute", rest=round(wait, 1))
+                    break
+                if kind == "key":
+                    _google_mark(key, "bad"); status(f"{what}: این کلید را قبول نکرد؛ کلیدِ بعدی…")
+                    _diag("google_key_bad", code=e.code, msg=_google_clean_msg(e.msg))
+                    break
+                if e.code in (401, 403):
+                    _diag("google_403_unattributed", msg=_google_clean_msg(e.msg))
+                    status(f"{what}: گوگل این درخواست را رد کرد ({e.code})؛ کلیدِ بعدی را امتحان می‌کنم…")
+                    break
+                if e.code >= 500:                           # Google itself is overloaded: a short back-off, four tries in all
+                    busy_tries += 1
+                    _diag("google_5xx", code=e.code, msg=e.msg[:120], tries=busy_tries)
+                    if busy_tries >= 4:
+                        raise RuntimeError(f"{what}: سرورهای گوگل الان شلوغ‌اند ({e.code}) — چهار بار امتحان کردیم. یک دقیقهٔ دیگر دوباره بزنید؛ هیچ کلیدی خراب نشده.")
+                    wait = 2 ** busy_tries
+                    status(f"{what}: سرورِ گوگل شلوغ است ({e.code}) — {wait} ثانیهٔ دیگر دوباره امتحان می‌کنم ({busy_tries} از 4)…")
+                    for _ in range(4 * wait):
+                        _check_cancel(); time.sleep(0.25)
+                    queue.append(key)
+                    break
+                raise RuntimeError(f"{what}: {_google_clean_msg(e.msg)}")
+            except requests.RequestException as e:
+                last = e; net_fail = True
+                _diag("google_net", err=type(e).__name__ + ": " + str(e)[:90])
+                status(f"{what}: اتصال به گوگل برقرار نشد — تلاش {attempt + 2} از ۳…")
+                for _ in range(4 * (2 + attempt * 2)):
+                    _check_cancel(); time.sleep(0.25)
+        net_keys = net_keys + 1 if net_fail and not isinstance(last, _GoogleHTTP) else 0
+        if net_keys >= min(2, len(keys)):
+            _diag("google_blocked", kind="network", reason="two_keys_unreachable")
+            if not _rerouted:
+                _bench(_NET["route"] or "direct")
+                ok, label, report = ensure_route(status, force=True)
+                if ok:
+                    status(f"{what}: مسیرِ شبکه عوض شد («{label}»)؛ دوباره امتحان می‌کنم…")
+                    with _G_RR["lock"]:                            # 176: the same keys again over the new route
+                        _G_RR["last"] = keys[(keys.index(first_key) - 1) % len(keys)] if first_key in keys else None
+                    return google_rotate(call, status, what, _rerouted=True, only_key_tag=only_key_tag)
+                raise RuntimeError(f"{what}: " + net_status_text(ok, label, report) + " هیچ کلیدی نامعتبر نشد.")
+            raise RuntimeError(f"{what}: " + _NET_BLOCK_MSG)
+    raise RuntimeError(f"{what}: با هیچ‌کدام از کلیدها جواب نگرفتیم — " +
+                       _google_clean_msg(getattr(last, "msg", None) or str(last) or "؟"))
+
+
+def google_keys_status():
+    """176: «ok» counts every key that still has today's quota (a key resting from its per-minute limit is still
+    there in a moment); the header badge shows that number and updates whenever a key's state changes."""
+    now = time.time(); out = []
+    for k in google_keys():
+        state = "bad" if k.get("bad") else ("exhausted" if k.get("until", 0) > now else "ok")
+        out.append({"key": k["key"], "masked": k["key"][:6] + "•" * 8 + k["key"][-4:] if len(k["key"]) > 12 else "••••",
+                    "state": state, "until": k.get("until", 0), "resting": max(0, int(_G_COOL.get(k["key"], 0) - now))})
+    return out
+
+
+# ===========================================================================
+# 176 · the sound library has nine families (the 44 sounds that came from one film were folded into them under plain
+#   names); a clip saved with an old path still plays. The film's score is a built-in track of the music library.
+# ===========================================================================
+_SFX_MOVED = None
+_sfx_pcm_175 = _sfx_pcm
+
+
+def _sfx_pcm(file):
+    global _SFX_MOVED
+    try:
+        return _sfx_pcm_175(file)
+    except RuntimeError:
+        if _SFX_MOVED is None:
+            try:
+                _SFX_MOVED = json.loads(Path(_res_path(str(Path("ui") / "sfx" / "index.json"))).read_text(encoding="utf-8")).get("moved", {})
+            except Exception:
+                _SFX_MOVED = {}
+        new = _SFX_MOVED.get(str(file))
+        if new:
+            return _sfx_pcm_175(new)
+        raise
+
+
+def _builtin_music():
+    try:
+        return json.loads(Path(_res_path(str(Path("ui") / "music" / "index.json"))).read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+_music_list_175, _music_load_175, _music_delete_175 = music_list, music_load, music_delete
+
+
+def music_list():
+    """176: the app's own tracks first (they cannot be deleted), then this machine's library."""
+    return _builtin_music() + _music_list_175()
+
+
+def music_load(file):
+    f = str(file or "")
+    if f.startswith("builtin:"):
+        p = Path(_res_path(str(Path("ui") / "music" / os.path.basename(f[len("builtin:"):]))))
+        if not p.exists():
+            raise RuntimeError("این موسیقی در این نسخهٔ برنامه نیست.")
+        pcm, sr = _decode_audio(p.read_bytes())
+        _MUSIC.update({"pcm": pcm, "sr": sr, "prompt": f})
+        return pcm, sr
+    return _music_load_175(file)
+
+
+def music_delete(file):
+    if str(file or "").startswith("builtin:"):
+        return music_list()                         # a built-in track stays
+    _music_delete_175(file)
+    return music_list()

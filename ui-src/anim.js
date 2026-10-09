@@ -239,9 +239,9 @@ let GSEG = null; try { GSEG = new Intl.Segmenter(undefined, { granularity: 'grap
 const graphemes = s => GSEG ? Array.from(GSEG.segment(s), x => x.segment) : (s.match(/[\s\S][\u0300-\u036F\u064B-\u065F\u0670\u06D6-\u06ED\u200C\u200D\uFE0F]*/g) || []);
 const TLC = new Map();
 function textLayout(g, o, H, w){
-  const px = Math.max(6, o.size * H), font = FONT(o.weight || 700, px, o.font), key = (o.text || '') + '\u0001' + font + '|' + w.toFixed(1) + '|' + (o.align || 'center');
+  const px = Math.max(6, o.size * H), font = FONT(o.weight || 700, px, o.font), key = (o.text || '') + '\u0001' + font + '|' + w.toFixed(1) + '|' + (o.align || 'center') + '|' + (o.autoW === true ? 'a' : 'f');
   let L = TLC.get(key); if (L) return L; if (TLC.size > 240) TLC.clear();
-  g.save(); g.font = font; const text = o.text || '', rtl = AR_L.test(text), sp = g.measureText(' ').width, lh = px * 1.35, maxW = w * 0.96;
+  g.save(); g.font = font; const text = o.text || '', rtl = AR_L.test(text), sp = g.measureText(' ').width, lh = px * 1.35, maxW = o.autoW === true ? 1e9 : w * 0.96;   // 176: an auto-width text never wraps (its box follows it)
   const mk = s => { const dir = AR_L.test(s) ? 'r' : LAT_L.test(s) ? 'l' : 'n'; g.direction = dir === 'r' ? 'rtl' : 'ltr'; return { text: s, dir, w: g.measureText(s).width, lx: null }; };
   const rows = []; text.split('\n').forEach(par => { let cur = [], cw = 0; par.split(/\s+/).filter(Boolean).forEach(s => { const wd = mk(s), nw = cur.length ? cw + sp + wd.w : wd.w; if (nw > maxW && cur.length){ rows.push(cur); cur = [wd]; cw = wd.w; } else { cur.push(wd); cw = nw; } }); rows.push(cur); });
   const th = rows.length * lh, by = -th / 2; let tw = 0, wi = 0;
@@ -272,6 +272,7 @@ function unitXf(g, s, ux, uy, uh){ const pv = s.pivot === 'bottom' ? uh / 2 : 0;
   const sc = s.s ?? 1, sx = (s.sx ?? 1) * sc, sy = (s.sy ?? 1) * sc; if (sx !== 1 || sy !== 1) g.scale(Math.max(1e-4, sx), Math.max(1e-4, sy)); g.translate(-ux, -uy - pv); }
 /* the glyphs, plain or one unit at a time; plan = { by, st(i) → state | null (at rest), clip, block } */
 function drawTextGlyphs(g, o, L, plan, glow){
+  if (typeof VEDIT !== 'undefined' && VEDIT === o) return;   // 176: being typed on the canvas — the editor shows the words
   g.font = L.font; g.fillStyle = o.color || '#fff'; g.textBaseline = 'middle'; g.textAlign = 'left';
   const fw = wd => { g.direction = wd.dir === 'r' ? 'rtl' : 'ltr'; g.fillText(wd.text, wd.x, wd.cy); };
   const lit = (lvl, fn) => { if (lvl > 0.01){ g.save(); g.shadowColor = rgba(o.color || '#ffffff', Math.min(1, 0.95 * lvl)); g.shadowBlur = L.px * 0.6 * lvl; fn(); g.shadowBlur = L.px * 0.22 * lvl; fn(); g.restore(); } else fn(); };

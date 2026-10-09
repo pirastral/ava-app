@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The house sound-effects library (170). Every sound is synthesised here — no recordings, nothing licensed —
 from the recipes the founder's «Fox and the Moon» editor used (swept noise, FM bells, kicks, blips, booms,
-water drops), extended into nine families. Output: ui/sfx/<family>/<key>.mp3 + ui/sfx/index.json.
+water drops), extended into nine families (176: plus 44 sounds folded in under plain names, kept as "own"). Output: ui/sfx/<family>/<key>.mp3 + ui/sfx/index.json.
 
     python3 tools/make_sfx.py            # writes everything that is missing or changed
 """
@@ -453,11 +453,17 @@ def main():
         if not path.exists():
             write_mp3(y, path); made += 1
         idx.append({"fam": fam, "key": key, "fa": fa, "en": en, "sec": round(len(y) / SR, 2), "file": f"sfx/{fam}/{key}.mp3"})
-    # 175: families this script doesn't make (the Fox and the Moon's, from tools/fox_sfx.py) stay in the index
+    # 176: sounds this script doesn't make stay in the index — whole families it doesn't know, and the items marked
+    #      "own" inside its families (the 44 folded in from another set, under plain names); the old-path map stays too
     prev = json.loads((OUT / "index.json").read_text(encoding="utf-8")) if (OUT / "index.json").exists() else {"families": {}, "items": []}
     fams = {k: {"fa": v[0], "en": v[1]} for k, v in FAM.items()}; fams.update({k: v for k, v in prev.get("families", {}).items() if k not in FAM})
-    idx += [x for x in prev.get("items", []) if x.get("fam") not in FAM]
-    (OUT / "index.json").write_text(json.dumps({"families": fams, "items": idx}, ensure_ascii=False, indent=0), encoding="utf-8")
+    made_keys = {(x["fam"], x["key"]) for x in idx}
+    idx += [x for x in prev.get("items", []) if (x.get("fam") not in FAM or x.get("own")) and (x.get("fam"), x.get("key")) not in made_keys]
+    order = list(fams); idx.sort(key=lambda x: order.index(x["fam"]) if x["fam"] in order else len(order))
+    out = {"families": fams, "items": idx}
+    if prev.get("moved"):
+        out["moved"] = prev["moved"]
+    (OUT / "index.json").write_text(json.dumps(out, ensure_ascii=False, indent=0), encoding="utf-8")
     print(f"{len(idx)} sounds ({made} written) → {OUT}")
 
 

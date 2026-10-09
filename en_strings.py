@@ -19,6 +19,8 @@ EXACT = {
  "فقط همین یک بار: مدل چترباکس (حدود ۲ گیگابایت) دانلود می‌شود و از این به بعد روی دستگاه می‌ماند.": "One time only: downloading the Chatterbox model (about 2 GB); it stays on this device afterwards.",
  "فقط همین یک بار: مدل هم‌ترازی واژه‌ها (حدود ۱٫۲ گیگابایت) دانلود می‌شود…": "One time only: downloading the word-alignment model (about 1.2 GB)…",
  "مدل هم‌ترازی آماده است.": "The alignment model is ready.",
+ "دارم مدلِ زمان‌بندیِ واژه‌ها را یک بار دانلود می‌کنم (290 مگابایت)…": "Downloading the word-timing model once (290 MB)…",
+ "مدلِ زمان‌بندیِ واژه‌ها آماده است.": "The word-timing model is ready.",
  "پیش از ساخت این بخش، حافظهٔ موتور را خالی می‌کنم…": "Freeing the engine's memory before this part…",
  "حافظهٔ چترباکس خالی شد؛ دفعهٔ بعد چند ثانیه بیشتر طول می‌کشد.": "Chatterbox memory was released; the next part takes a few seconds longer.",
  "این بخش دیگر در حافظه نیست؛ یک بار دیگر «تبدیل به گفتار» را بزنید.": "This part is no longer in memory; press “Generate speech” again.",
@@ -102,6 +104,7 @@ EXACT = {
     'ساختنِ فایل از خطِ زمان': 'building the file from the timeline',
 }
 PATTERNS = [
+ (r"^مدلِ زمان‌بندیِ واژه‌ها: (" + D + ")٪$", "Word-timing model: {0}%"),
  (r"^دارم گفتار را می‌سازم… بخش (\S+) از (\S+)$", "Generating speech… part {0} of {1}"),
  (r"^دارم گفتار را می‌سازم… تکهٔ (\S+) از (\S+)$", "Generating speech… piece {0} of {1}"),
  (r"^دانلود (.+?)… (\S+)٪$", "Downloading {0}… {1}%"),

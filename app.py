@@ -138,12 +138,22 @@ class Api:
         Api._lang = "en" if lang == "en" else "fa"
         return {"ok": True, "lang": Api._lang}
 
+    _keys_seen = 0
+
     def _status(self, msg, pct=None):
         if Api._lang == "en":
             msg = _tr_en(msg)
         payload = json.dumps({"msg": msg, "pct": pct})
         try:
             self._window.evaluate_js(f"window.avaStatus({payload})")
+        except Exception:
+            pass
+        try:   # 176: a key ran out (or came back) — the header's badge counts again, live
+            import engines
+            n = engines._KEYS_CHANGED["n"]
+            if n != Api._keys_seen:
+                Api._keys_seen = n
+                self._window.evaluate_js("window.avaKeysChanged && window.avaKeysChanged()")
         except Exception:
             pass
 
@@ -168,6 +178,22 @@ class Api:
             if type(e).__name__ != "Cancelled":
                 traceback.print_exc()
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def gulp_words(self, gid):
+        """176: a part's line spans with their words timed again — after a project opens, or once the timing model is ready."""
+        try:
+            import engines
+            return {"ok": True, "lines": engines.gulp_lines(gid), "timing": engines.ctc_state()}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def timing_state(self):
+        """176: is the letter-timing model on this machine (ready · downloading NN% · failed)?"""
+        try:
+            import engines
+            return {"ok": True, **engines.ctc_state()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
     def reset_gulps(self):
         try:
@@ -377,7 +403,7 @@ class Api:
         """170: the bytes of a bundled sound effect (ui/sfx/<family>/<key>.mp3) — the window decodes them for playback."""
         try:
             rel = str(file).replace("\\", "/")
-            if not rel.startswith("sfx/") or ".." in rel:
+            if not (rel.startswith("sfx/") or rel.startswith("music/")) or ".." in rel:   # 176: a built-in music track can be an effect clip too
                 return {"ok": False, "error": "bad path"}
             p = Path(_res_path(str(Path("ui") / rel)))
             if not p.exists():
@@ -970,6 +996,13 @@ def main():
         js_api=api, width=win_w if licensed else 720, height=win_h if licensed else 760,
         min_size=(420, 640))
     api._window = window
+    if licensed:   # 176: the letter-timing model — fetched once in the background, then the page re-times what it shows
+        def _timing_ready():
+            try:
+                window.evaluate_js("window.avaTimingReady && window.avaTimingReady()")
+            except Exception:
+                pass
+        engines.ctc_warm(api._status, notify=_timing_ready)
     webview.start()
 
 

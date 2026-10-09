@@ -35,10 +35,6 @@
 "music": {
 "fa": "نت و آکوردِ کوتاه",
 "en": "Musical stingers"
-},
-"fox": {
-"fa": "روباه و ماه",
-"en": "The Fox and the Moon"
 }
 },
 "items": [
@@ -241,6 +237,69 @@
 "en": "Warp",
 "sec": 1.0,
 "file": "sfx/whoosh/warp.mp3"
+},
+{
+"fam": "whoosh",
+"key": "whoosh_round",
+"fa": "وووشِ گرد",
+"en": "Round whoosh",
+"sec": 1.12,
+"file": "sfx/whoosh/whoosh_round.mp3",
+"own": true
+},
+{
+"fam": "whoosh",
+"key": "riser_smooth",
+"fa": "رایزرِ صاف",
+"en": "Smooth riser",
+"sec": 2.0,
+"file": "sfx/whoosh/riser_smooth.mp3",
+"own": true
+},
+{
+"fam": "whoosh",
+"key": "fall_soft",
+"fa": "سقوطِ نرمِ صدا",
+"en": "Soft downsweep",
+"sec": 1.06,
+"file": "sfx/whoosh/fall_soft.mp3",
+"own": true
+},
+{
+"fam": "whoosh",
+"key": "swell_warm",
+"fa": "اوج‌گیریِ گرم",
+"en": "Warm swell",
+"sec": 2.27,
+"file": "sfx/whoosh/swell_warm.mp3",
+"own": true
+},
+{
+"fam": "whoosh",
+"key": "whoosh_soft",
+"fa": "وووشِ نرم",
+"en": "Soft whoosh",
+"sec": 1.31,
+"file": "sfx/whoosh/whoosh_soft.mp3",
+"own": true
+},
+{
+"fam": "whoosh",
+"key": "swell_long",
+"fa": "اوجِ بلند",
+"en": "Long swell",
+"sec": 2.97,
+"file": "sfx/whoosh/swell_long.mp3",
+"own": true
+},
+{
+"fam": "whoosh",
+"key": "whoosh_quick",
+"fa": "وووشِ تند",
+"en": "Quick whoosh",
+"sec": 0.9,
+"file": "sfx/whoosh/whoosh_quick.mp3",
+"own": true
 },
 {
 "fam": "hit",
@@ -457,6 +516,24 @@
 "en": "Ride",
 "sec": 0.8,
 "file": "sfx/hit/ride.mp3"
+},
+{
+"fam": "hit",
+"key": "boom_round",
+"fa": "بومِ گرد",
+"en": "Round boom",
+"sec": 1.71,
+"file": "sfx/hit/boom_round.mp3",
+"own": true
+},
+{
+"fam": "hit",
+"key": "thud_soft",
+"fa": "تاپِ نرم",
+"en": "Soft thud",
+"sec": 0.84,
+"file": "sfx/hit/thud_soft.mp3",
+"own": true
 },
 {
 "fam": "ui",
@@ -771,6 +848,33 @@
 "file": "sfx/ui/scan.mp3"
 },
 {
+"fam": "ui",
+"key": "pop_round",
+"fa": "پاپِ گرد",
+"en": "Round pop",
+"sec": 0.66,
+"file": "sfx/ui/pop_round.mp3",
+"own": true
+},
+{
+"fam": "ui",
+"key": "click_round",
+"fa": "کلیکِ گرد",
+"en": "Round click",
+"sec": 0.6,
+"file": "sfx/ui/click_round.mp3",
+"own": true
+},
+{
+"fam": "ui",
+"key": "message_chime",
+"fa": "زنگِ پیامِ نرم",
+"en": "Soft message chime",
+"sec": 1.21,
+"file": "sfx/ui/message_chime.mp3",
+"own": true
+},
+{
 "fam": "bell",
 "key": "bell_1",
 "fa": "زنگِ نتِ دو",
@@ -987,6 +1091,42 @@
 "file": "sfx/bell/wind_chime.mp3"
 },
 {
+"fam": "bell",
+"key": "chime_long",
+"fa": "زنگولهٔ بلند",
+"en": "Long chime",
+"sec": 4.42,
+"file": "sfx/bell/chime_long.mp3",
+"own": true
+},
+{
+"fam": "bell",
+"key": "sparkle_soft",
+"fa": "درخششِ نرم",
+"en": "Soft sparkle",
+"sec": 1.98,
+"file": "sfx/bell/sparkle_soft.mp3",
+"own": true
+},
+{
+"fam": "bell",
+"key": "shimmer_chord",
+"fa": "آکوردِ درخشان",
+"en": "Shimmer chord",
+"sec": 0.91,
+"file": "sfx/bell/shimmer_chord.mp3",
+"own": true
+},
+{
+"fam": "bell",
+"key": "chime_chord",
+"fa": "آکوردِ زنگ",
+"en": "Chime chord",
+"sec": 1.85,
+"file": "sfx/bell/chime_chord.mp3",
+"own": true
+},
+{
 "fam": "glitch",
 "key": "glitch_1",
 "fa": "گلیچِ کلاسیک",
@@ -1145,6 +1285,15 @@
 "en": "Stutter",
 "sec": 0.67,
 "file": "sfx/glitch/stutter.mp3"
+},
+{
+"fam": "glitch",
+"key": "glitch_short",
+"fa": "گلیچِ کوتاه",
+"en": "Short glitch",
+"sec": 1.06,
+"file": "sfx/glitch/glitch_short.mp3",
+"own": true
 },
 {
 "fam": "nature",
@@ -1337,6 +1486,24 @@
 "en": "Splash",
 "sec": 0.5,
 "file": "sfx/nature/splash.mp3"
+},
+{
+"fam": "nature",
+"key": "drop_clear",
+"fa": "قطرهٔ آبِ روشن",
+"en": "Clear water drop",
+"sec": 0.64,
+"file": "sfx/nature/drop_clear.mp3",
+"own": true
+},
+{
+"fam": "nature",
+"key": "wind_night",
+"fa": "بادِ شبانه",
+"en": "Night wind",
+"sec": 15.4,
+"file": "sfx/nature/wind_night.mp3",
+"own": true
 },
 {
 "fam": "trans",
@@ -1579,6 +1746,222 @@
 "file": "sfx/trans/tr_scene_chrome.mp3"
 },
 {
+"fam": "trans",
+"key": "tr_shatter",
+"fa": "شکستن",
+"en": "Shatter",
+"sec": 1.65,
+"file": "sfx/trans/tr_shatter.mp3",
+"own": true
+},
+{
+"fam": "trans",
+"key": "tr_rise",
+"fa": "بالا رفتن",
+"en": "Rise",
+"sec": 1.03,
+"file": "sfx/trans/tr_rise.mp3",
+"own": true
+},
+{
+"fam": "trans",
+"key": "tr_crossfade",
+"fa": "محو",
+"en": "Crossfade",
+"sec": 1.43,
+"file": "sfx/trans/tr_crossfade.mp3",
+"own": true
+},
+{
+"fam": "trans",
+"key": "tr_spin",
+"fa": "چرخش و ورق",
+"en": "Spin and flip",
+"sec": 1.65,
+"file": "sfx/trans/tr_spin.mp3",
+"own": true
+},
+{
+"fam": "trans",
+"key": "tr_ball",
+"fa": "گویِ شیشه‌ای",
+"en": "Glass ball",
+"sec": 5.0,
+"file": "sfx/trans/tr_ball.mp3",
+"own": true
+},
+{
+"fam": "trans",
+"key": "tr_leak_warm",
+"fa": "نشتِ نورِ گرم",
+"en": "Warm light leak",
+"sec": 1.9,
+"file": "sfx/trans/tr_leak_warm.mp3",
+"own": true
+},
+{
+"fam": "trans",
+"key": "tr_datamosh",
+"fa": "ذوبِ دیتاموش",
+"en": "Datamosh melt",
+"sec": 1.1,
+"file": "sfx/trans/tr_datamosh.mp3",
+"own": true
+},
+{
+"fam": "trans",
+"key": "tr_pool_water",
+"fa": "آبِ استخر",
+"en": "Pool water",
+"sec": 2.32,
+"file": "sfx/trans/tr_pool_water.mp3",
+"own": true
+},
+{
+"fam": "trans",
+"key": "tr_god_rays",
+"fa": "پرتوهای نور",
+"en": "God rays",
+"sec": 5.0,
+"file": "sfx/trans/tr_god_rays.mp3",
+"own": true
+},
+{
+"fam": "trans",
+"key": "tr_distort",
+"fa": "اعوجاجِ لنز",
+"en": "Lens distortion",
+"sec": 1.1,
+"file": "sfx/trans/tr_distort.mp3",
+"own": true
+},
+{
+"fam": "trans",
+"key": "tr_smear_frames",
+"fa": "کشیدگیِ قاب‌ها",
+"en": "Smeared frames",
+"sec": 1.18,
+"file": "sfx/trans/tr_smear_frames.mp3",
+"own": true
+},
+{
+"fam": "trans",
+"key": "tr_liquid_drop",
+"fa": "قطرهٔ مایع",
+"en": "Liquid drop",
+"sec": 1.33,
+"file": "sfx/trans/tr_liquid_drop.mp3",
+"own": true
+},
+{
+"fam": "trans",
+"key": "tr_glass_pane",
+"fa": "شیشه و شیشهٔ شیاردار",
+"en": "Glass pane",
+"sec": 2.2,
+"file": "sfx/trans/tr_glass_pane.mp3",
+"own": true
+},
+{
+"fam": "trans",
+"key": "tr_frosted_glass",
+"fa": "شیشهٔ مات",
+"en": "Frosted glass",
+"sec": 1.68,
+"file": "sfx/trans/tr_frosted_glass.mp3",
+"own": true
+},
+{
+"fam": "trans",
+"key": "tr_stained_long",
+"fa": "شیشهٔ رنگیِ بلند",
+"en": "Long stained glass",
+"sec": 3.75,
+"file": "sfx/trans/tr_stained_long.mp3",
+"own": true
+},
+{
+"fam": "trans",
+"key": "tr_ink_bloom",
+"fa": "شکوفهٔ جوهر",
+"en": "Ink bloom",
+"sec": 1.91,
+"file": "sfx/trans/tr_ink_bloom.mp3",
+"own": true
+},
+{
+"fam": "trans",
+"key": "tr_ember",
+"fa": "سوختنِ اخگر",
+"en": "Ember burn",
+"sec": 1.75,
+"file": "sfx/trans/tr_ember.mp3",
+"own": true
+},
+{
+"fam": "trans",
+"key": "tr_whip_pan",
+"fa": "پنِ شلاقی",
+"en": "Whip pan",
+"sec": 1.03,
+"file": "sfx/trans/tr_whip_pan.mp3",
+"own": true
+},
+{
+"fam": "trans",
+"key": "tr_glitch_cut",
+"fa": "برشِ گلیچ",
+"en": "Glitch cut",
+"sec": 0.68,
+"file": "sfx/trans/tr_glitch_cut.mp3",
+"own": true
+},
+{
+"fam": "trans",
+"key": "tr_zoom_through",
+"fa": "زومِ عبوری",
+"en": "Zoom through",
+"sec": 1.31,
+"file": "sfx/trans/tr_zoom_through.mp3",
+"own": true
+},
+{
+"fam": "trans",
+"key": "tr_mosaic_fine",
+"fa": "موزاییکِ ریز",
+"en": "Fine mosaic",
+"sec": 0.76,
+"file": "sfx/trans/tr_mosaic_fine.mp3",
+"own": true
+},
+{
+"fam": "trans",
+"key": "tr_halftone_soft",
+"fa": "هاف‌تونِ نرم",
+"en": "Soft halftone",
+"sec": 1.65,
+"file": "sfx/trans/tr_halftone_soft.mp3",
+"own": true
+},
+{
+"fam": "trans",
+"key": "tr_liquid_chrome",
+"fa": "کرومِ مایع",
+"en": "Liquid chrome",
+"sec": 5.0,
+"file": "sfx/trans/tr_liquid_chrome.mp3",
+"own": true
+},
+{
+"fam": "trans",
+"key": "tr_morph",
+"fa": "دگردیسی",
+"en": "Morph",
+"sec": 3.82,
+"file": "sfx/trans/tr_morph.mp3",
+"own": true
+},
+{
 "fam": "foley",
 "key": "applause_1",
 "fa": "تشویق",
@@ -1761,6 +2144,15 @@
 "en": "Laughter",
 "sec": 1.9,
 "file": "sfx/foley/laugh_track.mp3"
+},
+{
+"fam": "foley",
+"key": "castanets",
+"fa": "قاشقک",
+"en": "Castanets",
+"sec": 3.87,
+"file": "sfx/foley/castanets.mp3",
+"own": true
 },
 {
 "fam": "music",
@@ -2009,366 +2401,53 @@
 "en": "Suspense",
 "sec": 3.0,
 "file": "sfx/music/suspense.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_whoosh",
-"fa": "وووش",
-"en": "Whoosh",
-"sec": 1.12,
-"file": "sfx/fox/fox_whoosh.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_riser",
-"fa": "رایزر",
-"en": "Riser",
-"sec": 2.0,
-"file": "sfx/fox/fox_riser.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_fall",
-"fa": "سقوطِ صدا",
-"en": "Downsweep",
-"sec": 1.06,
-"file": "sfx/fox/fox_fall.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_swell",
-"fa": "اوج‌گیری",
-"en": "Swell",
-"sec": 2.27,
-"file": "sfx/fox/fox_swell.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_pop",
-"fa": "پاپ",
-"en": "Pop",
-"sec": 0.66,
-"file": "sfx/fox/fox_pop.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_click",
-"fa": "کلیک",
-"en": "Click",
-"sec": 0.6,
-"file": "sfx/fox/fox_click.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_chime",
-"fa": "زنگوله",
-"en": "Chime",
-"sec": 4.42,
-"file": "sfx/fox/fox_chime.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_sparkle",
-"fa": "درخشش",
-"en": "Sparkle",
-"sec": 1.98,
-"file": "sfx/fox/fox_sparkle.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_boom",
-"fa": "بوم",
-"en": "Boom",
-"sec": 1.71,
-"file": "sfx/fox/fox_boom.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_thud",
-"fa": "تاپ",
-"en": "Thud",
-"sec": 0.84,
-"file": "sfx/fox/fox_thud.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_glitch",
-"fa": "گلیچ",
-"en": "Glitch",
-"sec": 1.06,
-"file": "sfx/fox/fox_glitch.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_drop",
-"fa": "قطرهٔ آب",
-"en": "Water drop",
-"sec": 0.64,
-"file": "sfx/fox/fox_drop.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_tr_shatter",
-"fa": "گذارِ شکستن",
-"en": "Shatter",
-"sec": 1.65,
-"file": "sfx/fox/fox_tr_shatter.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_tr_rise",
-"fa": "گذارِ بالا رفتن",
-"en": "Rise",
-"sec": 1.03,
-"file": "sfx/fox/fox_tr_rise.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_tr_crossfade",
-"fa": "گذارِ محو",
-"en": "Crossfade",
-"sec": 1.43,
-"file": "sfx/fox/fox_tr_crossfade.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_tr_cube",
-"fa": "چرخشِ مکعب و ورق",
-"en": "Cube spin / card flip",
-"sec": 1.65,
-"file": "sfx/fox/fox_tr_cube.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_tr_lens",
-"fa": "گویِ شیشه‌ای",
-"en": "Glass ball",
-"sec": 5.0,
-"file": "sfx/fox/fox_tr_lens.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_tr_leak",
-"fa": "نشتِ نور",
-"en": "Light leak",
-"sec": 1.9,
-"file": "sfx/fox/fox_tr_leak.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_tr_melt",
-"fa": "ذوبِ دیتاموش",
-"en": "Datamosh melt",
-"sec": 1.1,
-"file": "sfx/fox/fox_tr_melt.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_tr_pool",
-"fa": "آبِ استخر",
-"en": "Pool water",
-"sec": 2.32,
-"file": "sfx/fox/fox_tr_pool.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_tr_rays",
-"fa": "پرتوهای نور",
-"en": "God rays",
-"sec": 5.0,
-"file": "sfx/fox/fox_tr_rays.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_tr_barrel",
-"fa": "اعوجاجِ لنز",
-"en": "Lens distortion",
-"sec": 1.1,
-"file": "sfx/fox/fox_tr_barrel.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_tr_smear",
-"fa": "کشیدگیِ قاب‌ها",
-"en": "Smear frames",
-"sec": 1.18,
-"file": "sfx/fox/fox_tr_smear.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_tr_liquid",
-"fa": "قطرهٔ مایع",
-"en": "Liquid drop",
-"sec": 1.33,
-"file": "sfx/fox/fox_tr_liquid.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_tr_glass",
-"fa": "شیشه و شیشهٔ شیاردار",
-"en": "Glass pane / reeded glass",
-"sec": 2.2,
-"file": "sfx/fox/fox_tr_glass.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_tr_frosted",
-"fa": "شیشهٔ مات",
-"en": "Frosted glass",
-"sec": 1.68,
-"file": "sfx/fox/fox_tr_frosted.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_tr_stained",
-"fa": "شیشهٔ رنگی",
-"en": "Stained glass",
-"sec": 3.75,
-"file": "sfx/fox/fox_tr_stained.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_tr_ink",
-"fa": "شکوفهٔ جوهر",
-"en": "Ink bloom",
-"sec": 1.91,
-"file": "sfx/fox/fox_tr_ink.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_tr_burn",
-"fa": "سوختنِ اخگر",
-"en": "Ember burn",
-"sec": 1.75,
-"file": "sfx/fox/fox_tr_burn.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_tr_whip",
-"fa": "پنِ شلاقی",
-"en": "Whip pan",
-"sec": 1.03,
-"file": "sfx/fox/fox_tr_whip.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_tr_glitch",
-"fa": "گذارِ گلیچ",
-"en": "Glitch transition",
-"sec": 0.68,
-"file": "sfx/fox/fox_tr_glitch.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_tr_zoom",
-"fa": "زومِ عبوری",
-"en": "Zoom through",
-"sec": 1.31,
-"file": "sfx/fox/fox_tr_zoom.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_tr_mosaic",
-"fa": "موزاییک",
-"en": "Mosaic",
-"sec": 0.76,
-"file": "sfx/fox/fox_tr_mosaic.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_tr_halftone",
-"fa": "هاف‌تون",
-"en": "Halftone",
-"sec": 1.65,
-"file": "sfx/fox/fox_tr_halftone.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_tr_chrome",
-"fa": "کرومِ مایع",
-"en": "Liquid chrome",
-"sec": 5.0,
-"file": "sfx/fox/fox_tr_chrome.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_tr_morph",
-"fa": "دگردیسی",
-"en": "Morph",
-"sec": 3.82,
-"file": "sfx/fox/fox_tr_morph.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_film_castanets",
-"fa": "قاشقک (کاستانیت)",
-"en": "Castanets",
-"sec": 3.87,
-"file": "sfx/fox/fox_film_castanets.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_film_shimmer",
-"fa": "درخششِ آکورد",
-"en": "Shimmer chord",
-"sec": 0.91,
-"file": "sfx/fox/fox_film_shimmer.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_film_soft_whoosh",
-"fa": "وووشِ نرم",
-"en": "Soft whoosh",
-"sec": 1.31,
-"file": "sfx/fox/fox_film_soft_whoosh.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_film_night_wind",
-"fa": "بادِ شبانه",
-"en": "Night wind",
-"sec": 15.4,
-"file": "sfx/fox/fox_film_night_wind.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_film_chime_chord",
-"fa": "آکوردِ زنگ",
-"en": "Chime chord",
-"sec": 1.85,
-"file": "sfx/fox/fox_film_chime_chord.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_film_long_swell",
-"fa": "اوجِ بلند",
-"en": "Long swell",
-"sec": 2.97,
-"file": "sfx/fox/fox_film_long_swell.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_film_short_whoosh",
-"fa": "وووشِ کوتاه",
-"en": "Short whoosh",
-"sec": 0.9,
-"file": "sfx/fox/fox_film_short_whoosh.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_film_message_chime",
-"fa": "زنگِ پیام",
-"en": "Message chime",
-"sec": 1.21,
-"file": "sfx/fox/fox_film_message_chime.mp3"
-},
-{
-"fam": "fox",
-"key": "fox_film_score",
-"fa": "موسیقیِ فیلم (کامل)",
-"en": "Film score (whole)",
-"sec": 74.6,
-"file": "sfx/fox/fox_film_score.mp3"
 }
-]
+],
+"moved": {
+"sfx/fox/fox_whoosh.mp3": "sfx/whoosh/whoosh_round.mp3",
+"sfx/fox/fox_riser.mp3": "sfx/whoosh/riser_smooth.mp3",
+"sfx/fox/fox_fall.mp3": "sfx/whoosh/fall_soft.mp3",
+"sfx/fox/fox_swell.mp3": "sfx/whoosh/swell_warm.mp3",
+"sfx/fox/fox_pop.mp3": "sfx/ui/pop_round.mp3",
+"sfx/fox/fox_click.mp3": "sfx/ui/click_round.mp3",
+"sfx/fox/fox_chime.mp3": "sfx/bell/chime_long.mp3",
+"sfx/fox/fox_sparkle.mp3": "sfx/bell/sparkle_soft.mp3",
+"sfx/fox/fox_boom.mp3": "sfx/hit/boom_round.mp3",
+"sfx/fox/fox_thud.mp3": "sfx/hit/thud_soft.mp3",
+"sfx/fox/fox_glitch.mp3": "sfx/glitch/glitch_short.mp3",
+"sfx/fox/fox_drop.mp3": "sfx/nature/drop_clear.mp3",
+"sfx/fox/fox_tr_shatter.mp3": "sfx/trans/tr_shatter.mp3",
+"sfx/fox/fox_tr_rise.mp3": "sfx/trans/tr_rise.mp3",
+"sfx/fox/fox_tr_crossfade.mp3": "sfx/trans/tr_crossfade.mp3",
+"sfx/fox/fox_tr_cube.mp3": "sfx/trans/tr_spin.mp3",
+"sfx/fox/fox_tr_lens.mp3": "sfx/trans/tr_ball.mp3",
+"sfx/fox/fox_tr_leak.mp3": "sfx/trans/tr_leak_warm.mp3",
+"sfx/fox/fox_tr_melt.mp3": "sfx/trans/tr_datamosh.mp3",
+"sfx/fox/fox_tr_pool.mp3": "sfx/trans/tr_pool_water.mp3",
+"sfx/fox/fox_tr_rays.mp3": "sfx/trans/tr_god_rays.mp3",
+"sfx/fox/fox_tr_barrel.mp3": "sfx/trans/tr_distort.mp3",
+"sfx/fox/fox_tr_smear.mp3": "sfx/trans/tr_smear_frames.mp3",
+"sfx/fox/fox_tr_liquid.mp3": "sfx/trans/tr_liquid_drop.mp3",
+"sfx/fox/fox_tr_glass.mp3": "sfx/trans/tr_glass_pane.mp3",
+"sfx/fox/fox_tr_frosted.mp3": "sfx/trans/tr_frosted_glass.mp3",
+"sfx/fox/fox_tr_stained.mp3": "sfx/trans/tr_stained_long.mp3",
+"sfx/fox/fox_tr_ink.mp3": "sfx/trans/tr_ink_bloom.mp3",
+"sfx/fox/fox_tr_burn.mp3": "sfx/trans/tr_ember.mp3",
+"sfx/fox/fox_tr_whip.mp3": "sfx/trans/tr_whip_pan.mp3",
+"sfx/fox/fox_tr_glitch.mp3": "sfx/trans/tr_glitch_cut.mp3",
+"sfx/fox/fox_tr_zoom.mp3": "sfx/trans/tr_zoom_through.mp3",
+"sfx/fox/fox_tr_mosaic.mp3": "sfx/trans/tr_mosaic_fine.mp3",
+"sfx/fox/fox_tr_halftone.mp3": "sfx/trans/tr_halftone_soft.mp3",
+"sfx/fox/fox_tr_chrome.mp3": "sfx/trans/tr_liquid_chrome.mp3",
+"sfx/fox/fox_tr_morph.mp3": "sfx/trans/tr_morph.mp3",
+"sfx/fox/fox_film_castanets.mp3": "sfx/foley/castanets.mp3",
+"sfx/fox/fox_film_shimmer.mp3": "sfx/bell/shimmer_chord.mp3",
+"sfx/fox/fox_film_soft_whoosh.mp3": "sfx/whoosh/whoosh_soft.mp3",
+"sfx/fox/fox_film_night_wind.mp3": "sfx/nature/wind_night.mp3",
+"sfx/fox/fox_film_chime_chord.mp3": "sfx/bell/chime_chord.mp3",
+"sfx/fox/fox_film_long_swell.mp3": "sfx/whoosh/swell_long.mp3",
+"sfx/fox/fox_film_short_whoosh.mp3": "sfx/whoosh/whoosh_quick.mp3",
+"sfx/fox/fox_film_message_chime.mp3": "sfx/ui/message_chime.mp3",
+"sfx/fox/fox_film_score.mp3": "music/quiet_night.mp3"
+}
 }

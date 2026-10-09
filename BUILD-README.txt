@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist
 ======================================================================
-This zip is the COMPLETE application source as of update 175.
+This zip is the COMPLETE application source as of update 176.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -16,13 +16,78 @@ Replace these files in the repo (paths identical):
   builtin_keys.json – NEW (101): Freesound / Jamendo keys shipped with the app
   en_strings.py     – NEW (107): English renderings of engine messages (116: Fish added)
   requirements.txt  – 116: + msgpack
-  voices/           – NOW POPULATED (107): 63 clips + voices.json — 175: NOT in the zip (byte-identical to 170's, so the
-                      zip stays under the 30 MB upload limit): leave the repo's voices/ folder exactly as it is
-  ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold)
+  voices/           – NOW POPULATED (107): 63 clips + voices.json — 175/176: NOT in this zip (byte-identical to 170's, so the
+                      zip stays under the 30 MB upload limit); it comes as its own zip: leave the repo's voices/ folder as it is
+  ui/fonts/         – NEW (110): Vazirmatn woff2 (Regular, Medium, Bold); 176: + latin/ — 29 English Google-font files (≈1 MB),
+                      fetched by the page the first time a text uses one (never embedded)
+  ui/music/         – NEW (176): the built-in music library («شبِ آرام» — the Fox and the Moon's score)
   .github/workflows/build.yml – unchanged since 89 (also here as WORKFLOW-build.yml)
-  ui/sfx/           – the effects library (170); 175: + fox/ — the Fox and the Moon's own 45 sounds (ships in ui/)
-  tools/            – build-time only, never shipped: ui-build/ (the page), make_sfx.py, fox_sfx.py + fox_render.js (175),
-                      protect.py / verify_protection.py
+  ui/sfx/           – the effects library (170); 176: the Fox and the Moon's sounds folded into the nine families (fox/ is gone;
+                      index.json's «moved» map sends old clip paths to the new files)
+  tools/            – build-time only, never shipped: ui-build/ (the page; package.json now lists the English fonts too),
+                      make_sfx.py, protect.py / verify_protection.py (176: fox_sfx.py + fox_render.js removed)
+  176 — DELETE FROM THE REPO (no longer used): ui/sfx/fox/ · tools/fox_sfx.py · tools/fox_render.js ·
+                      tools/ui-build/.input-editor.css (an old temporary file)
+
+WHAT CHANGED IN 176 (on top of 175) — the founder's 69 points, in one build
+  · LINES: Enter/split carries every setting of the line (speaker, tone, engine, voice, model); «لحنِ خط» sits before «تگ صوتی»;
+    a tone or tag the line's engine cannot do is KEPT (dimmed, not sent) until the line is regenerated with that engine;
+    Fish's tone badge has no brackets; the voice an engine fell back to shows chosen; a Gemini model per line and per
+    speaker; a new speaker starts with the project's voice; the speakers section opens expanded.
+  · REACTIONS ARE TIMED CLIPS: inserted at the caret, their clip appears at once (dashed until voiced) on a speech track;
+    the badge floats 70% above the line at the letter heard at that moment; time is the truth (free, precise moves; a
+    click selects without moving; moving never marks the line edited); the dialog's menus work after a generation;
+    «Regenerate» in the dialog; a line's regeneration never re-voices its reactions; saved and reopened with the
+    project (the engine renumbers their audio on open — the founder's project_002 opens with its reaction at 8.364 s).
+  · LETTER-PRECISE TIMING ON THE MACHINE: a 300M CTC model (int8 ONNX, 290 MB, downloaded once on first start into
+    AvaModels/timing) aligns every line's letters to its own voice — no Google transcription requests any more (audit,
+    lead-in, line index). Measured on the founder's take: the caret is within one letter (p90), two at most.
+  · KEYS: one request, one key (round robin across requests); a per-minute 429 moves on at once (the key rests); a daily
+    429 retires the key until Pacific midnight and tells the badge, which counts the active keys live; Google's 503
+    backs off (2, 4, 8 s) and stops after four tries; after a network re-route the retry goes through the same key.
+  · SOUNDS AND SAMPLES: the Fox's sounds folded into nine families with plain names; its score is the built-in music
+    «شبِ آرام»; adding a sound stops its preview; deleting a music clip silences it at once; the samples tool makes every
+    Chatterbox voice (chatterbox/) and each of them as a Fish «نمونه» voice (fish/); 13 more Gemini 3.1 samples bundled.
+  · TRACKS: one track of every kind always stays (audio: a speech track and a regular track; video: subtitles, a regular
+    layer, the background, the audio) — empty tracks go, never the last of their kind. A duplicate lands right after its
+    original on the same track and what follows makes room (speech — the old copy threw on the clip's own track
+    reference —, music, effects, reactions, video objects); «تکثیر» on every line's bar. Several clips at once in both
+    timelines: ⌘/Ctrl-click, Shift-click (a range), a marquee on empty lanes; they move together and Delete removes them.
+  · VIDEO CLIPS ARE AUDIO CLIPS: label on top, white trim handles beside the selected clip, its length on it; a video's
+    start handle moves through its source (never before its first frame, never past its last). Slides have their own
+    colour and say «اسلایدشو n/N»; a slide's neighbours follow a trim live; deleting a slide closes the gap (what follows
+    the slideshow stays behind it). A background clip's inspector has «کلیپ | گذار»: the transition (with «بدونِ گذار»)
+    joins only two clips that touch; its ✦ sits inside the clip, clear of the trim handle, and opens that tab; a
+    transition whose neighbour goes away goes with it, and the tool is not offered without one. Split is off the canvas
+    toolbar (it stays on the timeline's). Background pictures hide size, place, corners, stroke, shadow and the transform.
+  · TEXT: new text has no background and hugs its words (auto width) — a side handle gives it a width it wraps in
+    («پهنای خودکار / ثابت»), a corner scales it; double-click types right on the canvas, live; the size is a number with
+    − / + (Shift: ten); its colours have five swatches read from the frame on the canvas when the panel opens, a refresh,
+    and a round picker with its hex. «اندازه و جایگاه» sits on top, as in the mock. Pictures have no shadow by default;
+    the adjustments open by default. 22 English Google fonts (sans, serif, display, script) beside the Persian ones,
+    fetched the first time they are used; static families keep their real weights.
+  · SUBTITLES ALWAYS FOLLOW: drawn from the script and the voice's word times every time — no «follow the timeline», no
+    re-sync, no subtitle of their own; «words per caption» re-cuts them at once; a hand correction (double-click on the
+    canvas or the timeline) holds while its line is the same text and voice (moving the clip keeps it; a new wording, a
+    regeneration or a new words-per-caption replaces it; a pencil marks it); old projects' hand-fixed subtitles become
+    corrections. One design for all of them: the same colour fields and size field as text, «کلمهٔ گفته‌شده» (not
+    «برجسته»), a larger size grows inward from its edge, dragging one or the arrow keys moves all of them.
+  · ONE DESIGN: dropdowns as wide as their content and never taller than it; a group opens in its own layer beside the
+    menu toward the side its chevron points (WebKit clipped the old flyout inside the scrolling list — the Fish voice
+    groups), and moving to it on a slant does not switch it; every value control has its reset icon beside its name,
+    shown when the value is off its default (audio and video alike); every colour picker is a round circle with its hex.
+    A selected effect or reaction in the audio timeline has its own panel instead of a volume box over the project's.
+  · PREVIEW: larger (less margin), its bar folds away, ⤢ plays the video full screen (Esc leaves).
+  · SPEED: the stylesheet has no :has() any more — with any :has() rule present, every change to the page restyled all of
+    it (30–50 ms each, several per action: selecting an object took 300 ms, a canvas drag 200 ms per move); the build now
+    strips them (the day theme switches by data-theme, a collapse opens by class). A canvas drag no longer redraws the
+    timeline on every move (1 ms per move now); selecting an object ≈ 45 ms; the timeline ≈ 25 ms.
+  Tests: t24–t26 (reactions), t27 (lines, engines, models), t28 (sounds and samples), t29 (tracks, duplicates,
+  multi-selection, clips, transitions), t30 (text, subtitles, controls, preview, clip panels), e176/e176_keys/e176_lib
+  (timing model, keys, library) + every earlier suite updated to 176's behaviour + engine 146–160 (test147's key file
+  now restarts the key cursor too).
+  TO DO ON THE MAC: «Connection and quota» → «Make all voice samples…» once, to make the Chatterbox and Fish «نمونه»
+  samples (chatterbox/ and fish/); the timing model downloads by itself on the first start.
 
 WHAT CHANGED IN 175 (on top of 174) — everything asked for since 174, in one build (none of 171–174 was deployed)
   · TOOLING: the page's build tools live in the tree (tools/ui-build: build-editor.py, package.json, the Tailwind input).
