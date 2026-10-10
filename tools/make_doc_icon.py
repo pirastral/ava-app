@@ -84,7 +84,7 @@ def render(size):
     base, (x0, y0, x1, y1, fold) = page(S, small)
     k = S / 1024.0
     cr = crown_image()
-    h = round((500 if small else 452) * k)                     # the crown's height on the page
+    h = round((600 if small else 542) * k)                     # the crown's height on the page (182: 20 % larger)
     w = round(cr.width * h / cr.height)
     c = grey_crown(cr, w, h, small)
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2 + round(22 * k)     # the page's middle, a little low (the fold is above)

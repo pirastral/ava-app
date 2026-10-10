@@ -13,13 +13,16 @@
 var AMS = new Set(), AANCHOR = null, VMS = new Set(), VANCHOR = null, BGTAB = null;   // var: read by handlers in earlier files
 
 // ---------- tracks: never the last of a kind
-function keepOneOfEach(){
+// 182: the spare track a tidy-up just dropped comes back as itself (its id and settings) — it was re-made with a new id
+//      after every undo, redo and open, so a restored state never matched the saved one
+function keepOneOfEach(prev){
   ['speech', 'track'].forEach(k => { const all = S.tracks.filter(t => t.kind === k), full = all.filter(t => t.clips.length);
-    const keep = full.length ? full : [all[0] || { id: (k === 'speech' ? 's' : 'r') + (++uid), name: '', en: '', kind: k, gapless: false, clips: [] }];
+    const old = (prev || []).find(t => t.kind === k && !t.clips.length && !S.tracks.some(x => x.id === t.id));
+    const keep = full.length ? full : [all[0] || old || { id: (k === 'speech' ? 's' : 'r') + (++uid), name: '', en: '', kind: k, gapless: false, clips: [] }];
     S.tracks = S.tracks.filter(t => t.kind !== k || keep.includes(t)); keep.forEach(t => { if (!S.tracks.includes(t)) S.tracks.push(t); }); });
   renameTracks(); }
 cleanupTracks = function(){ keepOneOfEach(); };
-{ const _mt176 = migrateTracks; migrateTracks = function(){ const r = _mt176.apply(this, arguments); keepOneOfEach(); return r; }; }
+{ const _mt176 = migrateTracks; migrateTracks = function(){ const before = S.tracks.slice(), r = _mt176.apply(this, arguments); keepOneOfEach(before); return r; }; }
 keepOneOfEach();
 { const _el176 = ensureLayers; ensureLayers = function(){ _el176.apply(this, arguments);
     const objs = V.layers.filter(l => l.kind === 'obj'), full = objs.filter(l => l.items.length);
@@ -80,12 +83,14 @@ function aRange(id){ const a = findClip(AANCHOR || selClip || id), b = findClip(
       afterAMS(); return; }
     if (AMS.size > 1 && AMS.has(id)) return aGroupDrag(ev, el);
     AMS.clear(); AANCHOR = id; return _scd176.apply(this, arguments); }; }
-function aGroupDrag(ev, el){ ev.stopPropagation(); if (document.activeElement && document.activeElement.isContentEditable) document.activeElement.blur(); getSelection().removeAllRanges(); remember();
+function aGroupDrag(ev, el){ ev.stopPropagation(); if (document.activeElement && document.activeElement.isContentEditable) document.activeElement.blur(); getSelection().removeAllRanges(); const step = dragStep(), sc = tlSc(), sl0 = sc.scrollLeft;   // 182: edge scrolling, Esc
   const items = [...AMS].map(findClip).filter(x => x[1]).map(([t, c]) => ({ t, c, at0: c.at })), x0 = ev.clientX, lo = Math.min(...items.map(x => x.at0)); let moved = false; OVL_DRAG = true;
-  const mv = e => { if (Math.abs(e.clientX - x0) > 3) moved = true; if (!moved) return; const d = Math.max(-lo, (e.clientX - x0) / zoom);
-    items.forEach(({ c, at0 }) => { c.at = at0 + d; const x = document.querySelector(`#lanes .clip[data-cid="${c.id}"]`); if (x) x.style.left = (PAD + c.at * zoom) + 'px'; }); };
-  const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); OVL_DRAG = false;
-    if (!moved){ hist.past.pop(); AMS.clear(); AMS.add(el.dataset.cid); afterAMS(); return; }
+  const AS = autoScroller(e => mv(e));
+  const mv = e => { const dx = e.clientX - x0 + sc.scrollLeft - sl0; if (Math.abs(dx) > 3) moved = true; if (!moved) return; const d = Math.max(-lo, dx / zoom);
+    items.forEach(({ c, at0 }) => { c.at = at0 + d; const x = document.querySelector(`#lanes .clip[data-cid="${c.id}"]`); if (x) x.style.left = (PAD + c.at * zoom) + 'px'; }); AS.move(e); };
+  DRAG_ESC = () => { AS.stop(); removeEventListener('pointermove', mv); removeEventListener('pointerup', up); OVL_DRAG = false; step.cancel(); renderScript(); };
+  const up = () => { AS.stop(); DRAG_ESC = null; removeEventListener('pointermove', mv); removeEventListener('pointerup', up); OVL_DRAG = false;
+    if (!moved){ step.drop(); AMS.clear(); AMS.add(el.dataset.cid); afterAMS(); return; }
     const lines = amsLines(), clash = (t, c) => t.clips.some(x => x !== c && x.type !== 'ovl' && x.at < c.at + dur(c) - 1e-6 && x.at + dur(x) > c.at + 1e-6);
     items.forEach(({ t, c }) => { if (c.type === 'ovl' || !clash(t, c)) return; t.clips = t.clips.filter(x => x !== c); freeTrack(c).clips.push(c); });   // never two clips on one spot of one track
     items.forEach(({ c }) => { if (c.type !== 'ovl' || lines.has(c.line)) return; const [id, r] = rFind(c.rid || c.id); if (r) placeReact(r, id, c.at); });   // a reaction whose line moved along simply follows it
@@ -123,13 +128,15 @@ function vMultiDown(ev, el){ const k = el.dataset.k, id = el.dataset.id;
     afterVMS(); return true; }
   if (VMS.size > 1 && VMS.has(id)){ ev.stopPropagation(); vGroupDrag(ev, el); return true; }
   VMS.clear(); VANCHOR = id; return false; }
-function vGroupDrag(ev, el){ remember(); const lanes = $('lanes'), x0 = ev.clientX, ids = new Set(VMS); let moved = false;
+function vGroupDrag(ev, el){ const step = dragStep(), sc = tlSc(), sl0 = sc.scrollLeft; const lanes = $('lanes'), x0 = ev.clientX, ids = new Set(VMS); let moved = false;   // 182: edge scrolling, Esc
   [...ids].forEach(id => { const o = objById(id); if (o && o.show) slidesOf(o.show).forEach(s => ids.add(s.id)); });   // a slide moves with its slideshow
   const items = [...ids].map(objById).filter(Boolean).map(o => ({ o, s0: o.start || 0, e0: o.end })), lo = Math.min(...items.map(x => x.s0));
-  const mv = e => { if (Math.abs(e.clientX - x0) > 2) moved = true; if (!moved) return; const d = Math.max(-lo, (e.clientX - x0) / zoom);
-    items.forEach(({ o, s0, e0 }) => { o.start = s0 + d; if (e0 != null) o.end = e0 + d; const x = lanes.querySelector(`.vclip[data-id="${o.id}"]`); if (x) x.style.left = (PAD + o.start * zoom) + 'px'; }); };
-  const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up);
-    if (!moved){ hist.past.pop(); VMS.clear(); selectV(el.dataset.id); return; }
+  const AS = autoScroller(e => mv(e));
+  const mv = e => { const dx = e.clientX - x0 + sc.scrollLeft - sl0; if (Math.abs(dx) > 2) moved = true; if (!moved) return; const d = Math.max(-lo, dx / zoom);
+    items.forEach(({ o, s0, e0 }) => { o.start = s0 + d; if (e0 != null) o.end = e0 + d; const x = lanes.querySelector(`.vclip[data-id="${o.id}"]`); if (x) x.style.left = (PAD + o.start * zoom) + 'px'; }); AS.move(e); };
+  DRAG_ESC = () => { AS.stop(); removeEventListener('pointermove', mv); removeEventListener('pointerup', up); step.cancel(); renderTimeline(); vDraw(); };
+  const up = () => { AS.stop(); DRAG_ESC = null; removeEventListener('pointermove', mv); removeEventListener('pointerup', up);
+    if (!moved){ step.drop(); VMS.clear(); selectV(el.dataset.id); return; }
     items.forEach(({ o }) => { const L = layerOf(o.id); if (!L.items || L.kind === 'bg') return;   // an object now on top of another one on its layer gets a new layer above
       if (L.items.some(id => id !== o.id && !ids.has(id) && overlap(objById(id), o))){ L.items = L.items.filter(x => x !== o.id); V.layers.splice(V.layers.indexOf(L), 0, { id: 'L' + (++uid), kind: L.kind, name: L.name, en: L.en, items: [o.id] }); } });
     ensureLayers(); dropOrphanTrans(); renderTimeline(); vDraw(); autosave(); };
@@ -151,7 +158,9 @@ addEventListener('keydown', e => { if (mode !== 'video' || VMS.size < 2) return;
 
 // ---------- a media clip trims within its source
 function srcLen(o){ if (o.type === 'video' && !o.loop){ const m = MEDIA.get(o.asset), el = m && m.el; return el && isFinite(el.duration) && el.duration > 0 ? el.duration : null; }
-  if (o.type === 'sfx'){ const it = sfxItems().find(x => x.file === o.file); return it && it.sec ? it.sec : null; } return null; }
+  if (o.type === 'sfx'){ const it = sfxItems().find(x => x.file === o.file); return it && it.sec ? it.sec : null; }
+  if (o.type === 'audio' && !o.loop) return typeof vAudNat === 'function' ? vAudNat(o) : (o.nat || null);   // 182: an audio file on a layer
+  return null; }
 
 // 177: a slideshow keeps its length when slides go — the time they had is shared equally by the slides left
 function keepShowLength(id, first, endOld){ const rest = slidesOf(id); if (!rest.length) return; const sum = rest.reduce((a, x) => a + ((x.end || 0) - (x.start || 0)), 0), add = (endOld - first - sum) / rest.length;
@@ -170,7 +179,9 @@ function dropOrphanTrans(){ let n = 0; bgClips().forEach(o => { if (o.trans && !
 
 // ---------- a background clip's inspector: «کلیپ | گذار»
 const bgTabOf = o => BGTAB && BGTAB.id === o.id ? BGTAB.tab : 'clip';
-function openBgTab(id, tab){ BGTAB = { id, tab }; if (vSel !== id) selectV(id); else showVPanels(); }
+function openBgTab(id, tab){ BGTAB = { id, tab, fresh: true }; if (vSel !== id) selectV(id); else showVPanels(); if (BGTAB) BGTAB.fresh = false; }
+// 182: selecting a clip again lands on its main panel — the tab it was last on (the transition) stayed open for good
+{ const _sv182 = selectV; selectV = function(id){ if (BGTAB && !(BGTAB.fresh && BGTAB.id === id) && id !== vSel) BGTAB = null; return _sv182.apply(this, arguments); }; }
 function bgTabsEl(){ let el = $('iv-bgtabs'); if (!el){ el = document.createElement('div'); el.id = 'iv-bgtabs'; el.setAttribute('role', 'tablist'); el.className = 'tabs tabs-border hidden px-2 pt-1'; const host = $('vinsp'); if (host) host.insertBefore(el, host.firstChild); } return el; }
 function bgPipLook(on){ const p = $('iv-pip'); if (!p) return; const o = on ? objById(vSel) : null;
   /* 177: a background clip always covers the canvas — no corners, stroke or shadow (the 177 panel's own sections) */
@@ -187,7 +198,8 @@ function trKeys(){ const LIB = AvaTrans.LIB, keys = Object.keys(LIB).filter(k =>
 // 179 · a chosen preset only shows its adjust icon; its settings open on that icon (the founder), in the same panel at the
 //       foot of the inspector as before, with the preset's name, a reset-all icon and a close button (Esc closes it too)
 var TRADJ = null;   // the clip whose transition settings are open
-function adjIcon(on, open, fn){ return on ? `<span role="button" tabindex="0" class="adjic absolute end-1 top-1 z-[2] grid size-6 place-items-center rounded-full border shadow-sm ${open ? 'border-transparent bg-base-100 text-primary' : 'border-base-content/20 bg-base-100/90 text-base-content hover:bg-base-100'}" onclick="event.stopPropagation(); ${fn}" onkeydown="if (event.key === 'Enter' || event.key === ' '){ event.preventDefault(); event.stopPropagation(); ${fn} }" data-tip="${open ? 'بستنِ تنظیم‌ها' : 'تنظیم‌ها'}" data-tip-en="${open ? 'Close the settings' : 'Adjust'}" aria-label="adjust" aria-expanded="${open ? 'true' : 'false'}"><svg class="pointer-events-none size-3.5"><use href="#i-sliders-horizontal"/></svg></span>` : ''; }
+// 182: light on the (dark) picture in both themes, and always in the picture's top-left corner (English moved it right)
+function adjIcon(on, open, fn){ return on ? `<span role="button" tabindex="0" class="adjic absolute left-1 top-1 z-[2] grid size-6 place-items-center rounded-full border shadow-sm ${open ? 'border-transparent bg-white text-primary' : 'border-black/10 bg-white/90 text-neutral-900 hover:bg-white'}" onclick="event.stopPropagation(); ${fn}" onkeydown="if (event.key === 'Enter' || event.key === ' '){ event.preventDefault(); event.stopPropagation(); ${fn} }" data-tip="${open ? 'بستنِ تنظیم‌ها' : 'تنظیم‌ها'}" data-tip-en="${open ? 'Close the settings' : 'Adjust'}" aria-label="adjust" aria-expanded="${open ? 'true' : 'false'}"><svg class="pointer-events-none size-3.5"><use href="#i-sliders-horizontal"/></svg></span>` : ''; }
 function adjHead(name, changed, resetFn, closeFn){ return `<div class="flex items-center gap-1"><p class="min-w-0 flex-1 truncate text-sm font-semibold">${escapeHtml(name)}</p>`
   + `<button type="button" class="adjrst btn btn-ghost btn-xs btn-square ${changed ? 'text-primary' : 'opacity-50 hover:opacity-100'}" onclick="${resetFn}" data-tip="بازنشانیِ همهٔ تنظیم‌های این پیش‌تنظیم" data-tip-en="Reset all of this preset's settings" aria-label="reset all"><svg class="size-3.5"><use href="#i-rotate-ccw"/></svg></button>`
   + `<button type="button" class="adjx btn btn-ghost btn-xs btn-square" onclick="${closeFn}" data-tip="بستن (Esc)" data-tip-en="Close (Esc)" aria-label="close"><svg class="size-4"><use href="#i-x"/></svg></button></div>`; }

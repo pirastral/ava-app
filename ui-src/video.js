@@ -8,7 +8,7 @@ var mode = 'audio', vSel = null, VVER = 0;   // var: read by the editor's handle
 const RES = { '1080p': 1080, '2k': 1440, '4k': 2160 };
 const RATIOS = { '16:9': [16, 9], '9:16': [9, 16], '1:1': [1, 1], '4:5': [4, 5] };
 function outSize(res, ratio){ const [a, b] = RATIOS[ratio || V.ratio] || [16, 9], s = RES[res || V.res] || 1440; const short = s, long = Math.round(short * Math.max(a, b) / Math.min(a, b) / 2) * 2; return a >= b ? [long, short] : [short, long]; }
-const POD0 = () => ({ style: 1, layout: 'auto', wave: 'circle', pal: 'shf', bg: 'mesh', fit: 0, pos: [0, 0], zoom: 1, drift: 1, warp: 0.35, grain: 0.06, solid: '#0c1230', custom: ['#1c2a74', '#2b3fb0', '#0c1230'], v177: true, v179: true,   // 177: no orbs; a colour of its own; a custom gradient
+const POD0 = () => ({ style: 1, layout: 'auto', wave: 'circle', pal: 'shf', bg: 'mesh', fit: 0, pos: [0, 0], zoom: 1, drift: 0.3, warp: 0.7, grain: 0.06, solid: '#0c1230', custom: ['#1c2a74', '#2b3fb0', '#0c1230'], v177: true, v179: true,   // 177: no orbs; a colour of its own; a custom gradient
   sens: 0.6, ovColor: '#000000', ovOp: 0.15, grad: true, gradDir: 'to top', gradA: '#05070f', gradB: '#1c2a74', gradOp: 0.7, bgAsset: null, bgKind: null, names: true });
 const SUBS0 = () => ({ on: true, size: 0.042, color: '#ffffff', bg: '#000000', bgOp: 0.55, pos: 0.9, weight: 700, follow: true, cues: [], off: { x: 0, y: 0 }, fixes: {} });   // 176: always following; corrections by line; one place for all
 const TEXT0 = () => ({ type: 'text', text: T('عنوانِ قسمت', 'Episode title'), x: 0.1, y: 0.07, w: 0.8, h: 0.12, rot: 0, size: 0.06, weight: 900, color: '#ffffff', align: 'center',
@@ -249,7 +249,7 @@ function syncPreviewVideos(){
 // ---- selection, move, scale, rotate, snap (the mock's interactions, on the real document)
 function hitTest(nx, ny){
   const [W, H] = outSize();
-  const zo = zOrder(); for (let i = zo.length - 1; i >= 0; i--){ const o = zo[i]; if (o.type === 'fx' || !visibleAt(o, playhead) || layerOf(o.id).hidden) continue;   // 170: a transition covers the frame but is picked from the timeline
+  const zo = zOrder(); for (let i = zo.length - 1; i >= 0; i--){ const o = zo[i]; if (o.type === 'fx' || o.type === 'sfx' || o.type === 'audio' || !visibleAt(o, playhead) || layerOf(o.id).hidden) continue;   // 170: a transition covers the frame but is picked from the timeline
     const cx = (o.x + o.w / 2) * W, cy = (o.y + o.h / 2) * H, a = -(o.rot || 0) * Math.PI / 180, px = nx * W - cx, py = ny * H - cy;
     const rx = px * Math.cos(a) - py * Math.sin(a), ry = px * Math.sin(a) + py * Math.cos(a); if (Math.abs(rx) <= o.w * W / 2 && Math.abs(ry) <= o.h * H / 2) return o.id; }
   return null;
@@ -257,7 +257,7 @@ function hitTest(nx, ny){
 function selectV(id){ vSel = id; if (id && typeof sel !== 'undefined' && (sel.size || selClip)){ sel.clear(); selClip = null; paintSel(); }   // 169: a non-speech selection deselects everything else
   placeSelBox(); fillVInsp(); renderVTL(); }
 function placeSelBox(){
-  const sb = $('selbox'); if (!sb) return; const o = vSel && objById(vSel); if (!o || mode !== 'video' || o.type === 'sfx'){ sb.classList.add('hidden'); return; }
+  const sb = $('selbox'); if (!sb) return; const o = vSel && objById(vSel); if (!o || mode !== 'video' || o.type === 'sfx' || o.type === 'audio'){ sb.classList.add('hidden'); return; }
   sb.classList.remove('hidden'); sb.style.left = o.x * frameW + 'px'; sb.style.top = o.y * frameH + 'px'; sb.style.width = o.w * frameW + 'px'; sb.style.height = o.h * frameH + 'px'; sb.style.transform = `rotate(${o.rot || 0}deg)`;
 }
 function guides(gx, gy){ $('gV').classList.toggle('hidden', !gx); $('gH').classList.toggle('hidden', !gy); }
@@ -336,7 +336,7 @@ function fillXformOnly(){ const o = objById(vSel); if (!o) return; const [W, H] 
 function xfApply(k){ const o = objById(vSel); if (!o) return; remember(); const [W, H] = outSize(), ar = o.w * W / (o.h * H);
   o.x = +$('xfX').value / W; o.y = +$('xfY').value / H; const w = +$('xfW').value / W, h = +$('xfH').value / H;
   if (k === 'w'){ o.w = w; if (o.lock !== false) o.h = o.w * W / ar / H; } else if (k === 'h'){ o.h = h; if (o.lock !== false) o.w = o.h * H * ar / W; } o.rot = +$('xfR').value || 0; vChanged(); }
-const TYPE_NAME = { pod: ['قالبِ پادکست', 'Podcast template'], text: ['متن', 'Text'], image: ['تصویر', 'Picture'], video: ['ویدیو', 'Video'], sticker: ['استیکر', 'Sticker'], sfx: ['افکتِ صوتی', 'Sound effect'] };
+const TYPE_NAME = { pod: ['قالبِ پادکست', 'Podcast template'], text: ['متن', 'Text'], image: ['تصویر', 'Picture'], video: ['ویدیو', 'Video'], sticker: ['استیکر', 'Sticker'], sfx: ['افکتِ صوتی', 'Sound effect'], audio: ['صدا', 'Audio'] };   // 182: an audio file on a regular layer
 // 177: the old generated inspector (dead since 164 — fillVInsp is showVPanels) is gone
 function applyVStyle(k){ remember(); const keep = { bgAsset: V.pod.bgAsset, sens: V.pod.sens, names: V.pod.names }; Object.assign(V.pod, STYLES[k][1], { style: k }, keep); if (STYLES[k][1].layout === 'two') V.pod.layout = 'auto'; VVER++; fillVInsp(); vDraw(); autosave(); }
 function placeOnGrid(px, py){ const o = objById(vSel); if (!o) return; remember(); const m = 0.04; o.x = px < 0 ? m : px > 0 ? 1 - o.w - m : (1 - o.w) / 2; o.y = py < 0 ? m + 0.02 : py > 0 ? 1 - o.h - m - 0.1 : (1 - o.h) / 2; vChanged(); }
@@ -434,8 +434,18 @@ async function exportVideo(){
 
   const fmt = ($('vxFmt') || {}).value || 'mp4'; const { vc, ac } = fmt === 'gif' ? { vc: ['gif', 'gif'], ac: null } : await probeCodecs(W, H, fps, fmt); if (!vc) return vxProbe();   // 170: mp4 · webm · gif
   vExp = { cancel: false }; $('vxGo').disabled = true; $('vxProgRow').classList.remove('hidden'); const prog = (p, msg) => { $('vxProg').value = Math.round(p * 1000) / 10; if (msg) $('vxInfo').textContent = msg; };
-  let err = null;
+  let err = null, so = null, closed = false;
+  // 182 · THE FILE IS WRITTEN WHILE IT IS MADE (it used to be held whole in memory until the end): where it goes is asked
+  //       first, with its estimated size — a disk without that much room says so before anything starts; every piece
+  //       the muxer gives goes to the file at its place, in order, while the next frames are made (at most ~48 MB wait)
+  const isMov = fmt === 'mov', W8 = { q: [], bytes: 0, busy: null, err: null }; let written = 0;
+  const put = (data, pos) => { const c = new Uint8Array(data); if (isMov && pos === 0) toQuickTime(c); W8.q.push([c, pos]); W8.bytes += c.byteLength; written = Math.max(written, pos + c.byteLength); pump(); };
+  const pump = () => { if (W8.busy) return; W8.busy = (async () => { try { while (W8.q.length && !W8.err){ const [c, pos] = W8.q.shift(); const r = await API().video_save_at(so.job, await readB64(new Blob([c])), pos); W8.bytes -= c.byteLength; if (!r || !r.ok) throw new Error((r && r.error) || T('ویدیو روی دیسک نوشته نشد.', 'The video could not be written to the disk.')); } }
+    catch (e) { W8.err = e; W8.q = []; W8.bytes = 0; } finally { W8.busy = null; } })(); };
+  const drain = async () => { for (;;){ if (W8.err) throw W8.err; if (W8.busy){ await W8.busy; continue; } if (W8.q.length){ pump(); continue; } return; } };
   try {
+    const estMB = fmt === 'gif' ? W * H * Math.ceil(dur * Math.min(fps, 15)) * 0.6 / 1048576 : (BR(W, H, fps) + 192000) * dur / 8 / 1048576 * 1.15;
+    so = await API().video_save_open('Avaye-Javid-Shah.' + fmt, Math.ceil(estMB)); if (!so.ok){ if (so.error !== 'cancelled') throw new Error(so.error || ''); throw new Error('cancelled'); }
     await document.fonts.ready; prog(0, T('صدای نهایی ساخته می‌شود…', 'Making the final audio…'));
     const mt = musicTrack(), mVol = mt ? (mt.volume ?? 1) : 1, wm = $('vxMusic').value === 'music' && (S.music.file || S.music.name) && !(mt && (mt.muted || mVol <= 0));
     const cfg = wm ? { on: true, clips: musicClipsSpec(), file: S.music.file, level_db: S.music.level_db + 20 * Math.log10(Math.max(0.01, mVol)), duck: (S.music.duck_db ?? 12) > 0, duck_db: S.music.duck_db ?? 12, fade_in: S.music.fade_in, fade_out: S.music.fade_out } : null;
@@ -447,10 +457,10 @@ async function exportVideo(){
     if (base){ const b0 = base.getChannelData(0), b1 = base.numberOfChannels > 1 ? base.getChannelData(1) : b0, av = V.audioVol ?? 1;   // 175: the audio track's own volume over the whole audio composition
       if (av === 1){ L.set(b0.subarray(0, N)); Rr.set(b1.subarray(0, N)); } else { const n = Math.min(N, b0.length); for (let i = 0; i < n; i++){ L[i] = b0[i] * av; Rr[i] = b1[i] * av; } } }
     await mixVideoSounds(L, Rr, SR);
-    const ch = 2, isGif = fmt === 'gif', mkv = fmt === 'mkv', ebml = fmt === 'webm' || mkv, target = isGif ? { buffer: null } : (ebml ? new WebMMuxer.ArrayBufferTarget() : new Mp4Muxer.ArrayBufferTarget());   // 170: mp4 · webm · gif — 175: mov · mkv
+    const ch = 2, isGif = fmt === 'gif', mkv = fmt === 'mkv', ebml = fmt === 'webm' || mkv, target = isGif ? { buffer: null } : new (ebml ? WebMMuxer : Mp4Muxer).StreamTarget({ onData: (data, position) => put(data, position), chunked: true, chunkSize: window.__vxChunk || (1 << 20) });   // 170: mp4 · webm · gif — 175: mov · mkv — 182: straight to the file
     const muxer = isGif ? { addVideoChunk(){}, addAudioChunk(){}, addAudioChunkRaw(){}, finalize(){} }
       : ebml ? new WebMMuxer.Muxer({ target, type: mkv ? 'matroska' : 'webm', video: { codec: MKV_V[vc[0]] || 'V_VP9', width: W, height: H, frameRate: fps }, audio: ac ? { codec: ac[0] === 'aac' ? 'A_AAC' : 'A_OPUS', numberOfChannels: ch, sampleRate: SR } : (mkv ? { codec: 'A_MPEG/L3', numberOfChannels: ch, sampleRate: SR } : undefined), firstTimestampBehavior: 'offset' })
-      : new Mp4Muxer.Muxer({ target, video: { codec: vc[0], width: W, height: H, frameRate: fps }, audio: { codec: ac ? ac[0] : 'mp3', numberOfChannels: ch, sampleRate: SR }, fastStart: 'in-memory', firstTimestampBehavior: 'offset' });
+      : new Mp4Muxer.Muxer({ target, video: { codec: vc[0], width: W, height: H, frameRate: fps }, audio: { codec: ac ? ac[0] : 'mp3', numberOfChannels: ch, sampleRate: SR }, fastStart: false, firstTimestampBehavior: 'offset' });   // 182: the index at the end (the file grows on the disk)
     const gif = isGif ? gifBegin(W, H, fps) : null;
     const venc = isGif ? { encode(){}, flush: async () => {}, encodeQueueSize: 0, configure(){} } : new VideoEncoder({ output: (c, m) => muxer.addVideoChunk(c, m), error: e => { err = e; } });
     venc.configure({ codec: vc[1], width: W, height: H, bitrate: BR(W, H, fps), framerate: fps, latencyMode: 'quality', ...(vc[0] === 'avc' ? { avc: { format: 'avc' } } : {}) });
@@ -478,15 +488,16 @@ async function exportVideo(){
       if (vExp.cancel) throw new Error('cancelled'); if (err) throw err;
       await vFrame(ctx, W, H, i / fps, true); if (isGif) gif.frame(cv, i); else { const fr = new VideoFrame(cv, { timestamp: Math.round(i * 1e6 / fps), duration: Math.round(1e6 / fps) });
       venc.encode(fr, { keyFrame: i % (fps * 2) === 0 }); fr.close(); } while (venc.encodeQueueSize > 6) await new Promise(q => setTimeout(q, 2));
+      while (W8.bytes > (48 << 20) && !W8.err) await new Promise(q => setTimeout(q, 4)); if (W8.err) throw W8.err;   // 182: the disk keeps up
       if (i % 5 === 0){ const el = (performance.now() - t0) / 1000, left = el / (i + 1) * (total - i - 1); prog(0.02 + 0.93 * i / total, T(`فریمِ ${FA(i + 1)} از ${FA(total)} — حدودِ ${FA(Math.ceil(left))} ثانیه مانده`, `Frame ${i + 1} of ${total} — about ${Math.ceil(left)} s left`)); }
     }
-    await venc.flush(); await audioFlush(); if (err) throw err; muxer.finalize(); const out = isGif ? gif.finish() : fmt === 'mov' ? toQuickTime(new Uint8Array(target.buffer)) : new Uint8Array(target.buffer);
-    prog(0.96, T('ذخیره می‌شود…', 'Saving…'));
-    const so = await API().video_save_open('Avaye-Javid-Shah.' + fmt); if (!so.ok){ if (so.error !== 'cancelled') throw new Error(so.error || ''); throw new Error('cancelled'); }
-    for (let off = 0; off < out.length; off += 4 << 20){ const ok = await API().video_save_chunk(so.job, u8b64(out.subarray(off, off + (4 << 20)))); if (!ok.ok) throw new Error(ok.error || ''); prog(0.96 + 0.04 * off / out.length); }
-    const sc = await API().video_save_close(so.job); prog(1, T('ذخیره شد: ', 'Saved: ') + (sc.path || '')); doneToast(T('ویدیو ساخته شد', 'Video exported'), sc.path || ''); setTimeout(() => { const d = $('vxDlg') || document.querySelector('dialog[open]'); if (d && d.open) d.close(); }, 1600);   // 171 say(T('ویدیو ذخیره شد: ', 'Video saved: ') + (sc.path || ''), 'ok');
-    window.__lastVideo = { bytes: out.length, fmt, codecs: vc[0] + '+' + (ac ? ac[0] : isGif || fmt === 'webm' ? 'none' : 'mp3'), W, H, fps, frames: total };
-  } catch (e) { const c = String(e.message || e) === 'cancelled'; $('vxInfo').textContent = c ? T('لغو شد.', 'Canceled.') : (e.message || String(e)); if (!c) say(e.message || String(e), 'err'); }
+    await venc.flush(); await audioFlush(); if (err) throw err; muxer.finalize();
+    if (isGif){ const out = gif.finish(); for (let off = 0; off < out.length; off += 4 << 20) put(out.subarray(off, off + (4 << 20)), off); }   // a GIF is small: made whole, then written
+    prog(0.97, T('فایل کامل می‌شود…', 'Finishing the file…')); await drain();
+    const sc = await API().video_save_close(so.job); closed = true; if (!sc || !sc.ok) throw new Error((sc && sc.error) || ''); prog(1, T('ذخیره شد: ', 'Saved: ') + (sc.path || '')); doneToast(T('ویدیو ساخته شد', 'Video exported'), sc.path || ''); setTimeout(() => { const d = $('vxDlg') || document.querySelector('dialog[open]'); if (d && d.open) d.close(); }, 1600);   // 171 say(T('ویدیو ذخیره شد: ', 'Video saved: ') + (sc.path || ''), 'ok');
+    window.__lastVideo = { bytes: written, fmt, codecs: vc[0] + '+' + (ac ? ac[0] : isGif || fmt === 'webm' ? 'none' : 'mp3'), W, H, fps, frames: total };
+  } catch (e) { const c = String(e.message || e) === 'cancelled'; $('vxInfo').textContent = c ? T('لغو شد.', 'Canceled.') : (e.message || String(e)); if (!c) say(e.message || String(e), 'err');
+    if (so && so.ok && !closed){ W8.q = []; try { await API().video_save_abort(so.job); } catch (e2) {} } }   // 182: an unfinished file never stays behind
   finally { vExp = null; $('vxGo').disabled = false; }
 }
 // ---- each video clip's own sound (decoded once), mixed at its place, trim, loop and volume
@@ -529,7 +540,7 @@ vInit();
 // =====================================================================================
 Object.defineProperty(window, 'POD', { get: () => V.pod, configurable: true });   // the mock's inline handlers write POD.*
 const VICON = { bg: 'clapperboard', sfx: 'sparkles', sub: 'captions', obj: 'layers', vid: 'clapperboard', mix: 'audio-lines' };
-const VADD = { sfx: [['sfx', 'افکتِ صوتی از کتابخانه…', 'A sound effect from the library…']], sub: [['subs', 'زیرنویسِ تازه', 'New subtitle']], obj: [['text', 'متن', 'Text'], ['pimage', 'تصویر روی ویدیو', 'Picture on top'], ['pvideo', 'ویدیو روی ویدیو', 'Video on top'], ['sticker', 'استیکر', 'Sticker'], ['podtpl', 'قالبِ پادکست', 'Podcast template'], ['sfx', 'افکتِ صوتی…', 'Sound effect…']],
+const VADD = { sfx: [['sfx', 'افکتِ صوتی از کتابخانه…', 'A sound effect from the library…']], sub: [['subs', 'زیرنویسِ تازه', 'New subtitle']], obj: [['text', 'متن', 'Text'], ['pimage', 'تصویر روی ویدیو', 'Picture on top'], ['pvideo', 'ویدیو روی ویدیو', 'Video on top'], ['sticker', 'استیکر', 'Sticker'], ['podtpl', 'قالبِ پادکست', 'Podcast template'], ['afile', 'فایلِ صوتی…', 'Audio file…'], ['sfx', 'افکتِ صوتی…', 'Sound effect…']],
   bg: [['bgvideo', 'ویدیو', 'Video'], ['bgimage', 'تصویر', 'Image'], ['slideshow', 'اسلایدشو', 'Slideshow'], ['podcast', 'سبکِ پادکست', 'Podcast style']], vid: [], mix: [] };
 let vTouchT = null;
 function vTouch(){ VVER++; vDraw(); autosave(); }   // 177: the undo step is taken BEFORE a change (the inspector's own mark); this recorded the state after it, so undo seemed to do nothing
@@ -570,7 +581,7 @@ function renderVideoTimeline(){
   /* 176: a video clip is the audio clip — label on top, its length when selected, white trim handles beside it when selected */
   const hdl = (x, e, data, hw = 16) => `<span class="trimh vtrim absolute top-1.5 bottom-1.5 z-20 cursor-ew-resize" style="left:${x}px;width:${hw}px" data-e="${e}" ${data}><span class="pointer-events-none absolute top-1/2 h-[60%] w-[4px] -translate-y-1/2 rounded-full bg-white shadow-[0_0_4px_rgba(0,0,0,.6)] ${e === 's' ? 'right-[-6px]' : 'left-[-6px]'}"></span></span>`;   /* 178: the white bar inside the clip's edge */   /* 177: outside the clip, as in the audio editor */
   const clipEl = (cls, left, w, data, label, trims, extra = '', on = false, len = null, gl = 16, gr = 16) => { const ww = Math.max(6, w), wl = Math.max(6, Math.min(16, gl)), wr = Math.max(6, Math.min(16, gr));   /* 177: a handle narrows beside a touching neighbour */
-    return `<div class="clip vclip absolute top-1.5 bottom-1.5 cursor-grab overflow-hidden rounded-field outline outline-1 ${cls}" style="left:${left}px;width:${ww}px" ${data}><span class="ui pointer-events-none absolute inset-x-1.5 top-0.5 z-[1] truncate text-[11px] font-semibold" dir="auto">${escapeHtml(label)}</span>${extra}${len != null && lenFits(ww, secs(len), extra.includes('data-trbadge') ? 16 : 0) ? `<span class="cliplen pointer-events-none absolute bottom-1 ${extra.includes('data-trbadge') ? 'right-[40px]' : 'right-6'} z-[2] rounded-md bg-black/60 px-1.5 text-[10px] font-semibold tabular-nums text-white">${secs(len)}</span>` : ''}</div>`
+    return `<div class="clip vclip absolute top-1.5 bottom-1.5 cursor-grab overflow-hidden rounded-field outline outline-1 ${cls}" style="left:${left}px;width:${ww}px" ${data}><span class="ui pointer-events-none absolute inset-x-1.5 top-0.5 z-[1] truncate text-[11px] font-semibold" dir="auto">${escapeHtml(label)}</span>${extra}${len != null && lenFits(ww, lenTxt(len), extra.includes('data-trbadge') ? 16 : 0) ? `<span class="cliplen pointer-events-none absolute bottom-1 ${extra.includes('data-trbadge') ? (on && trims ? 'right-[32px]' : 'right-[24px]') : (on && trims ? 'right-[10px]' : 'right-1')} z-[2] rounded-md bg-black/60 px-1.5 text-[10px] font-semibold tabular-nums text-white">${lenTxt(len)}</span>` : ''}</div>`
       + (on && trims ? hdl(left - wl, 's', data, wl) + hdl(left + ww, 'e', data, wr) : ''); };
   const lanes = TR.map((t, i) => { let c = '';
     if (t.kind === 'sub') cuesNow().forEach((q, k) => { const on = vSel === 'SUB' && V.subSel === k; c += clipEl(`bg-accent/15 text-accent ${on ? 'outline-2 outline-accent' : 'outline-accent/40'}`, PAD + q.at * pps, q.dur * pps - 2, `data-k="sub" data-i="${k}"`, q.text, false, q.fixed ? `<span class="badge badge-warning badge-xs pointer-events-none absolute bottom-1 left-1 gap-0.5" data-tip="${T('دستی اصلاح شده', 'corrected by hand')}"><svg class="size-2.5"><use href="#i-pencil"/></svg></span>` : '', on, q.dur); });
@@ -578,11 +589,12 @@ function renderVideoTimeline(){
     else if (t.kind === 'mix') c += clipEl('bg-base-content/5 text-base-content/60 outline-base-content/15', PAD, speechEnd() * pps, 'data-k="mix"', T('صدا — دوبار کلیک برای ویرایش', 'Audio — double-click to edit'), false, `<span class="pointer-events-none absolute inset-x-2 bottom-1 top-6 flex items-end gap-px">${vBars(Math.max(20, Math.round(speechEnd() * pps / 6)), 7)}</span>`, false, speechEnd());
     else t.items.map(objById).filter(Boolean).forEach(o => { const s0 = o.start || 0, e0 = o.end == null ? projEnd() : o.end, multi = typeof VMS !== 'undefined' && VMS.has(o.id), on = vSel === o.id || multi;
       /* 176: background clips, slideshow slides and everything else each in their own colour; a slide says «اسلایدشو» */
-      const look = o.show ? 'bg-info/15 text-info' : o.bgl ? 'bg-secondary/15 text-secondary' : 'bg-primary/15 text-primary', ring = o.show ? 'outline-info!' : o.bgl ? 'outline-secondary!' : 'outline-primary!';
+      const snd = o.type === 'sfx' || o.type === 'audio';   /* 182: sounds on a regular layer look like the audio mode's effects */
+      const look = o.show ? 'bg-info/15 text-info' : o.bgl ? 'bg-secondary/15 text-secondary' : snd ? 'bg-accent/15 text-accent' : 'bg-primary/15 text-primary', ring = o.show ? 'outline-info!' : o.bgl ? 'outline-secondary!' : snd ? 'outline-accent!' : 'outline-primary!';
       const slides = o.show ? slidesOf(o.show) : null, label = o.show ? T('اسلایدشو', 'Slideshow') + ' · ' + num(slides.indexOf(o) + 1) + '/' + num(slides.length)
-        : T((TYPE_NAME[o.type] || [o.type])[0], (TYPE_NAME[o.type] || [0, o.type])[1]) + (o.type === 'text' ? ' · ' + (o.text || '') : o.type === 'sticker' ? ' · ' + (o.emoji || '') : o.type === 'fx' ? ' · ' + ((AvaTrans.LIB[o.fx] || {}).name || o.fx) : o.type === 'sfx' ? ' · ' + sfxName(o) : '');
+        : T((TYPE_NAME[o.type] || [o.type])[0], (TYPE_NAME[o.type] || [0, o.type])[1]) + (o.type === 'text' ? ' · ' + (o.text || '') : o.type === 'sticker' ? ' · ' + (o.emoji || '') : o.type === 'fx' ? ' · ' + ((AvaTrans.LIB[o.fx] || {}).name || o.fx) : o.type === 'sfx' ? ' · ' + sfxName(o) : o.type === 'audio' ? ' · ' + (o.name || '') : '');
       const nx = o.bgl && o.trans && o.trans.type ? bgNextOf(o) : null, w0 = (e0 - s0) * pps - 2;
-      const badge = nx && w0 > 40 ? `<span class="trbadge pointer-events-auto absolute bottom-1 right-[16px] z-[3] grid size-[18px] cursor-pointer place-items-center rounded-full" data-trbadge="${o.id}" data-tip="${escapeHtml(T('گذار: ', 'Transition: ') + trName(o.trans.type))}"><svg class="size-[11px]"><use href="#i-sparkles"/></svg></span>` : '';   /* inside its clip, clear of the trim handle */
+      const badge = nx && w0 > 40 ? `<span class="trbadge pointer-events-auto absolute bottom-1 ${on && !(typeof VMS !== 'undefined' && VMS.size > 1) ? 'right-[10px]' : 'right-1'} z-[3] grid size-[18px] cursor-pointer place-items-center rounded-full" data-trbadge="${o.id}" data-tip="${escapeHtml(T('گذار: ', 'Transition: ') + trName(o.trans.type))}"><svg class="size-[11px]"><use href="#i-sparkles"/></svg></span>` : '';   /* inside its clip, clear of the trim handle */
       const same = t.items.map(objById).filter(x => x && x !== o), gl = same.reduce((g, x) => { const xe = x.end == null ? projEnd() : x.end; return xe <= s0 + 1e-6 ? Math.min(g, (s0 - xe) * pps) : g; }, 16), gr = same.reduce((g, x) => { const xs = x.start || 0; return xs >= e0 - 1e-6 ? Math.min(g, (xs - e0) * pps) : g; }, 16);
       c += clipEl(`${look} ${on ? 'outline-2 ' + ring : 'outline-current/40'} ${t.hidden ? 'opacity-40' : ''}`, PAD + s0 * pps, w0, `data-k="obj" data-id="${o.id}"`, label, true, badge, on && !(typeof VMS !== 'undefined' && VMS.size > 1), e0 - s0, gl, gr); });
     return `<div class="lane relative h-14 border-b border-base-300/40" data-ti="${i}">${c}</div>`; }).join('');
@@ -606,24 +618,24 @@ function wireVideoTimeline(TR){
     if (k === 'mix'){ if (dbl) return setMode('audio'); vSel = 'MIX'; seek(t); renderTimeline(); showMixPanel(); return; }   // 174: the audio track is selectable
     if (k === 'sfx'){ ev.stopPropagation(); const [st, c] = findClip(el.dataset.cid); if (!c) return; selClip = c.id; remember(); const x0 = ev.clientX, at0 = c.at; let moved = false;   // 170: effects move in video mode too
       const mv = e => { if (Math.abs(e.clientX - x0) > 2) moved = true; if (!moved) return; c.at = Math.max(0, snapT(at0 + (e.clientX - x0) / zoom, c)); el.style.left = (PAD + c.at * zoom) + 'px'; };
-      const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); if (!moved) hist.past.pop(); st.clips.sort((a, b) => a.at - b.at); renderTimeline(); autosave(); }; addEventListener('pointermove', mv); addEventListener('pointerup', up); return; }   // two quick presses (the lanes redraw between clicks, so the browser's dblclick never fires)
+      const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); if (!moved) dropStep(); st.clips.sort((a, b) => a.at - b.at); renderTimeline(); autosave(); }; addEventListener('pointermove', mv); addEventListener('pointerup', up); return; }   // two quick presses (the lanes redraw between clicks, so the browser's dblclick never fires)
     if (k === 'sub' && dbl){ ev.stopPropagation(); editSubOnTimeline(+el.dataset.i); return; }   // 176: a correction of the wording, kept with its line
     if (k === 'sub'){ ev.stopPropagation(); const ci = +el.dataset.i, q = cuesNow()[ci]; V.subSel = ci; vSel = 'SUB'; if (q && (playhead < q.at || playhead >= q.at + q.dur)) seek(q.at + Math.min(0.05, q.dur / 2)); showVPanels(); renderTimeline(); requestAnimationFrame(() => requestAnimationFrame(placeSelBox)); return; }
     ev.stopPropagation(); remember(); const trim = hd, x0 = ev.clientX, y0 = ev.clientY; let moved = false, hot = null;
     const o = objById(el.dataset.id); if (!o) return; if (vSel !== o.id) selectV(o.id);
-    const s0 = o.start || 0, e0 = o.end == null ? projEnd() : o.end, from = layerOf(o.id), tin0 = o.trimIn || 0;
+    const s0 = o.start || 0, e0 = o.end == null ? projEnd() : o.end, from = layerOf(o.id), tin0 = o.trimIn || 0, aud0 = o.type === 'audio' && typeof vAudioTrim0 === 'function' ? vAudioTrim0(o) : null;   // 182: Loop rules
     const group = o.show ? slidesOf(o.show) : null, live = () => { (group || [o]).forEach(x => { const ex = lanes.querySelector(`.vclip[data-id="${x.id}"]`); if (ex){ ex.style.left = (PAD + (x.start || 0) * zoom) + 'px'; ex.style.width = Math.max(6, (((x.end == null ? projEnd() : x.end) - (x.start || 0)) * zoom - 2)) + 'px'; } });
       lanes.querySelectorAll(`.vtrim[data-id="${o.id}"]`).forEach(hx => { const ex = lanes.querySelector(`.vclip[data-id="${o.id}"]`); if (ex) hx.style.left = (hx.dataset.e === 's' ? parseFloat(ex.style.left) - (hx.offsetWidth || 16) : parseFloat(ex.style.left) + parseFloat(ex.style.width)) + 'px';   /* 177 */ }); };
     const mv = e => { const d = (e.clientX - x0) / zoom; if (Math.abs(e.clientX - x0) > 2 || Math.abs(e.clientY - y0) > 6) moved = true; if (!moved) return;
       const snap = t => { let best = t, bd = 8; vSnapEdges(o).forEach(ed => { const dd = Math.abs((t - ed) * zoom); if (dd < bd){ bd = dd; best = ed; } }); return best; };   // 170: bars snap to every edge
       if (o.show && slideEdit(o, trim ? trim.dataset.e : null, s0, e0, d)){ live(); return; }   // 175: a slide edits within its slideshow; 176: its neighbours follow live
-      if (trim && trim.dataset.e === 's'){ const media = o.type === 'video' || o.type === 'sfx'; o.start = Math.max(media ? Math.max(0, s0 - tin0) : 0, Math.min(e0 - 0.2, snap(s0 + d))); if (media) o.trimIn = tin0 + (o.start - s0); }   // 176: never before the source's first frame
-      else if (trim){ o.end = Math.max(s0 + 0.2, snap(e0 + d)); const lim = srcLen(o); if (lim) o.end = Math.min(o.end, (o.start || 0) + lim - (o.trimIn || 0)); }   // … nor past its last else { let ns = Math.max(0, s0 + d); const a1 = snap(ns), b1 = snap(ns + (e0 - s0)) - (e0 - s0); ns = Math.abs(a1 - ns) <= Math.abs(b1 - ns) ? a1 : b1; o.start = Math.max(0, ns); o.end = o.start + (e0 - s0); }
+      if (trim && trim.dataset.e === 's'){ const media = o.type === 'video' || o.type === 'sfx' || o.type === 'audio'; o.start = Math.max(media ? Math.max(0, s0 - tin0) : 0, Math.min(e0 - 0.2, snap(s0 + d))); if (media) o.trimIn = tin0 + (o.start - s0); }   // 176: never before the source's first frame
+      else if (trim){ o.end = Math.max(s0 + 0.2, snap(e0 + d)); if (aud0) vAudioTrimEnd(o, aud0); else { const lim = srcLen(o); if (lim) o.end = Math.min(o.end, (o.start || 0) + lim - (o.trimIn || 0)); } }   // … nor past its last else { let ns = Math.max(0, s0 + d); const a1 = snap(ns), b1 = snap(ns + (e0 - s0)) - (e0 - s0); ns = Math.abs(a1 - ns) <= Math.abs(b1 - ns) ? a1 : b1; o.start = Math.max(0, ns); o.end = o.start + (e0 - s0); }
       live();
       if (!trim){ el.style.pointerEvents = 'none'; el.style.zIndex = 30; el.style.transform = `translateY(${e.clientY - y0}px)`; const ln = document.elementFromPoint(e.clientX, e.clientY), lane = ln && ln.closest('.lane');
         if (hot && hot !== lane) hot.classList.remove('lane-hot'); const tt = lane && TR[+lane.dataset.ti]; hot = tt && tt.kind === from.kind ? lane : null; if (hot) hot.classList.add('lane-hot'); } };
     const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); const tgt = hot ? TR[+hot.dataset.ti] : null; if (hot) hot.classList.remove('lane-hot');
-      if (!moved){ hist.past.pop(); return; }
+      if (!moved){ dropStep(); return; }
       if (o.show){ slideDrop(o); ensureLayers(); dropOrphanTrans(); renderTimeline(); vDraw(); autosave(); showVPanels(); return; }   // 175: a slide stays in its slideshow
       if (tgt && tgt !== from){ from.items = from.items.filter(id => id !== o.id);
         if (tgt.items.some(id => { const x = objById(id); return x && x !== o && overlap(x, o); })){ const nl = { id: 'L' + (++uid), kind: tgt.kind, name: tgt.name, en: tgt.en, items: [o.id] }; V.layers.splice(V.layers.indexOf(tgt), 0, nl); }   // occupied → a new layer on top of it
@@ -675,7 +687,7 @@ pickVMedia = function(kind, replace, full){
   inp.click();
 }
 // ---- the inspector: the mock's panels, shown and filled
-const PANEL_OF = { text: 'iv-text', sticker: 'iv-sticker', pod: 'iv-pod', image: 'iv-pip', video: 'iv-pip', fx: 'iv-fx', sfx: 'iv-sfx' };
+const PANEL_OF = { text: 'iv-text', sticker: 'iv-sticker', pod: 'iv-pod', image: 'iv-pip', video: 'iv-pip', fx: 'iv-fx', sfx: 'iv-sfx', audio: 'iv-sfx' };   // 182: an audio file
 function fillVInsp(){ showVPanels(); }
 function showVPanels(anim){
   if (!$('iv-proj')) return; const o = vSel && vSel !== 'SUB' ? objById(vSel) : null;
@@ -686,7 +698,7 @@ function showVPanels(anim){
   if (!o){ $('iv-proj').classList.remove('hidden'); fillProj(); return; }
   $(PANEL_OF[o.type]).classList.remove('hidden'); $('iv-xform').classList.remove('hidden');
   if (o.type === 'fx'){ $('iv-xform').classList.add('hidden'); fillFx(o); return; }
-  if (o.type === 'sfx'){ $('iv-xform').classList.add('hidden'); fillSfxObj(o); return; }   /* 175: a sound has no frame on the canvas */
+  if (o.type === 'sfx' || o.type === 'audio'){ $('iv-xform').classList.add('hidden'); if (o.type === 'audio') fillVAudio(o); else fillSfxObj(o); return; }   /* 175: a sound has no frame on the canvas (182: nor an audio file) */
   if (o.type === 'text') fillText(o); else if (o.type === 'sticker') fillSticker(o); else if (o.type === 'pod') renderPodUI(); else fillPip(o);
   fillXformOnly(); const lk = $('lockBtn'); if (lk) lk.classList.toggle('btn-active', o.lock !== false);
   posObjBar();
@@ -782,7 +794,7 @@ function fillAvatarOpts(P){ const box = $('avatarOpts'); if (!box) return; const
   if (typeof rangeLabels === 'function') rangeLabels(box); }
 // ---- the floating object bar (the mock): animation, duplicate, bring forward, delete
 // the object bar sits below the selection box (or well above it) — never over the rotation handle
-function posObjBar(){ const b = $('objBar'), o = vSel && vSel !== 'SUB' ? objById(vSel) : null; if (!b) return; if (!o || mode !== 'video' || o.type === 'sfx' || (typeof VEDIT !== 'undefined' && VEDIT)){ b.classList.add('hidden'); return; }   /* 177: out of the way while typing */
+function posObjBar(){ const b = $('objBar'), o = vSel && vSel !== 'SUB' ? objById(vSel) : null; if (!b) return; if (!o || mode !== 'video' || o.type === 'sfx' || o.type === 'audio' || (typeof VEDIT !== 'undefined' && VEDIT)){ b.classList.add('hidden'); return; }   /* 177: out of the way while typing */
   const sb = $('selbox').getBoundingClientRect(), st = $('stage').getBoundingClientRect(); b.classList.remove('hidden'); { const an = b.querySelector('[onclick="openAnim()"]'); if (an && an.parentElement) an.parentElement.classList.toggle('hidden', !animKind(o)); }   /* 175: only objects that animate */
   { const fw = b.querySelector('[onclick="vForward()"]'); if (fw && fw.parentElement) fw.parentElement.classList.toggle('hidden', !canForward(o)); }   /* 177: only when it can actually move forward */
   { const bh = b.offsetHeight || 40; let top;   /* 177: below the box, else above it (clear of the rotation handle), else — a box as big as the canvas — inside it at its foot; never over the app's top bar */
@@ -796,7 +808,7 @@ function vDelete(){ const o = objById(vSel); if (!o) return; remember(); V.objec
 // 170: split the selected object at the playhead — the second half keeps playing from where the first stopped
 function vSplit(){ const o = objById(vSel); if (!o) return;   /* 177: podcast clips split too (both halves draw the same podcast settings) */ const s0 = o.start || 0, e0 = o.end == null ? projEnd() : o.end;
   if (playhead <= s0 + 0.05 || playhead >= e0 - 0.05) return say(T('پلی‌هد باید داخلِ این شیء باشد.', 'The playhead must be inside this object.'), 'err');
-  remember(); const c = JSON.parse(JSON.stringify(o)); c.id = 'o' + (++uid); c.start = playhead; c.end = o.end; if (o.type === 'video' || o.type === 'sfx') c.trimIn = (o.trimIn || 0) + (playhead - s0); o.end = playhead;
+  remember(); const c = JSON.parse(JSON.stringify(o)); c.id = 'o' + (++uid); c.start = playhead; c.end = o.end; if (o.type === 'video' || o.type === 'sfx' || o.type === 'audio') c.trimIn = (o.trimIn || 0) + (playhead - s0); o.end = playhead;
   if (o.trans){ delete o.trans; }   /* 179: a transition belongs to its clip's END — the second half keeps it (the first half's new end touches its own other half) */
   if (o.anim){ migrateAnim(o); migrateAnim(c); o.anim.out = 'none'; c.anim.in = 'none'; if (o.anim.bgOut) o.anim.bgOut = 'follow'; if (c.anim.bgIn) c.anim.bgIn = 'follow'; }   /* 175: the first half keeps In, the second keeps Out */
   const L = layerOf(o.id); V.objects.push(c); if (L && L.items && !L.items.includes(c.id)) L.items.splice(L.items.indexOf(o.id) + 1, 0, c.id); ensureLayers(); selectV(c.id); vChanged(); }   /* 179: the second half sat TWICE in its layer (drawn twice; its transition dropped as «orphaned») */
@@ -910,10 +922,10 @@ function drawSubs(ctx, W, H, t){
 // ---- the mock's toolbar above the stage: the format
 function wireVideoBar(){
   const r = $('res'); if (!r || r._wired) return; r._wired = true;
-  const map = [['9:16', null], ['16:9', null], ['4:5', null], ['1:1', null], ['16:9', '4k']];
+  const map = [['9:16', null], ['9:16', '4k'], ['16:9', null], ['16:9', '4k'], ['4:5', null], ['4:5', '4k'], ['1:1', null], ['1:1', '4k']];   // 182: 4K for every format
   r.onchange = async () => { const k = r.selectedIndex; if (r.value === 'custom'){ const v = await askText(T('نسبتِ تصویر', 'Aspect ratio'), T('مثلاً 21:9', 'e.g. 21:9'), '21:9'); const m = v && /(\d+)\s*[:/×x]\s*(\d+)/.exec(v.replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))); if (m){ RATIOS[`${m[1]}:${m[2]}`] = [+m[1], +m[2]]; vset('ratio', `${m[1]}:${m[2]}`); } }
     else { vset('ratio', map[k][0]); if (map[k][1]) vset('res', map[k][1]); else if (V.res === '4k') vset('res', '2k'); } fitFrame(); vDraw(); placeSelBox(); };   /* 177: leaving 4K goes back to 2K */
-  const idx = map.findIndex(([ra, rs]) => ra === V.ratio && (!rs || rs === V.res)); r.selectedIndex = idx >= 0 ? idx : 1; enh(r);
+  const idx = map.findIndex(([ra, rs]) => ra === V.ratio && (rs ? rs === V.res : V.res !== '4k')); r.selectedIndex = idx >= 0 ? idx : 2; enh(r);   // 182: a 4K project shows its 4K format
 }
 // ---- mode switch: the same timeline, the mock's panels, the mock's bar
 const _setMode164 = setMode;
@@ -1153,8 +1165,8 @@ const _fillPip175 = fillPip;
 fillPip = function(o){ const r = _fillPip175.apply(this, arguments); const host = $('iv-pip'); let box = $('slideBox'); if (!host) return r;
   if (!o || !o.show){ if (box) box.remove(); return r; } if (!box){ box = document.createElement('div'); box.id = 'slideBox'; box.className = 'space-y-2 rounded-box border border-base-300 p-3'; host.insertBefore(box, host.children[1] || null); }
   const n = slidesOf(o.show).length;
-  box.innerHTML = `<div class="flex items-center gap-2"><svg class="size-4"><use href="#i-film"/></svg><span class="flex-1 text-sm font-semibold">${T('اسلایدشو', 'Slideshow')} · ${num(n)} ${T('تصویر', 'pictures')}</span></div>
-    <div class="flex gap-2"><button class="btn btn-sm flex-1 gap-1 border-base-content/15 bg-base-100" onclick="addSlideshow(objById(vSel).show)"><svg class="size-4"><use href="#i-plus"/></svg>${T('افزودنِ تصویر', 'Add pictures')}</button><button class="btn btn-sm flex-1 border-base-content/15 bg-base-100" onclick="{ remember(); distributeSlides(objById(vSel).show); vChanged(); renderTimeline(); }">${T('تقسیمِ مساوی', 'Spread equally')}</button></div>
+  box.innerHTML = `<div class="flex items-center gap-2"><svg class="size-4"><use href="#i-film"/></svg><span class="flex-1 text-sm font-semibold">${T('اسلایدشو', 'Slideshow')} · ${num(n)} ${T('اسلاید', 'slides')}</span></div>
+    <div class="flex gap-2"><button class="btn btn-sm flex-1 gap-1 border-base-content/15 bg-base-100" onclick="addSlideshow(objById(vSel).show)"><svg class="size-4"><use href="#i-plus"/></svg>${T('افزودنِ تصویر یا ویدیو', 'Add pictures or videos')}</button><button class="btn btn-sm flex-1 border-base-content/15 bg-base-100" onclick="{ remember(); distributeSlides(objById(vSel).show); vChanged(); renderTimeline(); }">${T('تقسیمِ مساوی', 'Spread equally')}</button></div>
     <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T('کمترین مدتِ هر اسلاید', 'Shortest slide')} · <span class="slmin">${secs(slideMin())}</span></legend><input type="range" min="0.5" max="10" step="0.5" data-def="2" value="${slideMin()}" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="V.slideMin = +this.value; document.querySelector('#slideBox .slmin').textContent = secs(this.value)" onchange="{ remember(); const L = slidesOf(objById(vSel).show); layoutSlides(objById(vSel).show, L[0].start || 0); vChanged(); renderTimeline(); }"></fieldset>
     <p class="text-xs leading-relaxed text-base-content/60">${T('لبه‌ی بینِ دو اسلاید را بکشید تا مرزشان جابه‌جا شود؛ اسلاید را بکشید تا جایش در ترتیب عوض شود.', 'Drag the edge between two slides to move their boundary; drag a slide to change its place in the order.')}</p>`; return r; };
 /* 175 · a font picker (each row drawn in its own font) and the weights that family really has */

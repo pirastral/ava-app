@@ -5,7 +5,7 @@
 //       shows exactly these speakers (one orb each).
 // =====================================================================================
 const SPK_LINE = /^(\s*(?:\{[^}]*\}\s*)?)([^:：\n{}<>|]{1,24})[:：]\s*/;
-const SPK0 = name => ({ id: 's' + (++uid), name: name || '', engine: '', gVoice: (S.proj && S.proj.g_voice) || '', gModel: '', gPreset: '', gState: '', fishVoice: (S.proj && S.proj.fish && S.proj.fish.voice) || '', cbxVoice: (S.proj && S.proj.cbx && S.proj.cbx.voice) || '' });   // 176: the project's voices, chosen
+const SPK0 = name => ({ id: 's' + (++uid), name: name || '', engine: '', gVoice: '', gModel: '', gPreset: '', gState: '', fishVoice: '', cbxVoice: '' });   // 182: a new speaker follows the project in everything until something is changed
 function migrateSpeakers(){
   const out = [], has = n => out.some(o => o.name === n);
   (typeof CAST !== 'undefined' ? CAST : []).forEach(c => { if (c.name && !has(c.name)) out.push({ ...SPK0(c.name), gVoice: c.voice || '', gState: c.style || '' }); });
@@ -28,14 +28,59 @@ const shiftWords = (W, off, cuts) => W ? W.map(w => { const add = p => (cuts || 
 const shiftWordsFor = (W, id) => { const si = spokenInfo(id); return shiftWords(W, si.shift, si.cuts); };   // words inside the unsent tone prefix are dropped
 
 
-function spkEngine(sp){ return sp.engine || S.proj.engine; }
-function spkVoiceOptions(sp){
-  const e = spkEngine(sp);
-  if (e === 'google') return voiceOptions(sp.gVoice || '', false).replace('<optgroup', `<option value="" ${sp.gVoice ? '' : 'selected'}>${T('— صدای پروژه —', "— project's voice —")}</option><optgroup`);
-  if (e === 'fish') return `<option value="">${T('— صدای پروژه —', "— project's voice —")}</option>` + fishOptions(sp.fishVoice || '');   // 169: the groups survive (copying .options flattened them)
-  if (e === 'chatterbox') return `<option value="">${T('— صدای پروژه —', "— project's voice —")}</option><option value="default" ${sp.cbxVoice === 'default' ? 'selected' : ''}>${T('پیش‌فرض', 'Default')}</option>` + cbxGroups(CBX_VOICES, sp.cbxVoice, false);
-  return null;                                                                                        // a light voice IS its engine
-}
+// =====================================================================================
+// 182 · THE FORK MODEL — a speaker follows the project, and a line follows its speaker (or the project when it has
+//       none), setting by setting along each engine's chain: engine → model → voice → reading style → mood (Chatterbox:
+//       engine → voice → its sliders; …). Until it differs it shows its parent's ACTUAL choice. The first setting where it
+//       differs is the fork: every setting under it belongs to that choice — what it has chosen there, or that choice's
+//       default (project on Chatterbox, speaker on Google → Google's own defaults; both on Google, project 3.8, speaker
+//       3.1 → 3.1's default voice). Resetting a setting gives what the parent has there (or, under a fork, the fork's
+//       default); resetting the setting AT the fork makes everything under it follow the parent again.
+// =====================================================================================
+const VCHAIN = { google: ['engine', 'gModel', 'gVoice', 'gPreset', 'gState'], chatterbox: ['engine', 'cbxVoice', 'cbxSpeed', 'cbxExag', 'cbxCfg', 'cbxTemp'],
+  fish: ['engine', 'fishVoice', 'fishPreset'], light: ['engine', 'lightSpeed', 'lightNoise', 'lightNoiseW'] };
+const VKEYS = new Set(Object.values(VCHAIN).flat());
+const vchainOf = eng => VCHAIN[LIGHT_ENGINES.includes(eng) ? 'light' : eng] || ['engine'];
+const VDEF0 = { gPreset: 'neutral', gState: '', cbxVoice: 'default', cbxSpeed: 1, cbxExag: 0.8, cbxCfg: 1, cbxTemp: 0, fishVoice: 'default', fishPreset: 'neutral', lightSpeed: 1, lightNoise: 0.667, lightNoiseW: 0.8 };
+function vDefault(k){ if (k === 'engine') return (typeof DEFAULTS !== 'undefined' && DEFAULTS && DEFAULTS.engine) || 'google'; if (k === 'gModel') return (typeof DEFAULTS !== 'undefined' && DEFAULTS && DEFAULTS.model) || 'gemini-3.1-flash-tts-preview'; if (k === 'gVoice') return 'Charon'; return VDEF0[k]; }
+const vSet = x => x !== undefined && x !== null && x !== '';
+function vOk(k, v, cur){
+  if (k === 'gModel') return (typeof MODELS === 'undefined' || !MODELS.length) || MODELS.some(m => m[0] === v);
+  if (k === 'gVoice'){ if (G_VOICES.some(x => x[0] === v)) return true; if (!/3\.8/.test(String(cur.gModel || ''))) return false;
+    return v.startsWith('lib:') ? LIBV.some(x => 'lib:' + x.id === v) : v.startsWith('design:') ? DESIGNS.some(x => 'design:' + x.id === v) : v.startsWith('clone:') ? CLONES.some(x => 'clone:' + x.id === v) : false; }
+  if (k === 'cbxVoice') return v === 'default' || !(CBX_VOICES || []).length || CBX_VOICES.some(x => x.id === v);
+  return true; }
+function projEff(){ const p = S.proj || {}, c = p.cbx || {}, f = p.fish || {}, l = p.light || {};
+  return { engine: p.engine || vDefault('engine'), gModel: p.g_model || vDefault('gModel'), gVoice: p.g_voice || 'Charon', gPreset: p.g_preset || 'neutral', gState: p.g_state || '',
+    cbxVoice: c.voice || 'default', cbxSpeed: c.speed ?? 1, cbxExag: c.exag ?? 0.8, cbxCfg: c.cfg ?? 1, cbxTemp: c.temp ?? 0, fishVoice: f.voice || 'default', fishPreset: f.preset || 'neutral',
+    lightSpeed: l.speed ?? 1, lightNoise: l.noise ?? 0.667, lightNoiseW: l.noisew ?? 0.8 }; }
+// own: what the speaker / line chose itself; parent: its parent's settings as they are. Returns its settings as they are.
+function forkResolve(own, parent){ own = own || {};
+  const out = { ...parent }; Object.keys(own).forEach(k => { if (!VKEYS.has(k) && vSet(own[k])) out[k] = own[k]; });   // its other choices (not on a chain) are its own
+  const eng = vSet(own.engine) ? own.engine : parent.engine; let forked = false;
+  for (const k of vchainOf(eng)){ const ov = own[k], has = vSet(ov) && (k === 'engine' || vOk(k, ov, out));
+    if (has){ out[k] = ov; if (ov !== parent[k]) forked = true; }
+    else { out[k] = forked ? vDefault(k) : parent[k]; if (k !== 'engine' && !vOk(k, out[k], out)) out[k] = vDefault(k); } }   // an inherited choice that is not possible here (a 3.8 voice on 3.1) → the default
+  return out; }
+// the first setting where it differs from its parent (-1: it follows in everything)
+function forkAt(own, parent){ own = own || {}; const chain = vchainOf(vSet(own.engine) ? own.engine : parent.engine), cur = forkResolve(own, parent);
+  return chain.findIndex(k => vSet(own[k]) && (k === 'engine' || vOk(k, own[k], cur)) && own[k] !== parent[k]); }
+// a choice: equal to what it would be without its own choice → it follows (no own value); else it is its own
+function forkPick(own, parent, k, v){ const o = { ...(own || {}) }, w = { ...o }; delete w[k]; if (v === forkResolve(w, parent)[k]) delete o[k]; else o[k] = v; return o; }
+// a reset: its own choice goes; AT the fork, every choice under it goes too (it follows its parent again)
+function forkReset(own, parent, k){ const o = { ...(own || {}) }, chain = vchainOf(vSet(o.engine) ? o.engine : parent.engine), i = chain.indexOf(k), f = forkAt(o, parent);
+  delete o[k]; if (i >= 0 && i === f){ const under = new Set(k === 'engine' ? [...VKEYS].filter(q => q !== 'engine') : chain.slice(i + 1)); under.forEach(q => delete o[q]); }
+  return o; }
+const vSame = (a, b) => [...VKEYS].every(k => (a[k] ?? null) === (b[k] ?? null));
+// does a reset change anything? (its icon is grey when it would not)
+const forkResettable = (own, parent, k) => !vSame(forkResolve(own, parent), forkResolve(forkReset(own, parent, k), parent));
+// the speaker's and the line's own choices, and their settings as they are
+const SPK_KEYS = ['engine', 'gModel', 'gVoice', 'gPreset', 'gState', 'fishVoice', 'fishPreset', 'cbxVoice'];
+function spkOwn(sp){ const o = {}; if (sp) SPK_KEYS.forEach(k => { if (vSet(sp[k])) o[k] = sp[k]; }); return o; }
+function spkEff(sp){ return forkResolve(spkOwn(sp), projEff()); }
+function lineParent(id){ const sp = speakerOfLine(id); return sp ? spkEff(sp) : projEff(); }
+function lineEff(id){ const L = S.lines[id]; return forkResolve((L && L.voice) || {}, lineParent(id)); }
+function spkEngine(sp){ return spkEff(sp).engine; }
 const SPK_VKEY = { google: 'gVoice', fish: 'fishVoice', chatterbox: 'cbxVoice' };
 
 // =====================================================================================
@@ -66,7 +111,7 @@ async function previewVoice(engine, voice){
   const r = await API().voice_preview(previewPayload(engine, voice)); if (!r || !r.ok) return say((r && r.error) || T('نمونه ساخته نشد.', 'Could not make the sample.'), 'err');
   say('', 'ok'); togglePreview(key, URL.createObjectURL(b64Blob(r.b64, 'audio/mpeg')));
 }
-function previewSpeaker(i){ const sp = spkList()[i], e = spkEngine(sp); previewVoice(e, e === 'google' ? (sp.gVoice || S.proj.g_voice) : e === 'fish' ? (sp.fishVoice || S.proj.fish.voice) : e === 'chatterbox' ? (sp.cbxVoice || S.proj.cbx.voice) : null); }
+function previewSpeaker(i){ const sp = spkList()[i], v = spkEff(sp), e = v.engine; previewVoice(e, e === 'google' ? v.gVoice : e === 'fish' ? v.fishVoice : e === 'chatterbox' ? v.cbxVoice : null); }   // 182: the voice it actually has
 // 177 · the samples of every built-in voice ship with the app (levelled to one loudness: tools/level_previews.py); a
 //       voice of your own gets its sample once, when it is made, and keeps it (the engine's cache, keyed by the voice)
 function makeSampleNow(engine, voice){ try { setTimeout(() => { API().voice_preview(previewPayload(engine, voice)).catch(() => {}); }, 300); } catch (e) {} }
@@ -97,10 +142,32 @@ function normLine(L){
   if ((m = /^\s*\{([^{}\n]{1,40})\}\s*/.exec(t))){ L.tone = m[1].trim(); t = t.slice(m[0].length); }   // a tone written after the name
   L.text = t;
 }
-function spkSummary(sp){ const e = spkEngine(sp), en = engShort(e);
-  const voice = e === 'google' ? (sp.gVoice || S.proj.g_voice) : e === 'fish' ? (((([...($('fishVoice') || { options: [] }).options].find(o => o.value === (sp.fishVoice || S.proj.fish.voice))) || {}).text) || sp.fishVoice || T('صدای پروژه', "project's voice")) : e === 'chatterbox' ? (sp.cbxVoice || S.proj.cbx.voice) : '';
-  const style = sp.gPreset ? presetName(sp.gPreset) : ''; return [en, voice, style].filter(Boolean).join(' · '); }
+function spkSummary(sp){ const v = spkEff(sp), e = v.engine, en = engShort(e);   // 182: what the speaker actually uses
+  const voice = e === 'google' ? v.gVoice : e === 'fish' ? fishVoiceName(v.fishVoice) : e === 'chatterbox' ? (v.cbxVoice === 'default' ? T('پیش‌فرض', 'Default') : v.cbxVoice) : '';
+  const style = (e === 'google' || e === 'fish') ? presetName(e === 'fish' ? v.fishPreset : v.gPreset) : ''; return [en, e === 'google' ? modelShort(v.gModel) : '', voice, style].filter(Boolean).join(' · '); }
 function setSpk(i, k, v){ remember(); const sp = spkList()[i]; sp[k] = v; markDirty(id => (S.lines[id] || {}).spk === sp.id); renderSpeakers(); renderScript(); autosave(); if (typeof VVER !== 'undefined') VVER++; }
+// 182 · a speaker's voice setting, on the fork model: a choice equal to what it would have anyway is no choice (it follows
+//       the project); a reset gives the project's choice, and at the fork everything under it follows the project again
+function spkWrite(sp, own){ SPK_KEYS.forEach(k => { sp[k] = vSet(own[k]) ? own[k] : ''; }); }
+function spkPick(i, k, v){ const sp = spkList()[i]; if (!sp) return; remember(); spkWrite(sp, forkPick(spkOwn(sp), projEff(), k, v)); markDirty(id => (S.lines[id] || {}).spk === sp.id); renderSpeakers(); renderScript(); autosave(); if (typeof VVER !== 'undefined') VVER++; }
+function spkReset(i, k){ const sp = spkList()[i]; if (!sp) return; remember(); spkWrite(sp, forkReset(spkOwn(sp), projEff(), k)); markDirty(id => (S.lines[id] || {}).spk === sp.id); renderSpeakers(); renderScript(); autosave(); if (typeof VVER !== 'undefined') VVER++; }
+// its fields: what the speaker actually has, each with a reset beside it (orange when it would change something)
+function spkFields(sp, i){ const own = spkOwn(sp), par = projEff(), v = forkResolve(own, par), e = v.engine;
+  const pres = G_PRESETS.map(p => [p[0], p[1]]), states = DIRECTOR.states.filter(a => a[0] !== 'custom').map(a => [a[0], lang === 'fa' ? a[1] : (a[2] || a[1])]);
+  const f = (label, k, html, extra = '') => { const on = forkResettable(own, par, k); return `<fieldset class="fieldset py-0"><legend class="fieldset-legend flex w-full items-center gap-1 text-xs font-medium text-base-content/70"><span class="flex-1">${label}</span><span class="spkrst btn btn-ghost btn-xs btn-square -my-1 ${on ? 'text-primary' : 'opacity-50 hover:opacity-100'}" role="button" ${on ? `onclick="spkReset(${i}, '${k}')"` : ''} data-tip="برگشت به پروژه" data-tip-en="Back to the project" aria-label="reset"><svg class="size-3.5"><use href="#i-rotate-ccw"/></svg></span></legend><select class="select select-sm w-full" ${extra} onchange="spkPick(${i}, '${k}', this.value)">${html}</select></fieldset>`; };
+  let h = f(T('موتور', 'Engine'), 'engine', optList(ENGINES, e));
+  if (e === 'google') h += f(T('مدل', 'Model'), 'gModel', optList(MODELS.map(m => [m[0], modelShort(m[0])]), v.gModel))
+    + f(T('صدا', 'Voice'), 'gVoice', spkVoiceOptions(sp), `data-spk-voice="${i}" data-preview="google"`)
+    + f(T('سبکِ خواندن', 'Reading style'), 'gPreset', optList(pres, v.gPreset)) + f(T('حال و احساس', 'Mood'), 'gState', optList(states, v.gState));
+  else if (e === 'fish') h += f(T('صدا', 'Voice'), 'fishVoice', spkVoiceOptions(sp), `data-spk-voice="${i}" data-preview="fish"`) + f(T('سبک', 'Style'), 'fishPreset', optList(pres, v.fishPreset));
+  else if (e === 'chatterbox') h += f(T('صدا', 'Voice'), 'cbxVoice', spkVoiceOptions(sp), `data-spk-voice="${i}" data-preview="chatterbox" data-cbx-del="1"`);
+  return h; }
+// the voice menu of a speaker's panel, for the voice it actually has (182: the fork model); a light voice IS its engine
+function spkVoiceOptions(sp){ const v = spkEff(sp), e = v.engine;
+  if (e === 'google') return voiceOptions(v.gVoice, false, /3\.8/.test(v.gModel || ''));
+  if (e === 'fish') return fishOptions(v.fishVoice);
+  if (e === 'chatterbox') return cbxOptions(v.cbxVoice);
+  return null; }
 function delSpeaker(i){ remember(); const sp = spkList()[i]; spkList().splice(i, 1); Object.values(S.lines).forEach(L => { if (L.spk === sp.id){ L.spk = undefined; L.dirty = true; } }); SPK_OPEN = null; renderSpeakers(); renderScript(); autosave(); }
 let SPK_OPEN = null;
 function toggleSpkEdit(id){ SPK_OPEN = SPK_OPEN === id ? null : id; renderSpeakers(); }
@@ -133,12 +200,19 @@ function spkFlash(id){ clearTimeout(SPK_HL_T); SPK_HL = { id, until: performance
 // 179 · «Add a speaker…» in a line's speaker menu: a speaker is set up on the project level, so the app goes there at once —
 //       the line and its clip are let go, the project tab comes up with Speakers open, and the new speaker is expanded,
 //       scrolled into view and highlighted, its name selected to type over
-function addSpeakerFromLine(){
+function addSpeakerFromLine(id){
   closeDD();
   try { const a = document.activeElement; if (a && a.closest && a.closest('#editor')) a.blur(); const s = getSelection(); if (s) s.removeAllRanges(); } catch (e) {}
+  const lines = id != null ? linesFor(id) : [];
   sel = new Set(); selClip = null; paintSel(); if (typeof placeClipBar === 'function') placeClipBar(); renderTimeline();
-  showInsp('proj', true); addSpeaker(); }
-function openSpeakers(addNew){ if (addNew) return addSpeakerFromLine(); showInsp('proj', true); const box = $('spkOpen'); if (box) box.checked = true; }
+  showInsp('proj', true); const sp = addSpeaker();
+  // 182: the line it came from takes the new speaker at once (its badge shows it) — the same undo step as adding it
+  if (sp && lines.length){ lines.forEach(x => { const LL = S.lines[x]; if (!LL) return; const was = LL.spk || ''; LL.spk = sp.id; if (was !== sp.id){ const [, c] = clipOfLine(x); if (c && !c.unvoiced) LL.dirty = true; } }); renderScript(); autosave(); if (typeof VVER !== 'undefined') VVER++; } }
+function openSpeakers(addNew){ if (addNew) return addSpeakerFromLine(); showInsp('proj', true); const box = $('spkOpen'); if (!box) return;
+  // 182: opened for real (its box ticked AND the section open — ticked alone it stayed shut, with no height: the project
+  //      tab could not scroll to the speakers), then brought into view
+  const col = box.closest('.collapse'); box.checked = true; if (col) col.classList.add('collapse-open');
+  requestAnimationFrame(() => requestAnimationFrame(() => { const t = col && col.querySelector(':scope > .collapse-title'); if (t) t.scrollIntoView({ block: 'start', behavior: 'smooth' }); })); }
 // 168: speaker colours come from the theme (8 warm-leaning colours, light and dark tones); a speaker may carry a photo
 const spkN = k => ((k % 8) + 8) % 8 + 1;
 const spkBg = k => `background:var(--spk${spkN(k)});color:var(--spk${spkN(k)}-on)`;
@@ -155,7 +229,7 @@ function pickSpkPhoto(i){
 function setSpkPhoto(i, url){ const sp = spkList()[i]; if (!sp) return; remember(); if (url) sp.photo = url; else delete sp.photo; renderSpeakers(); renderScript(); autosave(); if (typeof VVER !== 'undefined') VVER++; }
 function renderSpeakers(){
   const box = $('spkList'); if (!box) return; const L = spkList(); if ($('spkCount')) $('spkCount').textContent = FA(L.length);
-  box.innerHTML = L.map((sp, i) => { const e = spkEngine(sp), vo = spkVoiceOptions(sp), vk = SPK_VKEY[e], open = SPK_OPEN === sp.id;
+  box.innerHTML = L.map((sp, i) => { const open = SPK_OPEN === sp.id;
     const hl = SPK_HL && SPK_HL.id === sp.id && performance.now() < SPK_HL.until;
     return `<li class="list-row items-center gap-3 py-2 transition-[box-shadow,background-color] duration-700 ${hl ? 'bg-primary/10 ring-2 ring-inset ring-primary' : ''}" data-spk-row="${sp.id}">
         <div class="group/av relative shrink-0"><button class="grid size-10 place-items-center overflow-hidden rounded-full text-sm font-bold" style="${spkBg(i)}" onclick="pickSpkPhoto(${i})" data-tip="${sp.photo ? 'عوض کردنِ عکس' : 'افزودنِ عکس'}" data-tip-en="${sp.photo ? 'Change photo' : 'Add a photo'}" aria-label="photo">${spkFace(sp)}</button>${sp.photo ? `<div class="spkph-act pointer-events-none absolute inset-0 flex items-center justify-center gap-0.5 rounded-full bg-black/55 opacity-0 transition-opacity group-hover/av:pointer-events-auto group-hover/av:opacity-100"><button class="grid size-5 place-items-center rounded-full text-white hover:bg-white/25" onclick="pickSpkPhoto(${i})" data-tip="عوض کردنِ عکس" data-tip-en="Change photo" aria-label="change photo"><svg class="size-3"><use href="#i-refresh-cw"/></svg></button><button class="grid size-5 place-items-center rounded-full text-white hover:bg-white/25" onclick="setSpkPhoto(${i}, null)" data-tip="حذفِ عکس" data-tip-en="Remove photo" aria-label="remove photo"><svg class="size-3"><use href="#i-trash-2"/></svg></button></div>` : `<span class="pointer-events-none absolute -bottom-0.5 -end-0.5 grid size-4 place-items-center rounded-full bg-base-100 text-base-content/70 opacity-0 shadow-sm transition-opacity group-hover/av:opacity-100"><svg class="size-2.5"><use href="#i-camera"/></svg></span>`}</div>
@@ -163,13 +237,10 @@ function renderSpeakers(){
         <button class="btn btn-ghost btn-sm btn-circle" onclick="previewSpeaker(${i})" data-tip="شنیدنِ صدا" data-tip-en="Hear the voice" aria-label="play"><svg class="size-4"><use href="#i-play"/></svg></button>
       </li>${open ? `<li class="space-y-2 border-t border-base-300 px-3 pb-3 pt-2" data-edit="${sp.id}">
         <input class="input input-sm w-full" dir="auto" value="${escapeHtml(sp.name)}" placeholder="${T('نام', 'Name')}" onchange="setSpk(${i}, 'name', this.value.trim())">
-        <select class="select select-sm w-full" onchange="setSpk(${i}, 'engine', this.value)"><option value="">${T('موتورِ پروژه', "The project's engine")}</option>${ENGINES.map(([v, l]) => `<option value="${v}" ${v === sp.engine ? 'selected' : ''}>${escapeHtml(tr(l))}</option>`).join('')}</select>
-        ${e === 'google' ? `<select class="select select-sm w-full" onchange="setSpk(${i}, 'gModel', this.value)"><option value="">${T('مدلِ پروژه', "The project's model")}: ${escapeHtml(modelShort(S.proj.g_model))}</option>${MODELS.map(m => `<option value="${m[0]}" ${m[0] === sp.gModel ? 'selected' : ''}>${escapeHtml(modelShort(m[0]))}</option>`).join('')}</select>` : ''}
-        ${vo ? `<select class="select select-sm w-full" data-spk-voice="${i}" data-preview="${e}" onchange="setSpk(${i}, '${vk}', this.value)">${vo}</select>` : ''}
-        ${e === 'google' || e === 'fish' ? `<select class="select select-sm w-full" onchange="setSpk(${i}, 'gPreset', this.value)"><option value="">${T('سبکِ پروژه', "The project's style")}</option>${G_PRESETS.map(p => `<option value="${escapeHtml(p[0])}" ${p[0] === sp.gPreset ? 'selected' : ''}>${escapeHtml(tr(p[1]))}</option>`).join('')}</select>` : ''}
+        ${spkFields(sp, i)}
         <div class="flex justify-end"><button class="btn btn-ghost btn-sm gap-1.5 text-error" onclick="delSpeaker(${i})"><svg class="size-4"><use href="#i-trash-2"/></svg>${T('حذفِ گوینده', 'Remove speaker')}</button></div></li>` : ''}`; }).join('')
     || `<li class="px-3 py-3 text-xs text-base-content/60">${T('هنوز گوینده‌ای نیست؛ همهٔ خط‌ها با صدای پروژه خوانده می‌شوند.', "No speakers yet; every line uses the project's voice.")}</li>`;
-  box.querySelectorAll('select').forEach(el => { enh(el); if (el.dataset.spkVoice !== undefined){ const i = +el.dataset.spkVoice; el._preview = v => previewVoice(spkEngine(spkList()[i]), v || null); } });
+  box.querySelectorAll('select').forEach(el => { enh(el); if (el.dataset.spkVoice !== undefined){ const i = +el.dataset.spkVoice; el._preview = v => previewVoice(spkEngine(spkList()[i]), v || null); if (el.dataset.cbxDel) el._onDel = cbxSampleDelete; } });
 }
 // the chips at the start of a line
 function spkChip(id){ const L = S.lines[id], sp = speakerOfLine(id), k = sp ? spkList().indexOf(sp) : -1;
@@ -234,7 +305,7 @@ function openSpkMenu(ev, id){
   ev.stopPropagation(); const L = spkList(), cur = (S.lines[id] || {}).spk || '';
   const row = (sp, k) => `<li><a data-spk="${sp ? sp.id : ''}" class="gap-2 ${cur === (sp ? sp.id : '') ? 'menu-active' : ''}">${sp ? `<span class="grid size-6 shrink-0 place-items-center overflow-hidden rounded-full text-[10px] font-bold" style="${spkBg(k)}">${spkFace(sp)}</span><span class="min-w-0 flex-1"><span class="block font-semibold">${escapeHtml(sp.name)}</span><span class="block truncate text-xs text-base-content/60">${escapeHtml(spkSummary(sp))}</span></span>` : `<span class="size-6 shrink-0 rounded-full border border-dashed border-base-content/30"></span><span class="flex-1">${T('بدونِ گوینده — صدای پروژه', "No speaker — the project's voice")}</span>`}</a></li>`;
   lineMenu(ev.currentTarget, `<ul class="menu menu-sm w-full p-1">${cur ? `<li class="mb-1 border-b border-base-300 pb-1"><a data-spk="" class="gap-2 text-error"><svg class="size-4"><use href="#i-trash-2"/></svg>${T('حذفِ گوینده از این خط', 'Remove the speaker from this line')}</a></li>` : ''}${L.map(row).join('')}${row(null)}<li class="mt-1 border-t border-base-300 pt-1"><a data-spk-add class="gap-2"><svg class="size-4"><use href="#i-plus"/></svg>${T('افزودنِ گوینده…', 'Add a speaker…')}</a></li></ul>`, e => {
-    const a = e.target.closest('[data-spk]'), add = e.target.closest('[data-spk-add]'); if (add){ addSpeakerFromLine(); return; } if (!a) return;
+    const a = e.target.closest('[data-spk]'), add = e.target.closest('[data-spk-add]'); if (add){ addSpeakerFromLine(id); return; } if (!a) return;
     remember(); linesFor(id).forEach(x => { const LL = S.lines[x]; if (!LL) return; const was = LL.spk || ''; LL.spk = a.dataset.spk || undefined; if (was !== (a.dataset.spk || '')){ const [, c] = clipOfLine(x); if (c && !c.unvoiced) LL.dirty = true; } });
     closeDD(); renderScript(); autosave(); if (typeof VVER !== 'undefined') VVER++; });
 }
@@ -262,7 +333,7 @@ function ovlList(id){ const t = (S.lines[id] || {}).text || '', out = [], re = n
   return out; }
 function ovlSpeaker(id, o){ if (o.spk) return o.spk; const own = speakerOfLine(id); return spkList().find(x => x !== own) || null; }
 function spkVoiceOf(x){ const v = {}; if (!x) return v; if (x.engine) v.engine = x.engine; ['gVoice', 'gModel', 'gPreset', 'gState', 'fishVoice', 'cbxVoice'].forEach(k => { if (x[k]) v[k] = x[k]; }); return v; }
-const ovlVoice = (id, o) => ({ engine: S.proj.engine, gVoice: S.proj.g_voice, gPreset: S.proj.g_preset, gState: S.proj.g_state, ...spkVoiceOf(ovlSpeaker(id, o)) });
+const ovlVoice = (id, o) => { const x = ovlSpeaker(id, o); return x ? spkEff(x) : projEff(); };   // 182: the speaker as it actually is (the fork model)
 const ovlKey = (id, o) => { const x = ovlSpeaker(id, o); return JSON.stringify([o.text, o.mood || '', x ? x.id : '', spkVoiceOf(x)]); };
 const ovlSpoken = (id, o) => (o.mood && ovlVoice(id, o).engine === 'google' && isG38() ? `{${o.mood}} ` : '') + o.text;   // 170: the mood reaches Gemini 3.8 only   // the speaker's OWN settings only — project defaults never mark a line
 function ovlSig(id){ return ovlList(id).map(o => ovlKey(id, o)).join('|'); }
@@ -405,7 +476,7 @@ const _openDD175 = openDD; openDD = function(s){ try { clearVWarn(s); } catch (e
 // =====================================================================================
 const reactsOf = id => (S.lines[id] && S.lines[id].reacts) || [];
 const rSpk = r => (r && r.spk && spkList().find(s => s.id === r.spk)) || null;
-const rVoice = r => ({ engine: S.proj.engine, gVoice: S.proj.g_voice, gPreset: S.proj.g_preset, gState: S.proj.g_state, ...spkVoiceOf(rSpk(r)) });
+const rVoice = r => rSpk(r) ? spkEff(rSpk(r)) : projEff();   // 182: the reaction's speaker as it actually is (the fork model)
 const rKey = r => JSON.stringify([r.text, r.mood || '', r.spk || '', spkVoiceOf(rSpk(r))]);
 const rSpoken = r => (r.mood && rVoice(r).engine === 'google' && /3\.8/.test(rVoice(r).gModel || S.proj.g_model) ? `{${r.mood}} ` : '') + r.text;
 const rHasAudio = r => r.gulp != null && !!(AUD.get(r.gulp) || {}).buf;

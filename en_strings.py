@@ -48,6 +48,8 @@ EXACT = {
  "این قطعه کمتر از پنج ثانیه است؛ برای پس‌زمینه کوتاه است.": "This track is under five seconds; too short for a background.",
  "این موسیقی دیگر روی دستگاه نیست.": "This music is no longer on this device.",
  "فایل پیدا نشد.": "File not found.",
+ "این فایل صوتی تقریباً خالی است.": "This audio file is almost empty.",
+ "روی این دیسک جا نیست؛ کمی جا باز کنید و دوباره امتحان کنید.": "There is no room left on this disk; free some space and try again.",
  "این فایل WAV شانزده‌بیتی نیست.": "This WAV file is not 16-bit.",
  "این فایل صوتی به درد نمی‌خورد؛ یک WAV یا MP3 هشت تا پانزده‌ثانیه‌ای با صدای یک نفر انتخاب کنید.": "This audio file will not work; choose an 8–15 s WAV or MP3 of a single speaker.",
  "برای Freesound کلید لازم است: در freesound.org ثبت‌نام کنید و از freesound.org/apiv2/apply کلید بگیرید.": "Freesound needs a key: sign up at freesound.org and get one at freesound.org/apiv2/apply.",
@@ -146,6 +148,7 @@ PATTERNS = [
  (r"^فایل (\S+) روی دستگاه خراب بود؛ دوباره دانلودش می‌کنم…$", "The file {0} on this device was corrupt; downloading it again…"),
  (r"^موتور صداهای سبک با کد (\S+) بسته شد \(خطای داخلی\)\.$", "The light-voice engine exited with code {0} (internal error)."),
  (r"^این قالب صوتی را نمی‌توانم بخوانم \((.+?)\)؛ WAV، MP3، OGG یا FLAC بدهید\.$", "Cannot read this audio format ({0}); use WAV, MP3, OGG or FLAC."),
+ (r"^این قالب صوتی را نمی‌توانم بخوانم \((.+?)\)؛ WAV، MP3، M4A، OGG یا FLAC بدهید\.$", "Cannot read this audio format ({0}); use WAV, MP3, M4A, OGG or FLAC."),
  (r"^\(این دستگاه (\S+) گیگابایت دارد\)\. به‌جایش از صداهای سبک — مانا، ژیرو یا امیر — استفاده کنید\.$", "(this device has {0} GB). Use the light voices — Mana, Gyro or Amir — instead."),
  (r"^چترباکس روی این دستگاه اجرا نمی‌شود؛ دست‌کم 8 گیگابایت رم می‌خواهد (.*)$", "Chatterbox cannot run on this device; it needs at least 8 GB of RAM {0}"),
  (r"^نمونهٔ صدایی که انتخاب کرده‌اید پیدا نشد: (.*)$", "The selected voice sample was not found: {0}"),
@@ -163,4 +166,15 @@ PATTERNS = [
  (r"^حافظهٔ آزاد این دستگاه کم است \((\S+) گیگابایت\)؛ منتظرم برنامه‌های دیگر حافظه را پس بدهند — اگر می‌توانید چندتایی را ببندید…$", "This computer is low on free memory ({0} GB); waiting for other programs to give some back — close a few if you can…"),
  (r"^حافظهٔ آزاد این دستگاه برای چترباکس کافی نیست \((\S+) گیگابایت آزاد است\)\. چند برنامهٔ دیگر را ببندید و دوباره بسازید\.$", "This computer does not have enough free memory for Chatterbox ({0} GB free). Close a few programs and generate again."),
  (r"^این تکه حتی در دو نیمه هم در حافظهٔ این دستگاه جا نشد \(چترباکس به (\S+) گیگابایت رسید\)\. برنامه‌های دیگر را ببندید یا این خط را کوتاه‌تر کنید و دوباره بسازید\.$", "This piece did not fit in this computer's memory even in two halves (Chatterbox reached {0} GB). Close other programs or shorten this line, then generate again."),
+]
+
+# 182 · safe saves, the recovery copy, import limits
+EXACT.update({
+ "نسخهٔ بازیابی پیدا نشد.": "The recovery copy was not found.",
+})
+PATTERNS += [
+ (r"^روی این دیسک جا نیست: این کار حدود (" + D + r") مگابایت جا لازم دارد و فقط (" + D + r") مگابایت آزاد است\. کمی جا باز کنید یا جای دیگری را انتخاب کنید\.$",
+  "Not enough room on this disk: this needs about {0} MB and only {1} MB is free. Free up some space or choose another place."),
+ (r"^«(.+)» (" + D + r") مگابایت است؛ یک فایلِ صوتی حداکثر 250 مگابایت می‌تواند باشد\.$", "“{0}” is {1} MB; an audio file can be at most 250 MB."),
+ (r"^«(.+)» (" + D + r") دقیقه است؛ یک فایلِ صوتی حداکثر 60 دقیقه می‌تواند باشد\.$", "“{0}” is {1} minutes long; an audio file can be at most 60 minutes."),
 ]

@@ -208,3 +208,7 @@ body.splitting,body.splitting *{cursor:row-resize!important;user-select:none!imp
 /* 179: a field's label sits on the interface's side, as its list's rows do (a Latin voice name in Persian, a Persian name in English) */
 html[dir=rtl] .avtrig > span:first-child{text-align:right}
 html[dir=ltr] .avtrig > span:first-child{text-align:left}
+
+/* 182 · History / undo / redo: the item and the setting a step changed light up briefly in the primary colour */
+@keyframes histflash{0%,35%{box-shadow:0 0 0 2px var(--color-primary);background-color:color-mix(in oklab,var(--color-primary) 18%,transparent)}100%{box-shadow:0 0 0 2px transparent}}
+.hist-flash{animation:histflash 1.6s ease-out;border-radius:var(--radius-field)}

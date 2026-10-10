@@ -1,5 +1,9 @@
 // 179 · the keyboard goes to what is open first (a list, a menu, a preset's panel) — keyGuard lives in controls.js; this
 //       listener is installed before every other key handler so the canvas, the playhead and play/pause never steal its keys
+// 182: Esc first puts back a drag in progress (drag.js), else closes the red refusal message (drop.js) — before any other key handler
+var DRAG_ESC = null;
+addEventListener('keydown', ev => { if (ev.key !== 'Escape') return; try { if (DRAG_ESC){ ev.preventDefault(); ev.stopImmediatePropagation(); const f = DRAG_ESC; DRAG_ESC = null; f(); return; }
+  const t = document.getElementById('refuseToast'); if (t && t._close){ ev.preventDefault(); ev.stopImmediatePropagation(); t._close(); } } catch (e) { console.warn('esc', e); } }, true);
 addEventListener('keydown', ev => { try { if (typeof keyGuard === 'function') keyGuard(ev); } catch (e) { console.warn('keys', e); } }, true);
 // =====================================================================================
 // Avaye Javid Shah — the new editor (build 154, audio mode, Google)
@@ -24,6 +28,8 @@ const pctSign = () => '%';   /* 177: English digits and signs in both languages 
 const secs = (v, d = 1) => `${(+v || 0).toFixed(d)}s`;   /* 177: seconds are «12.6s», never «12.6ث» */
 // 179: every clip shows its length (selected or not, every kind, both timelines) while it is wide enough at this zoom to hold it
 const lenFits = (w, s, extra = 0) => w >= 6.2 * String(s).length + 44 + extra;
+// 182: a clip's length — «8.4s» under a minute, «01:00» from a minute, «01:00:00» from an hour
+const lenTxt = v => { v = +v || 0; if (v < 59.95) return secs(v); const t = Math.round(v), p2 = n => String(n).padStart(2, '0'); return t >= 3600 ? `${p2(Math.floor(t / 3600))}:${p2(Math.floor(t % 3600 / 60))}:${p2(t % 60)}` : `${p2(Math.floor(t / 60))}:${p2(t % 60)}`; };
 const fmt = t => `${String(Math.floor(t / 60)).padStart(2, '0')}:${(t % 60).toFixed(1).padStart(4, '0')}`;
 const escapeHtml = x => String(x ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');   // 160: quotes too — attributes broke on them
 const PAD = 18, SNAP_PX = 8, GAP = 0.12;            // margin before 0:00; snapping; the breath between parts
@@ -32,12 +38,12 @@ let uid = Date.now() % 100000, zoom = 22, playhead = 0, playing = false, snapOn 
 // ---------------- state ----------------
 const S = {
   lines: {},                                         // id -> { text, dirty, voice: {gVoice,gPreset,gState} | null }
-  tracks: [ { id: 's1', name: 'گفتار 1', en: 'Speech 1', kind: 'speech', gapless: false, clips: [] } ],
+  tracks: [ { id: 's1', name: 'گفتار', en: 'Speech', kind: 'speech', gapless: false, clips: [] } ],
   proj: { engine: 'google', g_model: 'gemini-3.1-flash-tts-preview', g_voice: 'Charon', g_preset: 'neutral', g_state: '', g_age: '', g_lang: 'fa', g_continuity: true, g_style: '',
           duo: { on: false, a: { name: '', voice: 'Charon' }, b: { name: '', voice: 'Kore' } },
           cbx: { voice: 'default', speed: 1, exag: 0.8, cfg: 1, temp: 0 }, light: { speed: 1, noise: 0.667, noisew: 0.8 },
           fish: { model: '', latency: 'normal', voice: 'default', preset: 'neutral', speed: 1, volume: 0, temp: 0.7, top_p: 0.7, cont: true, condPrev: true, normLoud: true, normalize: false, quality: false, custom: '', age: '', state: '', ageCustom: '', stateCustom: '', speakers: [] } },
-  music: { level_db: -16, fade_in: 1.5, fade_out: 1.5, duck: true, duck_db: 12, file: null, name: null },
+  music: { level_db: -16, fade_in: 1.5, fade_out: 1.5, duck: true, duck_db: 12, file: null, name: null, credit: '' },   // 182: the same keys a restored project has
 };
 // a speech clip: { id, lines: [lineId…], gulp: id|null, in, out, at, trimIn, trimOut, unvoiced }
 //   (a part without a trusted line map is ONE clip carrying several lines)
@@ -49,12 +55,12 @@ const orderedLines = () => scriptOrder().flatMap(c => c.lines);
 const clipOfLine = id => { for (const t of S.tracks) for (const c of t.clips) if (c.lines && c.lines.includes(id)) return [t, c]; return [null, null]; };
 const dur = c => Math.max(0.05, c.out - c.in);
 const total = () => Math.max(10, ...S.tracks.flatMap(t => t.clips.map(c => c.at + dur(c))));
-const lineVoice = id => ({ engine: S.proj.engine, gVoice: S.proj.g_voice, gPreset: S.proj.g_preset, gState: S.proj.g_state, ...spkVoice(id), ...(S.lines[id] && S.lines[id].voice || {}) });   // 162: speaker, then the line's own
+const lineVoice = id => lineEff(id);   // 182: the fork model (speakers.js) — the line follows its speaker, or the project, until it differs;   // 162: speaker, then the line's own
 const lineEngine = id => lineVoice(id).engine;
 
 // ---------------- status, busy, cancel ----------------
 const enDigits = t => String(t ?? '').replace(/[۰-۹]/g, d => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).replace(/[٠-٩]/g, d => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).replace(/٫/g, '.');   // 176: the status line speaks in English digits
-function say(msg, kind){ const s = $('status'); s.textContent = enDigits(msg || ''); s.className = 'min-w-0 flex-1 truncate ' + (kind === 'err' ? 'text-error' : kind === 'success' ? 'text-success' : 'text-primary'); }   /* 177: «success» is green */
+function say(msg, kind){ const s = $('status'); s.textContent = enDigits(msg || ''); s.className = 'min-w-0 flex-1 truncate ' + (kind === 'err' ? 'text-error' : kind === 'success' ? 'text-success' : kind === 'warn' ? 'text-warning' : 'text-primary'); }   /* 177: «success» is green; 182: «warn» amber */
 window.avaStatus = ({ msg, pct, kind }) => { say(msg, kind || 'ok'); const p = $('prog'); if (pct === undefined || pct === null) p.removeAttribute('value'); else p.value = pct; };
 function setBusy(on){ busy = on; $('prog').classList.toggle('hidden', !on); $('cancelBtn').classList.toggle('hidden', !on); $('genBtn').disabled = on; if (!on && typeof refreshKeys === 'function') setTimeout(() => refreshKeys(), 0); }   // 176: the key badge counts again after every job
 window.avaKeysChanged = () => { if (typeof refreshKeys === 'function') refreshKeys(); };   // 176: the engine says a key ran out or came back
@@ -68,21 +74,88 @@ function snapRaw(){ return { lines: S.lines, tracks: S.tracks.map(t => ({ ...t, 
 function snapshot(){ return JSON.parse(JSON.stringify(snapRaw())); }
 const MUSIC0 = { level_db: -16, fade_in: 1.5, fade_out: 1.5, duck: true, duck_db: 12, file: null, name: null, credit: '' };
 function restoreSnap(sn){ S.lines = sn.lines; S.tracks = sn.tracks; const base = JSON.parse(JSON.stringify(S.proj)); S.proj = Object.assign(base, sn.proj || {}); ['cbx', 'light', 'fish', 'duo'].forEach(k => S.proj[k] = Object.assign({}, base[k], (sn.proj || {})[k] || {})); S.music = Object.assign({}, MUSIC0, sn.music || {}); }   // replace, never merge: a missing key means 'none'
-function autosave(){ if (typeof VVER !== 'undefined') VVER++; clearTimeout(saveTimer); saveTimer = setTimeout(() => { /* 164: no autosaved document — projects are saved as .ava files */ }, 800); }
+function autosave(){ if (typeof VVER !== 'undefined') VVER++; projChanged(); if (typeof histEdited === 'function') histEdited(); if (!CAP_T && !PROJ_LOADING) CAP_T = setTimeout(capGuard, 0); clearTimeout(saveTimer); saveTimer = setTimeout(() => { /* 164: no autosaved document — projects are saved as .ava files; 182: the recovery copy (above) */ }, 800); }
+var PROJ_LOADING = false;   // 182: while a project is being opened its own changes are not unsaved changes
 
 // ---------------- undo / redo: snapshots; parts referenced by history are kept in memory ----------------
-const hist = { past: [], future: [] };
-// 177: 200 steps (each a few KB — media are referenced, never copied); a step that changes nothing is not recorded twice
-var HIST_MAX = 200;
-function remember(){ const js = JSON.stringify(snapRaw()); if (js === hist._last) return; hist._last = js; hist.past.push(JSON.parse(js)); if (hist.past.length > HIST_MAX) hist.past.shift(); hist.future = []; }
-function undo(){ if (!hist.past.length) return; hist.future.push(snapshot()); restoreSnap(hist.past.pop()); hist._last = null; afterChange(true); }
-function redo(){ if (!hist.future.length) return; hist.past.push(snapshot()); restoreSnap(hist.future.pop()); hist._last = null; afterChange(true); }
+// 182 · every change is one step: the project before it, when it happened, what the action called itself and in which
+//       mode it was made (the History panel and its navigation read them). Capped by memory as well as by count (a long
+//       project's copies are big); a fresh history for every opened or new project (undo never shows another project).
+//       A step that turned out to change nothing (a click that did not drag, a pick that was cancelled) is dropped with
+//       dropStep(): it also forgets the step's fingerprint — popping it alone left the fingerprint behind, so the next
+//       real change from the same state was silently not recorded (the founder's deleted podcast clip that undo skipped).
+// each entry: { sn: a state, size, m: the step's own record — when, its label, the mode, and (history.js) the control
+// and selection it was made with }. The record travels with its step between the two stacks.
+const hist = { past: [], future: [], bytes: 0, base: { kind: 'start', at: Date.now() } };
+var HIST_MAX = 200, HIST_BYTES = 160 * 1024 * 1024;
+const histMeta = label => ({ at: Date.now(), label: label || '', mode: typeof mode !== 'undefined' ? mode : 'audio', ctx: typeof histCtx === 'function' ? histCtx() : null });
+const histTell = () => { if (typeof histChanged === 'function') histChanged(); };
+function histTrim(){ while (hist.past.length > 1 && (hist.past.length > HIST_MAX || hist.bytes > HIST_BYTES)){ const st = hist.past.shift(); hist.bytes -= st.size; hist.base = { kind: 'older', at: st.m ? st.m.at : Date.now() }; actFinal(st); } }
+// 182 · EVERY DELETE IS A STEP — a step can carry an action outside the project (a sample of yours, a library track, a
+//       recent voice, a voice on Fish or Google): undo brings it back, redo deletes it again; what cannot be brought back
+//       once really gone (a file, a voice on a server) waits until its step can no longer be undone — then it goes.
+function actFinal(st){ const a = st && st.m && st.m.act; if (a && a.finalize && !a.done){ a.done = true; try { a.finalize(); } catch (e) { console.warn('delete', e); } } }
+function rememberAct(label, act){ const js = JSON.stringify(snapRaw()); const st = { sn: JSON.parse(js), size: js.length * 2, m: { ...histMeta(label), act } };
+  hist.past.push(st); hist.bytes += st.size; histClearFuture(); histTrim(); hist._last = null; histTell(); return st; }
+function histClearFuture(){ hist.future.forEach(f => { hist.bytes -= f.size; }); hist.future = []; }
+function remember(label){ const js = JSON.stringify(snapRaw()); if (js === hist._last) return; hist._last = js;
+  const st = { sn: JSON.parse(js), size: js.length * 2, m: histMeta(label) }; hist.past.push(st); hist.bytes += st.size; histClearFuture(); histTrim(); histTell(); }
+function dropStep(){ const st = hist.past.pop(); if (st) hist.bytes -= st.size; hist._last = null; histTell(); }
+// a step whose state is the one on screen (a pick that changed nothing, typing that was put back) is passed over: one
+// press of undo / redo always shows a change
+function histSkipSame(stack, js){ while (stack.length && !(stack[stack.length - 1].m || {}).act && sameState(JSON.stringify(stack[stack.length - 1].sn), js)){ const d = stack.pop(); hist.bytes -= d.size; } }   // a step with an action is never «nothing»
+function undo(){ const js = JSON.stringify(snapRaw()); histSkipSame(hist.past, js); if (!hist.past.length){ hist._last = null; return; } const st = hist.past.pop(), cur = JSON.parse(js); hist.bytes -= st.size;
+  const back = { sn: cur, size: js.length * 2, m: st.m }; hist.future.push(back); hist.bytes += back.size;
+  restoreSnap(st.sn); hist._last = null; CAP_SKIP = true; if (st.m && st.m.act && st.m.act.undo) try { st.m.act.undo(); } catch (e) { console.warn('undo', e); } afterChange(true); }
+function redo(){ const js = JSON.stringify(snapRaw()); histSkipSame(hist.future, js); if (!hist.future.length) return; const st = hist.future.pop(), cur = JSON.parse(js); hist.bytes -= st.size;
+  const fwd = { sn: cur, size: js.length * 2, m: st.m }; hist.past.push(fwd); hist.bytes += fwd.size;
+  restoreSnap(st.sn); hist._last = null; CAP_SKIP = true; if (st.m && st.m.act && st.m.act.redo) try { st.m.act.redo(); } catch (e) { console.warn('redo', e); } afterChange(true); }
+function histReset(kind){ hist.past.forEach(actFinal); hist.past = []; hist.future = []; hist.bytes = 0; hist._last = null; hist.base = { kind: kind || 'start', at: Date.now() }; histTell(); }   // deletions done so far are final   // 182: a project opened or started — its history begins there
 function gcParts(){
   const keep = new Set();
-  [snapshot(), ...hist.past, ...hist.future].forEach(sn => { sn.tracks.forEach(t => t.clips.forEach(c => { if (c.gulp !== null && c.gulp !== undefined) keep.add(c.gulp); }));
+  [snapshot(), ...hist.past.map(st => st.sn), ...hist.future.map(st => st.sn)].forEach(sn => { sn.tracks.forEach(t => t.clips.forEach(c => { if (c.gulp !== null && c.gulp !== undefined) keep.add(c.gulp); }));
     Object.values(sn.lines || {}).forEach(L => { Object.values(L.ovlA || {}).forEach(g => { if (g !== null && g !== undefined) keep.add(g); }); (L.reacts || []).forEach(r => { if (r.gulp != null) keep.add(r.gulp); }); }); });   // 170/176: the reactions' audio too
   try { API().gc_gulps([...keep]); } catch (e) {}
+  return keep;
 }
+// 182 · UNSAVED CHANGES — the project is compared with what was last saved (or opened, or started): a click that changed
+//       nothing is not a change, and undoing back to the saved state is «saved» again. The app is told at once (its
+//       window asks before closing); while there are unsaved changes a recovery copy is brought up to date every 90 s,
+//       when the page is idle (only what is new is written — AvaModels/recovery; a manual save refreshes it too).
+var PROJ_DIRTY = false, SAVED_JS = null, DIRTY_T = 0, CHG = 0, RECOV_DUE = false, RECOV_BUSY = false;
+function setDirty(d){ if (d === PROJ_DIRTY) return; PROJ_DIRTY = d; try { API().set_dirty(d); } catch (e) {} }
+// two states are the same project when their contents match — key order aside (restoring a state rebuilds some objects
+// with their keys in another order): the plain texts first; only texts of the same length are compared key by key
+function canonJson(x){ if (x === null || typeof x !== 'object') return JSON.stringify(x) || 'null'; if (Array.isArray(x)) return '[' + x.map(v => v === undefined || typeof v === 'function' ? 'null' : canonJson(v)).join(',') + ']';
+  return '{' + Object.keys(x).filter(k => x[k] !== undefined && typeof x[k] !== 'function').sort().map(k => JSON.stringify(k) + ':' + canonJson(x[k])).join(',') + '}'; }
+function sameState(a, b){ if (a === b) return true; if (a == null || b == null || a.length !== b.length) return false; return canonJson(JSON.parse(a)) === canonJson(JSON.parse(b)); }
+function dirtyCheck(){ clearTimeout(DIRTY_T); DIRTY_T = 0; if (SAVED_JS === null) return; setDirty(!sameState(JSON.stringify(snapRaw()), SAVED_JS)); }
+function projChanged(){ CHG++; if (SAVED_JS === null || PROJ_LOADING) return; RECOV_DUE = true; if (!PROJ_DIRTY) setDirty(true); clearTimeout(DIRTY_T); DIRTY_T = setTimeout(dirtyCheck, 600); }
+function projBaseline(js){ SAVED_JS = js !== undefined ? js : JSON.stringify(snapRaw()); RECOV_DUE = false; dirtyCheck(); }   // what «saved» means from now on
+function quietChange(wasClean){ if (wasClean && !PROJ_LOADING && SAVED_JS !== null) projBaseline(); }   // a refinement the app made by itself (word timing) on a saved project stays «saved»
+async function recoverNow(){ if (!PROJ_DIRTY || !RECOV_DUE || RECOV_BUSY || PROJ_LOADING || !API().recovery_write) return; RECOV_BUSY = true; RECOV_DUE = false;
+  try { const r = await API().recovery_write(snapRaw(), S.projPath || null, projFileName()); if (!r || !r.ok) RECOV_DUE = true; } catch (e) { RECOV_DUE = true; } finally { RECOV_BUSY = false; } }
+setInterval(() => { if (!PROJ_DIRTY || !RECOV_DUE) return; (window.requestIdleCallback || (f => setTimeout(f, 0)))(() => { recoverNow(); }, { timeout: 15000 }); }, 90000);
+
+// 182 · PROJECT LENGTH: 60 minutes at most — said from 50; a change that would take the project past 60 is taken back
+//       with the reason (a project that is already longer — from an older build — cannot grow). Making speech stops
+//       before a part once the project has reached 60 minutes (what was made stays).
+var CAP_S = 3600, CAP_WARN_S = 3000, CAP_WARNED = false, CAP_T = 0;
+function projLength(sn){ const tr = sn ? sn.tracks : S.tracks, vo = sn ? ((sn.video || {}).objects || []) : ((typeof V !== 'undefined' && V && V.objects) || []); let e = 0;
+  (tr || []).forEach(t => (t.clips || []).forEach(c => { e = Math.max(e, (c.at || 0) + Math.max(0, (c.out || 0) - (c.in || 0))); }));
+  vo.forEach(o => { e = Math.max(e, o.end || 0); }); return e; }
+const capMins = s => FA(Math.floor(s / 60));
+function capSay(back){ say(back ? T('پروژه نمی‌تواند از 60 دقیقه بلندتر شود؛ این تغییر برگشت داده شد.', 'A project cannot be longer than 60 minutes; this change was taken back.')
+                                : T('این پروژه از 60 دقیقه بلندتر شده است — بیشترین طول 60 دقیقه است؛ پیش از افزودنِ چیزِ تازه کوتاهش کنید.', 'This project is now longer than 60 minutes — the most a project can be; shorten it before adding anything.'), 'err'); }
+var CAP_TOP = null, CAP_SKIP = false;   // undo / redo bring back states that were allowed when they were made — never taken back
+function capGuard(){ CAP_T = 0; if (PROJ_LOADING) return; const L = projLength(), st = hist.past[hist.past.length - 1], fresh = !!st && st !== CAP_TOP && !CAP_SKIP; CAP_TOP = st || null; CAP_SKIP = false;
+  if (L > CAP_S + 0.01){ const before = st ? projLength(st.sn) : 0;
+    // only the change that just made a new step is taken back (a change without its own step — the app's own work, or
+    // making speech — is never undone in its place; it is said instead)
+    if (fresh && (st.m || {}).label !== 'gen' && L > Math.max(CAP_S, before) + 0.01){ hist.past.pop(); hist.bytes -= st.size; hist._last = null; CAP_TOP = hist.past[hist.past.length - 1] || null; restoreSnap(st.sn); renderScript(); try { if (typeof refreshOpenPanels === 'function') refreshOpenPanels(); } catch (e) {} capSay(true); dirtyCheck(); return; }
+    if (L > before + 0.01) capSay(false); return; }
+  if (L >= CAP_WARN_S && !CAP_WARNED){ CAP_WARNED = true; say(T(`این پروژه ${capMins(L)} دقیقه است؛ بیشترین طولِ یک پروژه 60 دقیقه است.`, `This project is ${Math.floor(L / 60)} minutes long; a project can be up to 60 minutes.`), 'warn'); }
+  if (L < CAP_WARN_S - 60) CAP_WARNED = false; }
 function afterChange(noHist){ renderScript(); autosave(); }
 
 // 177: the selects are daisyUI's own (the native list) — see controls.js
@@ -158,8 +231,9 @@ function setProj(k, v){
 }
 function setLineOpt(k, v){
   if (sel.size !== 1) return; const id = [...sel][0]; remember();
-  const L = S.lines[id]; L.voice = Object.assign({}, L.voice || {});
-  if (v === null || v === undefined || v === '') delete L.voice[k]; else L.voice[k] = v;     // only THIS line; the speaker and the project are untouched
+  // 182: the fork model — a choice equal to what the line would have anyway is no choice (it follows); a reset (no value)
+  //      gives its parent's choice, and at the fork everything under it follows its parent again. Only THIS line changes.
+  const L = S.lines[id], parent = lineParent(id); L.voice = (v === null || v === undefined || v === '') ? forkReset(L.voice || {}, parent, k) : forkPick(L.voice || {}, parent, k, v);
   if (k === 'engine') buildTagMenus();
   fillLineInspector(id); afterChange();
 }
@@ -170,41 +244,37 @@ function showInsp(w, byUser){
   $('it-line').classList.toggle('tab-active', w === 'line'); $('it-proj').classList.toggle('tab-active', w !== 'line');
 }
 function fillLineInspector(id){
-  // 169: the line's speaker first; then the fields of the engine this line actually uses. Every field starts from the speaker
-  //      (or the project when there is no speaker); a change applies to THIS line only and has a reset back.
-  const L = S.lines[id] || {}, v = L.voice || {}, sp = speakerOfLine(id), eff = lineVoice(id), eng = eff.engine;
-  const base = { engine: S.proj.engine, gVoice: S.proj.g_voice, gPreset: S.proj.g_preset, gState: S.proj.g_state, ...spkVoice(id) };
-  const from = sp ? T('مثلِ گوینده', 'as the speaker') : T('مثلِ پروژه', 'as the project');
-  const engName = engShort;
-  const set = k => v[k] !== undefined && v[k] !== '' && v[k] !== null;
-  const lab = (t, k) => `<legend class="fieldset-legend flex w-full items-center gap-1 text-xs font-medium text-base-content/70"><span class="flex-1">${t}</span><span class="lnrst btn btn-ghost btn-xs btn-square -my-1 ${set(k) ? 'text-primary' : 'opacity-50 hover:opacity-100'}" role="button" ${set(k) ? `onclick="setLineOpt('${k}', null)"` : ''} data-tip="${T('برگشت: ', 'Back: ')}${from}" data-tip-en="Back: ${from}" aria-label="reset"><svg class="size-3.5"><use href="#i-rotate-ccw"/></svg></span></legend>`;   /* 179: always there — orange when this line has its own value */
-  const inh = txt => { const t = String(txt || '').replace(/^[—–-]\s*|\s*[—–-]$/g, '').trim(); return `<option value="">— ${from}${t ? ': ' + escapeHtml(t) : ''} —</option>`; };   // 177: «— as the speaker: unchanged —», not nested dashes
+  // 169: the line's speaker first; then the fields of the engine this line actually uses. A change applies to THIS line only.
+  // 182: the fork model — every list shows what the line actually has (its speaker's, or the project's, until it differs);
+  //      no «— as the speaker —» entries; each field's reset is orange when it would change something
+  const L = S.lines[id] || {}, own = L.voice || {}, sp = speakerOfLine(id), parent = lineParent(id), eff = forkResolve(own, parent), eng = eff.engine;
+  const from = sp ? T('گوینده', 'the speaker') : T('پروژه', 'the project');
+  const lab = (t, k) => { const on = forkResettable(own, parent, k); return `<legend class="fieldset-legend flex w-full items-center gap-1 text-xs font-medium text-base-content/70"><span class="flex-1">${t}</span><span class="lnrst btn btn-ghost btn-xs btn-square -my-1 ${on ? 'text-primary' : 'opacity-50 hover:opacity-100'}" role="button" ${on ? `onclick="setLineOpt('${k}', null)"` : ''} data-tip="${T('برگشت به ', 'Back to ')}${from}" data-tip-en="Back to ${from}" aria-label="reset"><svg class="size-3.5"><use href="#i-rotate-ccw"/></svg></span></legend>`; };
   const sel = (t, k, html) => `<fieldset class="fieldset">${lab(t, k)}<select id="ln_${k}" class="select select-sm w-full" onchange="setLineOpt('${k}', this.value)">${html}</select></fieldset>`;
-  const rng = (t, k, min, max, step, cur) => `<fieldset class="fieldset">${lab(t, k)}<div class="flex items-center gap-2"><input id="ln_${k}" type="range" min="${min}" max="${max}" step="${step}" value="${cur}" class="range range-xs flex-1 text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] ${set(k) ? '' : 'opacity-60'}" oninput="this.nextElementSibling.textContent = num(this.value); this.classList.remove('opacity-60')" onchange="setLineOpt('${k}', +this.value)"><span class="w-10 text-end text-xs tabular-nums text-base-content/70">${num(cur)}</span></div></fieldset>`;
-  const pres = G_PRESETS.map(p => [p[0], p[1]]), states = DIRECTOR.states.filter(a => a[0] !== 'custom').map(a => [a[0], lang === 'fa' ? a[1] : (a[2] || a[1])]), lbl = (list, k) => tr((list.find(r => r[0] === k) || [k, k])[1]);
+  const rng = (t, k, min, max, step) => { const cur = eff[k]; return `<fieldset class="fieldset">${lab(t, k)}<div class="flex items-center gap-2"><input id="ln_${k}" type="range" min="${min}" max="${max}" step="${step}" value="${cur}" class="range range-xs flex-1 text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="this.nextElementSibling.textContent = num(this.value)" onchange="setLineOpt('${k}', +this.value)"><span class="w-10 text-end text-xs tabular-nums text-base-content/70">${num(cur)}</span></div></fieldset>`; };
+  const pres = G_PRESETS.map(p => [p[0], p[1]]), states = DIRECTOR.states.filter(a => a[0] !== 'custom').map(a => [a[0], lang === 'fa' ? a[1] : (a[2] || a[1])]);
   let out = sp ? `<div class="flex items-center gap-2 rounded-box bg-base-100 p-2"><span class="grid size-8 shrink-0 place-items-center overflow-hidden rounded-full text-xs font-bold" style="${spkBg(spkList().indexOf(sp))}">${spkFace(sp)}</span><div class="min-w-0 flex-1"><div class="truncate text-sm font-semibold" data-keep-fa>${escapeHtml(sp.name)}</div><div class="truncate text-xs text-base-content/60">${escapeHtml(spkSummary(sp))}</div></div></div>
       <p class="text-xs text-base-content/60">${T('این خط با تنظیماتِ گوینده‌اش خوانده می‌شود. هر چیزی را این‌جا عوض کنید فقط برای همین خط عوض می‌شود — نه برای گوینده و نه بقیهٔ خط‌ها.', "This line uses its speaker’s settings. Changes here apply to this line only — not to the speaker or other lines.")}</p>`
     : `<p class="text-xs text-base-content/60">${T('این خط گوینده ندارد و با تنظیماتِ پروژه خوانده می‌شود؛ هر چیزی را این‌جا عوض کنید فقط برای همین خط است.', "This line has no speaker, so it uses the project’s settings. Changes here apply to this line only.")}</p>`;
-  out += sel(T('موتور', 'Engine'), 'engine', inh(engName(base.engine)) + optList(ENGINES, v.engine || ''));
+  out += sel(T('موتور', 'Engine'), 'engine', optList(ENGINES, eng));
   if (eng === 'google'){
-    out += sel(T('مدل', 'Model'), 'gModel', inh(modelShort(base.gModel || S.proj.g_model)) + optList(MODELS.map(m => [m[0], modelShort(m[0])]), v.gModel || ''));   // 176
-    out += sel(T('صدا', 'Voice'), 'gVoice', inh(base.gVoice) + voiceOptions(v.gVoice || '', true, /3\.8/.test(v.gModel || base.gModel || S.proj.g_model)));
-    out += sel(T('سبکِ خواندن', 'Reading style'), 'gPreset', inh(lbl(pres, base.gPreset)) + optList(pres, v.gPreset || ''));
-    out += sel(T('حال و احساس', 'Mood'), 'gState', inh(lbl(states, base.gState)) + optList(states, v.gState || ''));
+    out += sel(T('مدل', 'Model'), 'gModel', optList(MODELS.map(m => [m[0], modelShort(m[0])]), eff.gModel));   // 176
+    out += sel(T('صدا', 'Voice'), 'gVoice', voiceOptions(eff.gVoice, false, /3\.8/.test(eff.gModel || '')));
+    out += sel(T('سبکِ خواندن', 'Reading style'), 'gPreset', optList(pres, eff.gPreset));
+    out += sel(T('حال و احساس', 'Mood'), 'gState', optList(states, eff.gState));
   } else if (eng === 'fish'){
-    out += sel(T('صدا', 'Voice'), 'fishVoice', inh(fishVoiceName(base.fishVoice || S.proj.fish.voice)) + fishOptions(v.fishVoice || ''));   // 176: the inherited voice is named
-    out += sel(T('سبک', 'Style'), 'fishPreset', inh(lbl(pres, S.proj.fish.preset)) + optList(pres, v.fishPreset || ''));
+    out += sel(T('صدا', 'Voice'), 'fishVoice', fishOptions(eff.fishVoice));
+    out += sel(T('سبک', 'Style'), 'fishPreset', optList(pres, eff.fishPreset));
   } else if (eng === 'chatterbox'){
-    const c = S.proj.cbx;
-    out += sel(T('صدا', 'Voice'), 'cbxVoice', inh(base.cbxVoice || c.voice) + `<option value="default" ${v.cbxVoice === 'default' ? 'selected' : ''}>${T('پیش‌فرض', 'Default')}</option>` + cbxGroups(CBX_VOICES, v.cbxVoice, false));
-    out += rng(T('سرعت', 'Speed'), 'cbxSpeed', 0.7, 1.3, 0.05, v.cbxSpeed ?? c.speed) + rng(T('شدتِ بیان و احساس', 'Expressiveness'), 'cbxExag', 0, 1, 0.05, v.cbxExag ?? c.exag)
-         + rng(T('پایبندی به متن', 'Faithfulness to the text'), 'cbxCfg', 0, 1, 0.05, v.cbxCfg ?? c.cfg) + rng(T('تنوع و خلاقیت', 'Variety'), 'cbxTemp', 0, 1.5, 0.05, v.cbxTemp ?? c.temp);
+    out += sel(T('صدا', 'Voice'), 'cbxVoice', cbxOptions(eff.cbxVoice));   // 182: your samples deletable here too
+    out += rng(T('سرعت', 'Speed'), 'cbxSpeed', 0.7, 1.3, 0.05) + rng(T('شدتِ بیان و احساس', 'Expressiveness'), 'cbxExag', 0, 1, 0.05)
+         + rng(T('پایبندی به متن', 'Faithfulness to the text'), 'cbxCfg', 0, 1, 0.05) + rng(T('تنوع و خلاقیت', 'Variety'), 'cbxTemp', 0, 1.5, 0.05);
   } else if (LIGHT_ENGINES.includes(eng)){
-    const l = S.proj.light;
-    out += rng(T('سرعت', 'Speed'), 'lightSpeed', 0.5, 2, 0.05, v.lightSpeed ?? l.speed) + rng(T('آهنگ و حالتِ گفتار', 'Intonation'), 'lightNoise', 0.1, 1.3, 0.05, v.lightNoise ?? l.noise) + rng(T('کشش و تن', 'Stretch and timbre'), 'lightNoiseW', 0.1, 1.5, 0.05, v.lightNoiseW ?? l.noisew);
+    out += rng(T('سرعت', 'Speed'), 'lightSpeed', 0.5, 2, 0.05) + rng(T('آهنگ و حالتِ گفتار', 'Intonation'), 'lightNoise', 0.1, 1.3, 0.05) + rng(T('کشش و تن', 'Stretch and timbre'), 'lightNoiseW', 0.1, 1.5, 0.05);
   }
   $('lnBody').innerHTML = out; $('lnBody').querySelectorAll('select').forEach(s => enh(s));
-  const lv = $('ln_gVoice'); if (lv){ lv.dataset.recent = 'gvoice'; lv._onDel = delVoice; lv._actions = () => gVoiceActs('line', v.gModel || base.gModel || S.proj.g_model); refreshEnh(lv); }   // 177: the same «More» entries as the project's list
+  const lv = $('ln_gVoice'); if (lv){ lv.dataset.recent = 'gvoice'; lv._onDel = delVoice; lv._actions = () => gVoiceActs('line', eff.gModel); refreshEnh(lv); }   // 177: the same «More» entries as the project's list
+  const lc = $('ln_cbxVoice'); if (lc) lc._onDel = cbxSampleDelete;   // 182: a sample of your own can be deleted from here too (an undo step)
 }
 
 // =====================================================================================
@@ -232,8 +302,12 @@ function renderScript(){ Object.values(S.lines).forEach(normLine); const clips =
     i = j + 1;
   }
   ed.innerHTML = html + '<div id="pcaret" class="pointer-events-none absolute z-10 hidden w-0.5 rounded-full bg-primary shadow-[0_0_6px] shadow-primary/60"></div>';
-  wireLines(); paintSel(); updatePCaret(); renderTimeline();
+  fitSpeakerColumn(); wireLines(); paintSel(); updatePCaret(); renderTimeline();
 }
+// 182 · the speakers' column is as wide as its widest speaker (beside the line numbers, no empty band before the text)
+function fitSpeakerColumn(){ const ed = $('editor'); if (!ed) return; ed.style.setProperty('--spkw', '8rem'); let w = 0;   // measured at the old full width (8rem), then fitted
+  ed.querySelectorAll('.lnspk > *').forEach(x => { w = Math.max(w, Math.ceil(x.getBoundingClientRect().width)); });
+  ed.style.setProperty('--spkw', (w ? Math.min(w + 2, 128) : 0) + 'px'); }
 function lineRow(id, n, c){
   const L = S.lines[id]; if (!L) return '';
   const badge = (cls, icon, text, tip) => `<span class="badge ${cls} badge-xs gap-1 align-middle ${tip ? 'tooltip' : ''}" ${tip ? `data-tip="${tip}"` : ''} contenteditable="false">${icon ? `<svg class="size-2.5"><use href="#i-${icon}"/></svg>` : ''}${text}</span>`;
@@ -245,8 +319,8 @@ function lineRow(id, n, c){
      the text and never reaches that margin; the left margin is wide enough for a badge's end (the founder) */
   return `<div class="ln group relative flex items-start gap-1.5 ps-2 pe-24" data-id="${id}">
     <span class="grip mt-1.5 grid size-6 shrink-0 cursor-grab place-items-center rounded text-base-content/40 opacity-0 hover:bg-base-300 group-hover:opacity-100" title="${T('بکشید تا جابه‌جا شود', 'drag to reorder')}"><svg class="size-4"><use href="#i-grip-vertical"/></svg></span>
-    <span class="mt-1.5 w-6 shrink-0 text-end text-xs tabular-nums text-base-content/40">${num(n)}</span>
-    <span class="lnspk mt-[7px] flex w-32 min-w-0 shrink-0 justify-end">${spkChip(id).replace('me-1 ', '').replace('max-w-[12rem]', 'max-w-full')}</span>
+    <span class="mt-1.5 flex h-6 w-6 shrink-0 items-center justify-end text-xs tabular-nums text-base-content/40">${num(n)}</span>
+    <span class="lnspk mt-1.5 flex h-6 min-w-0 shrink-0 items-center justify-start" style="width:var(--spkw, 8rem)">${spkChip(id).replace('me-1 ', '').replace('max-w-[12rem]', 'max-w-full')}</span>
     <div class="min-w-0 flex-1 py-0.5"><p>${toneChip(id)}<span class="lt outline-none" contenteditable="true" spellcheck="false" data-ph="${T('متن را این‌جا بنویسید یا بچسبانید…', 'Type or paste the text here…')}">${pills(trimmedHtml(L.text || '', c))}</span> ${extra}</p><div class="lnbar"></div></div>
   </div>`;
 }
@@ -482,7 +556,7 @@ function clearDiacritics(){
 // TIMELINE (always left-to-right)
 // =====================================================================================
 let selClip = null;
-const ICON = { speech: 'mic', music: 'music' };
+const ICON = { speech: 'mic', music: 'music', track: 'layers' };   // 182: a regular track is a «Layer», with the video mode's layer icon
 const PEAKS = new Map();
 function peaksHtml(c, w){
   const pk = `${c.gulp}|${c.in.toFixed(3)}|${c.out.toFixed(3)}|${Math.round(w / 4)}|${!!(AUD.get(c.gulp) || {}).buf}`; if (PEAKS.has(pk)) return PEAKS.get(pk);
@@ -518,6 +592,7 @@ function renderTimeline(){
       const pos = c.hi ? 'top-1 bottom-[52%]' : c.lo ? 'top-[52%] bottom-1' : 'top-1.5 bottom-1.5';
       let look, label;
       if (c.type === 'music'){ look = 'bg-secondary/15 text-secondary outline-secondary/50'; label = c.name || T('موسیقی', 'Music'); } else if (c.type === 'sfx'){ look = 'bg-accent/15 text-accent outline-accent/50'; label = c.name || T('افکت', 'Effect'); } else if (c.type === 'ovl'){ look = c.pending ? 'border border-dashed border-primary/50 bg-transparent text-primary/70 outline-transparent' : 'bg-primary/15 text-primary outline-primary/50'; label = c.name || T('واکنش', 'Reaction'); }   // 176: dashed until its audio is made
+      else if (c.type === 'audio'){ look = 'bg-info/15 text-info outline-info/50'; label = escapeHtml(c.name || T('صدا', 'Audio')); }   // 182: a plain audio clip
       else { const L = S.lines[c.lines[0]] || { text: '' }; look = c.unvoiced ? 'border border-dashed border-base-content/30 bg-transparent text-base-content/50 outline-transparent' : 'bg-primary/15 text-primary outline-primary/50';
         label = `${num(order.indexOf(c.lines[0]) + 1)}${c.lines.length > 1 ? '–' + num(order.indexOf(c.lines[c.lines.length - 1]) + 1) : ''} ${escapeHtml((c.file ? '♪ ' : '') + (L.text || '').slice(0, 28))}…`; }
       const dirty = c.lines && c.lines.some(id => S.lines[id] && S.lines[id].dirty);
@@ -526,9 +601,9 @@ function renderTimeline(){
         <span class="ui pointer-events-none absolute inset-x-1.5 top-0.5 truncate text-[11px] font-semibold" dir="rtl">${label}</span>
         ${dirty ? `<span class="badge badge-warning badge-xs pointer-events-none absolute bottom-1 left-1 gap-0.5"><svg class="size-2.5"><use href="#i-pencil"/></svg></span>` : ''}
         ${(c.trimIn > 0.05 || c.trimOut > 0.05) ? `<span class="badge badge-error badge-xs pointer-events-none absolute bottom-1 ${dirty ? 'left-6' : 'left-1'}"><svg class="size-2.5"><use href="#i-scissors"/></svg></span>` : ''}
-        ${lenFits(w, secs(dur(c))) ? `<span class="cliplen pointer-events-none absolute bottom-1 right-6 rounded-md bg-black/60 px-1.5 text-[10px] font-semibold tabular-nums text-white">${secs(dur(c))}</span>` : ''}
+        ${lenFits(w, lenTxt(dur(c))) ? `<span class="cliplen pointer-events-none absolute bottom-1 ${selClip === c.id && ((!c.type && !c.unvoiced) || /^(music|sfx|audio)$/.test(c.type || '')) ? 'right-[10px]' : 'right-1'} rounded-md bg-black/60 px-1.5 text-[10px] font-semibold tabular-nums text-white">${lenTxt(dur(c))}</span>` : ''}
       </div>`;
-      if (selClip === c.id && ((!c.type && !c.unvoiced) || c.type === 'music' || c.type === 'sfx')){
+      if (selClip === c.id && ((!c.type && !c.unvoiced) || c.type === 'music' || c.type === 'sfx' || c.type === 'audio')){   // 182: plain audio clips trim too
         const xl = PAD + c.at * pps, xr = xl + w;
         // 177: the handles sit OUTSIDE the clip (a tiny effect's body still drags), their white bar right at its edge;
         //      beside a neighbour that touches it a handle narrows (≥ 6 px) so the neighbour's own body stays clickable
@@ -587,14 +662,14 @@ const overlaps = (t, c) => t.clips.some(o => o !== c && o.at < c.at + dur(c) - 0
 function placeOn(ti, c){
   const t = S.tracks[ti]; if (!overlaps(t, c)){ t.clips.push(c); t.clips.sort((a, b) => a.at - b.at); return; }
   const n = S.tracks.filter(x => x.kind === 'speech').length + 1;
-  S.tracks.splice(ti + 1, 0, { id: 's' + (++uid), name: 'گفتار ' + FA(n), en: 'Speech ' + n, kind: 'speech', gapless: false, clips: [c] });
+  S.tracks.splice(ti + 1, 0, { id: 's' + (++uid), name: 'گفتار', en: 'Speech', kind: 'speech', gapless: false, clips: [c] });   // 182: no numbers
 }
 function cleanupTracks(){ S.tracks = S.tracks.filter((t, k) => t.clips.length || t === S.tracks.find(x => x.kind === 'speech')); renameTracks(); }
 function startClipDrag(ev, el){
   ev.stopPropagation(); if (document.activeElement && document.activeElement.isContentEditable) document.activeElement.blur(); getSelection().removeAllRanges(); const [t, c] = findClip(el.dataset.cid); if (!c) return;
   selClip = c.id; if (c.type){ sel.clear(); paintSel(); if (c.type === 'music') showMusicInspector(); else showInsp('proj'); window.__tdrag = { c, t, at0: c.at }; if (c.type === 'ovl') OVL_DRAG = true;   const x0 = ev.clientX, at0 = c.at; let moved = false; remember();   // 166/172: typed clips move, across tracks too
  const mv = e => { if (Math.abs(e.clientX - x0) > 3) moved = true; if (!moved) return; c.at = Math.max(0, snapT(at0 + (e.clientX - x0) / zoom, c)); el.style.left = (PAD + c.at * zoom) + 'px'; const hit = document.elementFromPoint(e.clientX, e.clientY), lane = hit && hit.closest('#lanes [data-ti]'); document.querySelectorAll('#lanes .lane-hot').forEach(x => x.classList.remove('lane-hot')); if (lane && !isNaN(+lane.dataset.ti)){ lane.classList.add('lane-hot'); window.__dropTi = +lane.dataset.ti; } };   // 169/172
- const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); if (!moved){ hist.past.pop(); renderTimeline(); return; } S.music.manual = true; t.clips.sort((a, b) => a.at - b.at); renderTimeline(); autosave(); };
+ const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); if (!moved){ dropStep(); renderTimeline(); return; } S.music.manual = true; t.clips.sort((a, b) => a.at - b.at); renderTimeline(); autosave(); };
  addEventListener('pointermove', mv); addEventListener('pointerup', up); return; }
   sel = new Set(c.lines); const x0 = ev.clientX, at0 = c.at; let moved = false; remember();
   const y0 = ev.clientY; let hot = null;
@@ -602,7 +677,7 @@ function startClipDrag(ev, el){
  c.at = Math.max(0, snapT(at0 + dx, c)); el.style.left = (PAD + c.at * zoom) + 'px'; el.style.pointerEvents = 'none'; el.style.zIndex = 30; el.style.transform = `translateY(${e.clientY - y0}px)`;
  const ln = document.elementFromPoint(e.clientX, e.clientY), lane = ln && ln.closest('.lane'); if (hot && hot !== lane) hot.classList.remove('lane-hot'); hot = lane && S.tracks[+lane.dataset.ti] && S.tracks[+lane.dataset.ti].kind === 'speech' ? lane : null; if (hot) hot.classList.add('lane-hot'); };
   const up = e => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); const hotTi = hot ? +hot.dataset.ti : null; if (hot) hot.classList.remove('lane-hot'); el.style.transform = ''; el.style.pointerEvents = ''; el.style.zIndex = '';
- if (!moved){ hist.past.pop(); paintSel(); renderTimeline(); return; }
+ if (!moved){ dropStep(); paintSel(); renderTimeline(); return; }
     const li = hotTi;   // 164: the lane that was lit during the drag
     t.clips = t.clips.filter(x => x !== c);
     let ti = li !== null && S.tracks[li] && S.tracks[li].kind === 'speech' ? li : S.tracks.indexOf(t);
@@ -611,13 +686,23 @@ function startClipDrag(ev, el){
   addEventListener('pointermove', mv); addEventListener('pointerup', up);
 }
 function startTrim(ev, el){
-  ev.stopPropagation(); ev.preventDefault(); const [t, c] = findClip(el.dataset.cid); if (!c) return; remember(); if (c.type === 'music'){ if (!c.src) c.src = [0, 1e9]; S.music.manual = true; } if (c.type === 'sfx' && !c.src) c.src = [0, (SFXB.get(c.file) || {}).duration || c.out]; const edge = el.dataset.edge, x0 = ev.clientX, in0 = c.in, out0 = c.out, at0 = c.at, src = c.src || [c.in - (c.trimIn || 0), c.out + (c.trimOut || 0)];
-  c.src = src;
-  const mv = e => { const d0 = (e.clientX - x0) / zoom;   // 169: the moving edge snaps to every edge on every track
+  ev.stopPropagation(); ev.preventDefault(); const [t, c] = findClip(el.dataset.cid); if (!c) return; const step = dragStep(), sc = tlSc(), sl0 = sc.scrollLeft; if (c.type === 'music') S.music.manual = true;   // 182: edge scrolling, Esc
+  // 182 · LOOP (music, effects, plain audio clips): trimming out stops at the end of the clip's own sound; from there (a clip
+  //       already at its full length) trimming out turns Loop on and goes on; trimming a looping clip shorter than its sound
+  //       turns Loop off
+  const nat = clipNatural(c), loopable = nat != null && /^(music|sfx|audio)$/.test(c.type || '');
+  if (loopable) c.src = [0, nat];
+  const edge = el.dataset.edge, x0 = ev.clientX, in0 = c.in, out0 = c.out, at0 = c.at, src = c.src || [c.in - (c.trimIn || 0), c.out + (c.trimOut || 0)];
+  c.src = src; const loop0 = loopable && clipLooped(c, nat), full0 = loopable && out0 >= nat - 1e-3;
+  const AS = autoScroller(e => mv(e));
+  const mv = e => { const d0 = (e.clientX - x0 + sc.scrollLeft - sl0) / zoom; AS.move(e);   // 169: the moving edge snaps to every edge on every track
     if (edge === 'l'){ const d = snapPoint(at0 + d0, c) - at0, ni = Math.min(out0 - 0.2, Math.max(src[0], in0 + d)); c.at = at0 + (ni - in0); c.in = ni; c.trimIn = ni - src[0]; }
-    else { const end0 = at0 + out0 - in0, d = snapPoint(end0 + d0, c) - end0, no = Math.max(in0 + 0.2, Math.min(src[1], out0 + d)); c.out = no; c.trimOut = src[1] - no; }
+    else { const end0 = at0 + out0 - in0, d = snapPoint(end0 + d0, c) - end0; let no = Math.max(in0 + 0.2, out0 + d);
+      if (loopable){ if (loop0 || full0) c.loop = no > nat + 1e-3 ? true : no < nat - 1e-3 ? false : loop0; else { no = Math.min(nat, no); c.loop = false; } c.out = no; c.trimOut = 0; }
+      else { no = Math.min(src[1], no); c.out = no; c.trimOut = src[1] - no; } }
     quickTrimVisual(c); };
-  const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); if (t.gapless) pack(t); renderScript(); autosave(); };
+  const up = () => { AS.stop(); DRAG_ESC = null; removeEventListener('pointermove', mv); removeEventListener('pointerup', up); if (t.gapless) pack(t); renderScript(); autosave(); };
+  DRAG_ESC = () => { AS.stop(); removeEventListener('pointermove', mv); removeEventListener('pointerup', up); step.cancel(); renderScript(); };
   addEventListener('pointermove', mv); addEventListener('pointerup', up);
 }
 let trimRaf = 0;
@@ -633,13 +718,32 @@ function quickTrimVisual(c){
 function pack(t){ let x = t.clips.length ? Math.min(...t.clips.map(c => c.at)) : 0; t.clips.sort((a, b) => a.at - b.at).forEach(c => { c.at = x; x += dur(c); }); }
 function setGapless(i, on){ remember(); S.tracks[i].gapless = on; if (on) pack(S.tracks[i]); renderScript(); autosave(); }
 function toggleMute(i){ const t = S.tracks[i]; t.muted = !t.muted; const g = trackGain[t.id]; if (g && AC) g.gain.setValueAtTime(t.muted ? 0 : (t.volume ?? 1), AC.currentTime); renderTimeline(); autosave(); }   // live while playing
-function setZoom(z){ zoom = z; $('zoom').value = z; renderTimeline(); }
-$('zoom').oninput = e => setZoom(+e.target.value);
+// 182 · ZOOM: the slider is gentle (each step the same proportion — it jumped most at the wide end); every zoom keeps a
+//       point in place: the pointer for a pinch (Mac trackpad, Windows touchpads, ⌘/Ctrl + wheel), otherwise the playhead
+//       when it is in view (else the middle of the view). The playhead used to drift out of view and its time label
+//       stayed behind at the edge.
+const ZMIN = 8, ZMAX = 600, z2s = z => Math.round(1000 * Math.log(z / ZMIN) / Math.log(ZMAX / ZMIN)), s2z = v => ZMIN * Math.pow(ZMAX / ZMIN, v / 1000);
+function setZoom(z, anchor){
+  z = Math.max(ZMIN, Math.min(ZMAX, +z || 22)); const sc = $('tlScroll'), hw = $('heads') ? $('heads').offsetWidth : 0, vis = Math.max(1, sc.clientWidth - hw);
+  let t, off;
+  if (anchor && anchor.clientX != null){ off = Math.max(0, Math.min(vis, anchor.clientX - (sc.getBoundingClientRect().left + hw))); t = (sc.scrollLeft + off - PAD) / zoom; }
+  else { off = PAD + playhead * zoom - sc.scrollLeft; if (off < 0 || off > vis){ off = vis / 2; t = (sc.scrollLeft + off - PAD) / zoom; } else t = playhead; }
+  zoom = z; const zs = $('zoom'); if (zs) zs.value = z2s(z); renderTimeline();
+  sc.scrollLeft = Math.max(0, PAD + t * z - off); seekVisual(playhead); }
+$('zoom').min = 0; $('zoom').max = 1000; $('zoom').step = 1; $('zoom').value = z2s(zoom);
+$('zoom').oninput = e => setZoom(s2z(+e.target.value));
+{ const sc = $('tlScroll'); let want = null, at = null, raf = 0, gz = null;
+  const zoomSoon = (z, x) => { want = z; at = x; if (!raf) raf = requestAnimationFrame(() => { raf = 0; const w = want; want = null; setZoom(w, { clientX: at }); }); };
+  sc.addEventListener('wheel', e => { if (!e.ctrlKey && !e.metaKey) return; e.preventDefault(); const d = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+    const f = Math.abs(d) >= 50 ? (d > 0 ? 1 / 1.15 : 1.15) : Math.exp(-d * 0.01); zoomSoon((want ?? zoom) * f, e.clientX); }, { passive: false });
+  sc.addEventListener('gesturestart', e => { e.preventDefault(); gz = zoom; });   // Safari / the Mac app: the trackpad's pinch
+  sc.addEventListener('gesturechange', e => { e.preventDefault(); if (gz != null) zoomSoon(gz * e.scale, e.clientX); });
+  sc.addEventListener('gestureend', e => { e.preventDefault(); gz = null; }); }
 function placeClipBar(){
   const bar = $('clipBar'), el = selClip && document.querySelector(`#lanes .clip[data-cid="${selClip}"]`);
   if (!el){ bar.classList.add('hidden'); return; }
   const [t, c] = findClip(selClip), b = (icon, tip, fn, txt) => `<li><a onclick="${fn}" class="gap-1 " ${txt ? '' : `data-tip="${tip}"`}><svg class="size-3.5"><use href="#i-${icon}"/></svg>${txt ? `<span class="ui">${txt}</span>` : ''}</a></li>`;
-  bar.innerHTML = c.type === 'ovl' ? (b('pencil', T('ویرایش', 'edit'), 'ovlEdit()') + b('refresh-cw', T('بازتولید', 'regenerate'), 'ovlRegen()') + b('copy', T('تکثیر', 'duplicate'), 'ovlDup()') + b('trash-2', T('حذف', 'delete'), 'ovlDel()')) : (c.type === 'music' || c.type === 'sfx') ? b('scissors', T('برش در جای پلی‌هد', 'split at the playhead'), 'splitMusic()') + b('copy', T('تکثیر', 'duplicate'), 'dupMusic()') + b('trash-2', T('حذف', 'delete'), 'delMusicClip()') : (c.unvoiced || c.file ? '' : b('refresh-cw', '', 'revoiceClip()', T('بازتولید', 'Regenerate')))
+  bar.innerHTML = c.type === 'ovl' ? (b('pencil', T('ویرایش', 'edit'), 'ovlEdit()') + b('refresh-cw', T('بازتولید', 'regenerate'), 'ovlRegen()') + b('copy', T('تکثیر', 'duplicate'), 'ovlDup()') + b('trash-2', T('حذف', 'delete'), 'ovlDel()')) : (c.type === 'music' || c.type === 'sfx' || c.type === 'audio') ? b('scissors', T('برش در جای پلی‌هد', 'split at the playhead'), 'splitMusic()') + b('copy', T('تکثیر', 'duplicate'), 'dupMusic()') + b('trash-2', T('حذف', 'delete'), 'delMusicClip()') : (c.unvoiced || c.file ? '' : b('refresh-cw', '', 'revoiceClip()', T('بازتولید', 'Regenerate')))
       + (c.lines.length === 1 && !c.unvoiced ? b('scissors', T('برش در جای پلی‌هد', 'split at the playhead'), 'splitClip()') : '')
       + b('copy', T('تکثیر', 'duplicate'), 'dupClip()') + b('trash-2', T('حذف', 'delete'), 'delClip()');
   const r = el.getBoundingClientRect(), sc = $('tlScroll').getBoundingClientRect(), left0 = sc.left + $('heads').offsetWidth;
@@ -679,10 +783,12 @@ async function addFromTrack(ti, k){
     const c = { id: 'c' + (++uid), lines: [nid], gulp: null, in: 0, out: 1.5, at: playhead, trimIn: 0, trimOut: 0, unvoiced: true };
     shiftAfter(t, playhead, 1.5 + GAP, null); placeOn(ti, c); sel = new Set([nid]); renderScript(); focusLine(nid); autosave(); return; }
   if (k === 'file'){
-    const r = await API().file_gulp(); if (!r.ok){ if (r.error !== 'cancelled') say(r.error, 'err'); hist.past.pop(); return; }
-    await storeAudio(r.gulp, r.b64); const nid = ++uid; S.lines[nid] = { text: r.name, dirty: false, voice: null, file: true };
-    const c = { id: 'c' + (++uid), lines: [nid], gulp: r.gulp, in: 0, out: r.seconds, at: playhead, trimIn: 0, trimOut: 0, file: true, src: [0, r.seconds] };
-    shiftAfter(t, playhead, r.seconds + GAP, null); placeOn(ti, c); renderScript(); autosave();
+    // 182: a plain audio clip — its own file, volume, fades, Loop and ducking (off) — at the playhead on this track, or on
+    //      a new track right below it when that spot is taken; nothing else moves (it was a line of the script before)
+    const r = await API().file_gulp(); if (!r.ok){ if (r.error !== 'cancelled') say(r.error, 'err'); dropStep(); return; }
+    await storeAudio(r.gulp, r.b64); const c = audioClip(r.gulp, r.name, r.seconds, playhead);
+    const tr = t.kind !== 'speech' && trackFree(t, c) ? t : newTrack(ti + 1, 'track'); tr.clips.push(c); tr.clips.sort((a, b) => a.at - b.at);
+    sel = new Set(); selClip = c.id; renderScript(); if (typeof showClipPanel === 'function') showClipPanel(c); autosave();
   }
 }
 $('tlScroll').addEventListener('scroll', () => { syncRuler(); placeClipBar(); }, { passive: true });
@@ -695,7 +801,7 @@ let CAST = [], CBX_VOICES = [], FISH_VOICES = [], BUILD_N = '';
 const showBuild = () => { $('edBuild').textContent = T('· نسخهٔ ', '· Build ') + num(BUILD_N); };
 async function loadEngineLists(){
   try { const r = await API().cbx_voices(); CBX_VOICES = (r && r.voices) || []; } catch (e) {}
-  try { const r = await API().fish_my_voices(); FISH_VOICES = (r && r.items) || []; } catch (e) {}
+  try { const r = await API().fish_my_voices(); FISH_VOICES = ((r && r.items) || []).filter(v => !PEND_DEL['fish:' + (v._id || v.id)]); } catch (e) {}   // 182: a deletion waiting for its step
   try { const r = await API().fish_key_get(); $('fishKey').value = (r && (r.key || '')) || ''; } catch (e) {}
 }
 async function saveFishKey(k){ try { await API().fish_key_set(k.trim()); say(T('کلیدِ Fish Audio ذخیره شد.', 'Fish Audio key saved.'), 'ok'); await loadEngineLists(); fillInspector(); } catch (e) { say(String(e), 'err'); } }
@@ -757,9 +863,10 @@ function collectRuns(){
 async function generateAll(){
   if (busy) return; const runs = collectRuns(), pendR = typeof reactsOf === 'function' ? orderedLines().flatMap(id => reactsOf(id)).filter(r => !rVoiced(r) && (r.text || '').trim()).length : 0;
   if (!runs.length && !pendR){ say(T('همهٔ خط‌ها ساخته شده‌اند؛ چیزی برای ساختن نمانده.', 'Every line is generated — nothing left to do.'), 'ok'); return; }
-  remember(); setBusy(true);
+  remember('gen'); setBusy(true);
   try {
     for (let k = 0; k < runs.length; k++){
+      if (projLength() >= CAP_S){ say(T(`پروژه به 60 دقیقه رسید؛ ${FA(runs.length - k)} بخشِ باقی‌مانده ساخته نشد (بیشترین طولِ یک پروژه 60 دقیقه است).`, `The project has reached 60 minutes; the ${runs.length - k} remaining parts were not made (a project can be up to 60 minutes).`), 'err'); return; }
       say(T(`دارم بخش ${FA(k + 1)} از ${FA(runs.length)} را می‌سازم…`, `Making part ${k + 1} of ${runs.length}…`), 'ok');
       if (runs[k].patch) await revoice(runs[k].patch, null); else await voiceRun(runs[k]);
       renderScript();
@@ -832,14 +939,14 @@ async function revoiceSelected(){   // 169: any selection — one line or many (
   const ids = orderedLines().filter(id => sel.has(id)), byClip = new Map(); let unvoiced = false;
   ids.forEach(id => { const [, c] = clipOfLine(id); if (!c) return; if (c.unvoiced){ unvoiced = true; return; } if (!byClip.has(c)) byClip.set(c, []); byClip.get(c).push(id); });
   if (!byClip.size){ if (unvoiced) generateAll(); return; }
-  remember(); setBusy(true); let ok = false;
+  remember('gen'); setBusy(true); let ok = false;
   try { for (const [c, part] of byClip) await revoice(c, part); gcParts(); ok = true;
     say(ids.length > 1 ? T(`${FA(ids.length)} خط دوباره ساخته شد.`, `${ids.length} lines regenerated.`) : T('این خط دوباره ساخته شد.', 'This line was regenerated.'), 'ok'); }
   catch (err) { say(isCancel(err) ? T('لغو شد.', 'Canceled.') : (err.message || String(err)), isCancel(err) ? 'ok' : 'err'); }
   finally { setBusy(false); renderScript(); autosave(); }
   if (ok && unvoiced) generateAll();
 }
-async function revoiceClip(){ const [, c] = findClip(selClip); if (!c || c.unvoiced) return; sel = new Set([c.lines[0]]); if (c.lines.length > 1){ remember(); setBusy(true);
+async function revoiceClip(){ const [, c] = findClip(selClip); if (!c || c.unvoiced) return; sel = new Set([c.lines[0]]); if (c.lines.length > 1){ remember('gen'); setBusy(true);
   try { await revoice(c, c.lines); } catch (e) { say(e.message || String(e), 'err'); } finally { setBusy(false); renderScript(); autosave(); } } else revoiceSelected(); }
 
 // =====================================================================================
@@ -865,20 +972,46 @@ function schedule(){
     const off = Math.max(0, playFrom - c.at), src = ctx.createBufferSource(); src.buffer = a.buf; src.connect(gainFor(t));
     src.start(base + c.at + off, c.in + off, dur(c) - off); nodes.push(src); if (!t.muted) speech.push([c.at, end]);
   }); });
-  S.tracks.forEach(t => { t.clips.forEach(c => { if (c.type !== 'sfx') return; const b = SFXB.get(c.file); if (!b){ loadSfx(c.file).catch(() => {}); return; } const end = c.at + (c.out - c.in); if (end <= playFrom) return; const off = Math.max(0, playFrom - c.at), s3 = ctx.createBufferSource(); s3.buffer = b; const g2 = ctx.createGain(); g2.gain.value = c.gain ?? 1; g2.connect(gainFor(t)); s3.connect(g2); s3.start(base + c.at + off, c.in + off, c.out - c.in - off); nodes.push(s3); }); });   // 170: sound effects
+  const inSpeech = tt => speech.some(([a, b]) => tt >= a - 0.15 && tt < b + 0.6);   // 182: shared by the music and every ducking clip
+  // 182: effects and plain audio clips — volume, fades, ducking under the speech and Loop (a clip longer than its sound
+  //      plays it again from the start)
+  const playLooping = (t, c, buf, opts) => { const D = buf.duration, len = c.out - c.in, s0 = Math.max(c.at, playFrom), e0 = c.at + len; if (e0 <= playFrom || len <= 0.02) return;
+    const looped = clipLooped(c, D), off = c.in + (s0 - c.at); if (!looped && off >= D) return;
+    const g = ctx.createGain(), src = ctx.createBufferSource(); src.buffer = buf; if (looped){ src.loop = true; src.loopStart = 0; src.loopEnd = D; } src.connect(g); g.connect(gainFor(t));
+    const at = tt => base + tt, P = g.gain, cg = (opts && opts.gain != null ? opts.gain : (c.gain ?? 1)), duck = +(c.duck || 0), duckF = Math.pow(10, -duck / 20), fi = +(c.fadeIn || 0), fo = +(c.fadeOut || 0);
+    const level = tt => { let l = cg * (duck > 0 && inSpeech(tt) ? duckF : 1); if (fi > 0 && tt - c.at < fi) l *= Math.max(0, (tt - c.at) / fi); if (fo > 0 && e0 - tt < fo) l *= Math.max(0, (e0 - tt) / fo); return l; };
+    P.setValueAtTime(level(s0), Math.max(ctx.currentTime, at(s0))); if (duck > 0 || fi > 0 || fo > 0) for (let tt = s0; tt <= e0; tt += 0.1) P.linearRampToValueAtTime(level(tt), Math.max(ctx.currentTime, at(tt)));
+    src.start(Math.max(ctx.currentTime, at(s0)), looped ? off % D : off); src.stop(at(e0) + 0.02); nodes.push(src); };
+  S.tracks.forEach(t => { t.clips.forEach(c => { if (c.type !== 'sfx') return; const b = SFXB.get(c.file); if (!b){ loadSfx(c.file).catch(() => {}); return; } playLooping(t, c, b); }); });   // 170: sound effects
+  S.tracks.forEach(t => { t.clips.forEach(c => { if (c.type !== 'audio') return; const a = AUD.get(c.gulp); if (!a || !a.buf){ ensureAudio(c.gulp); return; } playLooping(t, c, a.buf); }); });   // 182: plain audio clips
   S.tracks.forEach(t => t.clips.forEach(c => { if (c.type !== 'ovl') return; const a = AUD.get(c.gulp); if (!a || !a.buf) return; const len = c.out - c.in, end = c.at + len; if (end <= playFrom) return; const off = Math.max(0, playFrom - c.at), s4 = ctx.createBufferSource(); s4.buffer = a.buf; const g4 = ctx.createGain(); g4.gain.value = c.gain ?? 1; g4.connect(gainFor(t)); s4.connect(g4); s4.start(base + c.at + off, c.in + off, len - off); nodes.push(s4); }));   // 172: reactions are clips
   if (typeof mode !== 'undefined' && mode === 'video') V.objects.forEach(o => { if (o.type !== 'sfx') return; const b = SFXB.get(o.file); if (!b){ loadSfx(o.file).catch(() => {}); return; } const at = o.start || 0, len = Math.min(b.duration - (o.trimIn || 0), (o.end ?? at + b.duration) - at); if (at + len <= playFrom) return; const off = Math.max(0, playFrom - at), s5 = ctx.createBufferSource(); s5.buffer = b; const g5 = ctx.createGain(); g5.gain.value = o.gain ?? 1; g5.connect(ctx.destination); s5.connect(g5); s5.start(base + at + off, (o.trimIn || 0) + off, len - off); nodes.push(s5); });   // 172: video-mode effects
   const mt = { id: '__music', muted: false, volume: 1, clips: musicClips().filter(c => !(c._track && c._track.muted)) }; if (musicBuf && mt.clips.length){   // 166/172: every music clip at its place, on any track
-    const lvl = Math.pow(10, S.music.level_db / 20), duckF = Math.pow(10, -(S.music.duck_db ?? 12) / 20), D = musicBuf.duration, ducking = (S.music.duck ?? true) && (S.music.duck_db ?? 12) > 0;
-    const inSpeech = tt => speech.some(([a, b]) => tt >= a - 0.15 && tt < b + 0.6), cl = [...mt.clips].sort((a, b) => a.at - b.at), first = cl[0].at, last = Math.max(...cl.map(c => c.at + c.out - c.in));
-    cl.forEach(c => { const len = c.out - c.in, s0 = Math.max(c.at, playFrom), e0 = c.at + len; if (e0 <= playFrom || len <= 0.05) return;
-      const g = ctx.createGain(), src = ctx.createBufferSource(); src.buffer = musicBuf; src.loop = true; src.connect(g); g.connect(gainFor(mt));
+    // 182: the music sits where the exported file puts it — its loudness set against the voice (level_db under the
+    //      voice's average loudness), then each clip's Volume; it played louder here than in the file before
+    const lvl = Math.pow(10, S.music.level_db / 20) * musicMatch(speech), duckF = Math.pow(10, -(S.music.duck_db ?? 12) / 20), D = musicBuf.duration, ducking = (S.music.duck ?? true) && (S.music.duck_db ?? 12) > 0;
+    const cl = [...mt.clips].sort((a, b) => a.at - b.at), first = cl[0].at, last = Math.max(...cl.map(c => c.at + c.out - c.in));
+    cl.forEach(c => { const len = c.out - c.in, s0 = Math.max(c.at, playFrom), e0 = c.at + len; if (e0 <= playFrom || len <= 0.05) return; const looped = clipLooped(c, D); if (!looped && c.in + (s0 - c.at) >= D) return;
+      const g = ctx.createGain(), src = ctx.createBufferSource(); src.buffer = musicBuf; src.loop = looped; src.connect(g); g.connect(gainFor(mt));
       const at = tt => base + tt, P = g.gain, fi = c.at === first ? (S.music.fade_in || 0) : 0.03, fo = Math.abs(e0 - last) < 1e-6 ? (S.music.fade_out || 0) : 0.03;
       const cf = ((c._track && c._track.volume) ?? 1) * (c.gain ?? 1), level = tt => { let l = (ducking && inSpeech(tt) ? lvl * duckF : lvl) * cf; if (fi > 0 && tt - c.at < fi) l *= Math.max(0, (tt - c.at) / fi); if (fo > 0 && e0 - tt < fo) l *= Math.max(0, (e0 - tt) / fo); return l; };
       P.setValueAtTime(level(s0), Math.max(ctx.currentTime, at(s0))); for (let tt = s0; tt <= e0; tt += 0.1) P.linearRampToValueAtTime(level(tt), Math.max(ctx.currentTime, at(tt)));
-      src.start(Math.max(ctx.currentTime, at(s0)), (c.in + (s0 - c.at)) % D); src.stop(at(e0) + 0.02); nodes.push(src); });
+      src.start(Math.max(ctx.currentTime, at(s0)), looped ? (c.in + (s0 - c.at)) % D : c.in + (s0 - c.at)); src.stop(at(e0) + 0.02); nodes.push(src); });
   }
 }
+// 182 · a clip's Loop: on, or (an older clip) longer than its own sound
+const clipLooped = (c, D) => !!c.loop || (D > 0 && c.out > D + 1e-3);
+// 182 · the music's loudness against the voice, as the exported file sets it: the voice's average loudness over the
+//       composition ÷ the music's own (cached per music and per state of the voice)
+const MUSIC_RMS = new WeakMap(); let VOICE_RMS = { key: null, v: 0 };
+function bufRms(buf, nonzero){ const ch = buf.getChannelData(0), step = Math.max(1, Math.floor(ch.length / 400000)); let s = 0, n = 0; for (let i = 0; i < ch.length; i += step){ const x = ch[i]; if (nonzero && Math.abs(x) < 3e-5) continue; s += x * x; n++; } return n ? Math.sqrt(s / n) : 0; }
+function musicMatch(speech){
+  if (!musicBuf) return 1; let mr = MUSIC_RMS.get(musicBuf); if (mr === undefined){ mr = bufRms(musicBuf, true); MUSIC_RMS.set(musicBuf, mr); }
+  const key = (typeof VVER !== 'undefined' ? VVER : 0) + '|' + speech.length; if (VOICE_RMS.key !== key){ let e = 0, tot = 0, end = 0;   // energy and time in seconds (each sound at its own rate)
+    S.tracks.forEach(t => { if (t.muted) return; t.clips.forEach(c => { if (c.type || c.unvoiced) return; const a = AUD.get(c.gulp); if (!a || !a.buf) return; const ch = a.buf.getChannelData(0), sr = a.buf.sampleRate, i0 = Math.max(0, Math.floor(c.in * sr)), i1 = Math.min(ch.length, Math.floor(c.out * sr)), step = Math.max(1, Math.floor((i1 - i0) / 20000));
+      for (let i = i0; i < i1; i += step){ e += ch[i] * ch[i] * step / sr; } tot += Math.max(0, i1 - i0) / sr; end = Math.max(end, c.at + dur(c)); }); });
+    const span = Math.max(tot, end); VOICE_RMS = { key, v: span ? Math.sqrt(e / span) : 0 }; }
+  return mr > 1e-6 && VOICE_RMS.v > 1e-6 ? VOICE_RMS.v / mr : 1; }
 function tick(){
   if (!playing) return; const t = playFrom + (ac().currentTime - playT0);
   if ((stopAt !== null && t >= stopAt) || t >= compEnd() + 0.05){ stopPlay(); seekVisual(stopAt !== null ? stopAt : compEnd()); return; }
@@ -958,11 +1091,11 @@ async function setMusicTrack(b64, file, name){
 function layoutMusic(){ if (!S.music.file){ S.tracks.forEach(t => { t.clips = t.clips.filter(c => c.type !== 'music'); }); S.music.manual = false; cleanupTracks(); return; }   // 172: music is a clip on a normal track
   if (S.music.manual && musicClips().length) return; S.tracks.forEach(t => { t.clips = t.clips.filter(c => c.type !== 'music'); });
   const at = Math.max(0, S.music.at || 0), end = speechEnd(), len = at < end - 1 ? end - at : Math.max(2, musicBuf ? musicBuf.duration : 30);   // 179: from the playhead to the end of the speech (it loops)
-  const c = { id: 'mu1', type: 'music', lines: [], name: S.music.name, at, in: 0, out: Math.max(2, len), gain: 1 }; freeTrack(c).clips.push(c); }
+  const c = { id: 'mu1', type: 'music', lines: [], name: S.music.name, at, in: 0, out: Math.max(2, len), gain: 1, loop: !!(musicBuf && Math.max(2, len) > musicBuf.duration + 1e-3) }; freeTrack(c).clips.push(c); }   // 182: longer than the music → Loop on
 function removeMusic(){ remember(); S.music.file = null; S.music.name = null; musicBuf = null; layoutMusic(); selClip = null; showInsp('proj'); renderScript(); autosave(); }
 function setMusic(k, v){ S.music[k] = v; autosave(); if (playing){ const t = playhead; stopPlay(); seekVisual(t); startPlay(); } }
 function showMusicInspector(){ ['line', 'proj'].forEach(k => $('insp-' + k).classList.add('hidden')); $('insp-music').classList.remove('hidden'); const tl = $('it-line').parentElement; if (tl) tl.classList.add('hidden');   // 169: a music clip has only its own panel
-  $('musicName').textContent = S.music.name || ''; $('musicCredit').textContent = S.music.credit || ''; setRange('mLevel', S.music.level_db); setRange('mFadeIn', S.music.fade_in); setRange('mFadeOut', S.music.fade_out); setRange('mDuckDb', S.music.duck_db ?? 12); }
+  $('musicName').textContent = S.music.name || ''; $('musicCredit').textContent = S.music.credit || ''; setRange('mFadeIn', S.music.fade_in); setRange('mFadeOut', S.music.fade_out); setRange('mDuckDb', S.music.duck_db ?? 12); }
 const UNIT_FA = { '%': '%', px: 'px', dB: 'dB', s: 's', '°': '°', '': '' };   // 177: units as they are written in English
 function rvText(el){ const v = +el.value, u = el.dataset.unit || '', n = Number.isInteger(v) ? String(v) : v.toFixed(1); return '\u2066' + n.replace('-', '−') + (u ? (u === 'dB' ? ' ' : '') + u : '') + '\u2069'; }   /* 177: a left-to-right island («0°», «−6 dB») that still sits at the legend's far end in Persian */   // 177: «12.6s», «35%» — English digits and units in both languages
 function wireRangeValues(){ document.querySelectorAll('aside input[type=range]').forEach(el => { if (el._rv) return;
@@ -1031,6 +1164,7 @@ async function init(){
     }
     if (S.music.file){ try { const r = await bigResult(await API().music_load(S.music.file)); if (r.ok){ const bin = atob(r.b64), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); musicBuf = await ac().decodeAudioData(u8.buffer.slice(0)); } } catch (e) {} }
   }
+  pendFinishOld(st && st.ed_pending_del).catch(() => {});   // 182: deletions left waiting by the last session are final now
   RECENT = (st && st.ed_recent) || {}; LIBV = (st && st.ed_lib_voices) || []; FISH_USED = (st && st.fish_used) || []; FISH_DESIGNED = (st && st.fish_designed) || [];
   DEFAULTS = { engine: st && st.default_engine, model: st && st.default_g_model };
   await loadEngineLists(); await loadG38Lists(); if (st && st.default_engine && !st.ed_doc) S.proj.engine = st.default_engine; if (st && st.default_g_model && !st.ed_doc) S.proj.g_model = st.default_g_model;
@@ -1038,10 +1172,35 @@ async function init(){
   try { const L = await API().license_state(); if (L && L.ok && L.days_left !== null && L.days_left !== undefined && L.days_left <= 21) say(T(`مجوزِ این دستگاه ${FA(L.days_left)} روزِ دیگر تمام می‌شود؛ برای تمدید، کدِ درخواست را برای کسی بفرستید که برنامه را به شما داده است.`, `This machine’s license ends in ${L.days_left} days. To renew, send the request code to whoever gave you the app.`), 'ok'); } catch (e) {}
   const gulps = [...new Set(speechClips().filter(c => !c.unvoiced && c.gulp !== null).map(c => c.gulp))];
   for (const g of gulps){ if (await ensureAudio(g)) renderTimeline(); }
+  try { migrateAudio182(); } catch (e) { console.warn('migrate audio', e); }
+  projBaseline();   // 182: what the app starts with is not an unsaved change
+  try { await offerRecovery(); } catch (e) { console.warn('recovery', e); }
   // 180: the app was opened by double-clicking a .ava file — open it now that the page is ready
   try { const po = API().pending_open ? await API().pending_open() : null; if (po && po.path) await projectOpen(po.path); } catch (e) { console.warn('open file', e); }
 }
-window.avaOpenPath = p => projectOpen(p);   // 180: a .ava double-clicked while the app is already open (macOS)
+window.avaOpenPath = p => {   // 180: a .ava double-clicked while the app is already open (macOS); 182: the open one is not opened again
+  const norm = x => String(x || '').replace(/\\/g, '/').toLowerCase();
+  if (S.projPath && norm(S.projPath) === norm(p)){ say(T('این پروژه همین حالا باز است.', 'This project is already open.'), 'ok'); return; }
+  return projectOpen(p); };
+// 182 · the window's close button (and ⌘Q) with unsaved changes: Save · Don't save · Cancel — the app closes itself after
+var CLOSE_ASK = false;
+window.avaAskBeforeClose = async () => { if (CLOSE_ASK) return; CLOSE_ASK = true;
+  try { dirtyCheck(); if (!PROJ_DIRTY){ API().app_quit(false); return; }
+    const k = await askChoice(T('تغییرهای ذخیره‌نشده', 'Unsaved changes'), T('تغییرهای این پروژه هنوز ذخیره نشده‌اند. پیش از بستنِ برنامه ذخیره‌شان کنید؟', 'This project has changes that are not saved yet. Save them before you quit?'),
+      [{ k: 'cancel', label: T('لغو', 'Cancel') }, { k: 'discard', label: T('ذخیره نکن', "Don't save"), danger: true }, { k: 'save', label: T('ذخیره', 'Save'), primary: true }]);
+    if (k === 'save'){ if (await projectSave(false)) API().app_quit(false); }
+    else if (k === 'discard') API().app_quit(true); }
+  finally { CLOSE_ASK = false; } };
+// 182 · after a session that did not end normally: its recovery copy is offered (closing this without a choice keeps it
+//       for the next launch)
+async function offerRecovery(){ let r = null; try { r = API().recovery_info ? await API().recovery_info() : null; } catch (e) { return; }
+  const info = r && r.info; if (!info) return;
+  const when = new Date((info.at || 0) * 1000), p2 = x => String(x).padStart(2, '0'), stamp = `${when.getFullYear()}/${p2(when.getMonth() + 1)}/${p2(when.getDate())} ${p2(when.getHours())}:${p2(when.getMinutes())}`, name = info.name || T('پروژهٔ ذخیره‌نشده', 'unsaved project');
+  const k = await askChoice(T('بازیابیِ کارِ ذخیره‌نشده', 'Recover unsaved work'),
+    T(`برنامه دفعهٔ پیش درست بسته نشد. نسخهٔ بازیابیِ «${name}» از ${stamp} مانده است. بازش کنید؟`, `The app did not close normally last time. A recovery copy of “${name}” from ${stamp} is here. Open it?`),
+    [{ k: 'discard', label: T('دور انداختن', 'Discard'), danger: true }, { k: 'open', label: T('باز کردن', 'Open'), primary: true }]);
+  try { if (k === 'open'){ const o = await API().recovery_open(); if (o && o.ok) await projectTake(o, true); else say((o && o.error) || '', 'err'); }
+    else if (k === 'discard') await API().recovery_discard(); else await API().recovery_later(); } catch (e) { say(e.message || String(e), 'err'); } }
 init();
 
 
@@ -1051,9 +1210,16 @@ init();
 let typingSnap = false, typingTimer = 0;
 function noteTyping(){ if (!typingSnap){ remember(); typingSnap = true; } clearTimeout(typingTimer); typingTimer = setTimeout(() => { typingSnap = false; }, 1200); }
 addEventListener('keydown', e => {
-  const mod = e.metaKey || e.ctrlKey, k = e.key.toLowerCase(), t = e.target, inText = /INPUT|TEXTAREA|SELECT/.test(t.tagName) || !!(t.closest && t.closest('#vtextEd'));   /* 177: the canvas text editor undoes its own typing */
-  if (mod && !inText && (k === 'z' || k === 'y')){
-    e.preventDefault(); e.stopPropagation(); typingSnap = false; if (k === 'y' || e.shiftKey) redo(); else undo(); return;
+  const mod = e.metaKey || e.ctrlKey, k = e.key.toLowerCase(), t = e.target, inText = /INPUT|TEXTAREA|SELECT/.test(t.tagName) || !!(t.closest && t.closest('#vtextEd'));
+  // 182: ⌘Z / ⇧⌘Z work in a field too — the app's own undo (typing in a field is one step): the field hands over what was
+  //      typed, the step is undone, and a text field keeps the focus. A list's search box, an open dialog and the canvas
+  //      text editor (it undoes its own typing, 177) are left alone.
+  if (mod && !e.altKey && (k === 'z' || k === 'y') && !document.querySelector('dialog[open]') && !(t.matches && t.matches('input[type=search], .avq, input[type=file]')) && !(t.closest && t.closest('#vtextEd'))){   /* 177: the canvas text editor undoes its own typing and stays open */
+    e.preventDefault(); e.stopPropagation(); typingSnap = false;
+    let back = null; if (inText && t.blur){ back = /TEXTAREA/.test(t.tagName) || (t.tagName === 'INPUT' && /^(text|number|)$/.test(t.type || '')) ? t : null; t.blur(); }
+    if (k === 'y' || e.shiftKey) redo(); else undo();
+    if (back && back.isConnected && back.offsetParent) try { back.focus({ preventScroll: true }); } catch (err) {}
+    return;
   }
   if (e.key === 'Escape' && !document.querySelector('dialog[open]') && $('ddMenu').classList.contains('hidden') && !(typeof mode !== 'undefined' && mode === 'video')){
     if (t.isContentEditable) t.blur(); getSelection().removeAllRanges(); if (sel.size || selClip || (typeof AMS !== 'undefined' && AMS && AMS.size)){ if (typeof AMS !== 'undefined' && AMS) AMS.clear(); sel = new Set(); selClip = null; paintSel(); renderTimeline(); } return; }
@@ -1131,7 +1297,12 @@ function musicRow(key, title, meta, onPrev, onUse, onDel){
 }
 async function musicPreviewLib(k){ const it = MUSIC_LIB[k]; if (prevKey === 'lib' + k && !PREV.paused) return stopPreview(); const r = await bigResult(await API().music_load(it.file)); if (r && r.ok && r.b64) togglePreview('lib' + k, URL.createObjectURL(b64Blob(r.b64, 'audio/mpeg'))); }
 async function useLib(k){ const it = MUSIC_LIB[k], r = await bigResult(await API().music_load(it.file)); if (!r || !r.ok) return say((r && r.error) || '', 'err'); S.music.credit = it.credit || ''; stopPreview(); await setMusicTrack(r.b64, it.file, it.builtin ? T(it.title, it.title_en || it.title) : (it.title || it.file)); $('musicDlg').close(); focusMusic(); }
-async function delLib(k){ const it = MUSIC_LIB[k]; const r = await API().music_delete(it.file); if (r && r.ok) loadMusicLib(); }
+async function delLib(k){ const it = MUSIC_LIB[k]; if (!it) return;   // 182: an undo step; the file waits in the trash
+  let token = null, entry = null; const act = { item: T('موسیقی', 'Music') + ` «${it.title || it.file}»`, what: T('از کتابخانه حذف شد', 'Removed from the library'),
+    undo: async () => { try { await API().music_restore(token, entry); } catch (e) {} token = null; loadMusicLib(); },
+    redo: async () => { try { const d = await API().music_delete(it.file); token = d && d.token; entry = d && d.entry; } catch (e) {} loadMusicLib(); } };
+  const st = rememberAct('', act); const r = await API().music_delete(it.file); if (!(r && r.ok)){ actDrop(st); return say((r && r.error) || '', 'err'); }
+  token = r.token; entry = r.entry; loadMusicLib(); }
 async function searchMusic(page){
   if (mTab === 'library' || mTab === 'lyria') return; page = Math.max(1, page || 1);
   $('musicResults').innerHTML = `<li class="p-4 text-sm text-base-content/60">${T('در حال جست‌وجو…', 'Searching…')}</li>`;
@@ -1252,9 +1423,34 @@ let LIBV = [], DESIGNS = [], CLONES = [], CONSENT = '', FISH_USED = [], FISH_DES
 const b64Blob = (b64, type) => { const bin = atob(b64), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return new Blob([u8], { type }); };
 const is38 = () => /3\.8/.test(S.proj.g_model);
 async function loadG38Lists(){
-  try { const r = await API().g38_designs(); DESIGNS = (r && r.designs) || []; } catch (e) {}
-  try { const r = await API().g38_clones(); CLONES = (r && r.clones) || []; CONSENT = (r && r.consent) || ''; } catch (e) {}
+  try { const r = await API().g38_designs(); DESIGNS = ((r && r.designs) || []).filter(d => !PEND_DEL['design:' + d.id]); } catch (e) {}
+  try { const r = await API().g38_clones(); CLONES = ((r && r.clones) || []).filter(c => !PEND_DEL['clone:' + c.id]); CONSENT = (r && r.consent) || ''; } catch (e) {}
 }
+// 182 · deletions that wait for their step: a voice on Google or Fish is hidden here until its step can no longer be undone,
+//       then deleted for real; the list is kept in the settings, so a restart finishes what the last session left
+var PEND_DEL = {};
+function pendSave(){ try { API().settings_set({ ed_pending_del: PEND_DEL }); } catch (e) {} }
+async function pendRun(key){ const [kind, ...rest] = String(key).split(':'), id = rest.join(':');
+  try { if (kind === 'design') await API().g38_design_delete({ id }); else if (kind === 'clone') await API().g38_clone_delete({ id }); else if (kind === 'fish') await API().fish_delete_voice(id); } catch (e) { console.warn('delete', e); }
+  delete PEND_DEL[key]; pendSave(); }
+async function pendFinishOld(saved){ PEND_DEL = {}; for (const k of Object.keys(saved || {})) await pendRun(k); }
+function refreshVoiceLists(){ try { fillInspector(); } catch (e) {} try { renderSpeakers(); } catch (e) {} try { if (sel.size === 1) fillLineInspector([...sel][0]); } catch (e) {} }
+function actDrop(st){ const i = hist.past.indexOf(st); if (i >= 0){ hist.past.splice(i, 1); hist.bytes -= st.size; hist._last = null; histTell(); } }
+// a remote voice deleted as a step: hidden now, really deleted once the step is final
+function remoteVoiceDelete(key, label, after){ const act = { item: label, what: T('حذف شد', 'Deleted'),
+    undo: () => { delete PEND_DEL[key]; pendSave(); after(); }, redo: () => { PEND_DEL[key] = true; pendSave(); after(); }, finalize: () => pendRun(key) };
+  rememberAct('', act); PEND_DEL[key] = true; pendSave(); return act; }
+// 182 · one of your Chatterbox samples: an undo step; its file waits in the trash until the step is final
+async function cbxSampleDelete(id){
+  const name = ((CBX_VOICES || []).find(v => v.id === id) || {}).name || String(id).replace(/^u:/, '');
+  let token = null; const act = { item: T('نمونهٔ چترباکس', 'Chatterbox sample') + ` «${name}»`, what: T('حذف شد', 'Deleted'),
+    undo: async () => { if (token){ try { await API().cbx_voice_restore(token); } catch (e) {} token = null; } await loadEngineLists(); refreshVoiceLists(); },
+    redo: async () => { try { const d = await API().cbx_voice_delete(id); token = d && d.token; } catch (e) {} await loadEngineLists(); refreshVoiceLists(); } };
+  const st = rememberAct('', act); const r = await API().cbx_voice_delete(id);
+  if (!(r && r.ok)){ actDrop(st); return say((r && r.error) || '', 'err'); } token = r.token;
+  if (S.proj.cbx.voice === id) S.proj.cbx.voice = 'default';   // nothing keeps a voice that is gone (part of the same step)
+  spkList().forEach(sp => { if (sp.cbxVoice === id) sp.cbxVoice = ''; }); Object.values(S.lines).forEach(L => { if (L && L.voice && L.voice.cbxVoice === id) delete L.voice.cbxVoice; });
+  await loadEngineLists(); refreshVoiceLists(); autosave(); say(T('نمونه حذف شد (با آن‌دو برمی‌گردد).', 'Sample deleted (undo brings it back).'), 'ok'); }
 function voiceOptions(cur, withProj, m38){
   const o = (v, l, extra = '') => `<option value="${escapeHtml(v)}" ${v === cur ? 'selected' : ''} ${extra}>${escapeHtml(l)}</option>`;
   let html = withProj ? `<option value="">${T('— مثلِ پروژه —', '— as the project —')}</option>` : '';
@@ -1266,11 +1462,14 @@ function voiceOptions(cur, withProj, m38){
   }
   return html;
 }
-async function delVoice(v){
-  if (v.startsWith('lib:')){ LIBV = LIBV.filter(x => 'lib:' + x.id !== v); try { await API().settings_set({ ed_lib_voices: LIBV }); } catch (e) {} }
-  else if (v.startsWith('design:')){ await API().g38_design_delete({ id: v.slice(7) }); await loadG38Lists(); }
-  else if (v.startsWith('clone:')){ await API().g38_clone_delete({ id: v.slice(6) }); await loadG38Lists(); }
-  if (S.proj.g_voice === v) S.proj.g_voice = 'Charon'; fillInspector(); autosave();
+async function delVoice(v){   // 182: an undo step
+  const name = (v.startsWith('lib:') ? (LIBV.find(x => 'lib:' + x.id === v) || {}).name : v.startsWith('design:') ? (DESIGNS.find(x => 'design:' + x.id === v) || {}).name : (CLONES.find(x => 'clone:' + x.id === v) || {}).name) || v, label = T('صدای گوگل', 'Google voice') + ` «${name}»`;
+  if (v.startsWith('lib:')){ const before = LIBV.slice(), put = list => { LIBV = list; try { API().settings_set({ ed_lib_voices: LIBV }); } catch (e) {} refreshVoiceLists(); };
+    rememberAct('', { item: label, what: T('از کتابخانه حذف شد', 'Removed from the library'), undo: () => put(before.slice()), redo: () => put(before.filter(x => 'lib:' + x.id !== v)) }); put(before.filter(x => 'lib:' + x.id !== v)); }
+  else if (v.startsWith('design:') || v.startsWith('clone:')){ const isD = v.startsWith('design:');
+    remoteVoiceDelete(v, label, async () => { await loadG38Lists(); refreshVoiceLists(); }); if (isD) DESIGNS = DESIGNS.filter(x => 'design:' + x.id !== v); else CLONES = CLONES.filter(x => 'clone:' + x.id !== v); }
+  if (S.proj.g_voice === v) S.proj.g_voice = 'Charon'; spkList().forEach(sp => { if (sp.gVoice === v) sp.gVoice = ''; }); Object.values(S.lines).forEach(L => { if (L && L.voice && L.voice.gVoice === v) delete L.voice.gVoice; });
+  refreshVoiceLists(); autosave(); say(T('حذف شد (با آن‌دو برمی‌گردد).', 'Deleted (undo brings it back).'), 'ok');
 }
 function fillExtras(){
   document.querySelectorAll('.g38only').forEach(el => el.classList.toggle('hidden', !is38()));
@@ -1283,15 +1482,18 @@ function fillExtras(){
   refreshEnh($('pEngine')); refreshEnh($('pModel'));   // 177: their pin buttons
   // Chatterbox samples you added can be deleted
   const cv = $('cbxVoice'); /* 164: bundled voices are never deletable — only your samples carry data-del (cbxOptions) */
-  cv._onDel = async id => { const r = await API().cbx_voice_delete(id); if (r && r.ok){ if (S.proj.cbx.voice === id) S.proj.cbx.voice = 'default'; await loadEngineLists(); fillInspector(); } else say((r && r.error) || '', 'err'); };
+  cv._onDel = cbxSampleDelete;   // 182: an undo step
   // Fish voices: default + yours + recently used + designed (the classic groups)
   const f = S.proj.fish, fo = (v, l, d) => `<option value="${escapeHtml(v)}" ${v === f.voice ? 'selected' : ''} ${d ? 'data-del' : ''}>${escapeHtml(l)}</option>`;
   $('fishVoice').innerHTML = fishOptions(f.voice);   // 164: the classic nested view, restored
-  $('fishVoice')._onDel = async id => {
-    if (FISH_VOICES.some(v => (v._id || v.id) === id)){ const r = await API().fish_delete_voice(id); if (!(r && r.ok)) return say((r && r.error) || '', 'err'); await loadEngineLists(); }
-    FISH_USED = FISH_USED.filter(v => v.id !== id); FISH_DESIGNED = FISH_DESIGNED.filter(v => v.id !== id);
-    try { await API().settings_set({ fish_used: FISH_USED, fish_designed: FISH_DESIGNED }); } catch (e) {}
-    if (f.voice === id) f.voice = 'default'; fillInspector(); };
+  $('fishVoice')._onDel = async id => {   // 182: an undo step
+    const label = T('صدای Fish', 'Fish voice') + ` «${fishVoiceName(id)}»`, used0 = FISH_USED.slice(), des0 = FISH_DESIGNED.slice(), remote = FISH_VOICES.some(v => (v._id || v.id) === id);
+    const putLists = (u, d) => { FISH_USED = u; FISH_DESIGNED = d; try { API().settings_set({ fish_used: FISH_USED, fish_designed: FISH_DESIGNED }); } catch (e) {} };
+    if (remote) remoteVoiceDelete('fish:' + id, label, async () => { await loadEngineLists(); refreshVoiceLists(); });
+    else rememberAct('', { item: label, what: T('حذف شد', 'Deleted'), undo: () => { putLists(used0.slice(), des0.slice()); refreshVoiceLists(); }, redo: () => { putLists(used0.filter(v => v.id !== id), des0.filter(v => v.id !== id)); refreshVoiceLists(); } });
+    putLists(used0.filter(v => v.id !== id), des0.filter(v => v.id !== id)); if (remote) FISH_VOICES = FISH_VOICES.filter(v => (v._id || v.id) !== id);
+    if (f.voice === id) f.voice = 'default'; spkList().forEach(sp => { if (sp.fishVoice === id) sp.fishVoice = ''; }); Object.values(S.lines).forEach(L => { if (L && L.voice && L.voice.fishVoice === id) delete L.voice.fishVoice; });
+    refreshVoiceLists(); autosave(); };
   refreshEnh($('fishVoice'));
   renderCast(); fillExtras2();
 }
@@ -1414,10 +1616,16 @@ async function netTest(){ $('netReport').classList.remove('hidden'); $('netRepor
   const r = await API().net_test(); $('netReport').textContent = (r && r.text) || ''; netStatus(); }
 // ---- document
 async function saveText(){ const text = orderedLines().map(id => S.lines[id].text).join('\n'); const r = await API().save_text(text, 'txt'); if (r && r.ok) say(T('متن ذخیره شد.', 'Text saved.'), 'ok'); else if (r && r.error && r.error !== 'cancelled') say(r.error, 'err'); }
-async function newDoc(){ if (!(await askYes(T('پروژهٔ تازه', 'New project'), T('سند و ویدیوی فعلی پاک می‌شوند (پروژه‌ای که ذخیره کرده‌اید سرِ جایش می‌ماند).', 'The current document and video are cleared (a project you saved stays where it is).'), T('شروعِ پروژهٔ تازه', 'Start a new project')))) return;   // 175: the app's dialog, not confirm()
-  remember(); try { await API().new_document(); } catch (e) {} S.lines = {}; S.tracks.forEach(t => t.clips = []); selClip = null; sel = new Set(); S.music.file = null; S.music.name = null; S.projPath = null; projFileShow(); document.title = 'آوای جاوید شاه';
+async function newDoc(){
+  // 182: unsaved changes are asked about (Save · Don't save · Cancel); a saved project still gets the plain question
+  dirtyCheck(); if (PROJ_DIRTY){ if (!(await askUnsaved())) return; }
+  else if (!(await askYes(T('پروژهٔ تازه', 'New project'), T('سند و ویدیوی فعلی پاک می‌شوند (پروژه‌ای که ذخیره کرده‌اید سرِ جایش می‌ماند).', 'The current document and video are cleared (a project you saved stays where it is).'), T('شروعِ پروژهٔ تازه', 'Start a new project')))) return;   // 175: the app's dialog, not confirm()
+  PROJ_LOADING = true;
+  try { if (typeof playing !== 'undefined' && playing) stopPlay(); } catch (e) {}
+  histReset('new'); forgetPageMemory(); try { await API().new_document(); await API().project_forget([]); } catch (e) {}   // 182: a fresh history; the previous project's parts and music go
+  S.lines = {}; S.tracks.forEach(t => t.clips = []); selClip = null; sel = new Set(); S.music.file = null; S.music.name = null; S.projPath = null; projFileShow(); document.title = 'آوای جاوید شاه';
   if (typeof V0 === 'function'){ V = V0(); vSel = null; if (typeof ensureLayers === 'function') ensureLayers(); if (typeof vDraw === 'function') try { vDraw(); } catch (err) {} }   // 171: the video mode is flushed too
-  ensureOneLine(); renderScript(); showInsp('proj'); autosave(); }
+  ensureOneLine(); renderScript(); showInsp('proj'); autosave(); PROJ_LOADING = false; projBaseline(); }
 document.querySelectorAll('#netMode, #lbLang, #lbGender, #lbPitch, #lbCtx, #dsGender, #flLang, #flSort').forEach(el => enh(el));
 // 177: a library's filters search at once (they waited for the Search button, so choosing one seemed to do nothing)
 ['lbLang', 'lbGender', 'lbPitch', 'lbCtx'].forEach(id => { const el = $(id); if (el) el.addEventListener('change', () => libSearch()); });
@@ -1438,7 +1646,7 @@ function seekVisual(t){
   const ph = $('ph'); if (ph) ph.style.left = x + 'px';
   const pl = $('phLabel'); if (pl){ pl.textContent = num(fmt(playhead)); const host = pl.parentElement, hw = host ? host.scrollWidth || host.clientWidth : 1e6, lw = pl.offsetWidth || 44;
     const sc0 = $('tlScroll'), visL = sc0 ? sc0.scrollLeft : 0, visR = sc0 ? visL + sc0.clientWidth - ($('heads').offsetWidth || 0) : hw;
- pl.style.left = Math.max(visL + 2, Math.min(x - lw / 2, Math.min(visR, hw) - lw - 2)) + 'px'; }   /* 167: centred on the line, held inside the visible ruler */
+ pl.style.left = Math.max(2, Math.min(x - lw / 2, hw - lw - 2)) + 'px'; }   /* 167: centred on the line · 182: always ON the line — only the ruler's own ends hold it in (held inside the view, it parted from a line out of view) */
   const st = $('phStem'); if (st) st.style.left = x + 'px';
   const tb = $('tBtn'); if (tb) tb.textContent = num(fmt(playhead));
   const sc = $('tlScroll'); if (playing && sc && (x > sc.scrollLeft + sc.clientWidth - 70 || x < sc.scrollLeft)) sc.scrollLeft = Math.max(0, x - sc.clientWidth * 0.3);
@@ -1458,8 +1666,9 @@ function setTrackVolume(i, v, el){ const t = S.tracks[i]; t.volume = v; const vb
 // ---- export: every unmuted voice track, at its volume; music at its track's volume, off when muted
 function timelineSpec(){
   const clips = [];
-  S.tracks.forEach(t => { if (t.muted) return; t.clips.forEach(c => { if ((!c.type || c.type === 'ovl') && !c.unvoiced && c.gulp != null) clips.push({ gulp: c.gulp, in: c.in, out: c.out, at: c.at, gain: (t.volume ?? 1) * (c.gain ?? 1) }); }); });   // 172
-  S.tracks.forEach(t => { if (t.muted) return; t.clips.forEach(c => { if (c.type === 'sfx') clips.push({ file: c.file, in: c.in, out: c.out, at: c.at, gain: (t.volume ?? 1) * (c.gain ?? 1) }); }); });   // 170
+  S.tracks.forEach(t => { if (t.muted) return; t.clips.forEach(c => { if ((!c.type || c.type === 'ovl') && !c.unvoiced && c.gulp != null) clips.push({ gulp: c.gulp, in: c.in, out: c.out, at: c.at, gain: (t.volume ?? 1) * (c.gain ?? 1), kind: 'voice' }); }); });   // 172 · 182: the speech that ducking listens to
+  S.tracks.forEach(t => { if (t.muted) return; t.clips.forEach(c => { if (c.type === 'sfx') clips.push({ file: c.file, in: c.in, out: c.out, at: c.at, gain: (t.volume ?? 1) * (c.gain ?? 1), loop: !!c.loop }); }); });   // 170
+  S.tracks.forEach(t => { if (t.muted) return; t.clips.forEach(c => { if (c.type === 'audio' && c.gulp != null) clips.push({ gulp: c.gulp, in: c.in, out: c.out, at: c.at, gain: (t.volume ?? 1) * (c.gain ?? 1), kind: 'audio', loop: !!c.loop, fade_in: +(c.fadeIn || 0), fade_out: +(c.fadeOut || 0), duck_db: +(c.duck || 0) }); }); });   // 182: plain audio clips
   return { clips };
 }
 const musicTrack = () => { const cl = musicClips(); return cl.length ? { clips: cl, muted: cl.every(c => c._track && c._track.muted), volume: 1 } : null; };   // 172: music clips on any track
@@ -1597,7 +1806,7 @@ const RESETS = {
   fishModel: () => setEng('fishModel', ((DIRECTOR.fish_models || [])[0] || [''])[0]), fishLatency: () => setEng('fishLatency', 'normal'), fishVoice: () => setEng('fishVoice', 'default'),
   fishPreset: () => { setEng('fishPreset', 'neutral'); S.proj.fish.custom = ''; }, fishSpeed: () => setEng('fishSpeed', 1), fishVolume: () => setEng('fishVolume', 0), fishTemp: () => setEng('fishTemp', 0.7), fishTopP: () => setEng('fishTopP', 0.7),
   fishAge: () => { setFishOpt('age', ''); S.proj.fish.ageCustom = ''; }, fishState: () => { setFishOpt('state', ''); S.proj.fish.stateCustom = ''; },
-  mLevel: () => setMusic('level_db', -16), mFadeIn: () => setMusic('fade_in', 1.5), mFadeOut: () => setMusic('fade_out', 1.5), mDuckDb: () => setMusic('duck_db', 12),
+  mFadeIn: () => setMusic('fade_in', 1.5), mFadeOut: () => setMusic('fade_out', 1.5), mDuckDb: () => setMusic('duck_db', 12),
   lnEngine: () => setLineOpt('engine', ''), lnVoice: () => setLineOpt('gVoice', ''), lnPreset: () => setLineOpt('gPreset', ''), lnState: () => setLineOpt('gState', '')
 };
 const SECTION_RESET = {
@@ -1623,22 +1832,65 @@ document.addEventListener('click', e => {
 const projFileName = () => S.projPath ? (String(S.projPath).split(/[\\/]/).pop() || '') : '';
 function projFileShow(){ document.querySelectorAll('.projfile').forEach(el => { const n = projFileName(); el.textContent = n || T('ذخیره‌نشده', 'Not saved yet'); el.title = S.projPath || ''; el.classList.toggle('badge-primary', !!n); el.classList.toggle('badge-soft', !!n); el.classList.toggle('badge-ghost', !n); }); }
 async function projectSave(as){   // 170: Save writes over the project's own file; Save As asks for a new one; the status line reports
-  const path = !as && S.projPath ? S.projPath : null, r = await API().project_save(snapshot(), path);
-  if (r && r.ok){ S.projPath = r.path; say(T('پروژه با موفقیت ذخیره شد: ', 'Project saved successfully: ') + projFileName(), 'success'); document.title = projFileName() + ' — آوای جاوید شاه'; projFileShow(); }
-  else if (r && r.error !== 'cancelled') say((r && r.error) || '', 'err'); }
+  // 182: true when it saved (the unsaved-changes questions wait for it); what was written is «saved» — a change made while
+  //      the file was being written stays unsaved
+  const path = !as && S.projPath ? S.projPath : null, js = JSON.stringify(snapRaw()), r = await API().project_save(JSON.parse(js), path);
+  if (r && r.ok){ S.projPath = r.path; projBaseline(js); RECOV_DUE = PROJ_DIRTY; say(T('پروژه با موفقیت ذخیره شد: ', 'Project saved successfully: ') + projFileName(), 'success'); document.title = projFileName() + ' — آوای جاوید شاه'; projFileShow(); return true; }
+  if (r && r.error !== 'cancelled') say((r && r.error) || '', 'err'); return false; }
+// 182 · before the current project goes (opening another, starting a new one, quitting): Save · Don't save · Cancel
+async function askUnsaved(quitting){ dirtyCheck(); if (!PROJ_DIRTY) return true;
+  const k = await askChoice(T('تغییرهای ذخیره‌نشده', 'Unsaved changes'),
+    quitting ? T('تغییرهای این پروژه هنوز ذخیره نشده‌اند. پیش از بستنِ برنامه ذخیره‌شان کنید؟', 'This project has changes that are not saved yet. Save them before you quit?')
+             : T('تغییرهای این پروژه هنوز ذخیره نشده‌اند. پیش از ادامه ذخیره‌شان کنید؟', 'This project has changes that are not saved yet. Save them before you go on?'),
+    [{ k: 'cancel', label: T('لغو', 'Cancel') }, { k: 'discard', label: T('ذخیره نکن', "Don't save"), danger: true }, { k: 'save', label: T('ذخیره', 'Save'), primary: true }]);
+  if (k === 'save') return await projectSave(false);
+  return k === 'discard'; }
+// 182 · nothing of the previous project stays in the page's memory either (its decoded audio, pictures, videos, waveforms)
+function forgetPageMemory(){
+  [AUD, PEAKS, VOICED].forEach(m => m.clear());
+  if (typeof ENV !== 'undefined') ENV.clear(); if (typeof ONSETS !== 'undefined') ONSETS.clear(); if (typeof VSND !== 'undefined') VSND.clear();
+  if (typeof TLC !== 'undefined') TLC.clear(); if (typeof PHOTO_CACHE !== 'undefined') PHOTO_CACHE.clear(); if (typeof RX_SKIP !== 'undefined') RX_SKIP.clear();
+  try { MEDIA.forEach(m => { try { if (m.el && m.el.tagName === 'VIDEO'){ m.el.pause(); m.el.removeAttribute('src'); m.el.load(); } if (m.url) URL.revokeObjectURL(m.url); } catch (e) {} }); MEDIA.clear(); } catch (e) {}
+  musicBuf = null; }
 function projectSaveAs(){ return projectSave(true); }
 document.addEventListener('keydown', ev => { if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && ev.key.toLowerCase() === 's'){ ev.preventDefault(); projectSave(ev.shiftKey); } });
+var OPENING = false;
 async function projectOpen(path){   // 180: with a path (a .ava double-clicked in Finder / Explorer) there is no dialog
-  const r = path ? await API().project_open_path(path) : await API().project_open(); if (!r || !r.ok){ if (r && r.error !== 'cancelled') say((r && r.error) || '', 'err'); return; }
-  remember(); setBusy(true);
-  try { const musicCfg = r.doc.music ? { ...r.doc.music } : null; restoreSnap(r.doc); S.projPath = r.path || null;
+  if (OPENING) return; OPENING = true;
+  try { if (!(await askUnsaved())) return;   // 182: the current project's unsaved changes first
+    const r = path ? await API().project_open_path(path) : await API().project_open(); if (!r || !r.ok){ if (r && r.error !== 'cancelled') say((r && r.error) || '', 'err'); return; }
+    await projectTake(r, false); }
+  finally { OPENING = false; }
+}
+// 182 · the opened project replaces the current one — after the newer-build question; the previous project's history,
+//       parts, music and everything the page held for it go; its music is the engine's music again (it was not: a reopened
+//       project exported and saved again without its music) and keeps its clips as they were saved
+async function projectTake(r, recovered){
+  const ids = Object.values(r.remap || {});
+  if (r.build && r.build_now && r.build > r.build_now && !(await askYes(T('پروژه‌ای از نسخهٔ تازه‌ترِ برنامه', 'A project from a newer build'),
+      T(`این پروژه با نسخهٔ ${FA(r.build)} ذخیره شده و این برنامه نسخهٔ ${FA(r.build_now)} است. ممکن است بخش‌هایی از آن این‌جا درست نشان داده نشود و اگر این‌جا دوباره ذخیره‌اش کنید، از دست برود. بهتر است اول برنامه را به‌روز کنید.`,
+        `This project was saved by build ${r.build}; this app is build ${r.build_now}. Parts of it may not show correctly here, and saving it again here may lose them. Updating the app first is better.`),
+      T('باز کردن', 'Open anyway')))){ try { await API().project_drop(ids); } catch (e) {} return false; }
+  PROJ_LOADING = true; setBusy(true);
+  try { try { if (typeof playing !== 'undefined' && playing) stopPlay(); } catch (e) {}
+    histReset(recovered ? 'recover' : 'open'); forgetPageMemory(); try { await API().project_commit(ids); } catch (e) {}
+    const musicCfg = r.doc.music ? { ...r.doc.music } : null; restoreSnap(r.doc);
+    S.projPath = (recovered ? (r.recovery && r.recovery.path) : r.path) || null; selClip = null; sel = new Set();
+    try { if (typeof vSel !== 'undefined') vSel = null; if (typeof AMS !== 'undefined' && AMS) AMS.clear(); if (typeof VMS !== 'undefined' && VMS) VMS.clear(); } catch (e) {}
     const gids = [...new Set(S.tracks.flatMap(t => t.clips.map(c => c.gulp)).filter(g => g != null))];
     for (const g of gids){ const a = await API().gulp_audio(g); if (a && a.ok) await storeAudio(g, a.b64); }
     for (const L of Object.values(S.lines)) for (const g of [...Object.values(L.ovlA || {}), ...(L.reacts || []).map(r => r.gulp)]) if (g != null && !AUD.get(g)){ const a = await API().gulp_audio(g); if (a && a.ok) await storeAudio(g, a.b64); }   // 176: the reactions' own recordings
-    if (r.music && r.music.b64){ await setMusicTrack(r.music.b64, null, r.music.name); if (musicCfg) Object.assign(S.music, musicCfg, { file: null }); }
-    renderScript(); fillInspector(); autosave(); projFileShow(); document.title = projFileName() + ' — آوای جاوید شاه'; say(T('پروژه باز شد: ', 'Project opened: ') + projFileName(), 'ok'); retimeWords().catch(() => {}); }
-  catch (e) { say(e.message || String(e), 'err'); } finally { setBusy(false); }
-}
+    if (r.music && r.music.b64){ try { const bin = atob(r.music.b64), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); musicBuf = await ac().decodeAudioData(u8.buffer.slice(0)); } catch (e) { musicBuf = null; }
+      S.music = Object.assign({}, MUSIC0, musicCfg || {}, { name: (musicCfg && musicCfg.name) || r.music.name }); if (!S.music.file) S.music.file = 'project:' + (S.music.name || 'music'); }
+    if (typeof ensureLayers === 'function') try { ensureLayers(); } catch (e) {}
+    try { migrateAudio182(); } catch (e) { console.warn('migrate audio', e); }
+    renderScript(); fillInspector(); projFileShow(); document.title = (projFileName() || 'آوای جاوید شاه') + (projFileName() ? ' — آوای جاوید شاه' : '');
+    if (typeof mode !== 'undefined' && mode === 'video'){ try { fitFrame(); fillVInsp(); renderVTL(); vDraw(); } catch (e) {} }
+    say(recovered ? T('نسخهٔ بازیابی باز شد — برای نگه داشتنش ذخیره‌اش کنید.', 'The recovery copy is open — save it to keep it.') : T('پروژه باز شد: ', 'Project opened: ') + projFileName(), 'ok'); }
+  catch (e) { say(e.message || String(e), 'err'); }
+  finally { PROJ_LOADING = false; setBusy(false); projBaseline(recovered ? '' : undefined); if (recovered) RECOV_DUE = true; }
+  const clean = !PROJ_DIRTY; retimeWords().then(n => { if (n) quietChange(clean); }).catch(() => {});
+  return true; }
 
 // 160 · tag and tone menus: values as data, one listener; pressing the menu never steals the caret
 ['tagMenu', 'toneMenu'].forEach(id => { const m = $(id); if (!m) return;
@@ -1715,13 +1967,13 @@ function fishOptions(cur){
 
 // 166 · music clips: split, duplicate, delete one (the music itself goes only with its last clip); quick trim visual for music
 const musicClipsSpec = () => musicClips().filter(c => !(c._track && c._track.muted)).map(c => ({ gain: ((c._track && c._track.volume) ?? 1) * (c.gain ?? 1), in: c.in, out: c.out, at: c.at }));
-function splitMusic(){ const [t, c] = findClip(selClip); if (!c || (c.type !== 'music' && c.type !== 'sfx')) return; const cut = playhead - c.at;
+function splitMusic(){ const [t, c] = findClip(selClip); if (!c || !/^(music|sfx|audio)$/.test(c.type || '')) return; const cut = playhead - c.at;
   if (cut <= 0.1 || cut >= c.out - c.in - 0.1) return say(T('پلی‌هد را روی کلیپِ موسیقی بگذارید.', 'Put the playhead over the music clip.'), 'err');
-  remember(); const n = { ...c, id: 'mu' + (++uid), at: c.at + cut, in: c.in + cut }; c.out = c.in + cut; t.clips.push(n); t.clips.sort((a, b) => a.at - b.at); S.music.manual = true; selClip = n.id; renderTimeline(); autosave(); }
-function dupMusic(){ const [t, c] = findClip(selClip); if (!c || (c.type !== 'music' && c.type !== 'sfx')) return; remember(); const len = c.out - c.in, end = Math.max(...t.clips.map(x => x.at + x.out - x.in));
+  remember(); const n = { ...c, id: (c.type === 'audio' ? 'a' : 'mu') + (++uid), at: c.at + cut, in: c.in + cut }; c.out = c.in + cut; t.clips.push(n); t.clips.sort((a, b) => a.at - b.at); if (c.type === 'music') S.music.manual = true; selClip = n.id; renderTimeline(); autosave(); }
+function dupMusic(){ const [t, c] = findClip(selClip); if (!c || !/^(music|sfx|audio)$/.test(c.type || '')) return; remember(); const len = c.out - c.in, end = Math.max(...t.clips.map(x => x.at + x.out - x.in));
   const free = !t.clips.some(x => x !== c && x.at < c.at + 2 * len && x.at + x.out - x.in > c.at + len);
-  const n = { ...c, id: 'mu' + (++uid), at: free ? c.at + len : end }; t.clips.push(n); t.clips.sort((a, b) => a.at - b.at); S.music.manual = true; selClip = n.id; renderTimeline(); autosave(); }
-function delMusicClip(){ const [t, c] = findClip(selClip); if (!c || (c.type !== 'music' && c.type !== 'sfx')) return; if (c.type === 'sfx'){ remember(); t.clips = t.clips.filter(x => x !== c); cleanupTracks(); selClip = null; renderTimeline(); autosave(); return; } if (musicClips().length <= 1) return removeMusic(); remember(); t.clips = t.clips.filter(x => x !== c); S.music.manual = true; selClip = null; renderTimeline(); autosave(); }
+  const n = { ...c, id: (c.type === 'audio' ? 'a' : 'mu') + (++uid), at: free ? c.at + len : end }; t.clips.push(n); t.clips.sort((a, b) => a.at - b.at); if (c.type === 'music') S.music.manual = true; selClip = n.id; renderTimeline(); autosave(); }
+function delMusicClip(){ const [t, c] = findClip(selClip); if (!c || !/^(music|sfx|audio)$/.test(c.type || '')) return; if (c.type === 'sfx' || c.type === 'audio'){ remember(); t.clips = t.clips.filter(x => x !== c); cleanupTracks(); selClip = null; renderTimeline(); autosave(); return; } if (musicClips().length <= 1) return removeMusic(); remember(); t.clips = t.clips.filter(x => x !== c); S.music.manual = true; selClip = null; renderTimeline(); autosave(); }
 const _quickTrimVisual165 = quickTrimVisual;
 quickTrimVisual = function(c){ if (!c.lines) return renderTimeline(); return _quickTrimVisual165(c); };
 
@@ -1907,7 +2159,7 @@ function musicClips(){ return S.tracks.flatMap(t => t.clips.filter(c => c.type =
 function trackFree(t, c){ const a = c.at, b = c.at + clipLen(c); return !t.clips.some(x => x !== c && x.at < b - 1e-6 && x.at + clipLen(x) > a + 1e-6); }
 const isTTS = c => !c.type || c.type === 'ovl', kindFor = c => isTTS(c) ? 'speech' : 'track';   // 173: TTS tracks are specialized; everything else is regular
 function renameTracks(){ const tts = S.tracks.filter(t => t.kind === 'speech'), reg = S.tracks.filter(t => t.kind !== 'speech'); S.tracks.length = 0; S.tracks.push(...tts, ...reg);
-  tts.forEach((t, i) => { t.name = 'گفتار ' + FA(i + 1); t.en = 'Speech ' + (i + 1); }); reg.forEach((t, i) => { t.kind = 'track'; t.name = 'ترک ' + FA(i + 1); t.en = 'Track ' + (i + 1); }); }
+  tts.forEach(t => { t.name = 'گفتار'; t.en = 'Speech'; }); reg.forEach(t => { t.kind = 'track'; t.name = 'لایه'; t.en = 'Layer'; }); }   // 182: no numbers — «Speech» and «Layer», like the video mode
 function newTrack(at, kind){ kind = kind || 'speech'; const t = { id: (kind === 'speech' ? 's' : 'r') + (++uid), name: '', en: '', kind, gapless: false, clips: [] }; const lastTTS = S.tracks.map(x => x.kind).lastIndexOf('speech');
   const pos = kind === 'speech' ? (at == null ? lastTTS + 1 : Math.min(at, lastTTS + 1)) : (at == null ? S.tracks.length : Math.max(at, lastTTS + 1)); S.tracks.splice(Math.max(0, pos), 0, t); renameTracks(); return t; }
 function freeTrack(c, from){ const k = kindFor(c); for (let i = from || 0; i < S.tracks.length; i++) if (S.tracks[i].kind === k && trackFree(S.tracks[i], c)) return S.tracks[i]; return newTrack(null, k); }

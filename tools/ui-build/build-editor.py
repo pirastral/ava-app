@@ -14,8 +14,8 @@ HERE = pathlib.Path(__file__).resolve().parent
 B = HERE.parent.parent                                   # the build tree (…/b153)
 U = B / "ui-src"
 NODE_DIR = pathlib.Path(os.environ.get("AVA_NODE_DIR", HERE / "node_modules"))
-JS_FILES = ("editor.js", "video-lib.js", "transitions.js", "muxers.js", "video.js", "anim.js", "speakers.js", "timeline.js", "design.js", "controls.js")
-CSS_SOURCES = ("editor.src.html", "editor.js", "video.js", "anim.js", "speakers.js", "video-lib.js", "lists.js", "timeline.js", "design.js", "controls.js")
+JS_FILES = ("editor.js", "video-lib.js", "transitions.js", "muxers.js", "video.js", "anim.js", "speakers.js", "timeline.js", "design.js", "controls.js", "history.js", "drop.js", "drag.js")
+CSS_SOURCES = ("editor.src.html", "editor.js", "video.js", "anim.js", "speakers.js", "video-lib.js", "lists.js", "timeline.js", "design.js", "controls.js", "history.js", "drop.js", "drag.js")
 # icons the code builds from parts (`#i-${name}`) — the scanner below cannot see them
 DYNAMIC_ICONS = {"mic", "music", "volume-2", "volume-x", "pause", "play", "layers", "pencil", "scissors", "check", "refresh-cw",
                  "copy", "trash-2", "plus", "grip-vertical", "captions", "clapperboard", "audio-lines", "sparkles", "chevron-left",

@@ -76,9 +76,10 @@ body.mode-video .audio-only{display:none!important}body.mode-audio .video-only{d
   <div id="stageBar" class="ui flex flex-wrap items-center gap-2 border-b border-base-300 px-1 pb-2" dir="rtl">
           <svg class="size-4 opacity-70"><use href="#i-smartphone"/></svg>
           <select id="res" class="select select-sm w-64" aria-label="اندازه" data-aria-en="Format">
-            <option value="9/16" data-en="Reels, Shorts, TikTok — 1080‎×‎1920">ریلز، شورتز، تیک‌تاک — 1080‎×‎1920</option><option value="16/9" data-en="YouTube — 1920‎×‎1080">یوتیوب — 1920‎×‎1080</option>
-            <option value="4/5" data-en="Instagram post — 1080‎×‎1350">پستِ اینستاگرام — 1080‎×‎1350</option><option value="1/1" data-en="Square — 1080‎×‎1080">مربع — 1080‎×‎1080</option>
-            <option value="16/9" data-en="YouTube 4K — 3840‎×‎2160">یوتیوب 4K — 3840‎×‎2160</option><option value="custom" data-en="Custom…">سفارشی…</option>
+            <option value="9/16" data-en="Reels, Shorts, TikTok — 1080‎×‎1920">ریلز، شورتز، تیک‌تاک — 1080‎×‎1920</option><option value="9/16" data-en="Reels, Shorts, TikTok 4K — 2160‎×‎3840">ریلز، شورتز، تیک‌تاک 4K — 2160‎×‎3840</option>
+            <option value="16/9" data-en="YouTube — 1920‎×‎1080">یوتیوب — 1920‎×‎1080</option><option value="16/9" data-en="YouTube 4K — 3840‎×‎2160">یوتیوب 4K — 3840‎×‎2160</option>
+            <option value="4/5" data-en="Instagram post — 1080‎×‎1350">پستِ اینستاگرام — 1080‎×‎1350</option><option value="4/5" data-en="Instagram post 4K — 2160‎×‎2700">پستِ اینستاگرام 4K — 2160‎×‎2700</option>
+            <option value="1/1" data-en="Square — 1080‎×‎1080">مربع — 1080‎×‎1080</option><option value="1/1" data-en="Square 4K — 2160‎×‎2160">مربع 4K — 2160‎×‎2160</option><option value="custom" data-en="Custom…">سفارشی…</option>
           </select>
           <span class="ms-auto truncate text-xs text-base-content/60" data-en="Click to select, double-click text to edit it">کلیک برای انتخاب؛ دوبار کلیک روی متن برای ویرایش</span>
           <button class="btn btn-ghost btn-sm btn-square" onclick="vFullscreen(true)" data-tip="پخشِ تمام‌صفحه" data-tip-en="Play full screen" aria-label="full screen"><svg class="size-4"><use href="#i-maximize"/></svg></button>
@@ -115,6 +116,7 @@ body.mode-video .audio-only{display:none!important}body.mode-audio .video-only{d
           <div class="flex items-center gap-0.5">
             <button class="btn btn-ghost btn-sm btn-circle" data-tip="آن‌دو" data-tip-en="Undo" onclick="undo()" aria-label="undo"><svg class="size-4"><use href="#i-undo-2"/></svg></button>
             <button class="btn btn-ghost btn-sm btn-circle" data-tip="ری‌دو" data-tip-en="Redo" onclick="redo()" aria-label="redo"><svg class="size-4"><use href="#i-redo-2"/></svg></button>
+            <button id="histBtn" class="btn btn-ghost btn-sm btn-circle" data-tip="تاریخچه" data-tip-en="History" onclick="histToggle()" aria-label="history"><svg class="size-4"><use href="#i-history"/></svg></button>
             <label id="snapBtn" class="btn btn-ghost btn-sm gap-1 bg-primary/20 text-primary" data-tip="اسنپ: چسبیدنِ کلیپ‌ها به لبهٔ هم" data-tip-en="Snap clips to each other"><input type="checkbox" class="hidden" checked onchange="snapOn=this.checked; const l = this.closest('label'); ['bg-primary/20', 'text-primary'].forEach(k => l.classList.toggle(k, this.checked)); l.classList.toggle('text-base-content/60', !this.checked)"><svg class="size-4"><use href="#i-magnet"/></svg><span class="ui text-xs" data-en="Snap">اسنپ</span></label>
           </div>
           <div class="mx-auto flex items-center gap-1.5">
@@ -126,7 +128,7 @@ body.mode-video .audio-only{display:none!important}body.mode-audio .video-only{d
             <span class="text-sm tabular-nums text-base-content/50" id="tTotal">/ 00:00.0</span>
           </div>
           <div class="flex items-center gap-1">
-            <input id="zoom" type="range" min="8" max="600" value="22" class="range range-xs w-28 text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" aria-label="zoom">
+            <input id="zoom" type="range" min="0" max="1000" step="1" value="280" class="range range-xs w-36 text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" aria-label="zoom">
             <button class="btn btn-ghost btn-sm btn-circle" data-tip="بازنشانیِ زوم" data-tip-en="Reset zoom" onclick="setZoom(22)" aria-label="reset zoom"><svg class="size-4"><use href="#i-rotate-ccw"/></svg></button>
           </div>
         </div>
@@ -210,8 +212,8 @@ body.mode-video .audio-only{display:none!important}body.mode-audio .video-only{d
               <div id="bgMesh" class="space-y-2">
                 <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Colors">رنگ‌ها</legend><div id="palGrid" class="flex flex-wrap gap-1.5"></div></fieldset>
                 <div id="palCustom" class="hidden space-y-2"></div>
-                <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Flow">پیچ‌وتاب</legend><input id="podWarp" type="range" data-unit="%" data-def="35" min="0" max="100" value="35" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="podSet('warp', this.value / 100, true)"></fieldset>
-                <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Speed">سرعت</legend><input id="podSpeed" type="range" data-unit="%" data-def="100" min="0" max="150" value="100" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="podSet('drift', this.value / 100, true)"></fieldset>
+                <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Flow">پیچ‌وتاب</legend><input id="podWarp" type="range" data-unit="%" data-def="70" min="0" max="100" value="70" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="podSet('warp', this.value / 100, true)"></fieldset>
+                <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Speed">سرعت</legend><input id="podSpeed" type="range" data-unit="%" data-def="30" min="0" max="150" value="30" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="podSet('drift', this.value / 100, true)"></fieldset>
               </div>
               <div id="bgMedia" class="hidden space-y-2">
                 <button id="mediaPickBtn" class="btn btn-sm w-full gap-1.5 border-base-content/15 bg-base-100"><svg class="size-4"><use href="#i-image"/></svg><span id="mediaPick" data-en="Choose a file…">انتخاب فایل…</span></button>
@@ -384,7 +386,6 @@ body.mode-video .audio-only{display:none!important}body.mode-audio .video-only{d
         <div id="insp-music" class="hidden space-y-3 p-4">
           <div class="flex items-center gap-2"><svg class="size-4 text-secondary"><use href="#i-music"/></svg><span class="text-sm font-bold" data-en="Background music">موسیقی پس‌زمینه</span></div>
           <p class="text-xs text-base-content/70" id="musicName" dir="auto"></p><p class="text-xs text-base-content/50" id="musicCredit" dir="auto"></p>
-          <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Music level under the voice">بلندی موسیقی نسبت به صدا</legend><input id="mLevel" type="range" data-unit="dB" min="-30" max="0" value="-16" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="setMusic('level_db', +this.value)"></fieldset>
           <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Fade in">محو شدنِ اول کار</legend><input id="mFadeIn" type="range" data-unit="s" min="0" max="5" step="0.5" value="1.5" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="setMusic('fade_in', +this.value)"></fieldset>
           <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Fade out">محو شدنِ آخر کار</legend><input id="mFadeOut" type="range" data-unit="s" min="0" max="5" step="0.5" value="1.5" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="setMusic('fade_out', +this.value)"></fieldset>
           <fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70" data-en="Duck under the voice">پایین‌رفتنِ موسیقی زیرِ صدا</legend><input id="mDuckDb" type="range" data-unit="dB" min="0" max="24" step="1" value="12" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="setMusic('duck_db', +this.value)"></fieldset>

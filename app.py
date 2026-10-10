@@ -46,6 +46,8 @@ if getattr(sys, "frozen", False):
     faulthandler.enable(_logfile)
 
 import subprocess
+import threading
+import time
 import webview
 
 
@@ -322,6 +324,70 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
+    # ---- 182 · safeguards: unsaved changes, the recovery copy, quitting, letting a project go ------------------------
+    def set_dirty(self, dirty):
+        """The page says whether there are unsaved changes (the window's close button asks only then)."""
+        _STATE["dirty"] = bool(dirty)
+        return {"ok": True}
+
+    def app_quit(self, discard_recovery=False):
+        """Close the window for real (after the page asked about unsaved changes)."""
+        import engines
+        _STATE["allow_close"] = True
+        if discard_recovery:
+            engines.recovery_clear()
+        w = self._window
+        threading.Thread(target=lambda: w.destroy(), daemon=True).start()
+        return {"ok": True}
+
+    def recovery_write(self, doc, path=None, name=None):
+        try:
+            import engines
+            engines.recovery_write(doc or {}, path, name)
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def recovery_info(self):
+        import engines
+        return {"ok": True, "info": engines.recovery_info() if _STATE.get("recovery_offer") else None}
+
+    def recovery_later(self):
+        """The offer was closed without a choice: the copy stays and is offered again at the next launch."""
+        _STATE["recovery_offer"] = False
+        return {"ok": True}
+
+    def recovery_open(self):
+        try:
+            import engines
+            r = engines.recovery_open()
+            _STATE["recovery_offer"] = False
+            return _opened((r.get("recovery") or {}).get("path"), r)
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def recovery_discard(self):
+        import engines
+        engines.recovery_discard()
+        _STATE["recovery_offer"] = False
+        return {"ok": True}
+
+    def project_forget(self, keep_ids=None):
+        """A new project: everything the previous one held in memory goes."""
+        import engines
+        return {"ok": True, "gone": engines.project_forget(keep_ids or [])}
+
+    def project_commit(self, keep_ids=None):
+        """182: the page has taken the opened project — the previous one's parts and music go; the file's music is the
+        engine's music from now on (exporting and saving again keep it)."""
+        import engines
+        return {"ok": True, "gone": engines.project_commit(keep_ids or [])}
+
+    def project_drop(self, ids=None):
+        """182: the page said no to the opened file (saved by a newer build): its parts go, the current project stays."""
+        import engines
+        return {"ok": True, "gone": engines.project_drop(ids or [])}
+
     def gc_gulps(self, keep_ids):
         try:
             import engines
@@ -347,6 +413,44 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
+    def asset_gulp(self, aid, name=""):
+        """182: an audio file the window put in the asset store (dropped or picked) becomes a part. fmt: this computer
+        cannot decode it here — the window decodes it itself and hands over plain WAV."""
+        try:
+            import engines
+            gid, mp3, nm, seconds = engines.asset_gulp(aid, name or None)
+            return {"ok": True, "gulp": gid, **_big(mp3), "name": nm, "seconds": seconds}
+        except Exception as e:
+            import engines
+            return {"ok": False, "fmt": isinstance(e, engines.AudioFormatError), "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def asset_to_mp3(self, aid, name=""):
+        """182: an audio file the window cannot decode — decoded here, kept as an MP3 asset."""
+        try:
+            import engines
+            return {"ok": True, **engines.asset_to_mp3(aid, name or None)}
+        except Exception as e:
+            import engines
+            return {"ok": False, "fmt": isinstance(e, engines.AudioFormatError), "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def asset_drop(self, aid):
+        try:
+            import engines
+            return {"ok": bool(engines.asset_drop(aid))}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def music_import_asset(self, aid, name=""):
+        """182: the music library's import from a file picked in the window (the limits, then the same as music_import)."""
+        try:
+            import engines
+            pcm, sr, entry = engines.music_import_asset(aid, name or None, self._status)
+            return {"ok": True, **_big(engines.pcm_to_mp3(pcm, sr)),
+                    "seconds": round(len(pcm) / sr, 1), "entry": entry}
+        except Exception as e:
+            import engines
+            return {"ok": False, "fmt": isinstance(e, engines.AudioFormatError), "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
     def set_gain(self, gid, percent):
         try:
             import engines
@@ -357,7 +461,15 @@ class Api:
     def cbx_voice_delete(self, voice_id):
         try:
             import engines
-            return {"ok": True, "voices": engines.cbx_voice_delete(voice_id)}
+            voices, token = engines.cbx_voice_delete(voice_id)   # 182: the file waits in the trash (the step can be undone)
+            return {"ok": True, "voices": voices, "token": token}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def cbx_voice_restore(self, token):
+        try:
+            import engines
+            return {"ok": True, "voices": engines.cbx_voice_restore(token)}
         except Exception as e:
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
@@ -403,7 +515,16 @@ class Api:
     def music_delete(self, file):
         try:
             import engines
-            return {"ok": True, "items": engines.music_delete(file)}
+            items = engines.music_delete(file)
+            last = dict(getattr(engines, "_MUSIC_LAST_DELETE", {}) or {})   # 182: what an undo needs to bring it back
+            return {"ok": True, "items": items, "token": last.get("token"), "entry": last.get("entry")}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def music_restore(self, token, entry=None):
+        try:
+            import engines
+            return {"ok": True, "items": engines.music_restore(token, entry)}
         except Exception as e:
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
@@ -576,16 +697,19 @@ class Api:
 
     # ---- 151: Gemini 3.8 voices ------------------------------------------------
     # ---- 161: the video tab's assets and the streamed MP4 save ------------------------
-    def asset_begin(self, name, mime):
+    def asset_begin(self, name, mime, size=0):
         import engines
-        return {"ok": True, "id": engines.asset_begin(name, mime)}
+        try:
+            return {"ok": True, "id": engines.asset_begin(name, mime, size)}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
     def asset_chunk(self, aid, b64):
         import engines
         try:
             return {"ok": engines.asset_chunk(aid, b64)}
         except Exception as e:
-            return {"ok": False, "error": str(e)}
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
     def asset_end(self, aid):
         import engines
@@ -602,29 +726,50 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def video_save_open(self, suggested="video.mp4"):
+    def video_save_open(self, suggested="video.mp4", need_mb=0):
         """Ask where to save the video, then accept it in chunks (big files never cross in one piece).
-        175: the file keeps the format's own extension (.mp4 · .mov · .webm · .mkv · .gif) — it used to become ….webm.mp4."""
+        175: the file keeps the format's own extension (.mp4 · .mov · .webm · .mkv · .gif) — it used to become ….webm.mp4.
+        182: asked BEFORE the encoding (the file is written while it is made); need_mb = its estimated size — a disk
+        without that much room says so (with the numbers) before anything starts."""
         try:
             import engines
             res = self._window.create_file_dialog(_FD('SAVE'), directory=_downloads_dir(), save_filename=suggested)
             if not res:
                 return {"ok": False, "error": "cancelled"}
             path = _with_video_ext(res if isinstance(res, str) else res[0], suggested)
+            if need_mb:
+                engines.need_room(Path(path).parent, float(need_mb))
             return {"ok": True, "job": engines.save_stream_open(path), "path": str(path)}
         except Exception as e:
-            return {"ok": False, "error": str(e)}
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
     def video_save_chunk(self, job, b64):
         import engines
         try:
             return {"ok": engines.save_stream_chunk(job, b64)}
         except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def video_save_at(self, job, b64, position):
+        import engines
+        try:
+            return {"ok": engines.save_stream_at(job, b64, position)}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
+    def video_save_abort(self, job):
+        import engines
+        try:
+            return {"ok": engines.save_stream_abort(job)}
+        except Exception as e:
             return {"ok": False, "error": str(e)}
 
     def video_save_close(self, job):
         import engines
-        return {"ok": True, "path": engines.save_stream_close(job)}
+        try:
+            return {"ok": True, "path": engines.save_stream_close(job)}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
     # ---- 162: voice previews ------------------------------------------------------------
     def mp3_begin(self, sr, ch):
@@ -665,18 +810,22 @@ class Api:
         """160: save the whole project — document, voiced parts, music — as one .ava file. 170: with a path, write over it (Save)."""
         try:
             import engines
-            data = engines.project_pack(doc or {})
-            if path and str(path).lower().endswith(".ava"):
-                open(path, "wb").write(data)
-                return {"ok": True, "path": str(path)}
-            res = self._window.create_file_dialog(_FD('SAVE'), directory=_downloads_dir(), save_filename="project.ava")
-            if not res:
-                return {"ok": False, "error": "cancelled"}
-            path = res if isinstance(res, str) else res[0]
-            if not str(path).lower().endswith(".ava"):
-                path = str(path) + ".ava"
-            open(path, "wb").write(data)
-            return {"ok": True, "path": str(path)}
+            # 182: written beside the file and swapped in only when complete (a crash or a full disk mid-save can no
+            #      longer destroy the only copy); the version it replaces goes to AvaModels/backups; the recovery copy is
+            #      refreshed with it, so it is never older than the saved file
+            if not (path and str(path).lower().endswith(".ava")):
+                res = self._window.create_file_dialog(_FD('SAVE'), directory=_downloads_dir(), save_filename="project.ava")
+                if not res:
+                    return {"ok": False, "error": "cancelled"}
+                path = res if isinstance(res, str) else res[0]
+                if not str(path).lower().endswith(".ava"):
+                    path = str(path) + ".ava"
+            path = engines.project_save_safe(doc or {}, path)
+            try:
+                engines.recovery_write(doc or {}, path, Path(str(path)).stem, from_save=True)
+            except Exception as e:
+                print("[ava] recovery copy after save:", e)
+            return {"ok": True, "path": str(path)}   # the page says whether anything changed meanwhile (set_dirty)
         except Exception as e:
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
@@ -692,7 +841,7 @@ class Api:
             import engines
             if not path or not str(path).lower().endswith(".ava") or not os.path.isfile(str(path)):
                 raise RuntimeError(("This project file was not found: " if Api._lang == "en" else "فایل پروژه پیدا نشد: ") + str(path))
-            return {"ok": True, "path": str(path), **engines.project_unpack(open(str(path), "rb").read())}
+            return _opened(str(path), engines.project_unpack(str(path)))
         except Exception as e:
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
@@ -705,7 +854,7 @@ class Api:
             if not res:
                 return {"ok": False, "error": "cancelled"}
             path = res if isinstance(res, str) else res[0]
-            return {"ok": True, "path": str(path), **engines.project_unpack(open(path, "rb").read())}
+            return _opened(str(path), engines.project_unpack(str(path)))
         except Exception as e:
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
@@ -775,7 +924,9 @@ class Api:
                 return {"ok": False, "error": "cancelled"}
             path = result if isinstance(result, str) else result[0]
             import engines
+            engines.audio_limits_check(path)                            # 182: the import limits on every way in
             _, secs = engines._to_wav24k_mono(open(path, "rb").read())
+            engines.audio_seconds_check(secs, os.path.basename(path))
             return {"ok": True, "path": path, "seconds": round(secs, 1), "name": os.path.basename(path)}
         except Exception as e:
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
@@ -1013,7 +1164,10 @@ class Api:
             if not result:
                 return {"ok": False, "error": "cancelled"}
             path = result if isinstance(result, str) else result[0]
-            Path(path).write_bytes(base64.b64decode(b64))
+            data = base64.b64decode(b64)
+            import engines
+            engines.need_room(Path(path).parent, len(data) / (1 << 20))   # 182: room on the disk first (with the numbers)
+            Path(path).write_bytes(data)
             return {"ok": True, "path": str(path)}
         except Exception as e:
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
@@ -1028,18 +1182,68 @@ class Api:
 #       again only when something changed, e.g. the app folder moved or an update brought a new icon) and receives the file
 #       in its arguments.
 _OPEN_REQ = {"path": None, "ready": False, "window": None}
+# 182 · the app's own state for the safeguards: unsaved changes (told by the page), a close the page has allowed, and
+#       whether the last session ended without closing normally (its recovery copy is then offered once)
+_STATE = {"dirty": False, "allow_close": False, "recovery_offer": False}
+
+
+def _opened(path, unpacked):
+    """182: a project file has been read. Nothing of the current project is let go here — the page may still say no
+    (a file saved by a newer build); once it has taken the project it commits (project_commit), else drops it."""
+    import engines
+    return {"ok": True, "path": path, **unpacked, "build_now": engines.BUILD}
+
+
+def _call_page(js):
+    """182: never wait for the page from inside a macOS event (the window's own thread would wait for itself — the freeze
+    of a .ava double-clicked while the app was open); the script is handed over from a helper thread."""
+    w = _OPEN_REQ.get("window")
+    if w is None:
+        return
+
+    def run():
+        try:
+            w.evaluate_js(js)
+        except Exception as e:
+            print("[ava] page call:", e)
+    threading.Thread(target=run, daemon=True).start()
+
+
+def _focus_window():
+    w = _OPEN_REQ.get("window")
+    if w is None:
+        return
+
+    def run():
+        try:
+            w.restore()
+        except Exception:
+            pass
+        try:
+            w.show()
+        except Exception:
+            pass
+        if os.name == "nt":   # Windows only brings a window forward this way
+            try:
+                w.on_top = True
+                time.sleep(0.15)
+                w.on_top = False
+            except Exception:
+                pass
+    threading.Thread(target=run, daemon=True).start()
+
 
 
 def _open_request(path):
-    """A .ava to open: kept until the page asks for it; a page that is already up is told at once."""
+    """A .ava to open: kept until the page asks for it; a page that is already up is told at once.
+    182: told from a helper thread — this runs inside macOS's «open these files» event on the window's own thread, and
+    waiting there for the page froze the app (a .ava double-clicked while the app was open)."""
     _OPEN_REQ["path"] = str(path)
     w = _OPEN_REQ.get("window")
     if w is not None and _OPEN_REQ.get("ready"):
-        try:
-            w.evaluate_js("window.avaOpenPath && window.avaOpenPath(" + json.dumps(str(path)) + ")")
-            _OPEN_REQ["path"] = None
-        except Exception:
-            pass
+        _OPEN_REQ["path"] = None
+        _call_page("window.avaOpenPath && window.avaOpenPath(" + json.dumps(str(path)) + ")")
+        _focus_window()
 
 
 def _ava_in_args():
@@ -1109,13 +1313,138 @@ def _mac_open_files():
         print("[ava] .ava file type (macOS):", e)
 
 
+def _instance_addr():
+    import hashlib
+    who = hashlib.sha1(str(Path.home()).encode("utf-8")).hexdigest()[:10]
+    if os.name == "nt":
+        return r"\\.\pipe\avaye-javid-shah-" + who, "AF_PIPE"
+    return str(Path.home() / "AvaModels" / ".instance.sock"), "AF_UNIX"
+
+
+def _single_instance(first):
+    """182 · one copy of the app at a time (the founder's log showed two running at once): a second launch hands its file
+    (if any) to the running copy, which comes forward, and quits. False = this launch should quit."""
+    from multiprocessing.connection import Listener, Client
+    addr, fam = _instance_addr()
+    key = b"ava-instance-1"
+    try:
+        c = Client(addr, family=fam, authkey=key)
+        try:
+            if os.name == "nt":
+                import ctypes
+                ctypes.windll.user32.AllowSetForegroundWindow(-1)   # ASFW_ANY: the running copy may come forward
+        except Exception:
+            pass
+        c.send({"open": first})
+        c.close()
+        return False
+    except Exception:
+        pass
+    try:
+        if fam == "AF_UNIX" and os.path.exists(addr):
+            os.unlink(addr)   # left by a copy that did not close normally
+        listener = Listener(addr, family=fam, authkey=key)
+    except Exception as e:
+        print("[ava] single instance:", e)
+        return True
+
+    def serve():
+        while True:
+            try:
+                conn = listener.accept()
+                msg = conn.recv()
+                conn.close()
+            except Exception:
+                continue
+            p = (msg or {}).get("open") if isinstance(msg, dict) else None
+            if p:
+                _open_request(p)
+            else:
+                _focus_window()
+    threading.Thread(target=serve, daemon=True).start()
+    return True
+
+
+def _mac_refresh_icons_once():
+    """182 · once per build on macOS: the app re-registers itself with Launch Services and drops the stale Quick Look
+    thumbnails, so .ava files saved before the type existed show the crown too (they kept the plain icon)."""
+    if sys.platform != "darwin" or not getattr(sys, "frozen", False):
+        return
+    import engines
+    mark = Path.home() / "AvaModels" / ".icons-refreshed"
+    try:
+        if mark.exists() and mark.read_text().strip() == str(engines.BUILD):
+            return
+    except Exception:
+        pass
+
+    def run():
+        try:
+            bundle = Path(sys.executable).resolve().parents[2]
+            ls = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+            if os.path.exists(ls) and str(bundle).endswith(".app"):
+                subprocess.run([ls, "-f", str(bundle)], timeout=60, capture_output=True)
+            if os.path.exists("/usr/bin/qlmanage"):
+                subprocess.run(["/usr/bin/qlmanage", "-r", "cache"], timeout=60, capture_output=True)
+            # Spotlight keeps the type a file was given when it was first indexed: .ava files indexed before the app
+            # declared the type still carry a «dynamic» type there, and Finder draws them plain. They are indexed again
+            # (the files themselves are not touched).
+            if os.path.exists("/usr/bin/mdfind") and os.path.exists("/usr/bin/mdimport"):
+                r = subprocess.run(["/usr/bin/mdfind", "kMDItemFSName == '*.ava'c"], timeout=60, capture_output=True, text=True)
+                paths = [q for q in (r.stdout or "").splitlines() if q.lower().endswith(".ava") and os.path.isfile(q)][:5000]
+                for i in range(0, len(paths), 200):
+                    subprocess.run(["/usr/bin/mdimport", *paths[i:i + 200]], timeout=180, capture_output=True)
+            mark.parent.mkdir(parents=True, exist_ok=True); mark.write_text(str(engines.BUILD))
+        except Exception as e:
+            print("[ava] icon refresh:", e)
+    threading.Thread(target=run, daemon=True).start()
+
+
+def _session_begin():
+    """182 · a recovery copy left behind by a session that did not end normally is offered (engines.recovery_session_begin)."""
+    import engines
+    try:
+        engines._RECOVERY_DIR.mkdir(parents=True, exist_ok=True)
+        _STATE["recovery_offer"] = engines.recovery_session_begin()
+    except Exception as e:
+        print("[ava] recovery at launch:", e)
+
+
+def _on_closing():
+    """182 · the window's close button (and ⌘Q): with unsaved changes the page asks first — Save, Don't save or Cancel —
+    and closes the window itself afterwards (app_quit). Nothing here may wait for the page (macOS calls this on the
+    window's own thread)."""
+    if _STATE["dirty"] and not _STATE["allow_close"]:
+        _call_page("window.avaAskBeforeClose && window.avaAskBeforeClose()")
+        return False
+    return True
+
+
+def _on_closed():
+    """182 · a normal close with nothing unsaved (or after Save / Don't save): this session's recovery copy goes."""
+    import engines
+    try:
+        if not _STATE["dirty"] or _STATE["allow_close"]:
+            engines.recovery_clear()
+    except Exception:
+        pass
+
+
 def main():
+    first = _ava_in_args()
+    if not _single_instance(first):
+        return   # 182: the running copy opens the file
     api = Api()
     _register_ava_windows()
     _mac_open_files()
-    _first = _ava_in_args()
-    if _first:
-        _OPEN_REQ["path"] = _first
+    _mac_refresh_icons_once()
+    _session_begin()
+    try:
+        engines_mod = __import__("engines"); engines_mod.trash_purge()   # 182: deletions of the last session are final now
+    except Exception as e:
+        print("[ava] trash:", e)
+    if first:
+        _OPEN_REQ["path"] = first
     # 126: the gate is the WHOLE window until the licence verifies — the app's UI
     # is never loaded behind it, so there is nothing to reveal by closing a dialog.
     import engines
@@ -1137,6 +1466,11 @@ def main():
         min_size=(420, 640))
     api._window = window
     _OPEN_REQ["window"] = window
+    try:   # 182: unsaved changes are asked about before the window closes
+        window.events.closing += _on_closing
+        window.events.closed += _on_closed
+    except Exception as e:
+        print("[ava] close guard:", e)
     # 177 · the window's own process (WKWebView's web content on macOS) is watched with the engine and the Chatterbox
     #       worker: every 30 s into the log, and a warning on the page past a quarter of the computer's memory (179)
     web = {"pid": None}

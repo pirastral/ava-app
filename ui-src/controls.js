@@ -47,7 +47,7 @@ function listRowA(sel, o, recent){ const v = o.value, pv = sel.dataset.preview !
     + (pv ? listSb('pv', v, 'play', 'شنیدن', 'Listen', 'opacity-70 hover:opacity-100') : '')
     + (o.dataset.pin !== undefined && !recent ? listSb('pin', v, pinned ? 'pin' : 'pin-off', pinned ? 'پیش‌فرض همین است' : 'پیش‌فرض کن', pinned ? 'This is the default' : 'Make default', pinned ? 'text-primary' : 'opacity-50 hover:opacity-100') : '')
     + (o.dataset.del !== undefined && !recent ? listSb('del', v, 'trash-2', 'حذف', 'Delete', 'opacity-60 hover:text-error') : '')
-    + (recent ? listSb('unrecent', v, 'x', 'حذف از اخیراً', 'Remove from recent', 'opacity-60 hover:text-error') : '') + '</a>'; }
+    + (recent ? listSb('unrecent', v, 'trash-2', 'حذف از اخیراً', 'Remove from recent', 'opacity-60 hover:text-error') : '') + '</a>'; }
 function listGrpA(gi, gr){ const has = gr.items.some(o => o.selected);
   return `<a class="avgrp flex items-center gap-2 ${has ? 'menu-active' : ''}" data-grp="${gi}" tabindex="-1" aria-haspopup="listbox" aria-expanded="false"><span class="min-w-0 flex-1 whitespace-normal break-words" dir="auto">${lesc(gr.g)}</span>`
     + `<span class="shrink-0 text-xs tabular-nums opacity-60">${gr.items.length}</span><svg class="avchev size-3.5 shrink-0 opacity-70"><use href="#i-chevron-left"/></svg></a>`; }
@@ -76,12 +76,22 @@ function listOpen(sel, anchor){ if (!sel) return; anchor = anchor || sel._btn ||
   const ul = box.querySelector('.avul'), act = ul.querySelector('a.menu-active');   // the choice in view (and focused: the keys work at once)
   if (act) ul.scrollTop = Math.max(0, act.offsetTop - ul.clientHeight / 2 + act.offsetHeight / 2);
   const first = act || ul.querySelector('a[data-pick], a.avgrp'); if (first) try { first.focus({ preventScroll: true }); } catch (e) {} }
-function listPlace(){ if (!LIST) return; const { box, anchor, dir } = LIST, r = anchor.getBoundingClientRect(), rtl = dir === 'rtl';
-  box.style.maxHeight = 'none'; box.style.width = 'max-content'; box.style.maxWidth = Math.min(LIST_W, innerWidth - 2 * LIST_EDGE) + 'px';
-  const nat = Math.ceil(box.getBoundingClientRect().width) + 2, w = Math.min(innerWidth - 2 * LIST_EDGE, Math.max(r.width, nat)); box.style.width = w + 'px'; box.style.maxWidth = '';   // +2: a label that just fits never wraps on a rounding
+// 182: the field the list belongs to, even when the inspector drew it again while the list was opening (its first opening
+//      found a field no longer on the page and the list landed in the window's top-left corner)
+function listAnchor(){ let a = LIST.anchor; if ((!a || !a.isConnected || !a.getClientRects().length) && LIST.sel && LIST.sel._btn && LIST.sel._btn.isConnected){ a = LIST.anchor = LIST.sel._btn; a.setAttribute('aria-expanded', 'true'); a.classList.add('avopen'); } return a; }
+function listPlace(){ if (!LIST) return; const anchor = listAnchor(), { box, dir } = LIST, r = anchor.getBoundingClientRect(), rtl = dir === 'rtl';
+  if (!r.width && !r.height){ box.style.visibility = 'hidden'; if ((LIST.tries = (LIST.tries || 0) + 1) < 20) requestAnimationFrame(listPlace); return; }
+  box.style.visibility = '';
+  // 182: in the inspector a list is never wider than its field's row (the inspector's inner width) — the engine list was
+  //      wider than the engine field and ran out over the editor
+  const row = anchor.closest('aside') ? (anchor.closest('fieldset') || anchor.parentElement) : null, rr = row ? row.getBoundingClientRect() : null;
+  const cap = rr ? Math.max(r.width, rr.width) : innerWidth - 2 * LIST_EDGE;
+  box.style.maxHeight = 'none'; box.style.width = 'max-content'; box.style.maxWidth = Math.min(LIST_W, cap, innerWidth - 2 * LIST_EDGE) + 'px';
+  const nat = Math.ceil(box.getBoundingClientRect().width) + 2, w = Math.min(cap, innerWidth - 2 * LIST_EDGE, Math.max(r.width, nat)); box.style.width = w + 'px'; box.style.maxWidth = '';   // +2: a label that just fits never wraps on a rounding
   const h = box.scrollHeight + 2, below = innerHeight - r.bottom - LIST_GAP - LIST_EDGE, above = r.top - LIST_GAP - LIST_EDGE;
   const want = Math.min(h, LIST_H), up = want > below && above > below, mh = Math.max(120, Math.min(want, up ? above : below)); box.style.maxHeight = mh + 'px';
-  const left = Math.max(LIST_EDGE, Math.min(innerWidth - w - LIST_EDGE, rtl ? r.right - w : r.left)), top = up ? Math.max(LIST_EDGE, r.top - LIST_GAP - box.offsetHeight) : r.bottom + LIST_GAP;
+  const x0 = rr ? Math.max(LIST_EDGE, Math.min(rr.left, r.left)) : LIST_EDGE, x1 = rr ? Math.min(innerWidth - LIST_EDGE, Math.max(rr.right, r.right)) : innerWidth - LIST_EDGE;
+  const left = Math.max(x0, Math.min(x1 - w, rtl ? r.right - w : r.left)), top = up ? Math.max(LIST_EDGE, r.top - LIST_GAP - box.offsetHeight) : r.bottom + LIST_GAP;
   Object.assign(box.style, { left: left + 'px', top: top + 'px', right: 'auto', bottom: 'auto' });
   const side = listSideOf(box.getBoundingClientRect(), 220); box.querySelectorAll('.avchev use').forEach(u => u.setAttribute('href', side === 'left' ? '#i-chevron-left' : '#i-chevron-right')); }
 function listSideOf(br, ww){ const roomL = br.left - LIST_EDGE, roomR = innerWidth - br.right - LIST_EDGE;   // a group opens toward the room (Persian: left first)
@@ -109,14 +119,18 @@ function listClose(refocus){ clearTimeout(SUB_T); clearTimeout(SUB_X); SUB_X = 0
 function listToggle(sel, anchor){ if (LIST && LIST.sel === sel && LIST.anchor === anchor){ listClose(true); return; } openDD(sel, anchor); }
 function openDD(sel, b){ if (sel && sel.tagName === 'SELECT') listOpen(sel, b); }   // speakers.js wraps it: opening a voice list clears its yellow dot
 function filterDD(q){ if (!LIST) return; LIST.q = String(q || '').trim().toLowerCase(); listSubClose(); LIST.box.querySelector('.avul').innerHTML = listItems(LIST.sel, LIST.M, LIST.q); }
-function listPick(sel, v, kbd){ listClose(!!kbd); if (sel.value !== v){ sel.value = v; sel.dispatchEvent(new Event('input', { bubbles: true })); sel.dispatchEvent(new Event('change', { bubbles: true })); } listLabel(sel); }
+function listPick(sel, v, kbd){ listClose(!!kbd); if (sel.value !== v){ try { HIST_DISP.set(sel, ctlText(sel)); } catch (e) {} sel.value = v;   /* 182: what the list showed before (History) */ sel.dispatchEvent(new Event('input', { bubbles: true })); sel.dispatchEvent(new Event('change', { bubbles: true })); } listLabel(sel); }
 
 // ---------------- clicks, hover, keys ----------------
 document.addEventListener('click', ev => { if (!LIST) return; const t = ev.target; if (!t.closest || !t.closest('#avList, #avSub')) return; ev.preventDefault(); ev.stopPropagation();
   const sel = LIST.sel, pv = t.closest('[data-pv]'); if (pv){ if (sel._preview) sel._preview(pv.dataset.pv); return; }
   const pin = t.closest('[data-pin]'); if (pin){ const f = sel._onPin; listClose(false); if (f) f(pin.dataset.pin); return; }
   const del = t.closest('[data-del]'); if (del){ const f = sel._onDel; listClose(false); if (f) f(del.dataset.del); return; }
-  const ur = t.closest('[data-unrecent]'); if (ur){ const k = sel.dataset.recent, a = LIST.anchor; RECENT[k] = (RECENT[k] || []).filter(x => x !== ur.dataset.unrecent); try { API().settings_set({ ed_recent: RECENT }); } catch (e) {} listClose(false); listOpen(sel, a); return; }
+  const ur = t.closest('[data-unrecent]'); if (ur){ const k = sel.dataset.recent, a = LIST.anchor, v = ur.dataset.unrecent, before = (RECENT[k] || []).slice();   // 182: an undo step
+    const put = list => { RECENT[k] = list; try { API().settings_set({ ed_recent: RECENT }); } catch (e) {} };
+    const o = [...sel.options].find(x => x.value === v), name = o ? o.text.trim() : v;
+    rememberAct('', { item: T('صدای اخیر', 'Recent voice') + ` «${name}»`, what: T('از «اخیراً» برداشته شد', 'Removed from recent'), icon: 'trash-2', undo: () => put(before.slice()), redo: () => put(before.filter(x => x !== v)) });
+    put(before.filter(x => x !== v)); listClose(false); listOpen(sel, a); return; }
   const g = t.closest('a.avgrp'); if (g){ const gi = +g.dataset.grp; if (LIST.sub && LIST.sub.gi === gi) listSubClose(); else listSubOpen(gi, g, false); return; }
   const act = t.closest('[data-act]'); if (act){ const f = selActs(sel)[+act.dataset.act]; listClose(false); if (f) setTimeout(() => f[3](), 0); return; }
   const p = t.closest('a[data-pick]'); if (p) listPick(sel, p.dataset.pick, ev.detail === 0); }, true);   // the keys give the field its focus back; a mouse pick leaves no ring on it
@@ -142,7 +156,7 @@ function listKeys(ev){ if (!LIST) return; const k = ev.key, ae = document.active
   const q = !!(ae && ae.classList && ae.classList.contains('avq')), rows = [...box.querySelectorAll('a[data-pick], a.avgrp, a[data-act]')].filter(a => a.getClientRects().length), i = rows.indexOf(ae);
   const go = n => { const a = rows[Math.max(0, Math.min(rows.length - 1, n))]; if (a){ a.focus({ preventScroll: true }); a.scrollIntoView({ block: 'nearest' }); } };
   const into = rtl ? 'ArrowLeft' : 'ArrowRight', back = rtl ? 'ArrowRight' : 'ArrowLeft';
-  if (k === 'Escape'){ ev.preventDefault(); ev.stopImmediatePropagation(); if (inSub){ const a = LIST.sub.a; listSubClose(); a.focus({ preventScroll: true }); } else listClose(true); return; }
+  if (k === 'Escape'){ ev.preventDefault(); ev.stopImmediatePropagation(); if (inSub){ const a = LIST.sub.a; listSubClose(); a.focus({ preventScroll: true }); } else { const an = LIST.anchor; listClose(false); escBlur(an); } return; }   // 182: closed, no focus ring left on its field
   if (k === 'Tab'){ listClose(false); return; }
   if (k === 'ArrowDown'){ ev.preventDefault(); go(i < 0 ? 0 : i + 1); return; }
   if (k === 'ArrowUp'){ ev.preventDefault(); go(i < 0 ? rows.length - 1 : i - 1); return; }
@@ -160,12 +174,17 @@ addEventListener('resize', () => { listClose(false); closeDD(); closeMenus(); })
 // open list owns the keys (the canvas's arrows, the playhead and play/pause wait), a list's field opens it with ↓ ↑ Enter
 // Space, and Esc closes the open menu, list or preset panel and only that (the line or the object stays selected)
 function keyIsTyping(t){ return !!(t && t.closest && t.closest('input:not([type=range]):not([type=checkbox]):not([type=radio]), textarea, [contenteditable="true"], .lt')); }
+// 182 · Esc: an open menu closes and leaves no focus ring on its button; a field is left (no ring either); and never a beep
+//       (the Mac's web view beeps at a key the page did not take — every Esc is taken, a dialog's own Esc excepted)
+function escBlur(el){ const a = document.activeElement; if (a && a !== document.body && (!el || a === el || (el.contains && el.contains(a)) || a.closest('#avList, #avSub, #ddMenu, details.dropdown'))) try { a.blur(); } catch (e) {} if (el && el.blur) try { el.blur(); } catch (e) {} }
 function keyGuard(ev){
+  if (ev.key === 'Escape' && !document.querySelector('dialog[open]')) ev.preventDefault();
   if (LIST){ if (ev.metaKey || ev.ctrlKey){ listClose(false); return; } listKeys(ev); ev.stopImmediatePropagation(); return; }
   const t = ev.target; if (t && t.classList && t.classList.contains('avtrig') && t._sel){ trigKey(ev, t._sel, t); if (ev.defaultPrevented) ev.stopImmediatePropagation(); return; }
   if (ev.key !== 'Escape') return;
-  const m = document.getElementById('ddMenu'); if (document.querySelector('details.dropdown[open]') || (m && m._open)){ ev.preventDefault(); ev.stopImmediatePropagation(); closeMenus(); closeDD(); return; }
-  if (document.querySelector('dialog[open]') || (typeof VEDIT !== 'undefined' && VEDIT) || keyIsTyping(t)) return;
+  const m = document.getElementById('ddMenu'); if (document.querySelector('details.dropdown[open]') || (m && m._open)){ ev.preventDefault(); ev.stopImmediatePropagation(); const d = document.querySelector('details.dropdown[open] > summary'); closeMenus(); closeDD(); escBlur(d); return; }
+  if (document.querySelector('dialog[open]') || (typeof VEDIT !== 'undefined' && VEDIT)) return;
+  if (keyIsTyping(t)){ if (t.matches && t.matches('input, textarea') && !t.closest('.clr-picker')){ ev.stopImmediatePropagation(); try { t.blur(); } catch (e) {} } return; }   // 182: Esc leaves a field (the script's lines keep their own Esc)
   if ((typeof TRADJ !== 'undefined' && TRADJ && trAdjClose()) || (typeof ANADJ !== 'undefined' && ANADJ && animAdjClose())){ ev.preventDefault(); ev.stopImmediatePropagation(); } }
 
 // ---------------- the field ----------------
@@ -281,11 +300,15 @@ function enhColors(root){ (root || document).querySelectorAll('input[type=color]
   const push = (c, fin) => { inp.value = c; sync(); inp.dispatchEvent(new Event('input', { bubbles: true })); if (fin) inp.dispatchEvent(new Event('change', { bubbles: true })); };
   inp._cfsync = sync; pk._cfx = push;
   hx.addEventListener('change', () => { const c = hex6(hx.value); if (!c){ hx.value = (inp.value || '').toUpperCase(); return; } push(c, true); });
-  hx.addEventListener('input', () => { const c = hex6(hx.value); if (c) push(c, false); });
+  hx.addEventListener('input', () => { const c = hex6(hx.value); if (c){ push(c, false); clrFollow(pk, c); } });
   hx.addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); hx.blur(); } }); }); }
 function syncColors(root){ (root || document).querySelectorAll('input[data-cfx]').forEach(inp => inp._cfsync && inp._cfsync()); }
 // the hex field of a colour field moves the swatch (and the picker) as it is typed
-document.addEventListener('input', ev => { const t = ev.target; if (!t.classList || !t.classList.contains('cfhex')) return; const el = t.closest('.cfield'); if (!el) return; const c = hex6(t.value); if (c) cfApply(el, c, true); }, true);
+document.addEventListener('input', ev => { const t = ev.target; if (!t.classList || !t.classList.contains('cfhex')) return; const el = t.closest('.cfield'); if (!el) return; const c = hex6(t.value); if (c){ cfApply(el, c, true); clrFollow(el.querySelector('.cpk'), c); } }, true);
+// 182 · colours follow what is typed or pasted, at once: in the picker's own hex box (it waited for Enter or for leaving the
+//       box) and in the field beside a swatch (an open picker now follows it too)
+function clrFollow(pk, c){ if (!pk || CLR_EL !== pk || !document.querySelector('.clr-picker.clr-open')) return; const cv = document.getElementById('clr-color-value'); if (!cv || cv === document.activeElement) return; cv.value = c; cv.dispatchEvent(new Event('change', { bubbles: true })); }
+document.addEventListener('input', ev => { const t = ev.target; if (!t || t.id !== 'clr-color-value') return; if (/^#?([0-9a-f]{6}|[0-9a-f]{8})$/i.test(String(t.value).trim())) t.dispatchEvent(new Event('change', { bubbles: true })); }, true);
 
 // Coloris: one picker for every swatch — opens beside it, flips at the window's edges, the frame's colours as swatches
 var CLR_EL = null, CLR_ON = false;
@@ -310,7 +333,7 @@ addEventListener('pywebviewready', themeSync); setTimeout(themeSync, 400);
 // a control's first change (a slider's whole drag, a run of typing in one field, a pick) records the state before it;
 // another control, or a pause of 1.5 s, starts a new step. remember() itself drops a step that changed nothing.
 var HMARK = { el: null, t: 0 };
-function histMark(el){ const now = performance.now(); if (HMARK.el === el && now - HMARK.t < 1500){ HMARK.t = now; return; } HMARK.el = el; HMARK.t = now; remember(); }
+function histMark(el){ const now = performance.now(); if (HMARK.el === el && now - HMARK.t < 1500){ HMARK.t = now; return; } HMARK.el = el; HMARK.t = now; HIST_EL = el; remember(); HIST_EL = null; }   // 182: the step knows its control (History)
 // on the WINDOW, in the capture phase: it runs before every other listener (the colour fields and number fields apply their
 // value in document-level listeners — recorded after them, the step held the new value and ⌘Z brought nothing back)
 ['input', 'change'].forEach(type => window.addEventListener(type, ev => { const t = ev.target; if (!t || !t.closest || !t.matches) return;

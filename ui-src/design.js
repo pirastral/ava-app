@@ -149,7 +149,7 @@ function txtEdStyle(ed, o){ const H = frameH, px = o.size * H, bg = !!(o.bg && o
     ed.focus(); edCaretAt(ed, VED_PT);   /* 177: the caret where the double-click was — never everything selected */
     ed.oninput = () => { o.text = ed.innerText.replace(/\n$/, ''); hugText(o); txtEdStyle(ed, o); VVER++; vDraw(); placeSelBox(); fillXformOnly(); };
     ed.onkeydown = e => { if (e.key === 'Escape'){ e.preventDefault(); ed.blur(); } e.stopPropagation(); };
-    ed.onblur = () => { o.text = ed.innerText.replace(/\n$/, '').trim() || t0; VEDIT = null; ed.classList.add('hidden'); ed.oninput = null; if (o.text === t0) hist.past.pop(); hugText(o); vChanged(); renderTimeline(); showVPanels(); }; }; }
+    ed.onblur = () => { o.text = ed.innerText.replace(/\n$/, '').trim() || t0; VEDIT = null; ed.classList.add('hidden'); ed.oninput = null; if (o.text === t0) dropStep(); hugText(o); vChanged(); renderTimeline(); showVPanels(); }; }; }
 
 // =====================================================================================
 // 176 · SUBTITLES ALWAYS FOLLOW — drawn from the script's lines and the voice's word times, every time (the «follow the
@@ -230,7 +230,7 @@ function drawReactCaption(ctx, W, H, t){ const s = V.subs; if (!s.on || s.reacts
     ev.preventDefault(); remember(); const s = V.subs, o0 = { x: (s.off || {}).x || 0, y: (s.off || {}).y || 0 }, x0 = ev.clientX, y0 = ev.clientY; let moved = false;
     const mv = e => { if (!moved && Math.hypot(e.clientX - x0, e.clientY - y0) < 3) return; moved = true; let nx = o0.x + (e.clientX - x0) / frameW; const snapX = Math.abs(nx) * frameW < 6; if (snapX) nx = 0;
       s.off = { x: nx, y: o0.y + (e.clientY - y0) / frameH }; guides(snapX, false); VVER++; vDraw(); requestAnimationFrame(placeSelBox); };
-    const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); guides(false, false); if (!moved) hist.past.pop(); else { autosave(); fillSub(); } };
+    const up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); guides(false, false); if (!moved) dropStep(); else { autosave(); fillSub(); } };
     addEventListener('pointermove', mv); addEventListener('pointerup', up); }; }
 let SUBKEY_T = 0;
 function subKey(e){ if (e.key === 'Escape'){ e.stopPropagation(); selectV(null); return true; }
@@ -309,13 +309,13 @@ addEventListener('keydown', e => { if (!document.body.classList.contains('vfull'
 // =====================================================================================
 var SFX_REPLACE_A = null;
 function clipPanelEl(){ let p = $('insp-clip'); if (!p){ p = document.createElement('div'); p.id = 'insp-clip'; p.className = 'hidden space-y-3 p-4'; $('insp-music').parentElement.appendChild(p); } return p; }
-const clipVolField = c => `<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T('بلندیِ این کلیپ', "This clip's volume")}</legend><input type="range" data-unit="%" min="0" max="200" step="5" data-def="100" value="${Math.round((c.gain ?? 1) * 100)}" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="clipGain('${c.id}', +this.value)"></fieldset>`;
+const clipVolField = c => `<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T('بلندی', 'Volume')}</legend><input type="range" data-unit="%" min="0" max="200" step="5" data-def="100" value="${Math.round((c.gain ?? 1) * 100)}" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="clipGain('${c.id}', +this.value)"></fieldset>`;
 function showClipPanel(c){ const p = clipPanelEl(); ['line', 'proj', 'music'].forEach(k => $('insp-' + k).classList.add('hidden')); const tl = $('it-line').parentElement; if (tl) tl.classList.add('hidden'); p.classList.remove('hidden');
   if (c.type === 'sfx'){ const it = sfxItems().find(x => x.file === c.file) || {}, fam = sfxFams()[it.fam] || {};
     p.innerHTML = `<div class="flex items-center gap-2"><svg class="size-4 text-primary"><use href="#i-audio-lines"/></svg><span class="text-sm font-bold">${T('افکتِ صوتی', 'Sound effect')}</span></div>
       <div class="flex items-center gap-2 rounded-box border border-base-300 p-2"><button class="btn btn-ghost btn-sm btn-circle" onclick="previewSfx('${escapeHtml(c.file)}')" aria-label="${T('شنیدن', 'Listen')}"><svg class="size-4"><use href="#i-play"/></svg></button>
         <div class="min-w-0 flex-1"><div class="truncate text-sm font-semibold">${escapeHtml(sfxName(c))}</div><div class="truncate text-xs text-base-content/60">${escapeHtml([fam.fa ? T(fam.fa, fam.en) : '', it.sec ? secs(it.sec) : ''].filter(Boolean).join(' · '))}</div></div></div>
-      ${clipVolField(c)}
+      ${clipVolField(c)}${clipLoopField(c)}
       <button class="btn btn-sm w-full gap-1.5 border-base-content/15 bg-base-100" onclick="replaceSfxClip('${c.id}')"><svg class="size-4"><use href="#i-replace"/></svg>${T('جایگزینی با صدای دیگر…', 'Replace with another sound…')}</button>`; }
   else if (c.type === 'ovl'){ const [, r] = rFind(c.rid || c.id); if (!r){ p.classList.add('hidden'); return; } const sp = rSpk(r), k = sp ? spkList().indexOf(sp) : -1;
     p.innerHTML = `<div class="flex items-center gap-2"><svg class="size-4 text-primary"><use href="#i-message-circle"/></svg><span class="text-sm font-bold">${T('واکنشِ هم‌زمان', 'Overlapping reaction')}</span>${rVoiced(r) ? '' : `<span class="badge badge-ghost badge-sm ms-auto">${T('ساخته نشده', 'not generated')}</span>`}</div>
@@ -323,15 +323,41 @@ function showClipPanel(c){ const p = clipPanelEl(); ['line', 'proj', 'music'].fo
         <div class="min-w-0 flex-1"><div class="truncate text-sm font-semibold" dir="auto">${escapeHtml(r.text)}</div><div class="truncate text-xs text-base-content/60">${escapeHtml(sp ? sp.name : T('صدای پروژه', "The project's voice"))}${r.mood ? ' · ' + escapeHtml(toneLabel(r.mood)) : ''}</div></div></div>
       ${clipVolField(c)}
       <div class="grid grid-cols-3 gap-2"><button class="btn btn-sm gap-1 border-base-content/15 bg-base-100" onclick="ovlEdit()"><svg class="size-3.5"><use href="#i-pencil"/></svg>${T('ویرایش', 'Edit')}</button><button class="btn btn-sm gap-1 border-base-content/15 bg-base-100" onclick="ovlRegen()"><svg class="size-3.5"><use href="#i-refresh-cw"/></svg>${T('بازتولید', 'Regenerate')}</button><button class="btn btn-sm gap-1 border-base-content/15 bg-base-100 text-error" onclick="ovlDel()"><svg class="size-3.5"><use href="#i-trash-2"/></svg>${T('حذف', 'Delete')}</button></div>`; }
+  else if (c.type === 'audio'){   // 182: a plain audio clip — its own file, volume, fades, ducking (off) and Loop
+    p.innerHTML = `<div class="flex items-center gap-2"><svg class="size-4 text-primary"><use href="#i-audio-lines"/></svg><span class="text-sm font-bold">${T('کلیپِ صدا', 'Audio clip')}</span></div>
+      <div class="flex items-center gap-2 rounded-box border border-base-300 p-2"><svg class="size-4 shrink-0 opacity-60"><use href="#i-file-audio"/></svg><div class="min-w-0 flex-1"><div class="truncate text-sm font-semibold" dir="auto">${escapeHtml(c.name || '')}</div><div class="truncate text-xs text-base-content/60">${secs(clipNatural(c) || dur(c))}</div></div></div>
+      ${clipVolField(c)}${clipRange(c, 'fadeIn', T('محو شدنِ اول', 'Fade in'), 's', 0, 5, 0.5, 0)}${clipRange(c, 'fadeOut', T('محو شدنِ آخر', 'Fade out'), 's', 0, 5, 0.5, 0)}${clipRange(c, 'duck', T('پایین‌رفتنِ زیرِ صدا', 'Duck under the voice'), 'dB', 0, 24, 1, 0)}
+      <p class="text-xs text-base-content/60">${T('0 دسی‌بل یعنی بدونِ پایین‌رفتن.', '0 dB = no ducking.')}</p>${clipLoopField(c)}`; }
   else { p.classList.add('hidden'); return; }
   try { wireRangeValues(); vResets(p); } catch (err) {} }
-const clipForPanel = () => { if (typeof mode !== 'undefined' && mode === 'video') return null; const c = selClip ? findClip(selClip)[1] : null; return c && (c.type === 'sfx' || c.type === 'ovl') ? c : null; };
+// 182 · the fields a plain audio clip (and the Loop of an effect or a music clip) adds
+const clipRange = (c, key, label, unit, min, max, step, def) => `<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${label}</legend><input type="range" data-unit="${unit}" min="${min}" max="${max}" step="${step}" data-def="${def}" value="${+(c[key] ?? def)}" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="clipSet('${c.id}', '${key}', +this.value)"></fieldset>`;
+const clipLoopField = c => `<label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span class="font-semibold">${T('تکرار', 'Loop')}</span><input type="checkbox" class="toggle toggle-sm toggle-primary" ${clipLooped(c, clipNatural(c) || 0) ? 'checked' : ''} onchange="setClipLoop('${c.id}', this.checked)"></label>`;
+function clipNatural(c){ if (!c) return null;
+  if (c.type === 'music') return musicBuf ? musicBuf.duration : null;
+  if (c.type === 'sfx'){ const b = SFXB.get(c.file); if (b) return b.duration; const it = typeof sfxItems === 'function' ? sfxItems().find(x => x.file === c.file) : null; return it && it.sec ? +it.sec : null; }
+  if (c.type === 'audio'){ const a = AUD.get(c.gulp); return a && a.buf ? a.buf.duration : (c.nat || null); }
+  return null; }
+function audioClip(gulp, name, seconds, at){ return { id: 'a' + (++uid), type: 'audio', lines: [], name: name || '', gulp, in: 0, out: seconds, at: Math.max(0, at || 0), gain: 1, fadeIn: 0, fadeOut: 0, duck: 0, loop: false, nat: seconds }; }
+function restartIfPlaying(){ if (typeof playing !== 'undefined' && playing){ const t = playhead; stopPlay(); seekVisual(t); startPlay(); } }
+function clipSet(id, key, v){ const [, c] = findClip(id); if (!c) return; c[key] = v; autosave(); restartIfPlaying(); }
+function setClipLoop(id, on){ const [, c] = findClip(id); if (!c) return; remember(); c.loop = !!on;
+  if (!on){ const nat = clipNatural(c); if (nat && c.out > nat){ c.out = nat; c.trimOut = 0; } }   // Loop off: a longer clip is its sound's length again, at once
+  renderTimeline(); autosave(); restartIfPlaying(); }
+// 182 · older projects keep how they sound: «Music level under the voice» is folded into each music clip's Volume (one
+//       Volume now), and a clip already longer than its own sound has Loop on
+function migrateAudio182(){
+  const lv = S.music && typeof S.music.level_db === 'number' ? S.music.level_db : -16;
+  if (S.music && !S.music.v182){ if (Math.abs(lv + 16) > 1e-6){ const f = Math.pow(10, (lv + 16) / 20); musicClips().forEach(c => { c.gain = Math.max(0, Math.min(2, (c.gain ?? 1) * f)); }); } S.music.level_db = -16; S.music.v182 = true; }
+  S.tracks.forEach(t => t.clips.forEach(c => { if (!/^(music|sfx|audio)$/.test(c.type || '') || c.loop !== undefined) return; const nat = clipNatural(c); c.loop = !!(nat && c.out > nat + 1e-3); }));
+}
+const clipForPanel = () => { if (typeof mode !== 'undefined' && mode === 'video') return null; const c = selClip ? findClip(selClip)[1] : null; return c && (c.type === 'sfx' || c.type === 'ovl' || c.type === 'audio') ? c : null; };
 { const _si176 = showInsp; showInsp = function(w){ const p = $('insp-clip'); if (p) p.classList.add('hidden'); const r = _si176.apply(this, arguments); const c = w === 'proj' ? clipForPanel() : null; if (c) showClipPanel(c); return r; }; }
 clipVolBox = function(){ const box = $('clipVol'); if (box) box.classList.add('hidden'); const p = $('insp-clip'), c = clipForPanel();
   if (c && (!p || p.classList.contains('hidden') || p._for !== c.id || !p.contains(document.activeElement))){ showClipPanel(c); clipPanelEl()._for = c.id; }
   else if (!c && p && !p.classList.contains('hidden')){ p.classList.add('hidden'); showInsp(sel.size === 1 ? 'line' : 'proj'); } };
 { const _smi176 = showMusicInspector; showMusicInspector = function(){ const r = _smi176.apply(this, arguments); const m = $('insp-music'), c = selClip ? findClip(selClip)[1] : null; let box = $('musicClipVol');
-    if (!box){ box = document.createElement('div'); box.id = 'musicClipVol'; m.insertBefore(box, m.children[1] || null); } box.innerHTML = c && c.type === 'music' ? clipVolField(c) : ''; try { wireRangeValues(); vResets(box); } catch (err) {} return r; }; }
+    if (!box){ box = document.createElement('div'); box.id = 'musicClipVol'; box.className = 'space-y-3'; m.insertBefore(box, m.children[1] || null); } box.innerHTML = c && c.type === 'music' ? clipVolField(c) + clipLoopField(c) : ''; try { wireRangeValues(); vResets(box); } catch (err) {} return r; }; }   // 182: one Volume (with «Music level under the voice» gone) and Loop
 function replaceSfxClip(id){ SFX_REPLACE_A = id; openSfxLib(); const d = $('sfxDlg'); if (d) d.addEventListener('close', () => setTimeout(() => { SFX_REPLACE_A = null; }, 0), { once: true }); }
 { const _as176 = addSfx; addSfx = async function(file){ const id = SFX_REPLACE_A; if (!id) return _as176.apply(this, arguments); SFX_REPLACE_A = null;
     const it = sfxItems().find(x => x.file === file), [, c] = findClip(id); if (!it || !c) return; remember(); if (SFX_PREV){ try { SFX_PREV.stop(); } catch (err) {} SFX_PREV = null; } const d = $('sfxDlg'); if (d && d.open) d.close();
@@ -339,11 +365,11 @@ function replaceSfxClip(id){ SFX_REPLACE_A = id; openSfxLib(); const d = $('sfxD
     renderTimeline(); showClipPanel(c); autosave(); say(T('افکت عوض شد: ', 'Effect replaced: ') + c.name, 'ok'); }; }
 
 // 176 · the audio inspector's reset icons follow the same rule as the video's: shown only when the value is off its default
-const AUD_DEF = { cbxSpeed: 1, cbxExag: 0.8, cbxCfg: 1, cbxTemp: 0, lightSpeed: 1, lightNoise: 0.667, lightNoiseW: 0.8, fishSpeed: 1, fishVolume: 0, fishTemp: 0.7, fishTopP: 0.7, mLevel: -16, mFadeIn: 1.5, mFadeOut: 1.5, mDuckDb: 12,
+const AUD_DEF = { cbxSpeed: 1, cbxExag: 0.8, cbxCfg: 1, cbxTemp: 0, lightSpeed: 1, lightNoise: 0.667, lightNoiseW: 0.8, fishSpeed: 1, fishVolume: 0, fishTemp: 0.7, fishTopP: 0.7, mFadeIn: 1.5, mFadeOut: 1.5, mDuckDb: 12,
   pVoice: 'Charon', pPreset: 'neutral', pState: '', pAge: '', pLang: 'fa', cbxVoice: 'default', fishVoice: 'default', fishLatency: 'normal', fishPreset: 'neutral', fishAge: '', fishState: '',
   pEngine: () => (typeof DEFAULTS !== 'undefined' && DEFAULTS.engine) || 'google', pModel: () => (typeof DEFAULTS !== 'undefined' && DEFAULTS.model) || 'gemini-3.1-flash-tts-preview', fishModel: () => ((DIRECTOR.fish_models || [])[0] || [''])[0] };
 const AUD_SRC = { pVoice: ['proj', 'g_voice'], pPreset: ['proj', 'g_preset'], pState: ['proj', 'g_state'], pAge: ['proj', 'g_age'], pLang: ['proj', 'g_lang'], pEngine: ['proj', 'engine'], pModel: ['proj', 'g_model'],
-  mLevel: ['music', 'level_db'], mFadeIn: ['music', 'fade_in'], mFadeOut: ['music', 'fade_out'], mDuckDb: ['music', 'duck_db'] };
+  mFadeIn: ['music', 'fade_in'], mFadeOut: ['music', 'fade_out'], mDuckDb: ['music', 'duck_db'] };
 function audVal(id, el){ try { if (typeof ENG_MAP !== 'undefined' && ENG_MAP[id]){ const [g, k] = ENG_MAP[id]; return S.proj[g][k]; } const m = AUD_SRC[id]; if (m) return m[0] === 'proj' ? S.proj[m[1]] : S.music[m[1]]; } catch (err) {} return el ? el.value : undefined; }   // the document's value (a control can lag behind it)
 function syncAudioResets(){ document.querySelectorAll('aside [data-rst]').forEach(b => { const id = b.dataset.rst, el = $(id); if (!el || !(id in AUD_DEF)) return; let d = AUD_DEF[id]; if (typeof d === 'function') d = d();
   const v = audVal(id, el), same = typeof d === 'number' ? Math.abs(+v - d) < 1e-6 : String(v ?? '') === String(d); rstMark(b, !same); }); }
@@ -356,7 +382,11 @@ document.addEventListener('click', ev => { if (ev.target.closest && ev.target.cl
 
 // 176 · a collapse opens by its class (the stylesheet has no :has() any more): kept in step with its checkbox
 function syncCollapses(root){ (root || document).querySelectorAll('.collapse').forEach(c => { const i = c.querySelector(':scope > input[type=checkbox], :scope > input[type=radio]'); if (i) c.classList.toggle('collapse-open', i.checked); }); }
-document.addEventListener('change', ev => { const t = ev.target; if (t && (t.type === 'checkbox' || t.type === 'radio') && t.parentElement && t.parentElement.classList.contains('collapse')) syncCollapses(t.parentElement.parentElement || document); }, true);
+document.addEventListener('change', ev => { const t = ev.target; if (t && (t.type === 'checkbox' || t.type === 'radio') && t.parentElement && t.parentElement.classList.contains('collapse')){ syncCollapses(t.parentElement.parentElement || document); if (t.checked) collapseShown(t.parentElement); } }, true);
+// 182 · a section opened in the inspector: once it has finished opening, its scrolling panel measures itself again (the Mac's
+//       web view kept the old height — the project tab could not scroll down to the speakers) and the section comes into view
+function collapseShown(col){ const sc = col && col.closest('.overflow-y-auto'); if (!sc || !col.closest('aside')) return;
+  setTimeout(() => { const o = sc.style.overflowY; sc.style.overflowY = 'hidden'; void sc.offsetHeight; sc.style.overflowY = o; if (col.classList.contains('collapse-open')) col.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 230); }
 syncCollapses();
 { const _svp176c = showVPanels; showVPanels = function(){ const r = _svp176c.apply(this, arguments); try { syncCollapses($('vinsp')); } catch (err) {} return r; }; }
 { const _rpu176c = renderPodUI; renderPodUI = function(){ const r = _rpu176c.apply(this, arguments); try { syncCollapses($('iv-pod')); } catch (err) {} return r; }; }

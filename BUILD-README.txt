@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist
 ======================================================================
-This zip is the COMPLETE application source as of update 181.
+This zip is the COMPLETE application source as of update 182.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -36,6 +36,12 @@ Replace these files in the repo (paths identical):
   177 — ui/previews/ is COMPLETE now (the founder's samples, levelled): 77 chatterbox/, 77 fish/, 3 light/, 30 per Google model
   178 — ui/previews/ REPLACED: the same 247 files at 128 kb/s (copy the whole folder over the repo's)
 
+  182 — NEW: ui-src/history.js (the History panel), ui-src/drop.js (files into the app: the drop, the limits, the red refusal
+        message, video-mode audio clips, video slides), ui-src/drag.js (moving clips: where a clip lands, edge scrolling,
+        Esc); tools/ui-build/build-editor.py lists all three. CHANGED: engines.py, app.py, en_strings.py, every ui-src/*.js,
+        ui-src/editor.src.html, tools/ui-build/input12p.css, tools/make_doc_icon.py and ava-doc.png / .icns / .ico (the
+        crown 20 % larger — replace all three), ui/index.html. Nothing to delete; ui/previews, voices/, ui/music, ui/sfx
+        unchanged.
   181 — NEW: tools/ava-crown.png (the founder's high-quality crown — the icon tool's source; build-time only, never shipped).
         CHANGED: ava-doc.png, ava-doc.icns, ava-doc.ico (the .ava icon in neutral greys — replace all three),
         tools/make_doc_icon.py, build.spec (the Mac bundle's version is the build number), app.py (Windows: the icon's
@@ -47,6 +53,67 @@ Replace these files in the repo (paths identical):
         ui/gate.html, engines.py (the build number). The three icon files MUST be in the repo or the build fails.
   179 — no files added or removed: engines.py, en_strings.py, app.py (a comment), ui-src/*, tools/ui-build/input12p.css and
         build-editor.py (four more icons), ui/index.html, ui/gate.html changed. ui/previews and voices/ are unchanged.
+
+WHAT CHANGED IN 182 (on top of 181) — the founder's feedback on 181 (10 Oct 2026, items 1–52)
+  · HISTORY (design A, his pick): a History button after undo / redo opens a floating panel — every step described (what
+    changed on what; a round swatch beside every colour named), timed, the current step orange. A click goes to that state:
+    the mode switches when the change was in the other one, the item comes into view, its inspector opens, the item and the
+    exact setting flash, and the playhead moves there when the item exists only at certain times. Undo and redo navigate the
+    same way, one step at a time. The panel closes only with its ✕, the button again or Esc. Opening or creating a project
+    starts a fresh history (nothing of the previous project kept).
+  · UNDO EVERYWHERE: every action records a step (deleting a podcast background clip recorded none); ⌘Z / ⇧⌘Z work while a
+    field has focus (typing in a field = one step); every delete is a step — a recent voice, one of your own samples (its
+    file stays until the step can no longer come back); the history is capped by memory as well.
+  · SAFEGUARDS: «unsaved changes?» before close / open / new; a recovery copy every 1–2 minutes (in the background, only what
+    is new is written) and on every save, offered at the next launch; saves are atomic (temp file → swap) and keep the
+    version they replace; a second launch hands its file to the first; the disk's room is checked before a save or an
+    export; a project from a newer build says so; a project is at most 60 minutes (said from 50).
+  · THE FORK MODEL for speakers and lines (engine → model → voice → reading style → mood): a speaker follows the project and
+    shows its actual choices until one differs; that one is the fork — everything under it belongs to that choice (its
+    defaults until set); a reset gives the parent's choice, and a reset at the fork follows the parent again. A line with a
+    speaker forks from the speaker, one without from the project. «Add a speaker…» from a line's badge gives the line the
+    new speaker.
+  · AUDIO CLIPS: an imported audio file is a plain clip on a Layer (never a line, never music) with Volume, fades, Ducking
+    (0 = off) and Loop. Loop for music, effects and audio clips: trimming out stops at the sound's end; from there it turns
+    Loop on and goes on; shorter than the sound turns it off; Loop off shortens a longer clip at once. A music clip has ONE
+    Volume (+ Loop) — «Music level under the voice» is folded into it for older projects. Tracks are «Speech» and «Layer»,
+    without numbers.
+  · FILES INTO THE APP: drop anywhere on the window — the audio mode puts audio files on a new Layer from the playhead (name
+    order: 2 before 10) and refuses pictures / videos with the reason; the video mode puts pictures (5 s) and videos (full
+    length, with their sound) on a new layer and audio files on another new layer; nothing already there moves; one undo
+    step. Limits on every way in (the drop, the + menus, the slideshow, the music import, voice samples, a speaker's photo):
+    video ≤ 1 GB · 60 min · 4K, audio ≤ 250 MB · 60 min, pictures ≤ 50 MB · 50 MP, 50 files at a time, never past the
+    project's 60 minutes, only what the window can play. Every refusal is listed with its reason in a red message (the
+    export message's look; ✕ or Esc). Files reach the app's store in pieces; M4A works on a Mac (afconvert) and on Windows
+    (the window decodes it); 24-bit WAV is no longer refused.
+  · VIDEO MODE: audio files go on regular layers (there is no audio-only track) as audio clips with Volume, fades, Ducking and
+    Loop — heard in the preview and in the export; a regular layer's + menu has «Audio file…». Pictures, videos and podcast
+    designs move between the regular tracks and the background track (onto it: fill the canvas / a podcast style with its
+    options back; off it: a picture on top in its old box / a template). The slideshow takes videos (full length, with
+    their volume, no Loop; the pictures share the rest).
+  · MOVING CLIPS: the background track is magnetic (dropped between two clips, the later ones make room; taken out, the gap
+    closes); speech tracks are magnetic when «gapless» is on (the script follows); every other track is free — a clip lands
+    where it is dropped (snapping when Snap is on) and gets a new track right there when the spot is taken. The clip
+    follows the pointer, the target track lights up, the timeline scrolls at its edges (clips, trim handles, several clips)
+    and Esc puts everything back.
+  · THE VIDEO EXPORT IS WRITTEN WHILE IT IS MADE (it was held whole in memory until the end): where it goes is asked first,
+    with its estimated size; a cancelled or failed export leaves no file behind.
+  · CHATTERBOX LETS GO OF ITS MEMORY: after a job when it holds more than a quarter of the computer's memory (8 / 16 GB:
+    always; 48 GB: it stays, ~6.5 GB), and on every computer after 5 minutes without a Chatterbox job.
+  · TIMELINE AND EDITOR: the playhead and its time label stay together at every zoom; a gentle zoom slider and pinch-to-zoom
+    (trackpads; ctrl+wheel) around the pointer; clip lengths 8.4s · 01:00 · 01:00:00, flush right; no empty band between
+    the speaker badge and the line numbers; line numbers centred on the grab handle; lists never wider than the inspector;
+    a trash icon to remove a recent voice; the Chatterbox list opens in place; colour fields follow typing live; Esc closes
+    menus and leaves fields without rings or beeps; loop animations up to 6×; In arrows point the way the object moves
+    («Towards»); the gradient's defaults Flow 70 % · Speed 30 %; 4K canvas sizes for every ratio; re-selecting a clip opens
+    its main inspector; the adjust icon light and top-left in both languages.
+  · .ava FILES: the crown 20 % larger (Mac and Windows); older .ava files get the icon too (a Spotlight re-index on the Mac);
+    double-clicking a project while the app runs no longer freezes it.
+  · FOUND ON THE WAY: a file dropped on the window replaced the app's page; adding your own Chatterbox sample set the
+    project's voice to a broken value; the Google reference-recording picker failed silently; dragging a clip into the track
+    above often failed (the floating clip toolbar caught the drop).
+  · THE LOG: a Fish take names its voice. (The word check's 0-of-4 on Fish was the takes: with the same transcriber 16 % of
+    Fish takes fail it against 1 % of Google's.)
 
 WHAT CHANGED IN 181 (on top of 180) — the .ava icon, the founder's way
   · THE .ava ICON IN NEUTRAL GREYS, the way Finder draws its own document icons (his examples: Finder's audio and ZIP icons;

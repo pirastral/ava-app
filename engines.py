@@ -94,8 +94,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 181
-BUILD_FA = "181"
+BUILD = 182
+BUILD_FA = "182"
 
 
 def _diag(tag, **kv):
@@ -1633,6 +1633,13 @@ def chatterbox_via_worker(req, status):
     tries = [0] * len(work)
     got, sr, kills, short, fresh = {}, 24000, 0, False, False
     params = {k: req[k] for k in ("exaggeration", "cfg_weight", "temperature", "speed", "voice_path") if k in req}
+    try:
+        return _cbx_job(clauses, work, tries, got, sr, kills, short, fresh, params, status)
+    finally:
+        _cbx_job_done()                                             # 182: the worker may let go of its memory afterwards
+
+
+def _cbx_job(clauses, work, tries, got, sr, kills, short, fresh, params, status):
     with _cbx_lock:
         pos = 0
         while pos < len(work):
@@ -1744,6 +1751,57 @@ def chatterbox_via_worker(req, status):
         per.append(np.concatenate(seg) if seg else np.zeros(int(sr * 0.15), dtype=np.int16))
     pcm = np.concatenate(per) if per else np.zeros(1, dtype=np.int16)
     return pcm, sr, per
+
+
+# 182 · CHATTERBOX LETS GO OF ITS MEMORY WHEN IT IS NOT WORKING (the founder's item 37, approved): after a job, a worker
+#       holding more than a quarter of this computer's memory unloads (8 and 16 GB computers: always — the model alone
+#       is about 6 GB; 48 GB: it stays, at about 6.5 GB); on every computer it unloads after 5 minutes without a
+#       Chatterbox job. «After a job» = a few seconds after the last request of a run (the lines of one Generate go one
+#       request after another — unloading between them would load the model again for every run). Never in the middle
+#       of a job (it waits for the job's lock).
+_CBX_IDLE_S, _CBX_AFTER_S, _CBX_KEEP_SHARE = 300.0, 15.0, 0.25
+_cbx_last_job = 0.0
+_cbx_idle_thread = None
+
+
+def _cbx_release_due(mb, total, idle):
+    """Why the worker should unload now (None: keep it): 'idle' after 5 minutes without a job; 'share' when, a job just
+    over, it holds more than a quarter of this computer's memory."""
+    if idle >= _CBX_IDLE_S:
+        return "idle"
+    if idle >= _CBX_AFTER_S and mb > _CBX_KEEP_SHARE * total:
+        return "share"
+    return None
+
+
+def _cbx_job_done():
+    global _cbx_last_job, _cbx_idle_thread
+    _cbx_last_job = time.time()
+    if _cbx_idle_thread is not None and _cbx_idle_thread.is_alive():
+        return
+
+    def run():
+        while True:
+            time.sleep(5.0)
+            try:
+                p = _cbx_proc
+                if p is None or p.poll() is not None or not _cbx_last_job:
+                    continue
+                total = _total_mb() or 16000
+                mb = _footprint_mb(p.pid)
+                why = _cbx_release_due(mb, total, time.time() - _cbx_last_job)
+                if not why or not _cbx_lock.acquire(blocking=False):   # a job is running: never in the middle of one
+                    continue
+                try:
+                    if _cbx_proc is p and p.poll() is None and _cbx_release_due(mb, total, time.time() - _cbx_last_job):
+                        _diag("cbx_release", why=why, mb=mb, total=total, idle=round(time.time() - _cbx_last_job))
+                        _cbx_retire_proc(wait=8.0)
+                finally:
+                    _cbx_lock.release()
+            except Exception:
+                pass
+    _cbx_idle_thread = threading.Thread(target=run, daemon=True)
+    _cbx_idle_thread.start()
 
 
 def _cbx_read(p, status):
@@ -2001,19 +2059,38 @@ def gc_gulps(keep_ids):
     return len(_GULP_PCM)
 
 
-def file_gulp(path):
+def file_gulp(path, name=None):
     """A part holding an audio file from disk (108): decoded to mono, kept at
-    its own rate (the splice resamples)."""
+    its own rate (the splice resamples). 182: name = the file's own name (a file
+    dropped on the window reaches the asset store under an id)."""
     p = Path(path)
+    nm = name or p.name
     if not p.is_file():
         raise RuntimeError("فایل پیدا نشد.")
+    audio_limits_check(p, nm)                                       # 182: 250 MB · 60 minutes
     pcm, sr = _decode_audio(p.read_bytes())
     if len(pcm) < sr // 10:
         raise RuntimeError("این فایل صوتی تقریباً خالی است.")
+    audio_seconds_check(len(pcm) / sr, nm)
     gid = next(_gulp_ids)
     _GULP_PCM[gid] = {"sr": sr, "items": [{"kind": "t", "text": "", "span": (0, 0), "pcm": pcm}],
-                      "text": "", "engine": "file", "payload": {"file": p.name}, "born": time.time()}
-    return gid, pcm_to_mp3(pcm, sr), p.name, round(len(pcm) / sr, 1)
+                      "text": "", "engine": "file", "payload": {"file": nm}, "born": time.time()}
+    return gid, pcm_to_mp3(pcm, sr), nm, round(len(pcm) / sr, 1)
+
+
+# 182 · import limits (every way in): audio ≤ 250 MB and ≤ 60 minutes
+AUDIO_MAX_MB, AUDIO_MAX_S = 250, 3600
+
+
+def audio_limits_check(p, name=None):
+    mb = Path(p).stat().st_size / (1 << 20)
+    if mb > AUDIO_MAX_MB:
+        raise RuntimeError(f"«{name or Path(p).name}» {round(mb)} مگابایت است؛ یک فایلِ صوتی حداکثر 250 مگابایت می‌تواند باشد.")
+
+
+def audio_seconds_check(seconds, name):
+    if seconds > AUDIO_MAX_S + 0.5:
+        raise RuntimeError(f"«{name}» {round(seconds / 60)} دقیقه است؛ یک فایلِ صوتی حداکثر 60 دقیقه می‌تواند باشد.")
 
 
 def silence_gulp(seconds, sr=24000):
@@ -3350,13 +3427,55 @@ def cbx_voice_path(voice_id):
 
 
 def cbx_voice_delete(voice_id):
-    """Remove one of the user's own samples (built-ins cannot be removed)."""
+    """Remove one of the user's own samples (built-ins cannot be removed). 182: it is an undo step — the file waits in a
+    trash folder (AvaModels/.trash) until the step can no longer be undone; the next launch empties it."""
     if not voice_id.startswith("u:"):
         raise RuntimeError("نمونه‌های داخل برنامه حذف نمی‌شوند؛ فقط نمونه‌های خودتان.")
     p = _USER_VOICES / os.path.basename(voice_id[2:])
-    if p.exists():
-        p.unlink()
+    token = trash_put(p) if p.exists() else None
+    return cbx_voices(), token
+
+
+def cbx_voice_restore(token):
+    """Undo of a deleted sample: the file comes back from the trash."""
+    trash_back(token)
     return cbx_voices()
+
+
+# 182 · THE TRASH — a file deleted in the app waits here until its step can no longer be undone (each in its own folder,
+#       remembering where it came from); the next launch empties it
+_TRASH_DIR = MODELS_DIR / ".trash"
+
+
+def trash_put(path):
+    import uuid as _uu, shutil
+    path = Path(path)
+    token = _uu.uuid4().hex[:16]
+    d = _TRASH_DIR / token
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "origin.txt").write_text(str(path), encoding="utf-8")
+    shutil.move(str(path), str(d / path.name))
+    return token
+
+
+def trash_back(token):
+    import shutil
+    d = _TRASH_DIR / os.path.basename(str(token or ""))
+    origin = d / "origin.txt"
+    if not origin.exists():
+        raise RuntimeError("این فایل دیگر برنمی‌گردد.")
+    dst = Path(origin.read_text(encoding="utf-8"))
+    src = d / dst.name
+    if src.exists():
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(src), str(dst))
+    shutil.rmtree(str(d), ignore_errors=True)
+    return str(dst)
+
+
+def trash_purge():
+    import shutil
+    shutil.rmtree(str(_TRASH_DIR), ignore_errors=True)
 
 
 def cbx_voice_add(src_path):
@@ -3364,6 +3483,13 @@ def cbx_voice_add(src_path):
     src = Path(src_path)
     if not src.is_file() or src.suffix.lower() not in _VOICE_EXT:
         raise RuntimeError("این فایل صوتی به درد نمی‌خورد؛ یک WAV یا MP3 هشت تا پانزده‌ثانیه‌ای با صدای یک نفر انتخاب کنید.")
+    audio_limits_check(src)                                         # 182: the import limits on every way in
+    try:
+        pcm, sr = _decode_audio(src.read_bytes())
+    except AudioFormatError:
+        pcm, sr = None, 1
+    if pcm is not None:
+        audio_seconds_check(len(pcm) / sr, src.name)
     _USER_VOICES.mkdir(parents=True, exist_ok=True)
     dst = _USER_VOICES / src.name
     k = 2
@@ -5624,12 +5750,28 @@ def music_load(file):
 
 
 def music_delete(file):
+    """182: an undo step — the file waits in the trash (see trash_put) and its library entry is handed back for the undo."""
     p = _MUSIC_DIR / os.path.basename(file)
-    if p.exists():
-        p.unlink()
+    entry = next((e for e in music_list() if e.get("file") == os.path.basename(file)), None)
+    token = trash_put(p) if p.exists() else None
     lib = [e for e in music_list() if e["file"] != os.path.basename(file)]
     (_MUSIC_DIR / "library.json").write_text(json.dumps(lib, ensure_ascii=False), encoding="utf-8")
+    _MUSIC_LAST_DELETE.update(token=token, entry=entry)
     return lib
+
+
+_MUSIC_LAST_DELETE = {"token": None, "entry": None}
+
+
+def music_restore(token, entry):
+    """Undo of a deleted library track: its file and its entry come back."""
+    if token:
+        trash_back(token)
+    lib = [e for e in _music_list_175() if not (entry and e.get("file") == entry.get("file"))]   # this machine's library (not the built-in tracks)
+    if entry and entry.get("file") and not str(entry["file"]).startswith("builtin:"):
+        lib.append(entry)
+    (_MUSIC_DIR / "library.json").write_text(json.dumps(lib, ensure_ascii=False), encoding="utf-8")
+    return music_list()
 
 
 def _envelope(x, sr, attack=0.12, release=0.45, win=0.03):
@@ -5763,25 +5905,59 @@ MOOD_QUERIES = {k: v["openverse"] for k, _, v in MUSIC_STYLES}
 MUSIC_PAGE = 8
 
 
+class AudioFormatError(RuntimeError):
+    """182: a file this computer cannot decode here (the window may still decode it and hand over plain WAV)."""
+
+
 def _decode_audio(raw):
-    """PCM mono int16 + rate from WAV/MP3/OGG/FLAC bytes."""
+    """PCM mono int16 + rate from WAV/MP3/OGG/FLAC bytes (182: + 24-bit/float WAV, and M4A/AAC on a Mac)."""
     import io
     if raw[:4] == b"RIFF":
-        with wave.open(io.BytesIO(raw)) as wf:
-            sr, ch, sw = wf.getframerate(), wf.getnchannels(), wf.getsampwidth()
-            frames = wf.readframes(wf.getnframes())
-        if sw != 2:
-            raise RuntimeError("این فایل WAV شانزده‌بیتی نیست.")
-        a = np.frombuffer(frames, dtype="<i2").astype(np.float32)
-        if ch > 1:
-            a = a.reshape(-1, ch).mean(axis=1)
-        return a.astype(np.int16), sr
+        try:
+            with wave.open(io.BytesIO(raw)) as wf:
+                sr, ch, sw = wf.getframerate(), wf.getnchannels(), wf.getsampwidth()
+                frames = wf.readframes(wf.getnframes()) if sw == 2 else b""
+            if sw == 2:
+                a = np.frombuffer(frames, dtype="<i2").astype(np.float32)
+                if ch > 1:
+                    a = a.reshape(-1, ch).mean(axis=1)
+                return a.astype(np.int16), sr
+        except Exception:
+            pass                                                    # 24-bit, float or extensible WAV → soundfile below
+    err = None
     try:
         import soundfile as sf
         a, sr = sf.read(io.BytesIO(raw), dtype="float32", always_2d=True)
+        return np.clip(a.mean(axis=1) * 32767, -32768, 32767).astype(np.int16), int(sr)
     except Exception as e:
-        raise RuntimeError("این قالب صوتی را نمی‌توانم بخوانم (" + type(e).__name__ + ")؛ WAV، MP3، OGG یا FLAC بدهید.")
-    return np.clip(a.mean(axis=1) * 32767, -32768, 32767).astype(np.int16), int(sr)
+        err = e
+    got = _decode_afconvert(raw)                                    # M4A / AAC / ALAC: the Mac's own decoder
+    if got is not None:
+        return got
+    raise AudioFormatError("این قالب صوتی را نمی‌توانم بخوانم (" + type(err).__name__ + ")؛ WAV، MP3، M4A، OGG یا FLAC بدهید.")
+
+
+def _decode_afconvert(raw):
+    """182: macOS only — afconvert (part of every Mac) turns what Core Audio reads (M4A, AAC, ALAC, CAF…) into 16-bit WAV."""
+    if sys.platform != "darwin" or not Path("/usr/bin/afconvert").exists():
+        return None
+    import tempfile, subprocess, io
+    ext = ".m4a" if raw[4:8] == b"ftyp" else ".aac" if raw[:2] in (b"\xff\xf1", b"\xff\xf9") else ".caf" if raw[:4] == b"caff" else ".audio"
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            src, dst = Path(td) / ("in" + ext), Path(td) / "out.wav"
+            src.write_bytes(raw)
+            r = subprocess.run(["/usr/bin/afconvert", "-f", "WAVE", "-d", "LEI16", str(src), str(dst)], capture_output=True, timeout=900)
+            if r.returncode != 0 or not dst.exists():
+                return None
+            with wave.open(str(dst)) as wf:
+                sr, ch = wf.getframerate(), wf.getnchannels()
+                a = np.frombuffer(wf.readframes(wf.getnframes()), dtype="<i2").astype(np.float32)
+            if ch > 1:
+                a = a.reshape(-1, ch).mean(axis=1)
+            return a.astype(np.int16), sr
+    except Exception:
+        return None
 
 
 def _http_get_json(url, params, headers=None, timeout=30):
@@ -5887,15 +6063,27 @@ def music_fetch(provider, item, status):
     return pcm, sr, entry
 
 
-def music_import(path, status):
-    """A file from disk becomes the bed and joins the library."""
+def music_import(path, status, name=None):
+    """A file from disk becomes the bed and joins the library. 182: the import limits (250 MB · 60 minutes);
+    name = the file's own name when it comes from the asset store."""
     p = Path(path)
+    nm = name or p.name
     if not p.is_file():
         raise RuntimeError("فایل پیدا نشد.")
+    audio_limits_check(p, nm)
     pcm, sr = _decode_audio(p.read_bytes())
-    _MUSIC.update({"pcm": pcm, "sr": sr, "prompt": "file:" + p.name})
-    entry = music_save(pcm, sr, "file", p.stem)
+    audio_seconds_check(len(pcm) / sr, nm)
+    _MUSIC.update({"pcm": pcm, "sr": sr, "prompt": "file:" + nm})
+    entry = music_save(pcm, sr, "file", Path(nm).stem)
     return pcm, sr, entry
+
+
+def music_import_asset(aid, name, status):
+    """182: the music library's import, from a file the window put in the asset store (dropped there afterwards)."""
+    try:
+        return music_import(_ASSET_DIR / f"{aid}.bin", status, name=name)
+    finally:
+        asset_drop(aid)
 
 
 def music_credit(entry):
@@ -6211,6 +6399,7 @@ def _fish_ref_for(voice_id, status):
 def fish_clone_create(path, title, status, transcript=None, enhance=False, visibility="private"):
     """POST /model — a persistent private voice from a clip (Fish runs its own
     ASR on the clip when no transcript is given). Returns the model id."""
+    audio_limits_check(path)                                        # 182: the import limits on every way in
     files = [("voices", (Path(path).name, open(path, "rb").read()))]
     data = [("type", "tts"), ("train_mode", "fast"), ("title", title[:80]), ("visibility", visibility),
             ("enhance_audio_quality", "true" if enhance else "false")]
@@ -6381,7 +6570,9 @@ def _fish_call(text, cfg, status):
     if raw[:4] != b"RIFF":
         raise RuntimeError("Fish Audio صدا برنگرداند (پاسخ WAV نبود): " + raw[:80].decode("utf-8", "replace"))
     pcm, sr = _decode_audio(raw)
-    _diag("fish_take", audio_s=round(len(pcm) / sr, 1), chars=len(text), model=model)
+    rid = body.get("reference_id")
+    _diag("fish_take", audio_s=round(len(pcm) / sr, 1), chars=len(text), model=model,
+          voice=(rid[:12] if isinstance(rid, str) else ("multi" if rid else "default")))   # 182: which voice (the word check's failures cluster by voice)
     if len(pcm) < sr // 5:
         raise _GoogleHTTP(500, "empty take")
     return pcm, sr
@@ -7822,19 +8013,46 @@ def timeline_pcm(spec, status=lambda *a, **k: None):
     end = 0.0
     for c in clips:
         dur = max(0.0, float(c.get("out", 0)) - float(c.get("in", 0)))
-        end = max(end, float(c.get("at", 0)) + dur)
+        end = max(end, float(c.get("at", 0)) + dur)                  # 182: a looping clip runs as long as it says
     for c in (spec or {}).get("clips", []):
         if c.get("silence") is not None:
             end = max(end, float(c.get("at", 0)) + float(c["silence"]))
     status("دارم کلیپ‌های خطِ زمان را کنارِ هم می‌گذارم…")
     mix = np.zeros(int(end * sr) + 1, dtype=np.float32)
+    # 182: the speech the ducking clips listen to — the same rule as the editor's playback (a moment before each
+    #      voice clip to a little after it), as a smooth 0…1 curve
+    duckers = [c for c in clips if float(c.get("duck_db", 0) or 0) > 0]
+    talk = None
+    if duckers:
+        talk = np.zeros(len(mix), dtype=np.float32)
+        for c in clips:
+            if c.get("kind") == "voice" or (c.get("kind") is None and c.get("gulp") is not None and not c.get("file")):
+                a0 = max(0, int((float(c.get("at", 0)) - 0.15) * sr)); b0 = min(len(talk), int((float(c.get("at", 0)) + float(c.get("out", 0)) - float(c.get("in", 0)) + 0.6) * sr))
+                if b0 > a0:
+                    talk[a0:b0] = 1.0
+        k = max(1, int(sr * 0.1))                                  # 100 ms ramps, like the editor's 0.1 s steps
+        talk = np.convolve(talk, np.ones(k, dtype=np.float32) / k, mode="same")
     for c in clips:
         src = rendered[ckey(c)]
-        a = max(0, int(float(c.get("in", 0)) * sr)); b = min(len(src), int(float(c.get("out", 0)) * sr))
-        if b <= a:
+        a = max(0, int(float(c.get("in", 0)) * sr)); b = int(float(c.get("out", 0)) * sr)
+        looped = bool(c.get("loop")) if "loop" in c else (b > len(src) + int(sr * 0.001) and (c.get("kind") == "audio" or bool(c.get("file"))))   # the editor says; an older caller: longer than its sound
+        if not looped:
+            b = min(len(src), b)
+        if b <= a or not len(src):
             continue
         at = max(0, int(float(c.get("at", 0)) * sr))
-        seg = src[a:b].astype(np.float32) * float(c.get("gain", 1.0))
+        seg = (src[np.arange(a, b) % len(src)] if looped else src[a:b]).astype(np.float32) * float(c.get("gain", 1.0))
+        n = len(seg)
+        fi = min(int(float(c.get("fade_in", 0) or 0) * sr), n // 2); fo = min(int(float(c.get("fade_out", 0) or 0) * sr), n // 2)
+        if fi > 0:
+            seg[:fi] *= np.linspace(0, 1, fi, dtype=np.float32)
+        if fo > 0:
+            seg[n - fo:] *= np.linspace(1, 0, fo, dtype=np.float32)
+        dk = float(c.get("duck_db", 0) or 0)
+        if dk > 0 and talk is not None:
+            m = min(n, len(talk) - at)
+            if m > 0:
+                seg[:m] *= 1.0 - (1.0 - 10 ** (-dk / 20.0)) * talk[at:at + m]
         n = min(len(seg), len(mix) - at)
         if n > 0:
             mix[at:at + n] += seg[:n]
@@ -8201,8 +8419,10 @@ def _asset_meta_path(aid):
     return _ASSET_DIR / f"{aid}.json"
 
 
-def asset_begin(name, mime):
+def asset_begin(name, mime, size=0):
     _ASSET_DIR.mkdir(parents=True, exist_ok=True)
+    if size:
+        need_room(_ASSET_DIR, float(size) / (1 << 20))              # 182: a big file on a nearly full disk says so before it starts
     aid = _uuid_v.uuid4().hex[:16]
     _ASSET_OPEN[aid] = open(_ASSET_DIR / f"{aid}.bin", "wb")
     _asset_meta_path(aid).write_text(_json_v.dumps({"name": str(name)[:200], "mime": str(mime)[:80]}, ensure_ascii=False), encoding="utf-8")
@@ -8213,7 +8433,18 @@ def asset_chunk(aid, b64):
     f = _ASSET_OPEN.get(aid)
     if not f:
         raise RuntimeError("این فایل باز نیست؛ دوباره اضافه‌اش کنید.")
-    f.write(_b64m.b64decode(b64))
+    try:
+        f.write(_b64m.b64decode(b64))
+    except OSError as e:                                            # 182: the disk filled up on the way — the piece-file goes
+        _ASSET_OPEN.pop(aid, None)
+        try:
+            f.close()
+        except Exception:
+            pass
+        asset_drop(aid)
+        if getattr(e, "errno", None) == 28:
+            raise RuntimeError("روی این دیسک جا نیست؛ کمی جا باز کنید و دوباره امتحان کنید.")
+        raise
     return True
 
 
@@ -8232,6 +8463,57 @@ def asset_info(aid):
     return {"id": aid, "size": p.stat().st_size, "name": meta.get("name", aid), "mime": meta.get("mime", "application/octet-stream")}
 
 
+def asset_drop(aid):
+    """182: an asset that was only on its way somewhere (an audio file that became a part) leaves the store."""
+    aid = str(aid)
+    if not aid.isalnum():
+        return False
+    for q in (_ASSET_DIR / f"{aid}.bin", _asset_meta_path(aid)):
+        try:
+            q.unlink()
+        except FileNotFoundError:
+            pass
+        except Exception:
+            pass
+    return True
+
+
+def asset_gulp(aid, name=None):
+    """182: an audio file dropped on (or picked in) the window, now in the asset store, becomes a part — the limits
+    (250 MB · 60 minutes), decoded to mono at its own rate; the stored copy goes (the part holds the sound)."""
+    p = _ASSET_DIR / f"{aid}.bin"
+    try:
+        if not p.exists():
+            raise RuntimeError("فایل پیدا نشد.")
+        return file_gulp(p, name=name or (asset_info(aid) or {}).get("name"))
+    finally:
+        asset_drop(aid)
+
+
+def asset_to_mp3(aid, name=None):
+    """182: an audio file the window cannot decode itself (Ogg on some Macs) is decoded here and kept as an MP3 asset
+    (the video mode plays and exports it from that); the original copy goes."""
+    p = _ASSET_DIR / f"{aid}.bin"
+    try:
+        if not p.exists():
+            raise RuntimeError("فایل پیدا نشد.")
+        nm = name or (asset_info(aid) or {}).get("name") or "audio"
+        audio_limits_check(p, nm)
+        pcm, sr = _decode_audio(p.read_bytes())
+        if len(pcm) < sr // 10:
+            raise RuntimeError("این فایل صوتی تقریباً خالی است.")
+        audio_seconds_check(len(pcm) / sr, nm)
+        nid = asset_begin(Path(nm).stem + ".mp3", "audio/mpeg")
+        f = _ASSET_OPEN.pop(nid)
+        try:
+            f.write(pcm_to_mp3(pcm, sr))
+        finally:
+            f.close()
+        return {"id": nid, "seconds": round(len(pcm) / sr, 3), "name": nm}
+    finally:
+        asset_drop(aid)
+
+
 def asset_read(aid, offset=0, size=4 * 1024 * 1024):
     p = _ASSET_DIR / f"{aid}.bin"
     with open(p, "rb") as f:
@@ -8241,23 +8523,66 @@ def asset_read(aid, offset=0, size=4 * 1024 * 1024):
 
 
 def save_stream_open(path):
+    """182: the video is written while it is encoded — into «name.exporting» beside the chosen file, which becomes the
+    file only when it is complete (a cancelled or failed export never leaves a broken file, nor spoils one already there)."""
     job = _uuid_v.uuid4().hex[:12]
-    _SAVE_OPEN[job] = {"f": open(path, "wb"), "path": str(path)}
+    p = Path(path)
+    tmp = p.with_name(p.name + ".exporting")
+    _SAVE_OPEN[job] = {"f": open(tmp, "wb"), "path": str(p), "tmp": str(tmp)}
     return job
 
 
-def save_stream_chunk(job, b64):
-    _SAVE_OPEN[job]["f"].write(_b64m.b64decode(b64))
+def _save_stream_write(job, data, position=None):
+    j = _SAVE_OPEN.get(job)
+    if not j:
+        raise RuntimeError("این خروجی دیگر باز نیست؛ دوباره بسازید.")
+    f = j["f"]
+    try:
+        f.seek(0, 2) if position is None else f.seek(int(position))
+        f.write(data)
+    except OSError as e:
+        if getattr(e, "errno", None) == 28:
+            save_stream_abort(job)
+            raise RuntimeError("روی این دیسک جا نیست؛ کمی جا باز کنید و دوباره امتحان کنید.")
+        raise
     return True
+
+
+def save_stream_chunk(job, b64):
+    return _save_stream_write(job, _b64m.b64decode(b64))
+
+
+def save_stream_at(job, b64, position):
+    """182: a piece at its place in the file (the muxer goes back at the end to fill in the sizes and the index)."""
+    return _save_stream_write(job, _b64m.b64decode(b64), position)
 
 
 def save_stream_close(job):
     j = _SAVE_OPEN.pop(job, None)
     if j:
         j["f"].close()
+        if j.get("tmp"):
+            os.replace(j["tmp"], j["path"])
         _diag("video_export_saved", path=j["path"][-60:])
         return j["path"]
     return None
+
+
+def save_stream_abort(job):
+    """182: a cancelled or failed export — its unfinished file goes."""
+    j = _SAVE_OPEN.pop(job, None)
+    if not j:
+        return False
+    try:
+        j["f"].close()
+    except Exception:
+        pass
+    try:
+        if j.get("tmp"):
+            os.unlink(j["tmp"])
+    except OSError:
+        pass
+    return True
 
 
 def _video_asset_ids(doc):
@@ -8314,6 +8639,425 @@ def project_unpack(data):
             v["pod"]["bgAsset"] = remap[v["pod"]["bgAsset"]]
         _diag("project_unpack_assets", n=len(remap))
     return out
+
+
+# ===========================================================================
+# 182 · SAFE PROJECT FILES — the founder: «build every single one of the safeguards».
+#   · a save is written beside the file and swapped in only once it is complete, so a crash or a full disk in the middle
+#     of a save can no longer destroy the only copy; the version it replaces is kept in AvaModels/backups (the last three
+#     of each project); free space is checked first;
+#   · the zip is written straight to disk (no second copy of the whole project in memory) and read from disk (pictures
+#     and videos are copied out piece by piece);
+#   · a recovery copy (AvaModels/recovery) is refreshed every minute or two while there are unsaved changes and on every
+#     manual save — never older than the saved file — and offered at the next launch if the app did not close normally;
+#   · a project saved by a newer build says so (its build number travels with the opened document);
+#   · opening or starting a project lets go of everything the previous one held in memory (its voiced parts, its music).
+# ===========================================================================
+import shutil as _sh_p
+_BACKUP_DIR = MODELS_DIR / "backups"
+_RECOVERY_DIR = MODELS_DIR / "recovery"
+BACKUPS_KEEP = 3
+
+
+def _project_gids(doc):
+    """Every voiced part the document refers to: the clips' and (176) every reaction recording's."""
+    return sorted({int(c["gulp"]) for t in (doc or {}).get("tracks", []) for c in t.get("clips", [])
+                   if c.get("gulp") is not None and int(c["gulp"]) in _GULP_PCM} | _ovl_gids(doc))
+
+
+def project_pack_to(doc, target):
+    """The whole project as one zip, written to `target` (a path or an open binary file)."""
+    import zipfile, io as _io, json as _json, wave as _wave
+    gids, parts = _project_gids(doc), {}
+    ids = _video_asset_ids(doc)
+    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("project.json", _json.dumps({"format": "ava-project", "version": 1, "build": BUILD, "doc": doc}, ensure_ascii=False))
+        for g in gids:
+            e = _GULP_PCM[g]; pcm = _assemble(e).astype(np.int16); sr = int(e["sr"])
+            wb = _io.BytesIO(); w = _wave.open(wb, "wb"); w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr); w.writeframes(pcm.tobytes()); w.close()
+            z.writestr(f"parts/{g}.wav", wb.getvalue())
+            parts[str(g)] = {"sr": sr, "text": e.get("text", ""), "lines": e.get("lines") or [], "words_ts": e.get("words_ts"),
+                             "engine": e.get("engine"), "spans": gulp_lines(g)}
+        z.writestr("parts.json", _json.dumps(parts, ensure_ascii=False, default=lambda o: list(o) if isinstance(o, tuple) else (o.item() if hasattr(o, "item") else str(o))))
+        if _MUSIC.get("pcm") is not None:
+            z.writestr("music.mp3", pcm_to_mp3(_MUSIC["pcm"], _MUSIC["sr"]))
+            z.writestr("music.json", _json.dumps({"name": _MUSIC.get("name") or "music"}, ensure_ascii=False))
+        if ids:
+            man = {}
+            for i in sorted(ids):
+                z.write(_ASSET_DIR / f"{i}.bin", f"assets/{i}.bin", compress_type=zipfile.ZIP_STORED)
+                man[i] = asset_info(i)
+            z.writestr("assets.json", _json_v.dumps(man, ensure_ascii=False))
+    _diag("project_pack", parts=len(gids), music=_MUSIC.get("pcm") is not None, assets=len(ids))
+
+
+def project_pack(doc):
+    import io as _io
+    buf = _io.BytesIO()
+    project_pack_to(doc, buf)
+    return buf.getvalue()
+
+
+def project_unpack(src):
+    """A .ava (its bytes, or its path — read from disk without loading the whole file) back into the editor's document."""
+    import zipfile, io as _io
+    if not isinstance(src, (bytes, bytearray)) and os.path.isdir(str(src)):
+        return _project_unpack_zip(_RecoveryDir(src))      # a recovery copy (a folder laid out like a .ava's inside)
+    with zipfile.ZipFile(_io.BytesIO(src) if isinstance(src, (bytes, bytearray)) else str(src)) as z:
+        return _project_unpack_zip(z)
+
+
+def _project_unpack_zip(z):
+    import io as _io, json as _json, wave as _wave, base64 as _b64
+    names = set(z.namelist())
+    if "project.json" not in names:
+        raise RuntimeError("این فایل، فایلِ پروژهٔ آوای جاوید شاه نیست.")
+    meta = _json.loads(z.read("project.json").decode("utf-8"))
+    parts = _json.loads(z.read("parts.json").decode("utf-8")) if "parts.json" in names else {}
+    remap = {}
+    for g, info in parts.items():
+        w = _wave.open(_io.BytesIO(z.read(f"parts/{g}.wav"))); sr = w.getframerate()
+        pcm = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).copy(); w.close()
+        ng = next(_gulp_ids)
+        _GULP_PCM[ng] = {"sr": sr, "items": [{"kind": "t", "text": "", "span": (0, 0), "pcm": pcm}], "text": info.get("text", ""),
+                         "lines": info.get("lines") or [], "words_ts": [tuple(x) for x in (info.get("words_ts") or [])] or None,
+                         "engine": info.get("engine"), "restored": True, "saved_spans": info.get("spans")}
+        remap[int(g)] = ng
+    doc = meta.get("doc") or {}
+    for t in doc.get("tracks", []):
+        for c in t.get("clips", []):
+            if c.get("gulp") is not None and int(c["gulp"]) in remap:
+                c["gulp"] = remap[int(c["gulp"])]
+    music = None
+    if "music.mp3" in names:
+        mname = (_json.loads(z.read("music.json").decode("utf-8")) if "music.json" in names else {}).get("name") or "music"
+        raw = z.read("music.mp3")
+        music = {"b64": _b64.b64encode(raw).decode("ascii"), "name": mname}
+        _PENDING_OPEN["music"] = (raw, mname)          # becomes the engine's music when the page commits the project
+    if "assets.json" in names:
+        _ASSET_DIR.mkdir(parents=True, exist_ok=True)
+        man = _json_v.loads(z.read("assets.json").decode("utf-8"))
+        amap = {}
+        for i, am in man.items():
+            size = z.getinfo(f"assets/{i}.bin").file_size; dst = _ASSET_DIR / f"{i}.bin"
+            nid = i if (not dst.exists() or dst.stat().st_size == size) else _uuid_v.uuid4().hex[:16]
+            with z.open(f"assets/{i}.bin") as fi, open(_ASSET_DIR / f"{nid}.bin", "wb") as fo:
+                _sh_p.copyfileobj(fi, fo, 4 << 20)
+            _asset_meta_path(nid).write_text(_json_v.dumps({"name": (am or {}).get("name", nid), "mime": (am or {}).get("mime", "")}, ensure_ascii=False), encoding="utf-8")
+            amap[i] = nid
+        v = doc.get("video") or {}
+        for o in v.get("objects", []):
+            if o.get("asset") in amap:
+                o["asset"] = amap[o["asset"]]
+        if (v.get("pod") or {}).get("bgAsset") in amap:
+            v["pod"]["bgAsset"] = amap[v["pod"]["bgAsset"]]
+        _diag("project_unpack_assets", n=len(amap))
+    if not music:
+        _PENDING_OPEN["music"] = None
+    _diag("project_unpack", parts=len(remap), music=bool(music))
+    return {"doc": doc, "music": music, "remap": {str(k): v for k, v in remap.items()}, "build": int(meta.get("build") or 0)}
+
+
+_PENDING_OPEN = {"music": None}
+
+
+def project_forget(keep=()):
+    """Starting a project: everything the previous one held in memory goes (its voiced parts, its music)."""
+    keep = {int(k) for k in (keep or ())}
+    gone = [g for g in list(_GULP_PCM) if g not in keep]
+    for g in gone:
+        _GULP_PCM.pop(g, None)
+    _MUSIC.update(pcm=None, sr=None, prompt="", name=None)
+    _G_LAST["tail"] = ""
+    _diag("project_forget", parts=len(gone), kept=len(keep))
+    return len(gone)
+
+
+def project_commit(keep=()):
+    """The page has taken the opened project: the previous one's parts and music go; the opened file's music (if it has
+    one) becomes the engine's music, so exporting and saving again keep it."""
+    gone = project_forget(keep)
+    pend, _PENDING_OPEN["music"] = _PENDING_OPEN.get("music"), None
+    if pend:
+        raw, name = pend
+        try:
+            pcm, sr = _decode_audio(raw)
+            _MUSIC.update(pcm=pcm, sr=sr, prompt="project:" + str(name), name=name)
+        except Exception as e:
+            _diag("project_music_decode_failed", error=str(e)[:120])
+    return gone
+
+
+def project_drop(ids=()):
+    """The page said no to an opened project (a newer build's file): its parts go, the current project stays as it was."""
+    n = 0
+    for g in ids or ():
+        try:
+            n += _GULP_PCM.pop(int(g), None) is not None
+        except (TypeError, ValueError):
+            pass
+    _PENDING_OPEN["music"] = None
+    return n
+
+
+def project_estimate_mb(doc):
+    """About how big the project file will be: its voiced parts (16-bit), its music, its pictures and videos."""
+    b = 0
+    for g in _project_gids(doc):
+        e = _GULP_PCM.get(g) or {}
+        try:
+            b += sum(len(it["pcm"]) for it in e.get("items", []) if it.get("pcm") is not None) * 2
+        except Exception:
+            pass
+    if _MUSIC.get("pcm") is not None:
+        b += int(len(_MUSIC["pcm"]) / max(1, _MUSIC.get("sr") or 44100) * 24000)   # the mp3 (~192 kb/s)
+    for i in _video_asset_ids(doc):
+        try:
+            b += (_ASSET_DIR / f"{i}.bin").stat().st_size
+        except OSError:
+            pass
+    return b / (1 << 20) + 1
+
+
+def free_mb(folder):
+    try:
+        return _sh_p.disk_usage(str(folder)).free / (1 << 20)
+    except Exception:
+        return None
+
+
+def need_room(folder, need_mb):
+    """Refuses (with the numbers) when the disk under `folder` has less room than `need_mb` and a margin."""
+    free = free_mb(folder)
+    if free is not None and free < need_mb * 1.1 + 64:
+        raise RuntimeError(f"روی این دیسک جا نیست: این کار حدود {round(need_mb)} مگابایت جا لازم دارد و فقط {round(free)} مگابایت آزاد است. "
+                           "کمی جا باز کنید یا جای دیگری را انتخاب کنید.")
+
+
+def _backup_previous(path):
+    """The version a save replaces goes to AvaModels/backups (the last BACKUPS_KEEP of each project)."""
+    import glob as _g
+    path = Path(path)
+    try:
+        _BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        stem = re.sub(r"[^\w\-. ]+", "_", path.stem)[:80] or "project"
+        _sh_p.copy2(str(path), str(_BACKUP_DIR / f"{stem} {time.strftime('%Y-%m-%d %H.%M.%S')}.ava"))
+        olds = sorted(_BACKUP_DIR.glob(f"{_g.escape(stem)} *.ava"), key=lambda q: q.stat().st_mtime)
+        for q in olds[:-BACKUPS_KEEP]:
+            q.unlink()
+    except Exception as e:
+        _diag("backup_failed", error=str(e)[:120])
+
+
+def project_save_safe(doc, path):
+    """Writes the project beside its file and swaps it in only when it is complete; keeps the version it replaces."""
+    path = Path(path)
+    need_room(path.parent, project_estimate_mb(doc))
+    tmp = path.with_name(path.name + f".saving-{os.getpid()}")
+    try:
+        with open(tmp, "wb") as f:
+            project_pack_to(doc, f)
+            f.flush()
+            os.fsync(f.fileno())
+        if path.exists():
+            _backup_previous(path)
+        os.replace(str(tmp), str(path))
+    finally:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
+    _diag("project_saved", size_mb=round(path.stat().st_size / (1 << 20), 1))
+    return str(path)
+
+
+# ---- the recovery copy: a FOLDER that grows with the project instead of a whole project file written again every
+#      minute and a half (with a long project and its videos that was gigabytes each time — editing would have felt it).
+#      Laid out like the inside of a .ava: recovery.json (the document + the parts' text and timing, swapped in whole),
+#      parts/<id>.wav (each voiced part, written ONCE), music.mp3 (when the music changes). Pictures and videos are not
+#      copied — they stay in the app's own store (AvaModels/assets), where the project refers to them. «current» is this
+#      session's copy; at launch a copy left behind by a session that did not end normally becomes «offered».
+_REC_LIVE = _RECOVERY_DIR / "current"
+_REC_OFFER = _RECOVERY_DIR / "offered"
+_REC_STATE = {"parts": {}, "music": None}
+_REC_LOCK = __import__("threading").Lock()          # the timer's copy and a manual save's copy never write at once
+
+
+def _rec_part_fp(e):
+    items = tuple((id(it.get("pcm")), -1 if it.get("pcm") is None else len(it["pcm"])) for it in e.get("items", []))
+    return (id(e), int(e.get("sr") or 0), items, e.get("text"), id(e.get("lines")), id(e.get("words_ts")))
+
+
+def _rec_write_atomic(path, data):
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "wb") as f:
+        f.write(data)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(str(tmp), str(path))
+
+
+def recovery_write(doc, orig_path=None, name=None, from_save=False):
+    """Brings the recovery copy up to date: only new or changed parts are written; the document is swapped in whole."""
+    with _REC_LOCK:
+        return _recovery_write(doc, orig_path, name, from_save)
+
+
+def _recovery_write(doc, orig_path, name, from_save):
+    import io as _io, json as _json, wave as _wave
+    live = _REC_LIVE
+    (live / "parts").mkdir(parents=True, exist_ok=True)
+    gids, parts, todo = _project_gids(doc), {}, []
+    for g in gids:
+        e = _GULP_PCM[g]; fp = _rec_part_fp(e)
+        if _REC_STATE["parts"].get(g, (None,))[0] != fp or not (live / "parts" / f"{g}.wav").exists():
+            todo.append((g, fp))
+    need = sum(sum(len(it["pcm"]) for it in _GULP_PCM[g].get("items", []) if it.get("pcm") is not None) * 2 for g, _ in todo) / (1 << 20)
+    if need > 1:
+        need_room(_RECOVERY_DIR, need)
+    for g, fp in todo:
+        e = _GULP_PCM[g]; pcm = _assemble(e).astype(np.int16); sr = int(e["sr"])
+        wb = _io.BytesIO(); w = _wave.open(wb, "wb"); w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr); w.writeframes(pcm.tobytes()); w.close()
+        _rec_write_atomic(live / "parts" / f"{g}.wav", wb.getvalue())
+        _REC_STATE["parts"][g] = (fp, {"sr": sr, "text": e.get("text", ""), "lines": e.get("lines") or [], "words_ts": e.get("words_ts"),
+                                       "engine": e.get("engine"), "spans": gulp_lines(g)})
+    for g in gids:
+        parts[str(g)] = _REC_STATE["parts"][g][1]
+    music = None
+    if _MUSIC.get("pcm") is not None:
+        mfp = (id(_MUSIC["pcm"]), len(_MUSIC["pcm"]), _MUSIC.get("sr"))
+        if _REC_STATE["music"] != mfp or not (live / "music.mp3").exists():
+            _rec_write_atomic(live / "music.mp3", pcm_to_mp3(_MUSIC["pcm"], _MUSIC["sr"]))
+            _REC_STATE["music"] = mfp
+        music = {"name": _MUSIC.get("name") or "music"}
+    body = {"project": {"format": "ava-project", "version": 1, "build": BUILD, "doc": doc}, "parts": parts, "music": music}
+    _rec_write_atomic(live / "recovery.json", _json.dumps(body, ensure_ascii=False, default=lambda o: list(o) if isinstance(o, tuple) else (o.item() if hasattr(o, "item") else str(o))).encode("utf-8"))
+    keep = {f"{g}.wav" for g in gids}
+    for q in (live / "parts").glob("*.wav"):
+        if q.name not in keep:
+            try:
+                q.unlink()
+                _REC_STATE["parts"].pop(int(q.stem), None)
+            except (OSError, ValueError):
+                pass
+    if music is None and (live / "music.mp3").exists():
+        (live / "music.mp3").unlink()
+        _REC_STATE["music"] = None
+    meta = {"path": str(orig_path) if orig_path else None, "name": name or "", "at": time.time(), "build": BUILD, "from_save": bool(from_save)}
+    if from_save and orig_path:
+        try:
+            st = os.stat(str(orig_path)); meta["saved_size"], meta["saved_mtime"] = st.st_size, st.st_mtime
+        except OSError:
+            pass
+    _rec_write_atomic(live / "meta.json", _json.dumps(meta, ensure_ascii=False).encode("utf-8"))
+    _diag("recovery_written", new_parts=len(todo), parts=len(gids), from_save=bool(from_save))
+    return True
+
+
+class _RecoveryDir:
+    """A recovery folder read with the same names as a .ava's inside (so the project file reader reads it too)."""
+    def __init__(self, folder):
+        import json as _json
+        self.root = Path(folder)
+        j = _json.loads((self.root / "recovery.json").read_text(encoding="utf-8"))
+        self._mem = {"project.json": _json.dumps(j["project"], ensure_ascii=False).encode("utf-8"),
+                     "parts.json": _json.dumps(j.get("parts") or {}, ensure_ascii=False).encode("utf-8")}
+        files = [f"parts/{g}.wav" for g in (j.get("parts") or {})]
+        if j.get("music") and (self.root / "music.mp3").exists():
+            self._mem["music.json"] = _json.dumps(j["music"], ensure_ascii=False).encode("utf-8")
+            files.append("music.mp3")
+        self._names = set(self._mem) | set(files)
+
+    def namelist(self):
+        return sorted(self._names)
+
+    def read(self, name):
+        return self._mem[name] if name in self._mem else (self.root / name).read_bytes()
+
+
+def _rec_meta(folder):
+    m, j = folder / "meta.json", folder / "recovery.json"
+    if not (m.exists() and j.exists()):
+        return None
+    try:
+        info = json.loads(m.read_text(encoding="utf-8"))
+    except Exception:
+        info = {}
+    try:
+        info["size_mb"] = round(sum(q.stat().st_size for q in folder.rglob("*") if q.is_file()) / (1 << 20), 1)
+    except OSError:
+        pass
+    return info
+
+
+def _rec_worth(info):
+    """Is there something the saved file does not have? A copy written by a manual save, with that file unchanged since,
+    is just the saved file."""
+    if not info:
+        return False
+    if info.get("from_save") and info.get("path"):
+        try:
+            st = os.stat(str(info["path"]))
+            if st.st_size == info.get("saved_size") and abs(st.st_mtime - float(info.get("saved_mtime") or 0)) < 2:
+                return False
+        except OSError:
+            pass
+    return True
+
+
+def recovery_session_begin():
+    """At launch. A copy this app left behind (it closes with nothing unsaved, or after Save / Don't save, and then clears
+    its copy — a copy still there means the last session did not end normally) becomes the one offered; a newer one
+    replaces an older offered copy. Returns whether there is one to offer."""
+    _REC_STATE["parts"].clear(); _REC_STATE["music"] = None
+    try:
+        info = _rec_meta(_REC_LIVE)
+        if info and _rec_worth(info):
+            _sh_p.rmtree(str(_REC_OFFER), ignore_errors=True)
+            os.replace(str(_REC_LIVE), str(_REC_OFFER))
+        else:
+            _sh_p.rmtree(str(_REC_LIVE), ignore_errors=True)
+        for q in (_RECOVERY_DIR / "current.ava", _RECOVERY_DIR / "current.json", _RECOVERY_DIR / "session.open"):
+            if q.exists():
+                q.unlink()                                   # earlier 182 drafts' files
+    except Exception as e:
+        _diag("recovery_begin_failed", error=str(e)[:120])
+    return _rec_meta(_REC_OFFER) is not None
+
+
+def recovery_info():
+    """The copy offered at launch (where it came from, when, its size) — None when there is none."""
+    return _rec_meta(_REC_OFFER)
+
+
+def recovery_open():
+    """Opens the offered copy; it then becomes this session's copy (the project is still unsaved)."""
+    info = recovery_info()
+    if not info:
+        raise RuntimeError("نسخهٔ بازیابی پیدا نشد.")
+    out = project_unpack(str(_REC_OFFER))
+    out["recovery"] = info
+    try:
+        _sh_p.rmtree(str(_REC_LIVE), ignore_errors=True)
+        os.replace(str(_REC_OFFER), str(_REC_LIVE))
+        _REC_STATE["parts"].clear(); _REC_STATE["music"] = None
+    except OSError as e:
+        _diag("recovery_adopt_failed", error=str(e)[:120])
+    return out
+
+
+def recovery_discard():
+    """«Discard» on the offer: the offered copy goes."""
+    _sh_p.rmtree(str(_REC_OFFER), ignore_errors=True)
+    return True
+
+
+def recovery_clear():
+    """This session's copy goes (closing with nothing unsaved, or «Don't save»)."""
+    _sh_p.rmtree(str(_REC_LIVE), ignore_errors=True)
+    _REC_STATE["parts"].clear(); _REC_STATE["music"] = None
+    return True
 
 
 # ===========================================================================
@@ -8454,7 +9198,7 @@ def mix_music_clips(voice, vsr, music, msr, clips, level_db=-16.0, duck=True, du
             seg[n - fo:] *= np.linspace(1, 0, fo)
         bed[at:at + n] += seg
     vr = float(np.sqrt(np.mean(v * v))) or 1.0
-    nz = bed[np.abs(bed) > 1e-3]; mr = float(np.sqrt(np.mean(nz * nz))) if len(nz) else 1.0
+    nz = m[np.abs(m) > 1e-3]; mr = float(np.sqrt(np.mean(nz * nz))) if len(nz) else 1.0   # 182: the music's own loudness (each clip's Volume then counts)
     bed *= (vr / mr) * (10 ** (level_db / 20.0))
     if duck and len(v):
         env = _envelope(v / 32768.0, vsr); gate = np.clip(env / 0.6, 0.0, 1.0); g = 1.0 - (1.0 - 10 ** (-duck_db / 20.0)) * gate
