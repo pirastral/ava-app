@@ -102,6 +102,13 @@ EXACT = {
     'روی خطِ زمان چیزی برای ساختن نیست.': 'There is nothing on the timeline to build.',
     'دارم کلیپ\u200cهای خطِ زمان را کنارِ هم می\u200cگذارم…': "Placing the timeline's clips…",
     'ساختنِ فایل از خطِ زمان': 'building the file from the timeline',
+    # 179 · Chatterbox memory: flushed and carried on
+    "مدل چترباکس دوباره بارگذاری می‌شود…": "Reloading the Chatterbox model…",
+    "حافظهٔ چترباکس خالی شد؛ کار از همین‌جا ادامه دارد…": "Chatterbox memory was flushed; the work carries on from here…",
+    "حافظهٔ چترباکس خالی شد؛ مدل دوباره بارگذاری می‌شود و کار از همین‌جا ادامه دارد…": "Chatterbox memory was flushed; the model is reloading and the work carries on from here…",
+    "حافظهٔ پردازندهٔ گرافیکی برای چترباکس کم آمد؛ حافظه را خالی می‌کنم و همین تکه را دوباره می‌سازم…": "The graphics memory ran short for Chatterbox; flushing it and making this piece again…",
+    "حافظهٔ پردازندهٔ گرافیکی برای چترباکس کم آمد؛ حافظه را خالی می‌کنم و این تکه را در دو نیمه می‌سازم…": "The graphics memory ran short for Chatterbox; flushing it and making this piece in two halves…",
+    "حافظهٔ آزاد این دستگاه تمام شد؛ چترباکس را نگه داشتم تا دستگاه قفل نکند و همین تکه را دوباره می‌سازم…": "This computer ran out of free memory; Chatterbox was stopped so it would not freeze, and this piece is made again…",
 }
 PATTERNS = [
  (r"^مدلِ زمان‌بندیِ واژه‌ها: (" + D + ")%$", "Word-timing model: {0}%"),
@@ -130,7 +137,7 @@ PATTERNS = [
  (r"^حافظهٔ چترباکس خالی شد \((\S+) گیگابایت آزاد شد\)؛ دفعهٔ بعد چند ثانیه بیشتر طول می‌کشد\.$", "Chatterbox memory was released ({0} GB freed); the next part takes a few seconds longer."),
  (r"^چترباکس به (\S+) گیگابایت حافظه رسید و برای اینکه دستگاه قفل نکند متوقف شد؛ دفعهٔ بعد یک نسخهٔ تازه از آن ساخته می‌شود — همین بخش را دوباره بسازید\.$", "Chatterbox reached {0} GB of memory and was stopped so the Mac would not freeze; a fresh copy starts next time — generate this part again."),
  (r"^حافظهٔ آزاد برای چترباکس کم است \(فقط (\S+) مگابایت\)\. (.*)$", "Free memory is low for Chatterbox (only {0} MB). {1}"),
- (r"^هشدار: حافظهٔ آزاد کم است \((\S+) گیگابایت\)؛ ممکن است کار کند پیش برود\. (.*)$", "Warning: free memory is low ({0} GB); things may go slowly. {1}"),
+ (r"^هشدار: حافظهٔ آزاد کم است \((\S+) گیگابایت\)؛ ممکن است کار کند پیش برود\. (.*)$", "Warning: free memory is low ({0} GB); things may go slowly. Closing other programs helps."),
  (r"^ساخت دوبارهٔ (\S+) تکهٔ تغییرکرده…$", "Regenerating {0} changed piece(s)…"),
  (r"^جراحی واژه‌ای: فقط «(.+?)» دوباره ساخته می‌شود…$", "Word surgery: only “{0}” is regenerated…"),
  (r"^یک‌نفس خواندن جواب نداد \((.+?)\)؛ تکه‌تکه می‌سازیم\.$", "One-take reading failed ({0}); generating piece by piece."),
@@ -150,4 +157,10 @@ PATTERNS = [
  (r"^(\S+) بخشِ حذف‌شده از صدا برداشته شد.*$", "{0} deleted stretch(es) removed from the audio; nothing regenerated."),
  (r"^(\S+) بخش با صداهای متفاوت ساخته می‌شود.*$", "{0} runs with different voices will be made; unselected lines keep their own voice."),
  (r"^Fish Audio ASR \((\d+)\): (.*)$", "Fish Audio ASR ({0}): {1}"),
+ # 179 · Chatterbox memory: flushed and carried on
+ (r"^چترباکس به (\S+) گیگابایت حافظه رسید؛ حافظه را خالی می‌کنم و همین تکه را دوباره می‌سازم…$", "Chatterbox reached {0} GB of memory; flushing it and making this piece again…"),
+ (r"^چترباکس به (\S+) گیگابایت حافظه رسید؛ حافظه را خالی می‌کنم و این تکه را در دو نیمه می‌سازم…$", "Chatterbox reached {0} GB of memory; flushing it and making this piece in two halves…"),
+ (r"^حافظهٔ آزاد این دستگاه کم است \((\S+) گیگابایت\)؛ منتظرم برنامه‌های دیگر حافظه را پس بدهند — اگر می‌توانید چندتایی را ببندید…$", "This computer is low on free memory ({0} GB); waiting for other programs to give some back — close a few if you can…"),
+ (r"^حافظهٔ آزاد این دستگاه برای چترباکس کافی نیست \((\S+) گیگابایت آزاد است\)\. چند برنامهٔ دیگر را ببندید و دوباره بسازید\.$", "This computer does not have enough free memory for Chatterbox ({0} GB free). Close a few programs and generate again."),
+ (r"^این تکه حتی در دو نیمه هم در حافظهٔ این دستگاه جا نشد \(چترباکس به (\S+) گیگابایت رسید\)\. برنامه‌های دیگر را ببندید یا این خط را کوتاه‌تر کنید و دوباره بسازید\.$", "This piece did not fit in this computer's memory even in two halves (Chatterbox reached {0} GB). Close other programs or shorten this line, then generate again."),
 ]

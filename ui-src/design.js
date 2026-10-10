@@ -34,10 +34,10 @@ function legendReset(holder, cls, tipFa, tipEn){ const fs = holder && holder.clo
   if (!b){ lg.classList.add('flex', 'w-full', 'items-center'); if (!lg.querySelector('.rv, .lgsp')) lg.insertAdjacentHTML('beforeend', '<span class="lgsp flex-1"></span>'); lg.insertAdjacentHTML('beforeend', `<button type="button" class="${cls} btn btn-ghost btn-xs btn-square -my-1 opacity-50 hover:opacity-100" data-tip="${tipFa || 'بازنشانی به پیش‌فرض'}" data-tip-en="${tipEn || 'Reset to default'}" aria-label="reset"><svg class="size-3.5"><use href="#i-rotate-ccw"/></svg></button>`); b = lg.querySelector('.' + cls); }
   legendTidy(lg); return b; }
 function cfMount(id, key, frame){ const box = $(id); if (!box) return; box.innerHTML = colorField(key, frame); const el = box.querySelector('.cfield'), f = CF[key]; if (!el || !f) return;
-  const b = legendReset(box, 'cfrst'); if (b){ b.dataset.cfk = key; b.classList.toggle('invisible', cdist(hex6(f.get()) || '#ffffff', hex6(f.def) || '#ffffff') < 1); } }
+  const b = legendReset(box, 'cfrst'); if (b){ b.dataset.cfk = key; rstMark(b, cdist(hex6(f.get()) || '#ffffff', hex6(f.def) || '#ffffff') >= 1); } }
 function cfPaint(el, c){ if (!el) return; const lab = el.querySelector('.cpick'), inp = el.querySelector('input[type=color]'), hx = el.querySelector('.cfhex'), f = CF[el.dataset.cf], fs = el.closest('fieldset'), rs = fs && fs.querySelector('legend .cfrst');
   if (lab) lab.style.background = c; if (inp && inp.value !== c) inp.value = c; if (hx && document.activeElement !== hx) hx.value = c.toUpperCase();
-  el.querySelectorAll('.cfsw').forEach(s => ['ring-2', 'ring-primary'].forEach(k => s.classList.toggle(k, cdist(s.dataset.c, c) < 6))); if (rs && f) rs.classList.toggle('invisible', cdist(c, hex6(f.def) || c) < 1); }
+  el.querySelectorAll('.cfsw').forEach(s => ['ring-2', 'ring-primary'].forEach(k => s.classList.toggle(k, cdist(s.dataset.c, c) < 6))); if (rs && f) rstMark(rs, cdist(c, hex6(f.def) || c) >= 1); }
 let CF_LIVE = null;
 function cfApply(el, c, live){ const f = CF[el.dataset.cf]; c = hex6(c); if (!f || !c) return; if (live){ if (CF_LIVE !== el){ remember(); CF_LIVE = el; } } else if (CF_LIVE !== el) remember(); f.set(c, true); cfPaint(el, c); if (!live) CF_LIVE = null; VVER++; vDraw(); autosave(); }
 document.addEventListener('click', ev => { const rb = ev.target.closest && ev.target.closest('legend .cfrst'); if (rb){ ev.preventDefault(); const el = rb.closest('fieldset').querySelector('.cfield'), f = el && CF[el.dataset.cf]; if (f) cfApply(el, f.def, false); return; }
@@ -66,8 +66,8 @@ function numField(key){ const f = NF[key]; if (!f) return ''; const v = Math.rou
   return `<div class="nfield flex items-center gap-1.5" data-nf="${key}" dir="ltr"><div class="join flex-1"><button type="button" class="btn btn-sm join-item btn-square border-base-content/15 bg-base-100" data-nfd="-1" aria-label="−"><svg class="size-3.5"><use href="#i-minus"/></svg></button>`
     + `<label class="input input-sm join-item flex-1 gap-1"><input type="number" class="nfin min-w-0 flex-1 text-center tabular-nums" value="${v}" min="${f.min}" max="${f.max}" step="1">${f.unit ? `<span class="label">${f.unit}</span>` : ''}</label>`
     + `<button type="button" class="btn btn-sm join-item btn-square border-base-content/15 bg-base-100" data-nfd="1" aria-label="+"><svg class="size-3.5"><use href="#i-plus"/></svg></button></div></div>`; }
-function nfMount(id, key){ const box = $(id); if (!box) return; box.innerHTML = numField(key); const f = NF[key], b = legendReset(box, 'nfrst'); if (b && f){ b.dataset.nfk = key; b.classList.toggle('invisible', Math.round(f.get()) === f.def); } }
-function nfApply(el, v){ const f = NF[el.dataset.nf]; if (!f) return; v = Math.round(Math.max(f.min, Math.min(f.max, +v || f.def))); remember(); f.set(v); const inp = el.querySelector('.nfin'); if (inp) inp.value = v; const fs = el.closest('fieldset'), rs = fs && fs.querySelector('legend .nfrst'); if (rs) rs.classList.toggle('invisible', v === f.def); VVER++; vDraw(); autosave(); }
+function nfMount(id, key){ const box = $(id); if (!box) return; box.innerHTML = numField(key); const f = NF[key], b = legendReset(box, 'nfrst'); if (b && f){ b.dataset.nfk = key; rstMark(b, !(Math.round(f.get()) === f.def)); } }
+function nfApply(el, v){ const f = NF[el.dataset.nf]; if (!f) return; v = Math.round(Math.max(f.min, Math.min(f.max, +v || f.def))); remember(); f.set(v); const inp = el.querySelector('.nfin'); if (inp) inp.value = v; const fs = el.closest('fieldset'), rs = fs && fs.querySelector('legend .nfrst'); if (rs) rstMark(rs, v !== f.def); VVER++; vDraw(); autosave(); }
 document.addEventListener('click', ev => { const rb = ev.target.closest && ev.target.closest('legend .nfrst'); if (rb){ ev.preventDefault(); const el = rb.closest('fieldset').querySelector('.nfield'), f = el && NF[el.dataset.nf]; if (f) nfApply(el, f.def); return; }
   const el = ev.target.closest && ev.target.closest('.nfield'); if (!el) return; const f = NF[el.dataset.nf]; if (!f) return;
   const b = ev.target.closest('[data-nfd]'); if (b){ ev.preventDefault(); nfApply(el, Math.round(f.get()) + (+b.dataset.nfd) * (ev.shiftKey ? 10 : 1)); } });
@@ -84,8 +84,8 @@ function vResets(root){ (root || $('vinsp') || document).querySelectorAll('input
       if (d === undefined) return; r.dataset.def = d; }
     const lg = r.closest('fieldset') && r.closest('fieldset').querySelector('legend'); if (!lg) return; let b = lg.querySelector('.vrst');
     if (!b){ lg.classList.add('flex', 'w-full', 'items-center'); lg.insertAdjacentHTML('beforeend', `<button type="button" class="vrst btn btn-ghost btn-xs btn-square -my-1 opacity-50 hover:opacity-100" data-tip="بازنشانی به پیش‌فرض" data-tip-en="Reset to default" aria-label="reset"><svg class="size-3.5"><use href="#i-rotate-ccw"/></svg></button>`); b = lg.querySelector('.vrst');
-      b.onclick = ev => { ev.preventDefault(); ev.stopPropagation(); r.value = r.dataset.def; r.dispatchEvent(new Event('input', { bubbles: true })); r.dispatchEvent(new Event('change', { bubbles: true })); r.dispatchEvent(new Event('rangeset')); b.classList.add('invisible'); }; }
-    legendTidy(lg); const sync = () => b.classList.toggle('invisible', Math.abs(+r.value - +r.dataset.def) < 1e-9); sync(); if (!r._vrs){ r._vrs = true; r.addEventListener('input', sync); r.addEventListener('rangeset', sync); } }); }
+      b.onclick = ev => { ev.preventDefault(); ev.stopPropagation(); r.value = r.dataset.def; r.dispatchEvent(new Event('input', { bubbles: true })); r.dispatchEvent(new Event('change', { bubbles: true })); r.dispatchEvent(new Event('rangeset')); rstMark(b, false); }; }
+    legendTidy(lg); const sync = () => rstMark(b, Math.abs(+r.value - +r.dataset.def) >= 1e-9); sync(); if (!r._vrs){ r._vrs = true; r.addEventListener('input', sync); r.addEventListener('rangeset', sync); } }); }
 
 // =====================================================================================
 // 176 · TEXT — the box hugs what it says (auto width), or keeps a width and wraps (fixed width, set by dragging a side
@@ -191,7 +191,7 @@ fillSub = function(){ const s = V.subs, cues = cuesNow(), q = cues[V.subSel]; $(
   document.querySelectorAll('#iv-sub input[name=sp]').forEach(r => { r.checked = r.value === (s.place || 'bottom'); r.onchange = () => { if (!r.checked) return; remember(); V.subs.place = r.value; V.subs.off = { x: 0, y: 0 }; VVER++; vDraw(); autosave(); requestAnimationFrame(placeSelBox); fillSub(); }; });
   { const lg = document.querySelector('#iv-sub input[name=sp]').closest('fieldset').querySelector('legend'), moved = s.off && (Math.abs(s.off.x) > 1e-4 || Math.abs(s.off.y) > 1e-4); let b = lg.querySelector('.vrst');
     if (!b){ lg.classList.add('flex', 'w-full', 'items-center'); lg.insertAdjacentHTML('beforeend', `<span class="flex-1"></span><button type="button" class="vrst btn btn-ghost btn-xs btn-square -my-1 opacity-50 hover:opacity-100" data-tip="برگرداندن به جای خودش" data-tip-en="Back to its place" aria-label="reset"><svg class="size-3.5"><use href="#i-rotate-ccw"/></svg></button>`); b = lg.querySelector('.vrst'); b.onclick = () => { remember(); V.subs.off = { x: 0, y: 0 }; V.subs.place = 'bottom'; VVER++; vDraw(); autosave(); requestAnimationFrame(placeSelBox); fillSub(); }; }
-    b.classList.toggle('invisible', !moved && (s.place || 'bottom') === 'bottom'); }   // 178: the reset icon also brings a chosen place back to the bottom
+    rstMark(b, moved || (s.place || 'bottom') !== 'bottom'); }   // 178: the reset icon also brings a chosen place back to the bottom
   CF.subColor = { get: () => V.subs.color || '#ffffff', set: c => { V.subs.color = c; }, def: '#ffffff' }; cfMount('subColorF', 'subColor', true);
   CF.subHi = { get: () => V.subs.hi || '#e9603b', set: c => { V.subs.hi = c; }, def: '#e9603b' }; cfMount('subHiColorF', 'subHi', true); $('subHiColorBox').classList.toggle('hidden', (s.hiMode || 'none') === 'none');
   const an = $('subAnim'); an.value = [...an.options].some(o => o.value === s.anim) ? s.anim : 'none'; an.onchange = () => subSet('anim', an.value); enh(an);
@@ -275,8 +275,7 @@ fitFrame = function(){ const st = $('stage'); if (!st) return; const full = docu
 //       full screen and unfold
 function stageBar(show, quiet){ const b = $('stageBar'), mini = $('stageMini'), res = $('res'), slot = $('resMini'); if (!b) return; b.classList.toggle('hidden', !show); if (mini){ mini.classList.toggle('hidden', !!show); mini.classList.toggle('flex', !show); }
   { const box = $('stageBox'); if (box) box.classList.toggle('stfold', !show); }   /* 178: folded, no room is left above the canvas (the stylesheet drops the top paddings) */
-  if (res && slot){ if (show){ const ic = b.querySelector('svg'); if (res.parentElement !== b) (ic ? ic.after(res) : b.prepend(res)); res.classList.remove('select-xs', 'w-52'); res.classList.add('select-sm', 'w-64'); }
-    else { if (res.parentElement !== slot) slot.appendChild(res); } }   /* 178: folded, the list sits invisible over its icon (the stylesheet) — the same list, opened by the icon */
+  if (!show && typeof listClose === 'function' && LIST && LIST.sel === res) listClose(false);   /* 179: the size icon opens the same list (listToggle), anchored to itself */
   if (!quiet){ try { API().settings_set({ ed_stagebar177: !!show }); } catch (err) {} try { localStorage.setItem('ava_stagebar177', show ? '1' : '0'); } catch (err) {} }
   requestAnimationFrame(() => { fitFrame(); vDraw(); }); }
 (async () => { let show = false; try { const v = localStorage.getItem('ava_stagebar177'); if (v === '1') show = true; } catch (err) {}
@@ -347,7 +346,7 @@ const AUD_SRC = { pVoice: ['proj', 'g_voice'], pPreset: ['proj', 'g_preset'], pS
   mLevel: ['music', 'level_db'], mFadeIn: ['music', 'fade_in'], mFadeOut: ['music', 'fade_out'], mDuckDb: ['music', 'duck_db'] };
 function audVal(id, el){ try { if (typeof ENG_MAP !== 'undefined' && ENG_MAP[id]){ const [g, k] = ENG_MAP[id]; return S.proj[g][k]; } const m = AUD_SRC[id]; if (m) return m[0] === 'proj' ? S.proj[m[1]] : S.music[m[1]]; } catch (err) {} return el ? el.value : undefined; }   // the document's value (a control can lag behind it)
 function syncAudioResets(){ document.querySelectorAll('aside [data-rst]').forEach(b => { const id = b.dataset.rst, el = $(id); if (!el || !(id in AUD_DEF)) return; let d = AUD_DEF[id]; if (typeof d === 'function') d = d();
-  const v = audVal(id, el), same = typeof d === 'number' ? Math.abs(+v - d) < 1e-6 : String(v ?? '') === String(d); b.classList.toggle('invisible', same); }); }
+  const v = audVal(id, el), same = typeof d === 'number' ? Math.abs(+v - d) < 1e-6 : String(v ?? '') === String(d); rstMark(b, !same); }); }
 { const _se176 = setEng; setEng = function(){ const r = _se176.apply(this, arguments); requestAnimationFrame(syncAudioResets); return r; }; const _sp176p = setProj; setProj = function(){ const r = _sp176p.apply(this, arguments); requestAnimationFrame(syncAudioResets); return r; };
   const _sm176 = setMusic; setMusic = function(){ const r = _sm176.apply(this, arguments); requestAnimationFrame(syncAudioResets); return r; }; }
 ['input', 'change'].forEach(t => document.addEventListener(t, ev => { if (ev.target.closest && ev.target.closest('aside')) requestAnimationFrame(syncAudioResets); }, true));

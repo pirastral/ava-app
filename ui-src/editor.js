@@ -1,3 +1,6 @@
+// 179 · the keyboard goes to what is open first (a list, a menu, a preset's panel) — keyGuard lives in controls.js; this
+//       listener is installed before every other key handler so the canvas, the playhead and play/pause never steal its keys
+addEventListener('keydown', ev => { try { if (typeof keyGuard === 'function') keyGuard(ev); } catch (e) { console.warn('keys', e); } }, true);
 // =====================================================================================
 // Avaye Javid Shah — the new editor (build 154, audio mode, Google)
 // Model: each LINE is a part (unit of editing); runs of consecutive lines with the same
@@ -19,6 +22,8 @@ const T = (fa, en) => lang === 'fa' ? fa : en;
 const num = s => String(s);
 const pctSign = () => '%';   /* 177: English digits and signs in both languages */
 const secs = (v, d = 1) => `${(+v || 0).toFixed(d)}s`;   /* 177: seconds are «12.6s», never «12.6ث» */
+// 179: every clip shows its length (selected or not, every kind, both timelines) while it is wide enough at this zoom to hold it
+const lenFits = (w, s, extra = 0) => w >= 6.2 * String(s).length + 44 + extra;
 const fmt = t => `${String(Math.floor(t / 60)).padStart(2, '0')}:${(t % 60).toFixed(1).padStart(4, '0')}`;
 const escapeHtml = x => String(x ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');   // 160: quotes too — attributes broke on them
 const PAD = 18, SNAP_PX = 8, GAP = 0.12;            // margin before 0:00; snapping; the breath between parts
@@ -172,7 +177,7 @@ function fillLineInspector(id){
   const from = sp ? T('مثلِ گوینده', 'as the speaker') : T('مثلِ پروژه', 'as the project');
   const engName = engShort;
   const set = k => v[k] !== undefined && v[k] !== '' && v[k] !== null;
-  const lab = (t, k) => `<legend class="fieldset-legend flex w-full items-center gap-1 text-xs font-medium text-base-content/70"><span class="flex-1">${t}</span>${set(k) ? `<span class="ddb text-primary" role="button" onclick="setLineOpt('${k}', null)" data-tip="${T('برگشت: ', 'Back: ')}${from}" aria-label="reset"><svg><use href="#i-rotate-ccw"/></svg></span>` : ''}</legend>`;
+  const lab = (t, k) => `<legend class="fieldset-legend flex w-full items-center gap-1 text-xs font-medium text-base-content/70"><span class="flex-1">${t}</span><span class="lnrst btn btn-ghost btn-xs btn-square -my-1 ${set(k) ? 'text-primary' : 'opacity-50 hover:opacity-100'}" role="button" ${set(k) ? `onclick="setLineOpt('${k}', null)"` : ''} data-tip="${T('برگشت: ', 'Back: ')}${from}" data-tip-en="Back: ${from}" aria-label="reset"><svg class="size-3.5"><use href="#i-rotate-ccw"/></svg></span></legend>`;   /* 179: always there — orange when this line has its own value */
   const inh = txt => { const t = String(txt || '').replace(/^[—–-]\s*|\s*[—–-]$/g, '').trim(); return `<option value="">— ${from}${t ? ': ' + escapeHtml(t) : ''} —</option>`; };   // 177: «— as the speaker: unchanged —», not nested dashes
   const sel = (t, k, html) => `<fieldset class="fieldset">${lab(t, k)}<select id="ln_${k}" class="select select-sm w-full" onchange="setLineOpt('${k}', this.value)">${html}</select></fieldset>`;
   const rng = (t, k, min, max, step, cur) => `<fieldset class="fieldset">${lab(t, k)}<div class="flex items-center gap-2"><input id="ln_${k}" type="range" min="${min}" max="${max}" step="${step}" value="${cur}" class="range range-xs flex-1 text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px] ${set(k) ? '' : 'opacity-60'}" oninput="this.nextElementSibling.textContent = num(this.value); this.classList.remove('opacity-60')" onchange="setLineOpt('${k}', +this.value)"><span class="w-10 text-end text-xs tabular-nums text-base-content/70">${num(cur)}</span></div></fieldset>`;
@@ -236,10 +241,13 @@ function lineRow(id, n, c){
     + (c.unvoiced && (L.text || '').trim() ? badge('badge-ghost', '', T('ساخته نشده', 'not generated')) : '')
     + (c.lines.length > 1 && c.lines[0] === id ? badge('badge-soft badge-info', 'layers', T('یک کلیپ', 'one clip'), T('این خط‌ها یک کلیپ‌اند: نقشهٔ خط برای این بخش ساخته نشد', 'these lines share one clip, so this part has no line map')) : '')
     + (c.lines.length === 1 && (c.trimIn > 0.05 || c.trimOut > 0.05) ? badge('badge-error badge-soft', 'scissors', T('کوتاه شده', 'trimmed')) : '');
-  return `<div class="ln group relative flex items-start gap-1.5 px-2" data-id="${id}">
+  /* 179 · the speaker sits in the right margin (beside the line's number), so a reaction on a line's first word starts inside
+     the text and never reaches that margin; the left margin is wide enough for a badge's end (the founder) */
+  return `<div class="ln group relative flex items-start gap-1.5 ps-2 pe-24" data-id="${id}">
     <span class="grip mt-1.5 grid size-6 shrink-0 cursor-grab place-items-center rounded text-base-content/40 opacity-0 hover:bg-base-300 group-hover:opacity-100" title="${T('بکشید تا جابه‌جا شود', 'drag to reorder')}"><svg class="size-4"><use href="#i-grip-vertical"/></svg></span>
     <span class="mt-1.5 w-6 shrink-0 text-end text-xs tabular-nums text-base-content/40">${num(n)}</span>
-    <div class="min-w-0 flex-1 py-0.5"><p>${spkChip(id)}${toneChip(id)}<span class="lt outline-none" contenteditable="true" spellcheck="false" data-ph="${T('متن را این‌جا بنویسید یا بچسبانید…', 'Type or paste the text here…')}">${pills(trimmedHtml(L.text || '', c))}</span> ${extra}</p><div class="lnbar"></div></div>
+    <span class="lnspk mt-[7px] flex w-32 min-w-0 shrink-0 justify-end">${spkChip(id).replace('me-1 ', '').replace('max-w-[12rem]', 'max-w-full')}</span>
+    <div class="min-w-0 flex-1 py-0.5"><p>${toneChip(id)}<span class="lt outline-none" contenteditable="true" spellcheck="false" data-ph="${T('متن را این‌جا بنویسید یا بچسبانید…', 'Type or paste the text here…')}">${pills(trimmedHtml(L.text || '', c))}</span> ${extra}</p><div class="lnbar"></div></div>
   </div>`;
 }
 function lineBar(){
@@ -518,7 +526,7 @@ function renderTimeline(){
         <span class="ui pointer-events-none absolute inset-x-1.5 top-0.5 truncate text-[11px] font-semibold" dir="rtl">${label}</span>
         ${dirty ? `<span class="badge badge-warning badge-xs pointer-events-none absolute bottom-1 left-1 gap-0.5"><svg class="size-2.5"><use href="#i-pencil"/></svg></span>` : ''}
         ${(c.trimIn > 0.05 || c.trimOut > 0.05) ? `<span class="badge badge-error badge-xs pointer-events-none absolute bottom-1 ${dirty ? 'left-6' : 'left-1'}"><svg class="size-2.5"><use href="#i-scissors"/></svg></span>` : ''}
-        ${selClip === c.id && w > 130 ? `<span class="pointer-events-none absolute bottom-1 right-6 rounded-md bg-black/60 px-1.5 text-[10px] font-semibold tabular-nums text-white">${secs(dur(c))}</span>` : ''}
+        ${lenFits(w, secs(dur(c))) ? `<span class="cliplen pointer-events-none absolute bottom-1 right-6 rounded-md bg-black/60 px-1.5 text-[10px] font-semibold tabular-nums text-white">${secs(dur(c))}</span>` : ''}
       </div>`;
       if (selClip === c.id && ((!c.type && !c.unvoiced) || c.type === 'music' || c.type === 'sfx')){
         const xl = PAD + c.at * pps, xr = xl + w;
@@ -945,11 +953,12 @@ async function importMusic(){ const r = await bigResult(await API().music_import
 async function setMusicTrack(b64, file, name){
   remember(); const bin = atob(b64), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
   try { musicBuf = await ac().decodeAudioData(u8.buffer.slice(0)); } catch (e) { musicBuf = null; }
-  S.music.file = file; S.music.name = name; layoutMusic(); sel = new Set(); selClip = 'mu1'; renderScript(); showMusicInspector(); autosave();
+  S.music.file = file; S.music.name = name; S.music.at = Math.max(0, playhead || 0); S.music.manual = false; layoutMusic(); sel = new Set(); selClip = 'mu1'; renderScript(); showMusicInspector(); autosave();   // 179: new music starts at the playhead
 }
 function layoutMusic(){ if (!S.music.file){ S.tracks.forEach(t => { t.clips = t.clips.filter(c => c.type !== 'music'); }); S.music.manual = false; cleanupTracks(); return; }   // 172: music is a clip on a normal track
   if (S.music.manual && musicClips().length) return; S.tracks.forEach(t => { t.clips = t.clips.filter(c => c.type !== 'music'); });
-  const c = { id: 'mu1', type: 'music', lines: [], name: S.music.name, at: 0, in: 0, out: Math.max(2, speechEnd()), gain: 1 }; freeTrack(c).clips.push(c); }
+  const at = Math.max(0, S.music.at || 0), end = speechEnd(), len = at < end - 1 ? end - at : Math.max(2, musicBuf ? musicBuf.duration : 30);   // 179: from the playhead to the end of the speech (it loops)
+  const c = { id: 'mu1', type: 'music', lines: [], name: S.music.name, at, in: 0, out: Math.max(2, len), gain: 1 }; freeTrack(c).clips.push(c); }
 function removeMusic(){ remember(); S.music.file = null; S.music.name = null; musicBuf = null; layoutMusic(); selClip = null; showInsp('proj'); renderScript(); autosave(); }
 function setMusic(k, v){ S.music[k] = v; autosave(); if (playing){ const t = playhead; stopPlay(); seekVisual(t); startPlay(); } }
 function showMusicInspector(){ ['line', 'proj'].forEach(k => $('insp-' + k).classList.add('hidden')); $('insp-music').classList.remove('hidden'); const tl = $('it-line').parentElement; if (tl) tl.classList.add('hidden');   // 169: a music clip has only its own panel
@@ -1029,7 +1038,10 @@ async function init(){
   try { const L = await API().license_state(); if (L && L.ok && L.days_left !== null && L.days_left !== undefined && L.days_left <= 21) say(T(`مجوزِ این دستگاه ${FA(L.days_left)} روزِ دیگر تمام می‌شود؛ برای تمدید، کدِ درخواست را برای کسی بفرستید که برنامه را به شما داده است.`, `This machine’s license ends in ${L.days_left} days. To renew, send the request code to whoever gave you the app.`), 'ok'); } catch (e) {}
   const gulps = [...new Set(speechClips().filter(c => !c.unvoiced && c.gulp !== null).map(c => c.gulp))];
   for (const g of gulps){ if (await ensureAudio(g)) renderTimeline(); }
+  // 180: the app was opened by double-clicking a .ava file — open it now that the page is ready
+  try { const po = API().pending_open ? await API().pending_open() : null; if (po && po.path) await projectOpen(po.path); } catch (e) { console.warn('open file', e); }
 }
+window.avaOpenPath = p => projectOpen(p);   // 180: a .ava double-clicked while the app is already open (macOS)
 init();
 
 
@@ -1616,8 +1628,8 @@ async function projectSave(as){   // 170: Save writes over the project's own fil
   else if (r && r.error !== 'cancelled') say((r && r.error) || '', 'err'); }
 function projectSaveAs(){ return projectSave(true); }
 document.addEventListener('keydown', ev => { if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && ev.key.toLowerCase() === 's'){ ev.preventDefault(); projectSave(ev.shiftKey); } });
-async function projectOpen(){
-  const r = await API().project_open(); if (!r || !r.ok){ if (r && r.error !== 'cancelled') say((r && r.error) || '', 'err'); return; }
+async function projectOpen(path){   // 180: with a path (a .ava double-clicked in Finder / Explorer) there is no dialog
+  const r = path ? await API().project_open_path(path) : await API().project_open(); if (!r || !r.ok){ if (r && r.error !== 'cancelled') say((r && r.error) || '', 'err'); return; }
   remember(); setBusy(true);
   try { const musicCfg = r.doc.music ? { ...r.doc.music } : null; restoreSnap(r.doc); S.projPath = r.path || null;
     const gids = [...new Set(S.tracks.flatMap(t => t.clips.map(c => c.gulp)).filter(g => g != null))];
@@ -1659,7 +1671,11 @@ function previewHooks(){
 // ===================================================================================
 function menuDo(fn, ...a){ if (document.activeElement) document.activeElement.blur(); setTimeout(() => fn(...a), 0); }   // a menu reopens after a choice
 let ASK = null;
-function askText(title, hint, initial){ return new Promise(res => { if (ASK) ASK(null); ASK = res; $('askTitle').textContent = title || ''; $('askHint').textContent = hint || ''; $('askInput').value = initial || ''; $('askDlg').showModal(); setTimeout(() => $('askInput').focus(), 30); }); }
+// 179: opts.del adds a Delete button (it answers ASK_DEL); opts.ok names the main button (Insert by default)
+const ASK_DEL = '\u0000delete';
+function askText(title, hint, initial, opts){ opts = opts || {}; return new Promise(res => { if (ASK) ASK(null); ASK = res; $('askTitle').textContent = title || ''; $('askHint').textContent = hint || ''; $('askInput').value = initial || '';
+  const del = $('askDel'), ok = $('askOk'); if (del) del.classList.toggle('hidden', !opts.del); if (ok) ok.textContent = opts.ok || T('درج', 'Insert');
+  $('askDlg').showModal(); setTimeout(() => { $('askInput').focus(); $('askInput').select(); }, 30); }); }
 function askDone(v){ const r = ASK; ASK = null; if ($('askDlg').open) $('askDlg').close(); if (r) r(v === null ? null : String(v)); }
 document.addEventListener('DOMContentLoaded', () => { const d = $('askDlg'); if (d) d.addEventListener('close', () => { if (ASK) askDone(null); }); });
 // the ruler is exactly as wide as the lanes and starts at the same pixel, so the label and the line never part

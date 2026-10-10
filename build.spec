@@ -5,6 +5,31 @@ from PyInstaller.utils.hooks import collect_all, copy_metadata
 
 import os as _os0, json as _json0
 datas, binaries, hiddenimports = [("ui", "ui"), ("icon.png", "."), ("voices", "voices")], [], []
+# 180: the .ava document icon (a page with the app's own crown — 181: in neutral greys — tools/make_doc_icon.py): Finder
+#      takes the .icns from the bundle's Resources; on Windows the app points the .ava type at the .ico when it starts (app.py)
+datas.append(("ava-doc.icns", ".") if sys.platform == "darwin" else ("ava-doc.ico", "."))
+
+
+# 181: the Mac bundle carries the build number as its version (Finder's «Get Info» shows it), so macOS takes each update for
+#      a new version and reads again what the app declares — the .ava icon with it. tools/protect.py writes BUILD_NUMBER
+#      before engines.py is compiled away; a plain source build reads engines.py. It never stops a build.
+def _build_no():
+    import re
+    try:
+        n = open("BUILD_NUMBER", encoding="utf-8").read().strip()
+        if n.isdigit():
+            return n
+    except OSError:
+        pass
+    try:
+        m = re.search(r"^BUILD = (\d+)", open("engines.py", encoding="utf-8").read(), re.M)
+        return m.group(1) if m else "0"
+    except OSError:
+        return "0"
+
+
+_BUILD = _build_no()
+
 # 155: in a protected build tools/protect.py has sealed these into the compiled vault and deleted them;
 # a plain source build (development) still bundles them as before.
 for _f in ("token.txt", "builtin_keys.json"):
@@ -63,4 +88,19 @@ if sys.platform == "darwin":
                  bundle_identifier="ir.kamangir31.ava",
                  info_plist={"CFBundleName": "Avaye Javid Shah",
                              "CFBundleDisplayName": "آوای جاوید شاه",
-                             "NSHighResolutionCapable": True})
+                             "NSHighResolutionCapable": True,
+                             "CFBundleShortVersionString": _BUILD, "CFBundleVersion": _BUILD,   # 181 (above)
+                             # 180: .ava is this app's own document — its icon in Finder, and a double-click opens it here
+                             "UTExportedTypeDeclarations": [{
+                                 "UTTypeIdentifier": "ir.kamangir31.ava.project",
+                                 "UTTypeDescription": "Avaye Javid Shah project",
+                                 "UTTypeConformsTo": ["public.data", "public.content"],
+                                 "UTTypeIconFile": "ava-doc.icns",
+                                 "UTTypeTagSpecification": {"public.filename-extension": ["ava"],
+                                                            "public.mime-type": ["application/x-ava-project"]}}],
+                             "CFBundleDocumentTypes": [{
+                                 "CFBundleTypeName": "Avaye Javid Shah project",
+                                 "CFBundleTypeRole": "Editor",
+                                 "LSHandlerRank": "Owner",
+                                 "LSItemContentTypes": ["ir.kamangir31.ava.project"],
+                                 "CFBundleTypeIconFile": "ava-doc.icns"}]})

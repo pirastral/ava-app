@@ -41,7 +41,7 @@ html[dir=ltr] .code,html[dir=ltr] textarea{text-align:left}
 </style></head><body>
 <div class="tools"><button id="themeBtn" title="روشن / تاریک">◑</button><button id="langBtn" title="Language">EN</button></div>
 <div class="gate">
-  <div class="band"><span>فعال‌سازی برنامه</span><small id="ver">نسخهٔ 178</small></div>
+  <div class="band"><span>فعال‌سازی برنامه</span><small id="ver">نسخهٔ 181</small></div>
   <div class="body">
     <h2>این دستگاه هنوز فعال نشده است</h2>
     <p>این برنامه شخصی است و روی هر دستگاه جداگانه فعال می‌شود. کدِ درخواست زیر را از راهی که خودتان امن می‌دانید بفرستید تا کدِ فعال‌سازیِ مخصوصِ همین دستگاه برایتان ساخته شود. آن کد روی هیچ دستگاه دیگری کار نمی‌کند. هیچ نام و مشخصه‌ای از شما در برنامه ذخیره نمی‌شود و برنامه به هیچ سروری وصل نمی‌شود.</p>
@@ -104,7 +104,7 @@ html[dir=ltr] .code,html[dir=ltr] textarea{text-align:left}
     $("ver").textContent = (LANG === "en" ? "version " : "نسخهٔ ") + faNum(BUILD_NO);
   }
   // 177: the app's own build number (it said 126 since build 126)
-  let BUILD_NO = 178;
+  let BUILD_NO = 181;
   window.addEventListener("pywebviewready", async () => { try { const b = await window.pywebview.api.build(); if (b && b.n){ BUILD_NO = b.n; applyLang(); } } catch (e) {} });
   // tag every translatable node once
   document.querySelectorAll(".gate h2, .gate p, .gate label span, .gate label small, .gate .btn, .gate .foot, .band span").forEach(el => {

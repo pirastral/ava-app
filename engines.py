@@ -94,8 +94,8 @@ def read_token() -> str:
     return ""
 
 
-BUILD = 178
-BUILD_FA = "178"
+BUILD = 181
+BUILD_FA = "181"
 
 
 def _diag(tag, **kv):
@@ -945,6 +945,7 @@ def piper_generate(voice_key, text, speed, noise_scale, noise_w, status):
 # Chatterbox-Persian — cached permanently in AvaModels/hf
 # ---------------------------------------------------------------------------
 _chatterbox = None
+_CBX_RELOAD = False   # 179: set in a worker that replaces a flushed one (the model files were checked this session)
 
 
 def _hf_cached(name_fragment: str) -> bool:
@@ -1016,9 +1017,10 @@ def _load_chatterbox(status):
     torch.load = _patched
 
     token = read_token()
-    _verify_repo_cache("ResembleAI/chatterbox", status)
-    if token:
-        _verify_repo_cache("Thomcles/Chatterbox-TTS-Persian-Farsi", status, token=token)
+    if not _CBX_RELOAD:   # 179: a worker reloading after a flush skips the network check (made at this session's first load)
+        _verify_repo_cache("ResembleAI/chatterbox", status)
+        if token:
+            _verify_repo_cache("Thomcles/Chatterbox-TTS-Persian-Farsi", status, token=token)
     model = ChatterboxMultilingualTTS.from_pretrained(device=device)
     if not token:
         raise RuntimeError("توکن Hugging Face داخل برنامه نیست؛ باید موقع ساختِ برنامه گذاشته می‌شد.")
@@ -1291,7 +1293,8 @@ def chatterbox_pcm(text, exaggeration, cfg_weight, temperature, status, speed=1.
             waves.append(np.zeros(int(model.sr * chunk), dtype=np.float32))
             continue
         i += 1
-        status(f"دارم گفتار را می‌سازم… بخش {i} از {total}")
+        if total > 1:   # 179: the worker says which piece of the whole text this is
+            status(f"دارم گفتار را می‌سازم… بخش {i} از {total}")
         with torch.no_grad():
             wav = model.generate(chunk, language_id=None,
                                  exaggeration=float(exaggeration),
@@ -1309,22 +1312,8 @@ def chatterbox_pcm(text, exaggeration, cfg_weight, temperature, status, speed=1.
                 torch.cuda.empty_cache()
         except Exception:
             pass
-        try:
-            import psutil
-            _rss = _footprint_mb()
-            _avail = psutil.virtual_memory().available // (1024 * 1024)
-            # rss is the honest signal: macOS compresses/swaps to keep "avail"
-            # looking fine while a leaking process swells — brake on OURSELVES
-            if _rss > _cbx_ceiling_mb(_rss, _avail) + 2000 or _avail < 800 \
-                    or _swap_hot(12000, _avail):
-                raise RuntimeError(
-                    f"مصرف حافظهٔ موتور وسط کار از حد گذشت ({faDigits(_rss // 1024)} گیگابایت) — "
-                    "برای اینکه دستگاه قفل نکند، این بخش متوقف شد و موتور از نو راه می‌افتد. "
-                    "همین بخش را دوباره بسازید.")
-        except RuntimeError:
-            raise
-        except Exception:
-            pass
+        # 179: no memory check here any more — the engine watches the worker from outside and, past its share of the
+        #      computer's memory, flushes it and carries on (a job never ends for memory)
     audio = np.concatenate(waves)
     if abs(float(speed) - 1.0) > 0.01:
         status("دارم سرعت گفتار را تنظیم می‌کنم…")
@@ -1348,8 +1337,10 @@ def chatterbox_generate(text, exaggeration, cfg_weight, temperature, status, spe
 # ---------------------------------------------------------------------------
 # Chatterbox process isolation: the engine leaks memory by design flaw
 # (resemble-ai/chatterbox #218), so it lives in a disposable helper process.
-# Leaked memory cannot outlive its process — when the worker grows past the
-# threshold, it retires itself and a fresh one is spawned on the next request.
+# Leaked memory cannot outlive its process. 179: when the worker grows past its
+# share of this computer's memory it hands back what it made and retires, and a
+# fresh one carries on from the next piece — the job goes on; it never ends
+# because memory was flushed.
 # ---------------------------------------------------------------------------
 def _swap_used_mb():
     try:
@@ -1362,24 +1353,51 @@ def _swap_used_mb():
 _SWAP_BASELINE = _swap_used_mb()
 
 
-def _swap_hot(threshold_mb, avail_mb):
+def _total_mb():
+    """This computer's memory in MB (None when it cannot be read)."""
+    try:
+        import psutil
+        return int(psutil.virtual_memory().total // (1024 * 1024))
+    except Exception:
+        return None
+
+
+def _avail_mb():
+    """The memory this computer can still hand out, in MB (None when it cannot be read)."""
+    try:
+        import psutil
+        return int(psutil.virtual_memory().available // (1024 * 1024))
+    except Exception:
+        return None
+
+
+def _swap_hot(share, avail_mb):
     """Swap matters only as GROWTH since this launch AND under genuine
     pressure (free RAM scarce). Absolute swap locked the app out after its
-    own crashes; swap-alone gating killed healthy processes. Both measured."""
+    own crashes; swap-alone gating killed healthy processes. Both measured.
+    179: both sides are shares of this computer's memory — growth past `share` of it, free memory under an eighth."""
+    total = _total_mb() or 16000
     growth = max(0, _swap_used_mb() - _SWAP_BASELINE)
-    return growth > threshold_mb and avail_mb is not None and avail_mb < 6000
+    return growth > share * total and avail_mb is not None and avail_mb < 0.125 * total
 
 
 # 177 · MEMORY IS MEASURED AS ACTIVITY MONITOR MEASURES IT. On macOS a leaking process's pages are compressed
 #       and do not count in rss, so rss under-reports exactly when it matters; the phys_footprint that Activity
-#       Monitor shows (libproc proc_pid_rusage) counts them. Elsewhere rss is the honest number.
-_CBX_RETIRE_MB = 9000    # after a job: past this the worker retires (the model needs 5–6 GB; the rest is the leak)
-_CBX_KILL_MB = 12000     # during a job: the engine stops the worker at once past this, on every machine
+#       Monitor shows (libproc proc_pid_rusage) counts them. 179: on Windows the private bytes (what the process has
+#       committed, paged-out pages included — Task Manager's commit size); elsewhere rss.
 _FP_LIB = None
 
 
+def _mi_mb(mi, nt=None):
+    """MB of a psutil memory_info: private bytes on Windows, rss elsewhere."""
+    nt = (os.name == "nt") if nt is None else nt
+    v = getattr(mi, "private", 0) if nt else 0
+    return int((v or mi.rss) // (1024 * 1024))
+
+
 def _footprint_mb(pid=None):
-    """Memory of a process in MB, the way Activity Monitor counts it (macOS phys_footprint; rss elsewhere)."""
+    """Memory of a process in MB, the way the system's own monitor counts it (macOS phys_footprint; Windows private
+    bytes; rss elsewhere)."""
     global _FP_LIB
     pid = int(pid or os.getpid())
     if sys.platform == "darwin":
@@ -1401,90 +1419,111 @@ def _footprint_mb(pid=None):
             pass
     try:
         import psutil
-        return int(psutil.Process(pid).memory_info().rss // (1024 * 1024))
+        return _mi_mb(psutil.Process(pid).memory_info())
     except Exception:
         return 0
 
 
-def _cbx_ceiling_mb(rss_mb, avail_mb):
-    """177: ONE absolute ceiling on every machine (9 GB), lowered on a busy Mac — never scaled up with the
-    machine's size. 176 and earlier let the fences grow with total memory (20–40 % of it): on a big Mac the
-    worker could reach 25–51 GB before retiring, and the samples tool's 73 Chatterbox takes in a row took
-    it past 44 GB and froze the Mac. History of the rule, kept for the record:
-    Two ceilings, whichever is LOWER wins.
-    (1) The adaptive pool ceiling: 75% of (avail + rss) — shrinks on busy
-        machines. Alone it is leak-unsafe: it only retires at rss > 3x avail,
-        which on a 48 GB Mac authorizes ~36 GB of growth (measured: 57 GB
-        reached twice, because macOS compresses memory and keeps "avail"
-        looking healthy while rss swells into swap).
-    (2) The absolute leak cap: the model itself needs 5-6 GB; anything much
-        past that is leaked memory the process holds hostage. Retire near
-        10 GB and the OS reclaims it for the price of a few-second respawn."""
-    if avail_mb is None:
-        return _CBX_RETIRE_MB
-    # a busy machine pulls the ceiling down (75 % of what it would have if the worker retired now), never below
-    # what the model itself needs, never above the absolute ceiling
-    return min(_CBX_RETIRE_MB, max(6500, int(0.75 * (avail_mb + rss_mb))))
+# 179 · CHATTERBOX'S MEMORY IS A SHARE OF THIS COMPUTER'S MEMORY, on Mac and Windows alike (the founder: a fixed 12 GB
+#       wastes his 48 GB and is too much for an 8 or 12 GB machine) — and reaching it never ends the job: the worker's
+#       memory goes back to the system and the work goes on.
+#   soft   between two pieces (sentences), a worker past it hands back what it made and retires; a fresh one carries on
+#          from the next piece. Ending the process is the only flush that frees everything (the GPU's cache included).
+#   hard   in the middle of a piece, the guard stops a worker past it; that piece is made again in a fresh worker (in
+#          two halves if it happens twice).
+#   low    free memory under this share of the computer: a worker that has grown retires at the next piece.
+#   floor  free memory under this share in the middle of a piece: the guard stops the worker at once (the computer
+#          would start to freeze).
+#   Every limit stays above what the model itself needs once loaded (`base`, measured in the worker; 6 GB until then)
+#   and leaves `low` free. 48 GB: soft ≈ 16 GB, hard 24 GB, low ≈ 7 GB, floor ≈ 3 GB · 16 GB: soft 9.6 GB, hard ≈ 11 GB
+#   · 8 GB: ≈ 7 GB (the free-memory shares stop it first).
+_CBX_SHARES = {"soft": 0.33, "hard": 0.50, "step": 0.10, "low": 0.15, "floor": 0.06}
+_CBX_MAX_KILLS = 10       # stops in the middle of a piece, in one job, before the engine says the text does not fit
+_CBX_WAIT_MOST = 120.0    # seconds it waits for other programs to give memory back before it says so
+_cbx_base_mb = 0          # the worker's memory right after the model loaded: the model's own need
+
+
+def _cbx_limits(total_mb=None, base_mb=None):
+    S = _CBX_SHARES
+    total = int(total_mb or _total_mb() or 16000)
+    base = int(base_mb or _cbx_base_mb or 6000)
+    low, floor = int(total * S["low"]), int(total * S["floor"])
+    cap = max(base + 500, total - low)
+    soft = min(cap, max(int(total * S["soft"]), int(base * 1.6)))
+    hard = max(soft, min(cap, max(int(total * S["hard"]), soft + int(total * S["step"]))))
+    return {"total": total, "base": base, "soft": soft, "hard": hard, "low": low, "floor": floor}
+
+
 _cbx_proc = None
 _cbx_stderr = None
 _cbx_lock = threading.Lock()
-_cbx_last_rss = 0  # worker rss (MB) as of its last finished job
+_cbx_last_rss = 0  # the worker's memory (MB) as of its last finished piece
+_cbx_verified = False  # a worker loaded the model in this session (its files were checked): later workers reload quickly
 
 
 def chatterbox_worker_main():
-    """Runs inside the helper process: serve generation requests over stdio."""
-    def status(msg, pct=None):
+    """Runs inside the helper process: serve generation requests over stdio. 179: every finished piece goes back at
+    once (a worker that has to stop never takes what it made with it); past its share of the computer's memory it hands
+    back and retires; out of GPU memory it says so and retires (the engine makes that piece again)."""
+    global _CBX_RELOAD
+
+    def out(obj):
         # ASCII on the wire: no OS codepage can break the protocol, and
         # json.loads on the parent side restores the exact Persian string.
-        sys.stdout.write(json.dumps({"type": "status", "msg": msg, "pct": pct},
-                                    ensure_ascii=True) + "\n")
+        sys.stdout.write(json.dumps(obj, ensure_ascii=True) + "\n")
         sys.stdout.flush()
+
+    def leave():
+        sys.stdout.flush()
+        os._exit(0)   # at once: the operating system takes back every byte (no slow interpreter teardown)
+
+    base = 0
     for line in sys.stdin:
         line = line.strip()
         if not line:
             continue
         try:
             req = json.loads(line)
-            texts = req.get("clauses") or [req["text"]]
-            parts, sr = [], 0
-            for k, t in enumerate(texts, 1):
-                if len(texts) > 1:
-                    status(f"دارم گفتار را می‌سازم… تکهٔ {k} از {len(texts)}")
-                pcm, sr = chatterbox_pcm(t, req.get("exaggeration", 0.8),
-                                         req.get("cfg_weight", 1.0),
-                                         req.get("temperature", 0.0), status,
-                                         speed=req.get("speed", 1.0),
+            items = req.get("items") or [[k, t] for k, t in enumerate(req.get("clauses") or [req["text"]])]
+            lim, of, flush = req.get("limits") or {}, int(req.get("of") or len(items)), bool(req.get("flush"))
+            again = bool(req.get("verified"))   # the model loaded once already in this session: its files are checked
+
+            def status(msg, pct=None):
+                if (flush or again) and msg.startswith("مدل چترباکس دارد از روی دستگاه بارگذاری می‌شود"):
+                    msg = ("حافظهٔ چترباکس خالی شد؛ مدل دوباره بارگذاری می‌شود و کار از همین‌جا ادامه دارد…" if flush
+                           else "مدل چترباکس دوباره بارگذاری می‌شود…")
+                out({"type": "status", "msg": msg, "pct": pct})
+            if not base:
+                if again:   # a reload: from the files already on this computer, no network round trips
+                    _CBX_RELOAD = True
+                    os.environ["HF_HUB_OFFLINE"] = "1"
+                _load_chatterbox(status)
+                base = _footprint_mb() or 1
+                out({"type": "base", "rss_mb": base})
+            for key, t in items:
+                if of > 1:
+                    status(f"دارم گفتار را می‌سازم… بخش {int(key) + 1} از {of}")
+                pcm, sr = chatterbox_pcm(t, req.get("exaggeration", 0.8), req.get("cfg_weight", 1.0),
+                                         req.get("temperature", 0.0), status, speed=req.get("speed", 1.0),
                                          voice_path=req.get("voice_path") or None)
-                parts.append(pcm)
-            offs, o = [], 0
-            for p in parts:
-                offs.append([o, len(p)]); o += len(p)
-            pcm = np.concatenate(parts) if parts else np.zeros(1, dtype=np.int16)
-            f = tempfile.NamedTemporaryFile(suffix=".wav", delete=False); f.close()
-            with wave.open(f.name, "wb") as wf:
-                wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(sr)
-                wf.writeframes(pcm.tobytes())
-            Path(f.name + ".offsets.json").write_text(json.dumps(offs), encoding="utf-8")
-            rss = _footprint_mb()   # 177: Activity Monitor's number (compressed pages included)
-            avail_mb = None
-            try:
-                import psutil
-                avail_mb = psutil.virtual_memory().available // (1024 * 1024)
-            except Exception:
-                pass
-            recycle = (rss > _cbx_ceiling_mb(rss, avail_mb)
-                       or (avail_mb is not None and avail_mb < 1500)
-                       or _swap_hot(4000, avail_mb))
-            sys.stdout.write(json.dumps({"type": "result", "path": f.name, "sr": sr,
-                                         "rss_mb": rss, "recycle": recycle},
-                                        ensure_ascii=True) + "\n")
-            sys.stdout.flush()
-            if recycle:
-                break  # retire: the OS reclaims every leaked byte
+                f = tempfile.NamedTemporaryFile(suffix=".wav", delete=False); f.close()
+                with wave.open(f.name, "wb") as wf:
+                    wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(sr)
+                    wf.writeframes(pcm.tobytes())
+                rss, avail = _footprint_mb(), _avail_mb()
+                out({"type": "part", "key": key, "path": f.name, "sr": sr, "rss_mb": rss, "avail_mb": avail})
+                grown = rss > base * 1.25
+                if lim and (rss > lim.get("soft", 1 << 40) or (grown and (
+                        (avail is not None and avail < lim.get("low", 0)) or _swap_hot(0.08, avail)))):
+                    out({"type": "retire", "rss_mb": rss, "avail_mb": avail})
+                    leave()
+            out({"type": "done", "rss_mb": _footprint_mb()})
         except Exception as e:
-            sys.stdout.write(json.dumps({"type": "error", "error": str(e)},
-                                        ensure_ascii=True) + "\n")
-            sys.stdout.flush()
+            s = str(e)
+            if "out of memory" in s.lower():   # CUDA / MPS: the GPU's memory ran out — a fresh worker makes it again
+                out({"type": "oom", "error": s[:300], "rss_mb": _footprint_mb()})
+                leave()
+            out({"type": "error", "error": s})
 
 
 def _cbx_ensure():
@@ -1509,76 +1548,209 @@ def _cbx_ensure():
     return _cbx_proc
 
 
-def chatterbox_via_worker(req, status):
-    """Returns (pcm int16 ndarray, sample_rate) from the isolated worker."""
-    with _cbx_lock:
-        global _cbx_proc, _cbx_last_rss
-        # ---- per-generation admission gate ----
-        # The worker retires AFTER a job crosses the ceiling; this is the other
-        # bracket: never ADMIT a job into a bloated worker. Measured failure
-        # mode: back-to-back jobs each starting on top of leaked memory until
-        # 57 GB. A fresh worker returns every leaked byte to the OS first.
-        avail_mb = None
+def _cbx_retire_proc(wait=8.0):
+    """Let the worker go: its memory goes back to the system (the only flush that frees everything, the GPU's cache
+    included). Waits up to `wait` s until it is gone, so the next worker starts on the freed memory."""
+    global _cbx_proc, _cbx_last_rss
+    p, _cbx_proc, _cbx_last_rss = _cbx_proc, None, 0
+    if p is None:
+        return
+    try:
+        p.stdin.close()
+    except Exception:
+        pass
+    if wait <= 0:
+        return
+    try:
+        p.wait(timeout=wait)
+    except Exception:
         try:
-            import psutil
-            avail_mb = psutil.virtual_memory().available // (1024 * 1024)
+            p.kill(); p.wait(timeout=3)
         except Exception:
             pass
-        if _cbx_proc is not None and _cbx_proc.poll() is None and _cbx_last_rss:
-            over = _cbx_last_rss > _cbx_ceiling_mb(_cbx_last_rss, avail_mb)
-            tight = avail_mb is not None and avail_mb < 1500
-            swapped = _swap_hot(6000, avail_mb)
-            if over or tight or swapped:
-                _diag("admission_recycle", rss=_cbx_last_rss, avail=avail_mb,
-                      swap=_swap_used_mb(),
-                      reason="ceiling" if over else ("swap" if swapped else "low_avail"))
-                status("پیش از ساخت این بخش، حافظهٔ موتور را خالی می‌کنم…")
-                try:
-                    _cbx_proc.terminate()
-                except Exception:
-                    pass
-                _cbx_proc = None
-                _cbx_last_rss = 0
+
+
+def _cbx_pieces(text):
+    """179: the pieces chatterbox_pcm makes of a text anyway (its sentences, none longer than 280 characters) — sent
+    one by one, so a worker can hand back what it made, and retire, between any two. A text with pause tags stays
+    whole (their silences are spliced inside chatterbox_pcm)."""
+    t = (text or "").strip()
+    if not t or _PAUSE_RE.search(t):
+        return [t]
+    return [p for p in _split_sentences(t) if p.strip()] or [t]
+
+
+def _cbx_halve(text):
+    """A piece that twice outgrew the memory is made in two: at the sentence break nearest its middle, else a comma,
+    else a space. None when it is too short to cut."""
+    t = (text or "").strip()
+    if len(t) < 24:
+        return None
+    mid = len(t) // 2
+    for marks in (".!?؟…؛\n", "،,", " "):
+        cuts = [i + 1 for i, ch in enumerate(t) if ch in marks and 6 <= i + 1 <= len(t) - 6]
+        if cuts:
+            c = min(cuts, key=lambda i: abs(i - mid))
+            a, b = t[:c].strip(), t[c:].strip()
+            if a and b:
+                return a, b
+    return t[:mid].strip(), t[mid:].strip()
+
+
+def _cbx_wait_mem(need_mb, status):
+    """179: the computer itself is short of free memory (other programs hold it): wait, saying so, until `need_mb` is
+    free, instead of starting a model that would freeze it. False after _CBX_WAIT_MOST seconds."""
+    t0, said = time.time(), False
+    while True:
         _check_cancel()
-        p = _cbx_ensure()
-        line = json.dumps(req, ensure_ascii=True) + "\n"  # Persian text + Persian paths
-        try:
-            p.stdin.write(line); p.stdin.flush()
-        except Exception:
-            _cbx_proc = None
+        av = _avail_mb()
+        if av is None or av >= need_mb:
+            return True
+        if time.time() - t0 >= _CBX_WAIT_MOST:
+            return False
+        if not said:
+            _diag("cbx_wait_mem", avail=av, need=need_mb)
+            status(f"حافظهٔ آزاد این دستگاه کم است ({round(av / 1024, 1)} گیگابایت)؛ منتظرم برنامه‌های دیگر حافظه را "
+                   "پس بدهند — اگر می‌توانید چندتایی را ببندید…")
+            said = True
+        time.sleep(0.5)
+
+
+def _cbx_short_error():
+    av = _avail_mb() or 0
+    return RuntimeError(f"حافظهٔ آزاد این دستگاه برای چترباکس کافی نیست ({round(av / 1024, 1)} گیگابایت آزاد است). "
+                        "چند برنامهٔ دیگر را ببندید و دوباره بسازید.")
+
+
+def chatterbox_via_worker(req, status):
+    """Returns (pcm int16 ndarray, sample_rate, [pcm per clause]) from the isolated worker. 179: the text goes in pieces
+    (the sentences Chatterbox makes one at a time anyway); a worker past its share of this computer's memory hands back
+    what it made and a fresh one carries on from the next piece; a worker stopped in the middle of a piece (memory) is
+    replaced and that piece made again — in two halves if it happens twice. The job never ends because memory was
+    flushed; it waits (saying so) while other programs hold the memory, and says plainly when a piece cannot fit."""
+    clauses = list(req.get("clauses") or [req["text"]])
+    work = [[k, p] for k, c in enumerate(clauses) for p in _cbx_pieces(c)]   # [clause, text]: a cut piece keeps its clause
+    tries = [0] * len(work)
+    got, sr, kills, short, fresh = {}, 24000, 0, False, False
+    params = {k: req[k] for k in ("exaggeration", "cfg_weight", "temperature", "speed", "voice_path") if k in req}
+    with _cbx_lock:
+        pos = 0
+        while pos < len(work):
+            _check_cancel()
+            lim = _cbx_limits()
+            avail = _avail_mb()
+            alive = _cbx_proc is not None and _cbx_proc.poll() is None
+            grown = _cbx_last_rss > lim["base"] * 1.25
+            # admission: a heavy worker (or one that has grown while the computer runs short) is replaced before it
+            # takes the next piece — a fresh worker returns every leaked byte first
+            if alive and _cbx_last_rss and (_cbx_last_rss > lim["soft"] or (grown and (
+                    (avail is not None and avail < lim["low"]) or _swap_hot(0.12, avail)))):
+                _diag("admission_recycle", rss=_cbx_last_rss, avail=avail, soft=lim["soft"], low=lim["low"])
+                status("پیش از ساخت این بخش، حافظهٔ موتور را خالی می‌کنم…")
+                _cbx_retire_proc()
+                alive, fresh = False, True
+            if not alive:
+                # a new worker needs room for the model: while this computer is short of free memory, wait (saying so)
+                if not _cbx_wait_mem(lim["floor"] + (lim["base"] if short else 0), status):
+                    raise _cbx_short_error()
+                short = False
             p = _cbx_ensure()
-            p.stdin.write(line); p.stdin.flush()
-        # 177 · the other half of the guard: while the worker works, the engine watches it every second and stops it
-        #       at once past 12 GB (or when the Mac runs out of free memory) — a leak never waits for the job's end
-        guard = {"on": True, "why": None, "mb": 0}
+            line = json.dumps(dict(params, items=[[i, work[i][1]] for i in range(pos, len(work))], of=len(work),
+                                   limits=lim, flush=fresh, verified=_cbx_verified), ensure_ascii=True) + "\n"   # Persian text + Persian paths
+            try:
+                p.stdin.write(line); p.stdin.flush()
+            except Exception:
+                _cbx_retire_proc(wait=2)
+                p = _cbx_ensure()
+                p.stdin.write(line); p.stdin.flush()
+            # the live guard: while the worker works, the engine watches it twice a second and stops it at once past
+            # the hard share (or when the computer's free memory falls under the floor)
+            guard = {"on": True, "why": None, "mb": 0, "small": False}
 
-        def _watch(proc=p):
-            while guard["on"] and proc.poll() is None:
-                mb = _footprint_mb(proc.pid)
-                try:
-                    import psutil
-                    av = psutil.virtual_memory().available // (1024 * 1024)
-                except Exception:
-                    av = None
-                if mb > _CBX_KILL_MB or (av is not None and av < 1200 and mb > 3000):
-                    guard["why"], guard["mb"] = ("ceiling" if mb > _CBX_KILL_MB else "low_avail"), mb
-                    _diag("mem_guard", role="cbx", action="kill", mb=mb, avail=av, why=guard["why"])
-                    try:
-                        proc.kill()
-                    except Exception:
-                        pass
-                    return
-                time.sleep(1.0)
-        threading.Thread(target=_watch, daemon=True).start()
-        try:
-            return _cbx_read(p, status, guard)
-        finally:
-            guard["on"] = False
+            def _watch(proc=p, lim=lim):
+                while guard["on"] and proc.poll() is None:
+                    mb, av = _footprint_mb(proc.pid), _avail_mb()
+                    base = _cbx_base_mb or lim["base"]
+                    if mb > lim["hard"] or (av is not None and av < lim["floor"] and mb > base * 0.5):
+                        guard.update(why="ceiling" if mb > lim["hard"] else "low_avail", mb=mb, small=mb < base * 1.25)
+                        _diag("mem_guard", role="cbx", action="kill", mb=mb, avail=av, hard=lim["hard"],
+                              floor=lim["floor"], why=guard["why"])
+                        try:
+                            proc.kill()
+                        except Exception:
+                            pass
+                        return
+                    time.sleep(0.5)
+            threading.Thread(target=_watch, daemon=True).start()
+            try:
+                end, parts, info = _cbx_read(p, status)
+            finally:
+                guard["on"] = False
+            for i, (pcm, psr) in parts.items():
+                got[i], sr = pcm, psr
+            while pos < len(work) and pos in got:
+                pos += 1
+            if end == "done":
+                continue
+            if end == "retire":
+                _diag("cbx_flush", next=pos, of=len(work), rss=info.get("rss_mb"), avail=info.get("avail_mb"))
+                _cbx_retire_proc(wait=8.0 if pos < len(work) else 0)
+                fresh = True
+                if pos < len(work):
+                    status("حافظهٔ چترباکس خالی شد؛ کار از همین‌جا ادامه دارد…")
+                continue
+            # the worker stopped in the middle of a piece: our guard, out of GPU memory, a cancel or a crash
+            _cbx_retire_proc(wait=3.0)
+            fresh = True
+            crash = end == "stopped" and not guard["why"]
+            if crash:
+                _check_cancel()   # cancel() ends the worker too
+            if pos >= len(work):
+                break
+            tries[pos] += 1
+            if crash:
+                if tries[pos] >= 2:
+                    time.sleep(0.2)
+                    tail = "\n".join(list(_cbx_stderr or [])[-8:])
+                    raise RuntimeError("موتور چترباکس یکهو بسته شد" +
+                                       (":\n" + tail if tail else " — یک بار دیگر امتحان کنید."))
+                _diag("cbx_crash_retry", piece=pos)
+                continue
+            kills += 1
+            if guard["why"] == "low_avail" and guard["small"]:
+                # the computer itself ran short (other programs hold the memory, not our worker): room first, then again
+                short = True
+                if tries[pos] >= 3:
+                    raise _cbx_short_error()
+                status("حافظهٔ آزاد این دستگاه تمام شد؛ چترباکس را نگه داشتم تا دستگاه قفل نکند و همین تکه را دوباره می‌سازم…")
+                continue
+            gb = round((guard["mb"] or info.get("rss_mb") or 0) / 1024, 1)
+            if kills > _CBX_MAX_KILLS or (tries[pos] >= 2 and not _cbx_halve(work[pos][1])):
+                raise RuntimeError(f"این تکه حتی در دو نیمه هم در حافظهٔ این دستگاه جا نشد (چترباکس به {gb} گیگابایت رسید). "
+                                   "برنامه‌های دیگر را ببندید یا این خط را کوتاه‌تر کنید و دوباره بسازید.")
+            oom = end == "oom"
+            if tries[pos] >= 2:
+                a, b = _cbx_halve(work[pos][1])
+                work[pos:pos + 1] = [[work[pos][0], a], [work[pos][0], b]]
+                tries[pos:pos + 1] = [0, 0]
+                status("حافظهٔ پردازندهٔ گرافیکی برای چترباکس کم آمد؛ حافظه را خالی می‌کنم و این تکه را در دو نیمه می‌سازم…" if oom else
+                       f"چترباکس به {gb} گیگابایت حافظه رسید؛ حافظه را خالی می‌کنم و این تکه را در دو نیمه می‌سازم…")
+            else:
+                status("حافظهٔ پردازندهٔ گرافیکی برای چترباکس کم آمد؛ حافظه را خالی می‌کنم و همین تکه را دوباره می‌سازم…" if oom else
+                       f"چترباکس به {gb} گیگابایت حافظه رسید؛ حافظه را خالی می‌کنم و همین تکه را دوباره می‌سازم…")
+    per = []
+    for c in range(len(clauses)):
+        seg = [got[i] for i in range(len(work)) if work[i][0] == c and i in got]
+        per.append(np.concatenate(seg) if seg else np.zeros(int(sr * 0.15), dtype=np.int16))
+    pcm = np.concatenate(per) if per else np.zeros(1, dtype=np.int16)
+    return pcm, sr, per
 
 
-def _cbx_read(p, status, guard):
-    """Reads the worker's answer for one job (status lines, then the result)."""
-    global _cbx_proc, _cbx_last_rss
+def _cbx_read(p, status):
+    """Reads one request's answers: status lines and finished pieces, until the worker is done, retires, runs out of
+    GPU memory or stops. Returns (end, {piece: (pcm, sr)}, its last message); end: done | retire | oom | stopped."""
+    global _cbx_last_rss, _cbx_base_mb, _cbx_verified
+    parts = {}
     for out in p.stdout:
         out = out.strip()
         try:
@@ -1588,48 +1760,37 @@ def _cbx_read(p, status, guard):
         t = msg.get("type")
         if t == "status":
             status(msg.get("msg", ""), pct=msg.get("pct"))
-        elif t == "error":
-            raise RuntimeError(msg.get("error", "خطای نامشخص"))
-        elif t == "result":
+        elif t == "base":
+            b = int(msg.get("rss_mb") or 0)
+            if b > 0:
+                _cbx_base_mb, _cbx_verified = b, True
+                _diag("cbx_base", mb=b, limits=_cbx_limits())
+        elif t == "part":
             _cbx_last_rss = int(msg.get("rss_mb") or 0)
-            with wave.open(msg["path"], "rb") as wf:
-                sr = wf.getframerate()
-                pcm = _wav_pcm(wf)
-            offs = None
             try:
-                offs = json.loads(Path(msg["path"] + ".offsets.json").read_text(encoding="utf-8"))
-            except Exception:
-                pass
-            for pth in (msg["path"], msg["path"] + ".offsets.json"):
+                with wave.open(msg["path"], "rb") as wf:
+                    sr = wf.getframerate()
+                    pcm = _wav_pcm(wf)
+                parts[int(msg["key"])] = (pcm, sr)
+            finally:
                 try:
-                    os.unlink(pth)
+                    os.unlink(msg["path"])
                 except OSError:
                     pass
-            if msg.get("recycle"):
-                freed = msg.get("rss_mb") or 0
-                status(f"حافظهٔ چترباکس خالی شد ({faDigits(freed // 1024)} گیگابایت آزاد شد)؛ دفعهٔ بعد چند ثانیه بیشتر طول می‌کشد."
-                       if freed else
-                       "حافظهٔ چترباکس خالی شد؛ دفعهٔ بعد چند ثانیه بیشتر طول می‌کشد.")
-                _cbx_proc = None
-                _cbx_last_rss = 0
-            if offs is not None:
-                return pcm, sr, [pcm[a:a + n].copy() for a, n in offs]
-            return pcm, sr
-    # stdout closed: the worker died mid-job
-    _cbx_proc = None
-    _cbx_last_rss = 0
-    if guard.get("why"):   # 177: our own guard stopped it
-        raise RuntimeError(f"چترباکس به {faDigits(guard['mb'] // 1024)} گیگابایت حافظه رسید و برای اینکه دستگاه قفل نکند متوقف شد؛ "
-                           "دفعهٔ بعد یک نسخهٔ تازه از آن ساخته می‌شود — همین بخش را دوباره بسازید.")
-    _check_cancel()
-    tail = "\n".join(list(_cbx_stderr or [])[-8:])
-    raise RuntimeError("موتور چترباکس یکهو بسته شد" +
-                       (":\n" + tail if tail else " — یک بار دیگر امتحان کنید."))
+        elif t in ("done", "retire", "oom"):
+            _cbx_last_rss = int(msg.get("rss_mb") or 0)
+            if t == "oom":
+                _diag("cbx_oom", rss=_cbx_last_rss, error=str(msg.get("error", ""))[:200])
+            return t, parts, msg
+        elif t == "error":
+            raise RuntimeError(msg.get("error", "خطای نامشخص"))
+    return "stopped", parts, {}
 
 
 # 177 · THE WHOLE APP'S MEMORY, every 30 s: the engine, the Chatterbox worker and the window's web process (Activity
-#       Monitor's numbers). A change or every 10 minutes goes to the log, so a runaway always leaves a trace; past 10 GB
-#       in the window or the engine the page is told once every 10 minutes (with the numbers).
+#       Monitor's numbers). A change or every 10 minutes goes to the log, so a runaway always leaves a trace; past a
+#       quarter of this computer's memory (179: a share, not a fixed 10 GB) in the window or the engine the page is
+#       told once every 10 minutes (with the numbers).
 def mem_watch(get_web_pid=None, warn=None, every=30.0):
     def run():
         last_log, last_warn, prev = 0.0, 0.0, None
@@ -1644,16 +1805,13 @@ def mem_watch(get_web_pid=None, warn=None, every=30.0):
                         web = _footprint_mb(wp)
                 except Exception:
                     pass
-                try:
-                    import psutil
-                    av = psutil.virtual_memory().available // (1024 * 1024)
-                except Exception:
-                    av = None
+                av = _avail_mb()
                 now, cur = time.time(), (main, wk, web)
                 if prev is None or now - last_log > 600 or any(abs(c - q) > max(300, 0.15 * q) for c, q in zip(cur, prev)):
                     _diag("mem", main=main, worker=wk, web=web, avail=av)
                     last_log, prev = now, cur
-                if warn and (web > 10000 or main > 10000) and now - last_warn > 600:
+                big = 0.25 * (_total_mb() or 16000)
+                if warn and (web > big or main > big) and now - last_warn > 600:
                     last_warn = now
                     warn(main, web)
             except Exception:
@@ -1772,30 +1930,23 @@ def _assemble_raw(entry):
 
 
 def _mem_preflight(status):
-    try:
-        import psutil
-        total_mb = psutil.virtual_memory().total // (1024 * 1024)
-    except Exception:
-        total_mb = None
+    """179: shares of this computer's memory, not fixed numbers. Chatterbox cannot run under 7 GB in all (the model
+    itself needs 5–6 GB). Low free memory is no reason to refuse any more: the engine waits for room before it starts
+    a worker and flushes the worker's memory as it goes — here it only warns when the room is short of what the
+    model needs plus the free share the engine keeps."""
+    total_mb = _total_mb()
     if total_mb is not None and total_mb < 7000:
         raise RuntimeError(
             f"چترباکس روی این دستگاه اجرا نمی‌شود؛ دست‌کم 8 گیگابایت رم می‌خواهد "
             f"(این دستگاه {total_mb // 1024} گیگابایت دارد). به‌جایش از صداهای سبک — مانا، ژیرو یا امیر — استفاده کنید.")
-    try:
-        import psutil
-        avail_mb = psutil.virtual_memory().available // (1024 * 1024)
-    except Exception:
-        avail_mb = None
-    if _swap_hot(10000, avail_mb):
-        raise RuntimeError(
-            "حافظهٔ دستگاه کم آمده و سواپ در همین نشست خیلی بالا رفته — "
-            "چند برنامهٔ دیگر را ببندید و دوباره امتحان کنید.")
-    if avail_mb is not None and avail_mb < 2000:
-        raise RuntimeError(
-            f"حافظهٔ آزاد برای چترباکس کم است (فقط {faDigits(avail_mb)} مگابایت). "
-            "چند برنامهٔ دیگر را ببندید و دوباره امتحان کنید؛ ادامه‌دادن در این وضعیت دستگاه را قفل می‌کند.")
-    if avail_mb is not None and avail_mb < 4500:
-        status(f"هشدار: حافظهٔ آزاد کم است ({avail_mb // 1024} گیگابایت)؛ ممکن است کار کند پیش برود. "
+    avail_mb = _avail_mb()
+    if avail_mb is None:
+        return
+    lim = _cbx_limits(total_mb)
+    ours = _footprint_mb(_cbx_proc.pid) if (_cbx_proc is not None and _cbx_proc.poll() is None) else 0
+    room = avail_mb + ours          # our own worker's memory comes back whenever the engine flushes it
+    if room < lim["low"] + lim["base"]:
+        status(f"هشدار: حافظهٔ آزاد کم است ({round(room / 1024, 1)} گیگابایت)؛ ممکن است کار کند پیش برود. "
                "اگر برنامه‌های دیگر را ببندید، کمک می‌کند.")
 
 

@@ -8,7 +8,7 @@ var mode = 'audio', vSel = null, VVER = 0;   // var: read by the editor's handle
 const RES = { '1080p': 1080, '2k': 1440, '4k': 2160 };
 const RATIOS = { '16:9': [16, 9], '9:16': [9, 16], '1:1': [1, 1], '4:5': [4, 5] };
 function outSize(res, ratio){ const [a, b] = RATIOS[ratio || V.ratio] || [16, 9], s = RES[res || V.res] || 1440; const short = s, long = Math.round(short * Math.max(a, b) / Math.min(a, b) / 2) * 2; return a >= b ? [long, short] : [short, long]; }
-const POD0 = () => ({ style: 1, layout: 'auto', wave: 'circle', pal: 'shf', bg: 'mesh', fit: 0, pos: [0, 0], zoom: 1, drift: 1, warp: 0.35, grain: 0.06, solid: '#0c1230', custom: ['#1c2a74', '#2b3fb0', '#0c1230'], v177: true,   // 177: no orbs; a colour of its own; a custom gradient
+const POD0 = () => ({ style: 1, layout: 'auto', wave: 'circle', pal: 'shf', bg: 'mesh', fit: 0, pos: [0, 0], zoom: 1, drift: 1, warp: 0.35, grain: 0.06, solid: '#0c1230', custom: ['#1c2a74', '#2b3fb0', '#0c1230'], v177: true, v179: true,   // 177: no orbs; a colour of its own; a custom gradient
   sens: 0.6, ovColor: '#000000', ovOp: 0.15, grad: true, gradDir: 'to top', gradA: '#05070f', gradB: '#1c2a74', gradOp: 0.7, bgAsset: null, bgKind: null, names: true });
 const SUBS0 = () => ({ on: true, size: 0.042, color: '#ffffff', bg: '#000000', bgOp: 0.55, pos: 0.9, weight: 700, follow: true, cues: [], off: { x: 0, y: 0 }, fixes: {} });   // 176: always following; corrections by line; one place for all
 const TEXT0 = () => ({ type: 'text', text: T('عنوانِ قسمت', 'Episode title'), x: 0.1, y: 0.07, w: 0.8, h: 0.12, rot: 0, size: 0.06, weight: 900, color: '#ffffff', align: 'center',
@@ -17,8 +17,8 @@ const MEDIA0 = (type, asset, aw, ah) => { const r = aw && ah ? aw / ah : 16 / 9,
   return { type, asset, x: 0.68, y: 0.06, w, h: Math.min(0.5, h), rot: 0, fit: 'cover', radius: 0.02, opacity: 1, mute: true, volume: 1, loop: true, trimIn: 0, anim: { v: 2 },
     stroke: { on: false, color: '#ffffff', style: 'solid', width: 0.004, opacity: 1 }, shadow: { on: false, color: '#000000', opacity: 0.45, angle: 90, distance: 0.008, blur: 0.02, spread: 0 }, start: 0, end: null }; };   // 176: no drop shadow by default
 const STICKER0 = () => { const [W, H] = outSize(); return { type: 'sticker', emoji: '👑', x: 0.84, y: 0.08, w: 0.09, h: 0.09 * W / H, rot: 6, bg: { on: false, shape: 'circle', color: '#e6a483' }, start: 0, end: null, opacity: 1, anim: { v: 2, loop: 'breathe', loopSpeed: 1 } }; };   // 169: no background by default
-const V0 = () => ({ ratio: '16:9', res: '2k', fps: 30, bg: '#0c1230', pod: POD0(), subs: SUBS0(),
-  objects: [] });   // 178: a new project's video is empty — no podcast, no title until you add them
+const V0 = () => ({ ratio: '16:9', res: '2k', fps: 30, bg: '#000000', cv179: true, pod: POD0(), subs: SUBS0(),
+  objects: [] });   // 178: a new project's video is empty — no podcast, no title until you add them · 179: a black canvas
 let V = V0();
 const objById = id => V.objects.find(o => o.id === id);
 const projEnd = () => Math.max(speechEnd(), ...V.objects.map(o => o.end || 0), 1);
@@ -172,21 +172,23 @@ function drawPhotoCircle(ctx, im, cx, cy, r){
   if (V.pod && V.pod.avatar && V.pod.avatar.ring === false) return;   /* 177: the ring switch acts on photos too */
   ctx.save(); ctx.strokeStyle = rgba('#ffffff', 0.75); ctx.lineWidth = Math.max(1, r * 0.06); ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); }
 function drawPodLayer(ctx, o, W, H, t, orbs){ const P = V.pod, orb = false;   // 177: no orbs
-  if ((V.pod.layout === 'quote')){ const q = cuesNow().find(c => t >= c.at && t < c.at + c.dur); if (q){ const fake = { ...o, text: '«' + q.text + '»', size: 0.05, weight: 900, color: '#fff', align: 'center', bg: { on: false } }; drawText(ctx, fake, W, H); } }
   orbs.forEach(ob => { const cx = ob.cx * W, cy = ob.cy * H, R = ob.r * H; if ((ob.alpha ?? 1) <= 0.002) return; ctx.save(); if (ob.alpha < 1) ctx.globalAlpha *= ob.alpha; if (ob.mask && ob.mask.p < 0.999) maskRect(ctx, ob.mask, ...ob.mask.box);   /* 175: In / Out per speaker */
-    if (!orb){ ctx.save(); const AV = (P.avatar && P.avatar.size) || 1, ph = spkPhotoImg(ob.spk); if (ph) drawPhotoCircle(ctx, ph, cx, cy, R * 0.55 * AV); else { ctx.fillStyle = rgba('#ffffff', 0.12); ctx.beginPath(); ctx.arc(cx, cy, R * 0.55 * AV, 0, Math.PI * 2); ctx.fill(); if (!(P.avatar && P.avatar.ring === false)){ ctx.lineWidth = Math.max(1, R * 0.04); ctx.strokeStyle = rgba('#ffffff', 0.5); ctx.stroke(); }
+    const AV = (P.avatar && P.avatar.size) || 1, AR = R * 0.55 * AV, DN = AR - R * 0.55;   // 179: the avatar's radius, and how far a bigger avatar pushes what sits under it
+    if (!orb){ ctx.save(); const ph = spkPhotoImg(ob.spk); if (ph) drawPhotoCircle(ctx, ph, cx, cy, AR); else { ctx.fillStyle = rgba('#ffffff', 0.12); ctx.beginPath(); ctx.arc(cx, cy, AR, 0, Math.PI * 2); ctx.fill(); if (!(P.avatar && P.avatar.ring === false)){ ctx.lineWidth = Math.max(1, R * 0.04); ctx.strokeStyle = rgba('#ffffff', 0.5); ctx.stroke(); }
       ctx.font = FONT(800, R * 0.32 * AV); ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.direction = 'rtl'; ctx.fillText(ob.spk.slice(0, 2), cx, cy); }
       const lv = ob.level, bars = 36; ctx.fillStyle = rgba('#ffffff', 0.85);
-      if (P.wave === 'circle'){ for (let i = 0; i < 48; i++){ const a = i / 48 * Math.PI * 2, len = R * (0.12 + 0.5 * lv * (0.5 + 0.5 * Math.sin(i * 1.7 + t * 9))); ctx.save(); ctx.translate(cx, cy); ctx.rotate(a); rrect(ctx, -R * 0.02, -R * 0.62 - len, R * 0.04, len, R * 0.02); ctx.fill(); ctx.restore(); } }
-      else if (P.wave === 'line'){ ctx.strokeStyle = rgba('#ffffff', 0.9); ctx.lineWidth = Math.max(1, H * 0.003); ctx.beginPath(); for (let i = 0; i <= 80; i++){ const x = cx - R * 1.3 + i / 80 * R * 2.6, y = cy + R * 0.95 + Math.sin(i * 0.5 + t * 8) * R * 0.25 * lv; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.stroke(); }
+      if (P.wave === 'circle'){ const RA = R * AV; for (let i = 0; i < 48; i++){ const a = i / 48 * Math.PI * 2, len = RA * (0.12 + 0.5 * lv * (0.5 + 0.5 * Math.sin(i * 1.7 + t * 9))); ctx.save(); ctx.translate(cx, cy); ctx.rotate(a); rrect(ctx, -RA * 0.02, -RA * 0.62 - len, RA * 0.04, len, RA * 0.02); ctx.fill(); ctx.restore(); } }   // 179: they hug the avatar at any size
+      else if (P.wave === 'line'){ ctx.strokeStyle = rgba('#ffffff', 0.9); ctx.lineWidth = Math.max(1, H * 0.003); ctx.beginPath(); for (let i = 0; i <= 80; i++){ const x = cx - R * 1.3 + i / 80 * R * 2.6, y = cy + DN + R * 0.95 + Math.sin(i * 0.5 + t * 8) * R * 0.25 * lv; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.stroke(); }
       else { const bw = R * 2.6 / bars; for (let i = 0; i < bars; i++){ const hh = R * 0.5 * Math.max(0.06, lv * (0.35 + 0.65 * Math.abs(Math.sin(i * 1.3 + t * 7)))); const x = cx - R * 1.3 + i * bw;
-          if (P.wave === 'mirror') rrect(ctx, x, cy + R * 0.95 - hh / 2, bw * 0.6, hh, bw * 0.3); else rrect(ctx, x, cy + R * 1.2 - hh, bw * 0.6, hh, bw * 0.3); ctx.fill(); } }
+          if (P.wave === 'mirror') rrect(ctx, x, cy + DN + R * 0.95 - hh / 2, bw * 0.6, hh, bw * 0.3); else rrect(ctx, x, cy + DN + R * 1.2 - hh, bw * 0.6, hh, bw * 0.3); ctx.fill(); } }
       ctx.restore(); }
     if (P.names !== false && orbs.length){ const LB = P.label || {}, ls = LB.size || 1, style = LB.style || 'pill', px = Math.max(8, H * 0.024 * ls);   // 170: size, weight and style
-      ctx.save(); ctx.font = FONT(LB.weight || 700, px); ctx.direction = 'rtl'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; const tw = ctx.measureText(ob.spk).width + px * 1.25, lh = px * 1.7, ty = cy + R * (orb ? 1.25 : 1.45) + (ls - 1) * px * 0.5;
+      // 179: the name's TOP stays where it was (under the avatar and its sound) and a bigger name grows downward from it
+      const px1 = Math.max(8, H * 0.024), top = cy + Math.max(R * 1.45 + DN - px1 * 0.85, P.wave === 'circle' ? R * AV * 1.29 : 0);
+      ctx.save(); ctx.font = FONT(LB.weight || 700, px); ctx.direction = 'rtl'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; const tw = ctx.measureText(ob.spk).width + px * 1.25, lh = px * 1.7, ty = top + lh / 2;
       const prim = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#e9603b';
       if (style === 'pill'){ ctx.fillStyle = rgba('#ffffff', 0.16); rrect(ctx, cx - tw / 2, ty - lh / 2, tw, lh, lh / 2); ctx.fill(); }
-      else if (style === 'solid'){ ctx.fillStyle = prim; rrect(ctx, cx - tw / 2, ty - lh / 2, tw, lh, lh / 2); ctx.fill(); }
+      else if (style === 'solid'){ ctx.fillStyle = LB.pill || prim; rrect(ctx, cx - tw / 2, ty - lh / 2, tw, lh, lh / 2); ctx.fill(); }
       else if (style === 'outline'){ ctx.lineWidth = Math.max(1, px * 0.08); ctx.strokeStyle = rgba('#ffffff', 0.55); rrect(ctx, cx - tw / 2, ty - lh / 2, tw, lh, lh / 2); ctx.stroke(); }
       else if (style === 'plain'){ ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = px * 0.35; ctx.shadowOffsetY = px * 0.08; }
       ctx.fillStyle = LB.color || '#fff'; ctx.fillText(ob.spk, cx, ty); ctx.restore(); }
@@ -319,7 +321,7 @@ const vcolor = (lbl, en, val, set) => `<label class="flex items-center justify-b
 const vsec = (title, en, body, reset) => `<div class="space-y-3 border-b border-base-300 px-4 py-3"><div class="flex items-center justify-between"><span class="text-sm font-bold">${T(title, en)}</span>${reset ? `<button class="btn btn-ghost btn-xs btn-square opacity-60 hover:opacity-100" onclick="${reset}" data-tip="بازنشانی به پیش‌فرض" data-tip-en="Reset to default"><svg class="size-3.5"><use href="#i-rotate-ccw"/></svg></button>` : ''}</div>${body}</div>`;
 function vset(path, val, noHist){ if (!noHist) remember(); const ks = path.split('.'); let o = ks[0] === 'sel' ? objById(vSel) : V; ks.slice(1, -1).forEach(k => o = o[k]); if (ks[0] !== 'sel' && ks.length === 1){ V[path] = val; } else o[ks[ks.length - 1]] = val; VVER++; vDraw(); autosave(); }
 function vreset(what){ remember(); const o = objById(vSel);
-  if (what === 'video') Object.assign(V, { ratio: '16:9', res: '2k', fps: 30, bg: '#0c1230' });
+  if (what === 'video') Object.assign(V, { ratio: '16:9', res: '2k', fps: 30, bg: '#000000' });
   else if (what === 'subs') V.subs = { ...SUBS0(), cues: V.subs.cues };
   else if (what === 'pod') V.pod = { ...POD0(), bgAsset: V.pod.bgAsset };
   else if (what === 'text' && o) Object.assign(o, (({ text, x, y, w, h, start, end, ...r }) => r)(TEXT0()));
@@ -391,7 +393,9 @@ function snapshot(){ return JSON.parse(JSON.stringify(snapRaw())); }
 function restoreSnap(sn){
   S.lines = sn.lines; S.tracks = sn.tracks; const base = JSON.parse(JSON.stringify(S.proj)); S.proj = Object.assign(base, sn.proj || {});
   ['cbx', 'light', 'fish', 'duo'].forEach(k => S.proj[k] = Object.assign({}, base[k], (sn.proj || {})[k] || {})); S.music = Object.assign({}, MUSIC0, sn.music || {});
-  const d = V0(); V = Object.assign(d, sn.video || {}); V.pod = Object.assign(POD0(), (sn.video || {}).pod || {}); V.subs = Object.assign(SUBS0(), (sn.video || {}).subs || {}); podMigrate(V.pod, (sn.video || {}).pod); VVER++;
+  const d = V0(); V = Object.assign(d, sn.video || {}); V.pod = Object.assign(POD0(), (sn.video || {}).pod || {}); V.subs = Object.assign(SUBS0(), (sn.video || {}).subs || {}); podMigrate(V.pod, (sn.video || {}).pod);
+  if (sn.video && !sn.video.cv179){ if (String(V.bg || '').toLowerCase() === '#0c1230') V.bg = '#000000'; V.cv179 = true; }   // 179: the old default navy canvas → the new default black
+  VVER++;
   if (mode === 'video'){ fitFrame(); fillVInsp(); renderVTL(); vDraw(); }
 }
 
@@ -539,7 +543,7 @@ function ensureLayers(){
     let L = V.layers.find(l => l.kind === kind && !l.items.some(id => { const x = objById(id); return x && overlap(x, o); }));
     if (!L){ L = { id: 'L' + (++uid), kind, name: kind === 'vid' ? T('پس‌زمینه', 'Background') : T('لایه', 'Layer'), en: kind === 'vid' ? 'Background' : 'Layer', items: [] }; if (kind === 'obj') V.layers.unshift(L); else V.layers.push(L); }
     L.items.push(o.id); });
-  V.layers.forEach(l => l.items = l.items.filter(id => objById(id))); V.layers = V.layers.filter(l => l.items.length || l.keep);
+  V.layers.forEach(l => l.items = l.items.filter((id, i, all) => objById(id) && all.indexOf(id) === i)); V.layers = V.layers.filter(l => l.items.length || l.keep);   // 179: never twice in a layer
   V.layers.forEach(l => { if (l.kind === 'vid'){ l.kind = 'obj'; l.name = 'لایه'; l.en = 'Layer'; } });
 }
 const overlap = (a, b) => (a.start || 0) < (b.end == null ? projEnd() : b.end) && (b.start || 0) < (a.end == null ? projEnd() : a.end);
@@ -566,12 +570,12 @@ function renderVideoTimeline(){
   /* 176: a video clip is the audio clip — label on top, its length when selected, white trim handles beside it when selected */
   const hdl = (x, e, data, hw = 16) => `<span class="trimh vtrim absolute top-1.5 bottom-1.5 z-20 cursor-ew-resize" style="left:${x}px;width:${hw}px" data-e="${e}" ${data}><span class="pointer-events-none absolute top-1/2 h-[60%] w-[4px] -translate-y-1/2 rounded-full bg-white shadow-[0_0_4px_rgba(0,0,0,.6)] ${e === 's' ? 'right-[-6px]' : 'left-[-6px]'}"></span></span>`;   /* 178: the white bar inside the clip's edge */   /* 177: outside the clip, as in the audio editor */
   const clipEl = (cls, left, w, data, label, trims, extra = '', on = false, len = null, gl = 16, gr = 16) => { const ww = Math.max(6, w), wl = Math.max(6, Math.min(16, gl)), wr = Math.max(6, Math.min(16, gr));   /* 177: a handle narrows beside a touching neighbour */
-    return `<div class="clip vclip absolute top-1.5 bottom-1.5 cursor-grab overflow-hidden rounded-field outline outline-1 ${cls}" style="left:${left}px;width:${ww}px" ${data}><span class="ui pointer-events-none absolute inset-x-1.5 top-0.5 z-[1] truncate text-[11px] font-semibold" dir="auto">${escapeHtml(label)}</span>${extra}${on && len != null && ww > 130 ? `<span class="pointer-events-none absolute bottom-1 ${extra.includes('data-trbadge') ? 'right-[40px]' : 'right-6'} z-[2] rounded-md bg-black/60 px-1.5 text-[10px] font-semibold tabular-nums text-white">${secs(len)}</span>` : ''}</div>`
+    return `<div class="clip vclip absolute top-1.5 bottom-1.5 cursor-grab overflow-hidden rounded-field outline outline-1 ${cls}" style="left:${left}px;width:${ww}px" ${data}><span class="ui pointer-events-none absolute inset-x-1.5 top-0.5 z-[1] truncate text-[11px] font-semibold" dir="auto">${escapeHtml(label)}</span>${extra}${len != null && lenFits(ww, secs(len), extra.includes('data-trbadge') ? 16 : 0) ? `<span class="cliplen pointer-events-none absolute bottom-1 ${extra.includes('data-trbadge') ? 'right-[40px]' : 'right-6'} z-[2] rounded-md bg-black/60 px-1.5 text-[10px] font-semibold tabular-nums text-white">${secs(len)}</span>` : ''}</div>`
       + (on && trims ? hdl(left - wl, 's', data, wl) + hdl(left + ww, 'e', data, wr) : ''); };
   const lanes = TR.map((t, i) => { let c = '';
     if (t.kind === 'sub') cuesNow().forEach((q, k) => { const on = vSel === 'SUB' && V.subSel === k; c += clipEl(`bg-accent/15 text-accent ${on ? 'outline-2 outline-accent' : 'outline-accent/40'}`, PAD + q.at * pps, q.dur * pps - 2, `data-k="sub" data-i="${k}"`, q.text, false, q.fixed ? `<span class="badge badge-warning badge-xs pointer-events-none absolute bottom-1 left-1 gap-0.5" data-tip="${T('دستی اصلاح شده', 'corrected by hand')}"><svg class="size-2.5"><use href="#i-pencil"/></svg></span>` : '', on, q.dur); });
-    else if (t.kind === 'sfx'){ const st = typeof sfxTrack === 'function' ? sfxTrack(false) : null; (st ? st.clips : []).forEach(x => { c += clipEl(`bg-accent/15 text-accent ${selClip === x.id ? 'outline-2 outline-accent' : 'outline-accent/40'}`, PAD + x.at * pps, (x.out - x.in) * pps - 2, `data-k="sfx" data-cid="${x.id}"`, x.name || '', false); }); }
-    else if (t.kind === 'mix') c += clipEl('bg-base-content/5 text-base-content/60 outline-base-content/15', PAD, speechEnd() * pps, 'data-k="mix"', T('صدا — دوبار کلیک برای ویرایش', 'Audio — double-click to edit'), false, `<span class="pointer-events-none absolute inset-x-2 bottom-1 top-6 flex items-end gap-px">${vBars(Math.max(20, Math.round(speechEnd() * pps / 6)), 7)}</span>`);
+    else if (t.kind === 'sfx'){ const st = typeof sfxTrack === 'function' ? sfxTrack(false) : null; (st ? st.clips : []).forEach(x => { c += clipEl(`bg-accent/15 text-accent ${selClip === x.id ? 'outline-2 outline-accent' : 'outline-accent/40'}`, PAD + x.at * pps, (x.out - x.in) * pps - 2, `data-k="sfx" data-cid="${x.id}"`, x.name || '', false, '', false, x.out - x.in); }); }
+    else if (t.kind === 'mix') c += clipEl('bg-base-content/5 text-base-content/60 outline-base-content/15', PAD, speechEnd() * pps, 'data-k="mix"', T('صدا — دوبار کلیک برای ویرایش', 'Audio — double-click to edit'), false, `<span class="pointer-events-none absolute inset-x-2 bottom-1 top-6 flex items-end gap-px">${vBars(Math.max(20, Math.round(speechEnd() * pps / 6)), 7)}</span>`, false, speechEnd());
     else t.items.map(objById).filter(Boolean).forEach(o => { const s0 = o.start || 0, e0 = o.end == null ? projEnd() : o.end, multi = typeof VMS !== 'undefined' && VMS.has(o.id), on = vSel === o.id || multi;
       /* 176: background clips, slideshow slides and everything else each in their own colour; a slide says «اسلایدشو» */
       const look = o.show ? 'bg-info/15 text-info' : o.bgl ? 'bg-secondary/15 text-secondary' : 'bg-primary/15 text-primary', ring = o.show ? 'outline-info!' : o.bgl ? 'outline-secondary!' : 'outline-primary!';
@@ -692,7 +696,7 @@ function bindRadios(name, values, cur, set){ radios(name).forEach((r, k) => { r.
 function bindRange(el, val, set){ if (!el) return; el.value = val; el.oninput = () => set(+el.value); el.dispatchEvent(new Event('rangeset')); }
 function fillProj(){
   const p = $('iv-proj'), fps = p.querySelector('select'); [...fps.options].forEach((op, k) => op.value = ['30', '24', '60'][k]); fps.value = String(V.fps); fps.onchange = () => { vset('fps', +fps.value); }; enh(fps);
-  CF.vBg = { get: () => V.bg || '#0c1230', set: c => { V.bg = c; }, def: '#0c1230' }; cfMount('vBgF', 'vBg', ['#0c1230', '#000000', '#ffffff']);   /* 177: a colour field with the three old choices as swatches */
+  CF.vBg = { get: () => V.bg || '#000000', set: c => { V.bg = c; }, def: '#000000' }; cfMount('vBgF', 'vBg', ['#000000', '#0c1230', '#ffffff']);   /* 179: black by default */   /* 177: a colour field with the three old choices as swatches */
   projFileShow();
 }
 function fillText(o){
@@ -793,8 +797,9 @@ function vDelete(){ const o = objById(vSel); if (!o) return; remember(); V.objec
 function vSplit(){ const o = objById(vSel); if (!o) return;   /* 177: podcast clips split too (both halves draw the same podcast settings) */ const s0 = o.start || 0, e0 = o.end == null ? projEnd() : o.end;
   if (playhead <= s0 + 0.05 || playhead >= e0 - 0.05) return say(T('پلی‌هد باید داخلِ این شیء باشد.', 'The playhead must be inside this object.'), 'err');
   remember(); const c = JSON.parse(JSON.stringify(o)); c.id = 'o' + (++uid); c.start = playhead; c.end = o.end; if (o.type === 'video' || o.type === 'sfx') c.trimIn = (o.trimIn || 0) + (playhead - s0); o.end = playhead;
+  if (o.trans){ delete o.trans; }   /* 179: a transition belongs to its clip's END — the second half keeps it (the first half's new end touches its own other half) */
   if (o.anim){ migrateAnim(o); migrateAnim(c); o.anim.out = 'none'; c.anim.in = 'none'; if (o.anim.bgOut) o.anim.bgOut = 'follow'; if (c.anim.bgIn) c.anim.bgIn = 'follow'; }   /* 175: the first half keeps In, the second keeps Out */
-  V.objects.push(c); const L = layerOf(o.id); if (L && L.items) L.items.push(c.id); ensureLayers(); selectV(c.id); vChanged(); }
+  const L = layerOf(o.id); V.objects.push(c); if (L && L.items && !L.items.includes(c.id)) L.items.splice(L.items.indexOf(o.id) + 1, 0, c.id); ensureLayers(); selectV(c.id); vChanged(); }   /* 179: the second half sat TWICE in its layer (drawn twice; its transition dropped as «orphaned») */
 // 170: the timeline's own toolbar for the selected object bar (animate · duplicate · split · delete)
 function placeVObjBar(){ const bar = $('clipBar'); if (!bar || mode !== 'video') return; const o = vSel && vSel !== 'SUB' ? objById(vSel) : null, el = o && document.querySelector(`#lanes .vclip[data-id="${o.id}"]`);
   if (!o || !el){ if (!selClip) bar.classList.add('hidden'); return; }
@@ -933,11 +938,17 @@ function vSnapEdges(skip){ const out = [0, playhead]; V.objects.forEach(x => { i
 function fillLabelOpts(P){ const box = $('labelOpts'); if (!box) return; const LB = P.label || (P.label = { size: 1, weight: 700, style: 'pill' }), on = P.names !== false;   // 177: a switch first; a size you can use (75–400 %)
   box.innerHTML = `<label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span class="font-semibold">${T('نمایشِ نام‌ها', 'Show the names')}</span><input type="checkbox" class="toggle toggle-sm toggle-primary" ${on ? 'checked' : ''} onchange="podSet('names', this.checked)"></label>`
     + (on ? `<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T('اندازهٔ نام', 'Name size')}</legend><input type="range" data-unit="%" data-def="100" min="75" max="400" value="${Math.round((LB.size || 1) * 100)}" class="range range-xs w-full text-base-content/35 [--range-fill:0] [--range-p:0px] [--range-thumb:var(--color-primary)] [--range-thumb-size:14px]" oninput="podPath('label.size', +this.value / 100, true)"></fieldset>`
-    + `<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T('سبکِ نام', 'Name style')}</legend><select class="select select-sm w-full" onchange="podPath('label.style', this.value)">${[['pill', 'پیلِ شیشه‌ای', 'Glass pill'], ['solid', 'پیلِ رنگی', 'Solid pill'], ['outline', 'خطِ دور', 'Outline'], ['plain', 'ساده با سایه', 'Plain with shadow']].map(([k, fa, en]) => `<option value="${k}" ${(LB.style || 'pill') === k ? 'selected' : ''}>${T(fa, en)}</option>`).join('')}</select></fieldset>`
+    + `<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T('سبکِ نام', 'Name style')}</legend><select class="select select-sm w-full" onchange="podPath('label.style', this.value); fillLabelOpts(V.pod)">${[['pill', 'پیلِ شیشه‌ای', 'Glass pill'], ['solid', 'پیلِ رنگی', 'Solid pill'], ['outline', 'خطِ دور', 'Outline'], ['plain', 'ساده با سایه', 'Plain with shadow']].map(([k, fa, en]) => `<option value="${k}" ${(LB.style || 'pill') === k ? 'selected' : ''}>${T(fa, en)}</option>`).join('')}</select></fieldset>`
+    + ((LB.style || 'pill') === 'solid' ? `<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T('رنگِ پیل', 'Pill color')}</legend><div id="podPillColorF"></div></fieldset>` : '')   /* 179: a solid pill has its colour (the same colour field as everywhere) */
     + `<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T('وزنِ نام', 'Name weight')}</legend><select class="select select-sm w-full" onchange="podPath('label.weight', +this.value)">${[[900, 'سیاه', 'Black'], [700, 'پررنگ', 'Bold'], [500, 'معمولی', 'Regular']].map(([k, fa, en]) => `<option value="${k}" ${(LB.weight || 700) === k ? 'selected' : ''}>${T(fa, en)}</option>`).join('')}</select></fieldset>`
     + `<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T('رنگِ نام', 'Name color')}</legend><div id="podNameColorF"></div></fieldset>` : '');
   box.querySelectorAll('select').forEach(s => enh(s)); if (typeof rangeLabels === 'function') rangeLabels(box);
-  if (on){ CF.podName = { get: () => (V.pod.label || {}).color || '#ffffff', set: c => { V.pod.label = V.pod.label || {}; V.pod.label.color = c; }, def: '#ffffff' }; cfMount('podNameColorF', 'podName', false); } }
+  if (on){ CF.podName = { get: () => (V.pod.label || {}).color || '#ffffff', set: c => { V.pod.label = V.pod.label || {}; V.pod.label.color = c; }, def: '#ffffff' }; cfMount('podNameColorF', 'podName', false);
+    if ($('podPillColorF')){ const prim = cssHex(getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#e9603b');
+      CF.podPill = { get: () => (V.pod.label || {}).pill || prim, set: c => { V.pod.label = V.pod.label || {}; V.pod.label.pill = c; }, def: prim }; cfMount('podPillColorF', 'podPill', false); } } }
+// any CSS colour (the theme's oklch() too) as #rrggbb — a colour field speaks hex
+function cssHex(c){ try { const cv = cssHex.cv || (cssHex.cv = Object.assign(document.createElement('canvas'), { width: 1, height: 1 })), g = cv.getContext('2d', { willReadFrequently: true });
+  g.clearRect(0, 0, 1, 1); g.fillStyle = '#000'; g.fillStyle = c; g.fillRect(0, 0, 1, 1); const d = g.getImageData(0, 0, 1, 1).data; return '#' + [d[0], d[1], d[2]].map(v => v.toString(16).padStart(2, '0')).join(''); } catch (e) { return '#e9603b'; } }
 function podPath(path, val, live){ const [a, b] = path.split('.'); if (live){ if (POD_LIVE !== path){ remember(); POD_LIVE = path; } } else { remember(); POD_LIVE = null; } V.pod[a] = V.pod[a] || {}; V.pod[a][b] = val; vTouch(); autosave(); }
 
 // =====================================================================================
@@ -1027,7 +1038,7 @@ async function drawBgClip(ctx, o, W, H, t, exporting, orbs, P, pod){
 async function drawBackground(ctx, W, H, t, exporting, orbs, P, pod){ const L = bgClips();
   for (let i = 0; i < L.length - 1; i++){ const A = L[i], B = L[i + 1], tr = !exporting && TRPV && TRPV.id === A.id ? TRPV.tr : A.trans; if (!tr || !tr.type) continue; const cut = A.end ?? projEnd(); if (Math.abs((B.start || 0) - cut) > 0.06) continue; const d = Math.max(0.1, tr.dur || 0.8);   /* 177: a hovered tile previews its transition */
     if (t >= cut - d / 2 && t < cut + d / 2){ const p = (t - (cut - d / 2)) / d, ca = trCanvas(0, W, H), cb = trCanvas(1, W, H); await drawBgClip(ca.getContext('2d'), A, W, H, t, exporting, orbs, P, pod); await drawBgClip(cb.getContext('2d'), B, W, H, t, exporting, orbs, P, pod); blendTr(ctx, W, H, ca, cb, p, tr, t); return; } }
-  const cur = L.find(o => visibleAt(o, t)); if (cur) return drawBgClip(ctx, cur, W, H, t, exporting, orbs, P, pod); ctx.fillStyle = V.bg || '#0c1230'; ctx.fillRect(0, 0, W, H); }
+  const cur = L.find(o => visibleAt(o, t)); if (cur) return drawBgClip(ctx, cur, W, H, t, exporting, orbs, P, pod); ctx.fillStyle = V.bg || '#000000'; ctx.fillRect(0, 0, W, H); }
 function blendTr(ctx, W, H, ca, cb, p, tr, t){ const T = tr.type !== 'fade' && AvaTrans.LIB[tr.type] ? trgl() : null, pg = T && T.prog(tr.type);
   if (!pg){ ctx.save(); ctx.globalAlpha = 1; ctx.drawImage(ca, 0, 0, W, H); ctx.globalAlpha = Math.min(1, Math.max(0, p)); ctx.drawImage(cb, 0, 0, W, H); ctx.restore(); return; }
   const gl = T.gl; if (T.cv.width !== W || T.cv.height !== H){ T.cv.width = W; T.cv.height = H; } gl.viewport(0, 0, W, H); gl.useProgram(pg.p); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
@@ -1157,7 +1168,9 @@ function fillFontPick(fsel, wsel, fam, w, setF, setW){
 // 177 · the podcast's palette (one of the mock's, or the founder's own three colours, the rest derived) and a 176 design's move
 function podPal(P){ if (P.pal !== 'custom') return PALS[P.pal] || PALS.nil; const c = (P.custom || []).map(x => hex6(x) || '#1c2a74'), mix = (a, b, k) => '#' + [1, 3, 5].map(i => Math.round(parseInt(a.substr(i, 2), 16) * (1 - k) + parseInt(b.substr(i, 2), 16) * k).toString(16).padStart(2, '0')).join('');
   return [c[0], c[1], c[2], mix(c[0], c[1], 0.5), mix(c[1], c[2], 0.5), mix(c[2], '#000000', 0.45)]; }
-function podMigrate(P, raw){ if (!raw || raw.v177) return; if (ORB_WAVES.includes(P.wave)) P.wave = 'circle'; if (typeof raw.style === 'number') P.style = STYLE_177[raw.style] ?? 0; ['iri', 'glow', 'ripple', 'labPalette', 'labMesh'].forEach(k => delete P[k]); P.v177 = true; }
+function podMigrate(P, raw){ if (!raw) return;
+  if (!raw.v177){ if (ORB_WAVES.includes(P.wave)) P.wave = 'circle'; if (typeof raw.style === 'number') P.style = STYLE_177[raw.style] ?? 0; ['iri', 'glow', 'ripple', 'labPalette', 'labMesh'].forEach(k => delete P[k]); P.v177 = true; }
+  if (!raw.v179){ if (P.drift > 1.5) P.drift = 1.5; if (typeof P.style === 'number'){ if (P.style === 3) P.style = 6; else if (P.style > 3) P.style -= 1; } if (P.layout === 'quote') P.layout = 'single'; P.v179 = true; } }   // 179: Quote → Minimal
 
 // 177 · a podcast design's tile is a flat picture of the design itself — its background, its speakers and its waveform —
 //       not a shiny ball (the orb look belongs to the commercial product)
@@ -1165,8 +1178,8 @@ function podStyleSvg(st){ const c = PALS[st.pal] || PALS.nil, id = 'psg' + st.pa
   const bg = st.bg === 'solid' ? `<rect width="64" height="36" fill="${c[2]}"/>`
     : `<defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${c[1]}"/><stop offset=".5" stop-color="${c[0]}"/><stop offset="1" stop-color="${c[2]}"/></linearGradient></defs><rect width="64" height="36" fill="url(#${id})"/>`
       + (st.bg === 'image' ? `<path d="M0 36 L18 20 L28 28 L40 16 L64 34 L64 36 Z" fill="#000" fill-opacity=".28"/><circle cx="50" cy="9" r="3" fill="#fff" fill-opacity=".35"/>` : '');
-  const xs = st.layout === 'single' || st.layout === 'quote' ? [32] : [21, 43], cy = st.layout === 'quote' ? 22 : 14, r = 5.2;
-  let fg = st.layout === 'quote' ? `<text x="32" y="12.5" text-anchor="middle" font-size="11" font-weight="800" fill="#fff" fill-opacity=".9" font-family="serif">“ ”</text>` : '';
+  const xs = st.layout === 'single' ? [32] : [21, 43], cy = 14, r = 5.2;
+  let fg = '';
   xs.forEach(x => { fg += `<circle cx="${x}" cy="${cy}" r="${r}" fill="#fff" fill-opacity=".16" stroke="#fff" stroke-opacity=".75" stroke-width=".8"/>`;
     if (st.wave === 'circle'){ for (let i = 0; i < 16; i++){ const a = i / 16 * Math.PI * 2, l = 1.2 + (i % 3) * 0.7, r0 = r + 1.2; fg += `<line x1="${(x + Math.cos(a) * r0).toFixed(2)}" y1="${(cy + Math.sin(a) * r0).toFixed(2)}" x2="${(x + Math.cos(a) * (r0 + l)).toFixed(2)}" y2="${(cy + Math.sin(a) * (r0 + l)).toFixed(2)}" stroke="#fff" stroke-opacity=".85" stroke-width=".7" stroke-linecap="round"/>`; } }
     else if (st.wave === 'line'){ let d = ''; for (let i = 0; i <= 16; i++){ const px = x - 8 + i, py = cy + r + 4 + Math.sin(i * 0.9) * 1.6; d += (i ? 'L' : 'M') + px.toFixed(1) + ' ' + py.toFixed(1); } fg += `<path d="${d}" fill="none" stroke="#fff" stroke-opacity=".9" stroke-width=".8" stroke-linecap="round"/>`; }

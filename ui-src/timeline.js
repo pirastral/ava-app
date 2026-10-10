@@ -184,10 +184,21 @@ var TRPV = null, TRHOV = 0, TRTH = { key: '', urls: {}, busy: 0 };
 const TR_DIRIC = { 180: '#i-arrow-left', 0: '#i-arrow-right', 90: '#i-arrow-down', 270: '#i-arrow-up', 135: '#i-arrow-down-left', 45: '#i-arrow-down-right', 225: '#i-arrow-up-left', 315: '#i-arrow-up-right' };
 function trKeys(){ const LIB = AvaTrans.LIB, keys = Object.keys(LIB).filter(k => !LIB[k].scene);
   return [[T('ساده', 'Simple'), ['none', 'fade', ...keys.filter(k => k === 'push')]], [T('سینمایی', 'Cinematic'), keys.filter(k => k !== 'push' && !LIB[k].sc)], [T('وایپ و محو', 'Wipes and dissolves'), keys.filter(k => LIB[k].sc)]]; }
+// 179 · a chosen preset only shows its adjust icon; its settings open on that icon (the founder), in the same panel at the
+//       foot of the inspector as before, with the preset's name, a reset-all icon and a close button (Esc closes it too)
+var TRADJ = null;   // the clip whose transition settings are open
+function adjIcon(on, open, fn){ return on ? `<span role="button" tabindex="0" class="adjic absolute end-1 top-1 z-[2] grid size-6 place-items-center rounded-full border shadow-sm ${open ? 'border-transparent bg-base-100 text-primary' : 'border-base-content/20 bg-base-100/90 text-base-content hover:bg-base-100'}" onclick="event.stopPropagation(); ${fn}" onkeydown="if (event.key === 'Enter' || event.key === ' '){ event.preventDefault(); event.stopPropagation(); ${fn} }" data-tip="${open ? 'بستنِ تنظیم‌ها' : 'تنظیم‌ها'}" data-tip-en="${open ? 'Close the settings' : 'Adjust'}" aria-label="adjust" aria-expanded="${open ? 'true' : 'false'}"><svg class="pointer-events-none size-3.5"><use href="#i-sliders-horizontal"/></svg></span>` : ''; }
+function adjHead(name, changed, resetFn, closeFn){ return `<div class="flex items-center gap-1"><p class="min-w-0 flex-1 truncate text-sm font-semibold">${escapeHtml(name)}</p>`
+  + `<button type="button" class="adjrst btn btn-ghost btn-xs btn-square ${changed ? 'text-primary' : 'opacity-50 hover:opacity-100'}" onclick="${resetFn}" data-tip="بازنشانیِ همهٔ تنظیم‌های این پیش‌تنظیم" data-tip-en="Reset all of this preset's settings" aria-label="reset all"><svg class="size-3.5"><use href="#i-rotate-ccw"/></svg></button>`
+  + `<button type="button" class="adjx btn btn-ghost btn-xs btn-square" onclick="${closeFn}" data-tip="بستن (Esc)" data-tip-en="Close (Esc)" aria-label="close"><svg class="size-4"><use href="#i-x"/></svg></button></div>`; }
 function trTile(k, on){ const url = TRTH.urls[k], name = k === 'none' ? T('بدونِ گذار', 'None') : trName(k);
   const pic = k === 'none' ? `<span class="grid h-full w-full place-items-center"><svg class="size-4 opacity-70"><use href="#i-ban"/></svg></span>` : url ? `<img src="${url}" alt="" class="block h-full w-full object-cover" draggable="false">` : '';
   return `<button type="button" class="trtile btn btn-sm h-auto min-h-0 flex-col gap-1 p-1 pb-1.5 text-[11px] font-medium leading-normal ${on ? 'btn-primary' : 'border-base-content/10 bg-base-100'}" data-tr="${k}" onclick="trPick('${k}')" onmouseenter="trHover('${k}')" onmouseleave="trHoverEnd()">`
-    + `<span class="trthumb block aspect-video w-full overflow-hidden rounded-[5px] bg-base-300" data-th="${k}">${pic}</span><span class="block w-full overflow-visible break-words text-center">${escapeHtml(name)}</span></button>`; }
+    + `<span class="relative block w-full">${adjIcon(on && k !== 'none', TRADJ === vSel, 'trAdj()')}<span class="trthumb block aspect-video w-full overflow-hidden rounded-[5px] bg-base-300" data-th="${k}">${pic}</span></span><span class="block w-full overflow-visible break-words text-center">${escapeHtml(name)}</span></button>`; }
+function trAdj(){ const o = objById(vSel); if (!o) return; TRADJ = TRADJ === o.id ? null : o.id; fillBgTransTab(o); }
+function trAdjClose(){ if (!TRADJ) return false; TRADJ = null; const o = objById(vSel); if (o) fillBgTransTab(o); return true; }
+function trResetAll(){ const o = objById(vSel); if (!o || !o.trans) return; remember(); o.trans.params = {}; o.trans.dur = 0.8; renderTimeline(); vChanged(); fillBgTransTab(o); previewTrans(o); }
+function trChanged(tr){ if (!tr) return false; const TP = AvaTrans.TP[tr.type] || []; return Math.abs((tr.dur || 0.8) - 0.8) > 1e-6 || TP.some(([k, , , , , d]) => { const v = (tr.params || {})[k]; return v != null && +v !== +d; }); }
 function trSeg(k, opts, v){ const pick = ov => `setBgTrans('p:${k}', ${+ov})`;
   if (opts.length === 8 && opts.every(([ov]) => TR_DIRIC[ov])){   // eight directions: arrows on a compass (the way it moves)
     const by = {}; opts.forEach(o => { by[+o[0]] = o; });
@@ -201,14 +212,15 @@ function fillBgTransTab(o){ const box = $('iv-fx'); if (!box) return; const nx =
   const tr = o.trans || null, LIB = AvaTrans.LIB, cur = tr ? tr.type : 'none';
   let h = head + `<p class="text-xs leading-relaxed text-base-content/60">${T('نشانگر را روی هر گذار ببرید تا روی صفحه ببینیدش؛ با کلیک انتخاب می‌شود.', 'Hover a transition to see it on the canvas; click to choose it.')}</p>`;
   trKeys().forEach(([g, ks]) => { h += `<div class="space-y-1.5"><p class="text-xs font-semibold text-base-content/60">${escapeHtml(g)}</p><div class="grid grid-cols-3 gap-1.5">${ks.map(k => trTile(k, k === cur)).join('')}</div></div>`; });
-  if (tr){ const TP = AvaTrans.TP[tr.type] || [], L = LIB[tr.type], lbl = en => T((AvaTrans.TPFA || {})[en] || en, en), about = tr.type === 'fade' || !L ? T('کلیپِ بعدی آرام روی کلیپِ فعلی پیدا می‌شود.', 'The next clip fades in over the current one.') : T(L.aboutFa || L.about || '', L.aboutEn || L.about || '');
+  if (TRADJ && TRADJ !== o.id) TRADJ = null;
+  if (tr && TRADJ === o.id){ const TP = AvaTrans.TP[tr.type] || [], L = LIB[tr.type], lbl = en => T((AvaTrans.TPFA || {})[en] || en, en), about = tr.type === 'fade' || !L ? T('کلیپِ بعدی آرام روی کلیپِ فعلی پیدا می‌شود.', 'The next clip fades in over the current one.') : T(L.aboutFa || L.about || '', L.aboutEn || L.about || '');
     const ctl = ([k, label, min, max, step, d, , opts]) => { const v = (tr.params || {})[k] ?? d;
       return `<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${escapeHtml(lbl(label))}</legend>` + (opts ? trSeg(k, opts, v)
         : `<input type="range" min="${min}" max="${max}" step="${step}" value="${v}" data-def="${d}" class="${RNG}" onchange="setBgTrans('p:${k}', +this.value)">`) + `</fieldset>`; };
     /* the chosen transition's options stay in view at the foot of the panel while the tiles scroll (as in Animation) */
-    h += `<div class="sticky bottom-0 z-10 -mx-4 space-y-2 border-t border-base-300 bg-base-200 px-4 pb-3 pt-2 shadow-[0_-8px_16px_-12px_rgba(0,0,0,.5)]"><p class="text-sm font-semibold">${escapeHtml(trName(tr.type))}</p><p class="text-xs leading-relaxed text-base-content/60">${escapeHtml(about)}</p>`
+    h += `<div class="adjpanel sticky bottom-0 z-10 -mx-4 space-y-2 border-t border-base-300 bg-base-200 px-4 pb-3 pt-2 shadow-[0_-8px_16px_-12px_rgba(0,0,0,.5)]">${adjHead(trName(tr.type), trChanged(tr), 'trResetAll()', 'trAdjClose()')}<p class="text-xs leading-relaxed text-base-content/60">${escapeHtml(about)}</p>`
       + `<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T('مدت', 'Length')}</legend><input type="range" data-unit="s" min="0.2" max="3" step="0.1" value="${tr.dur || 0.8}" data-def="0.8" class="${RNG}" onchange="setBgTrans('dur', +this.value)"></fieldset>${TP.map(ctl).join('')}</div>`; }
-  box.innerHTML = h; if (typeof rangeLabels === 'function') rangeLabels(box); trThumbs(o, nx); }
+  box.innerHTML = h; if (typeof rangeLabels === 'function') rangeLabels(box); if (typeof vResets === 'function') vResets(box); trThumbs(o, nx); }   // 179: the settings open from the adjust icon (not through showVPanels): their sliders get their reset icons here
 // the tiles' pictures: both clips drawn small at the cut, every transition rendered half-way — once per pair of clips,
 // a few at a time so the panel never waits
 async function trThumbs(o, nx){ const cv = $('vcanvas'), W = 160, H = Math.max(40, Math.round(160 * ((cv && cv.height) || 1080) / ((cv && cv.width) || 1920)));
@@ -225,7 +237,9 @@ async function trThumbs(o, nx){ const cv = $('vcanvas'), W = 160, H = Math.max(4
 function trTrOf(o, k){ if (k === 'none') return null; const tr = o.trans || {}; return { type: k, dur: tr.dur || 0.8, params: tr.type === k ? (tr.params || {}) : {} }; }
 function trHover(k){ clearTimeout(TRHOV); TRHOV = setTimeout(() => { const o = objById(vSel); if (!o || !o.bgl) return; trPreview(o, trTrOf(o, k), true); }, 140); }
 function trHoverEnd(){ clearTimeout(TRHOV); if (TRPV && TRPV.loop) trPreviewStop(); }
-function trPick(k){ clearTimeout(TRHOV); trPreviewStop(true); setBgTransKind(k === 'none' ? '' : k); }
+function trPick(k){ clearTimeout(TRHOV); trPreviewStop(true); const o = objById(vSel), cur = o && o.trans && o.trans.type ? o.trans.type : 'none';
+  if (k === cur){ if (o && o.trans) previewTrans(o); return; }   // 179: the chosen one again keeps its settings (it used to reset them)
+  TRADJ = null; setBgTransKind(k === 'none' ? '' : k); }
 // the canvas plays the cut ±½ s with this transition and the playhead stays (looping while hovered, once after a choice)
 function trPreview(o, tr, loop){ trPreviewStop(true); if (typeof animPreviewStop === 'function') animPreviewStop(true); if (playing || mode !== 'video') return;
   const cut = o.end ?? projEnd(), d = tr ? Math.max(0.1, tr.dur || 0.8) : 0.6, t0 = Math.max(0, cut - d / 2 - 0.5), t1 = cut + d / 2 + 0.5;

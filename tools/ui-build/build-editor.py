@@ -20,7 +20,7 @@ CSS_SOURCES = ("editor.src.html", "editor.js", "video.js", "anim.js", "speakers.
 DYNAMIC_ICONS = {"mic", "music", "volume-2", "volume-x", "pause", "play", "layers", "pencil", "scissors", "check", "refresh-cw",
                  "copy", "trash-2", "plus", "grip-vertical", "captions", "clapperboard", "audio-lines", "sparkles", "chevron-left",
                  "chevron-right", "image", "film", "type", "sticker", "podcast", "user", "eye", "eye-off", "lock", "lock-open",
-                 "pin", "pin-off", "library-big"}
+                 "pin", "pin-off", "library-big", "x", "search", "sliders-horizontal", "rotate-ccw"}
 
 
 def main():

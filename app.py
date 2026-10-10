@@ -680,6 +680,22 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
+    def pending_open(self):
+        """180: the .ava the app was asked to open (double-clicked in Finder or Explorer) — handed over once, when the page is up."""
+        _OPEN_REQ["ready"] = True
+        p, _OPEN_REQ["path"] = _OPEN_REQ["path"], None
+        return {"ok": True, "path": p}
+
+    def project_open_path(self, path):
+        """180: open a given .ava without a dialog (a double-clicked file)."""
+        try:
+            import engines
+            if not path or not str(path).lower().endswith(".ava") or not os.path.isfile(str(path)):
+                raise RuntimeError(("This project file was not found: " if Api._lang == "en" else "فایل پروژه پیدا نشد: ") + str(path))
+            return {"ok": True, "path": str(path), **engines.project_unpack(open(str(path), "rb").read())}
+        except Exception as e:
+            return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
+
     def project_open(self):
         """160: reopen a .ava project exactly as it was saved."""
         try:
@@ -1003,8 +1019,103 @@ class Api:
             return {"ok": False, "error": (_tr_en(str(e)) if Api._lang == "en" else str(e))}
 
 
+# 180 · THE .ava FILE TYPE — its own document icon in Finder and Explorer (a page with the app's own crown — 181: in neutral
+#       greys, like Finder's own document icons — ava-doc.icns / ava-doc.ico, made by tools/make_doc_icon.py) and a
+#       double-click opens the project in the app.
+#       macOS: the bundle declares the type (build.spec); Finder's request to open a file arrives as an Apple Event, taken
+#       here by pywebview's app delegate (without it macOS would say the app cannot open the file).
+#       Windows: there is no installer, so the app registers the type for this user at launch (HKCU — no admin rights; written
+#       again only when something changed, e.g. the app folder moved or an update brought a new icon) and receives the file
+#       in its arguments.
+_OPEN_REQ = {"path": None, "ready": False, "window": None}
+
+
+def _open_request(path):
+    """A .ava to open: kept until the page asks for it; a page that is already up is told at once."""
+    _OPEN_REQ["path"] = str(path)
+    w = _OPEN_REQ.get("window")
+    if w is not None and _OPEN_REQ.get("ready"):
+        try:
+            w.evaluate_js("window.avaOpenPath && window.avaOpenPath(" + json.dumps(str(path)) + ")")
+            _OPEN_REQ["path"] = None
+        except Exception:
+            pass
+
+
+def _ava_in_args():
+    for a in sys.argv[1:]:
+        if str(a).lower().endswith(".ava") and os.path.isfile(a):
+            return os.path.abspath(a)
+    return None
+
+
+def _register_ava_windows():
+    if os.name != "nt" or not getattr(sys, "frozen", False):
+        return
+    try:
+        import winreg
+        import ctypes
+        ico = str(_res_path("ava-doc.ico"))
+        if not os.path.isfile(ico):
+            return
+        prog = "AvayeJavidShah.Project"
+        # 181: a fingerprint of the icon's pictures, kept beside the type. An update that brings a new icon to the same place
+        #      changes it, so the type is written again and Explorer is told to drop the icon it remembers (it keeps showing
+        #      the old one otherwise — the icon's path alone has not changed)
+        import hashlib
+        with open(ico, "rb") as f:
+            stamp = hashlib.sha1(f.read()).hexdigest()[:16]
+        want = [("Software\\Classes\\.ava", "", prog),
+                ("Software\\Classes\\.ava\\OpenWithProgids", prog, ""),
+                ("Software\\Classes\\" + prog, "", "Avaye Javid Shah project"),
+                ("Software\\Classes\\" + prog, "AvaIcon", stamp),
+                ("Software\\Classes\\" + prog + "\\DefaultIcon", "", ico + ",0"),
+                ("Software\\Classes\\" + prog + "\\shell\\open\\command", "", '"' + sys.executable + '" "%1"')]
+        changed = False
+        for key, name, val in want:
+            with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, key, 0, winreg.KEY_READ | winreg.KEY_WRITE) as k:
+                try:
+                    cur = winreg.QueryValueEx(k, name)[0]
+                except OSError:
+                    cur = None
+                if cur != val:
+                    winreg.SetValueEx(k, name, 0, winreg.REG_SZ, val)
+                    changed = True
+        if changed:   # Explorer redraws the icons of every .ava file (a new icon included)
+            ctypes.windll.shell32.SHChangeNotify(0x08000000, 0x1000, None, None)   # SHCNE_ASSOCCHANGED, SHCNF_FLUSH
+    except Exception as e:
+        print("[ava] .ava file type (Windows):", e)
+
+
+def _mac_open_files():
+    if sys.platform != "darwin":
+        return
+    try:
+        from webview.platforms.cocoa import BrowserView
+
+        class AvaAppDelegate(BrowserView.AppDelegate):
+            def application_openFiles_(self, app, filenames):
+                try:
+                    for f in list(filenames or []):
+                        if str(f).lower().endswith(".ava"):
+                            _open_request(str(f))
+                finally:
+                    try:
+                        app.replyToOpenOrPrint_(0)   # NSApplicationDelegateReplySuccess
+                    except Exception:
+                        pass
+        BrowserView.AppDelegate = AvaAppDelegate
+    except Exception as e:
+        print("[ava] .ava file type (macOS):", e)
+
+
 def main():
     api = Api()
+    _register_ava_windows()
+    _mac_open_files()
+    _first = _ava_in_args()
+    if _first:
+        _OPEN_REQ["path"] = _first
     # 126: the gate is the WHOLE window until the licence verifies — the app's UI
     # is never loaded behind it, so there is nothing to reveal by closing a dialog.
     import engines
@@ -1025,8 +1136,9 @@ def main():
         js_api=api, width=win_w if licensed else 720, height=win_h if licensed else 760,
         min_size=(420, 640))
     api._window = window
+    _OPEN_REQ["window"] = window
     # 177 · the window's own process (WKWebView's web content on macOS) is watched with the engine and the Chatterbox
-    #       worker: every 30 s into the log, and a warning on the page past 10 GB
+    #       worker: every 30 s into the log, and a warning on the page past a quarter of the computer's memory (179)
     web = {"pid": None}
 
     def _grab_web_pid():

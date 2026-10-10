@@ -156,7 +156,6 @@ body.vfull #selbox,body.vfull #objBar{display:none!important}
 .ln.rxroom{padding-top:1.25rem}
 .rxbadge{z-index:20}
 /* 177 · a reaction's apron: the ruler's outside-composition tint, solid to 80% and fading out at the line's foot */
-.rxapron{z-index:19;border-radius:0 0 3px 3px;background:linear-gradient(to bottom,color-mix(in oklab,var(--color-primary) 10%,transparent) 0%,color-mix(in oklab,var(--color-primary) 10%,transparent) 80%,transparent 100%)}
 
 /* 176: every slider runs low → high from left to right, in Persian too */
 input[type="range"]{direction:ltr}
@@ -198,9 +197,14 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 #tlSec.tl-compact #lanes .clip > span.top-5,#tlSec.tl-compact #lanes .clip > span.top-6{top:3px}
 body.splitting,body.splitting *{cursor:row-resize!important;user-select:none!important}
 /* 178 · the folded bar's canvas-size icon: the size list itself lies invisible over the icon, so a click opens the same list */
-#resMini > select{position:absolute;inset:0;width:100%;height:100%;min-height:0;padding:0;margin:0;opacity:0;cursor:pointer;border:0}
 /* 178 · the bar folded: nothing between the panel's top and the canvas (the icons sit in the corner beside it) */
 #stageBox.stfold{padding-top:0}
 #stageBox.stfold #stage{padding-top:0}
 /* 178 · two fields side by side: each reset icon stays by its own label (at the far end it sat next to the other field's) */
 .grid-cols-2 > fieldset > legend > .xrst,.flex:not(.flex-col) > fieldset > legend > .xrst{margin-inline-start:.25rem!important}
+/* 179 · the list: every label starts at the list's own start (a Latin name in a Persian list stays on the right) */
+.avlist[dir=rtl] :is(.avrow,.avgrp) > span:first-child{text-align:right}
+.avlist[dir=ltr] :is(.avrow,.avgrp) > span:first-child{text-align:left}
+/* 179: a field's label sits on the interface's side, as its list's rows do (a Latin voice name in Persian, a Persian name in English) */
+html[dir=rtl] .avtrig > span:first-child{text-align:right}
+html[dir=ltr] .avtrig > span:first-child{text-align:left}

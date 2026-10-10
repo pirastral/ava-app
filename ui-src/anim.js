@@ -366,8 +366,27 @@ function animList(kd, tab){ const src = tab === 'loop' ? ANL : AN; return Object
 const numd = v => String(v);
 const durTxt = v => secs(v);
 const spdTxt = v => `${numd(String(Math.round(v * 100) / 100))}×`;
-function animSeg(label, opts, cur, call, ltr){ return `<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${label}</legend><div class="join w-full" ${ltr ? 'dir="ltr"' : ''}>${opts.map(([v, txt]) => `<button class="join-item btn btn-sm flex-1 ${cur === v ? 'btn-primary' : 'border-base-content/15 bg-base-100'}" onclick="${call.replace('#', v)}">${txt}</button>`).join('')}</div></fieldset>`; }
-function animTile(id, name, ic, on, pick, hov){ return `<button class="btn btn-sm h-auto min-h-0 flex-col gap-1 px-1 py-2 text-[11px] font-medium leading-normal ${on ? 'btn-primary' : 'border-base-content/10 bg-base-100'}" data-an="${id}" onclick="${pick}('${id}')" onmouseenter="${hov}('${id}')" onmouseleave="animHoverEnd()"><svg class="size-4"><use href="${ic}"/></svg><span class="block w-full overflow-visible break-words text-center">${escapeHtml(name)}</span></button>`; }
+// 179 · each value of these settings has its own reset icon too, as every value in the app (grey at the default, orange
+//       when changed); the reset-all icon by the preset's name puts them all back at once
+function animRst(changed, key){ return `<button type="button" class="xrst btn btn-ghost btn-xs btn-square -my-1 ${changed ? 'text-primary' : 'opacity-50 hover:opacity-100'}" onclick="event.preventDefault(); event.stopPropagation(); animUnset('${key}')" data-tip="بازنشانی به پیش‌فرض" data-tip-en="Reset to default" aria-label="reset" aria-pressed="${changed ? 'true' : 'false'}"><svg class="size-3.5"><use href="#i-rotate-ccw"/></svg></button>`; }
+function animUnset(key){ const o = objById(vSel); if (!o) return; const a = migrateAnim(o); if (a[key] == null) return; remember(); delete a[key]; VVER++; fillAnim(o); autosave(); animPreview(o, ANTAB, a, false); }
+const AN_LG = 'fieldset-legend flex w-full items-center gap-1 text-xs font-medium text-base-content/70', AN_RV = 'rv ms-auto shrink-0 text-xs font-medium tabular-nums text-base-content/80';
+function animSeg(label, opts, cur, call, ltr, rst){ return `<fieldset class="fieldset"><legend class="${rst ? AN_LG : 'fieldset-legend text-xs font-medium text-base-content/70'}">${label}${rst ? rst.replace('class="xrst ', 'class="xrst ms-auto ') : ''}</legend><div class="join w-full" ${ltr ? 'dir="ltr"' : ''}>${opts.map(([v, txt]) => `<button class="join-item btn btn-sm flex-1 ${cur === v ? 'btn-primary' : 'border-base-content/15 bg-base-100'}" onclick="${call.replace('#', v)}">${txt}</button>`).join('')}</div></fieldset>`; }
+// 179 · as the transitions: a chosen preset shows its adjust icon, and only that icon opens its settings (the panel at the
+//       foot, as before, with the preset's name, a reset-all icon and a close button; Esc closes it)
+var ANADJ = null;   // '<object>|<tab>|main' or '…|bg': whose settings are open
+const animAdjKey = (o, w) => (o ? o.id : '') + '|' + ANTAB + '|' + w;
+function animAdj(w){ const o = objById(vSel); if (!o) return; const k = animAdjKey(o, w); ANADJ = ANADJ === k ? null : k; fillAnim(o); }
+function animAdjClose(){ if (!ANADJ) return false; ANADJ = null; const o = objById(vSel); if (o) fillAnim(o); return true; }
+function animChanged(a, P, w){ const t = ANTAB;
+  if (w === 'bg'){ const k = (t === 'in' ? 'bgIn' : 'bgOut') + 'At'; return (a[k] && a[k] !== 'with') || a[t + 'Dur'] != null; }
+  if (t === 'loop') return (a.loopSpeed || 1) !== 1 || a.loopDir != null;
+  return (a[t + 'Dur'] != null && Math.abs(a[t + 'Dur'] - P.d) > 1e-6) || a[t + 'By'] != null || a[t + 'Dir'] != null || !!a[t + 'Each']; }
+function animResetAll(w){ const o = objById(vSel); if (!o) return; remember(); const a = migrateAnim(o), t = ANTAB;
+  if (w === 'bg'){ delete a[(t === 'in' ? 'bgIn' : 'bgOut') + 'At']; delete a[t + 'Dur']; }
+  else if (t === 'loop'){ delete a.loopSpeed; delete a.loopDir; } else [t + 'Dur', t + 'By', t + 'Dir', t + 'Each'].forEach(k => delete a[k]);
+  VVER++; fillAnim(o); autosave(); animPreview(o, ANTAB, a, false); }
+function animTile(id, name, ic, on, pick, hov, adj){ return `<button class="relative btn btn-sm h-auto min-h-0 flex-col gap-1 px-1 py-2 text-[11px] font-medium leading-normal ${on ? 'btn-primary' : 'border-base-content/10 bg-base-100'}" data-an="${id}" onclick="${pick}('${id}')" onmouseenter="${hov}('${id}')" onmouseleave="animHoverEnd()">${adj || ''}<svg class="size-4"><use href="${ic}"/></svg><span class="block w-full overflow-visible break-words text-center">${escapeHtml(name)}</span></button>`; }
 function fillAnim(o){
   const box = $('animBody'); if (!box || !o) return; const kd = animKind(o), tn = TYPE_NAME[o.type] || [o.type, o.type];
   $('animTarget').textContent = o.bgl ? T('کلیپِ پس‌زمینه', 'Background clip') : T(tn[0], tn[1]);
@@ -379,40 +398,50 @@ function fillAnim(o){
   if (kd === 'b') h += `<p class="text-xs leading-relaxed text-base-content/60">${T('کلیپ‌های پس‌زمینه با گذار به هم وصل می‌شوند؛ این‌جا حرکتِ دوربین درونِ قاب را انتخاب می‌کنید.', 'Background clips join with transitions; here you choose the camera move inside the frame.')}</p>`;
   else if (ANTAB === 'loop') h += `<p class="text-xs leading-relaxed text-base-content/60">${T('بینِ پایانِ ورود و آغازِ خروج تکرار می‌شود.', 'Repeats between the end of In and the start of Out.')}</p>`;
   const SRC = ANTAB === 'loop' ? ANL : AN, cur = a[ANTAB] && SRC[a[ANTAB]] && SRC[a[ANTAB]].k.includes(kd) ? a[ANTAB] : 'none';
-  h += `<div class="grid grid-cols-3 gap-1.5">${animTile('none', T('هیچ', 'None'), '#i-ban', cur === 'none', 'animPick', 'animHover')}${animList(kd, ANTAB).map(id => animTile(id, animName(SRC[id], ANTAB), SRC[id].ic, cur === id, 'animPick', 'animHover')).join('')}</div>`;
+  if (ANADJ && !ANADJ.startsWith(o.id + '|' + ANTAB + '|')) ANADJ = null;
+  const openMain = ANADJ === animAdjKey(o, 'main') && cur !== 'none';
+  h += `<div class="grid grid-cols-3 gap-1.5">${animTile('none', T('هیچ', 'None'), '#i-ban', cur === 'none', 'animPick', 'animHover')}${animList(kd, ANTAB).map(id => animTile(id, animName(SRC[id], ANTAB), SRC[id].ic, cur === id, 'animPick', 'animHover', cur === id ? adjIcon(true, openMain, "animAdj('main')") : '')).join('')}</div>`;
   const bgK = ANTAB === 'in' ? 'bgIn' : 'bgOut', bgOnly = ANTAB !== 'loop' && cur === 'none' && bgAnimOn(o, bgK);
   if (kd === 't' && o.bg && o.bg.on && ANTAB !== 'loop') h += animBgOpts(o, a);
   if (on('in') || on('out') || on('loop')) h += `<button class="btn btn-ghost btn-sm w-full text-error" onclick="animClear()"><svg class="size-4"><use href="#i-trash-2"/></svg>${T('برداشتنِ همهٔ انیمیشن‌ها', 'Remove all animations')}</button>`;
   /* the chosen preset's duration or speed (and its options) stay in view at the foot of the panel while the list scrolls */
-  if (cur !== 'none' || bgOnly) h += `<div class="sticky bottom-0 z-10 -mx-4 space-y-2 border-t border-base-300 bg-base-200 px-4 pb-3 pt-2 shadow-[0_-8px_16px_-12px_rgba(0,0,0,.5)]">${animOpts(o, a, kd, cur !== 'none' ? SRC[cur] : { d: 0.6 })}</div>`;
+  const panel = inner => `<div class="adjpanel sticky bottom-0 z-10 -mx-4 space-y-2 border-t border-base-300 bg-base-200 px-4 pb-3 pt-2 shadow-[0_-8px_16px_-12px_rgba(0,0,0,.5)]">${inner}</div>`;
+  if (openMain) h += panel(adjHead(animName(SRC[cur], ANTAB), animChanged(a, SRC[cur], 'main'), "animResetAll('main')", 'animAdjClose()') + animOpts(o, a, kd, SRC[cur]));
+  else if (ANADJ === animAdjKey(o, 'bg')){ const bk = ANTAB === 'in' ? 'bgIn' : 'bgOut', bc = a[bk] || 'follow', bp = AN_BG.find(x => x[0] === bc);
+    if (bp && bc !== 'follow' && bc !== 'none') h += panel(adjHead(T(bp[1], bp[2]), animChanged(a, { d: 0.6 }, 'bg'), "animResetAll('bg')", 'animAdjClose()') + animBgOrder(a) + (bgOnly ? animOpts(o, a, kd, { d: 0.6 }) : '')); else ANADJ = null; }
   box.innerHTML = h;
 }
 function animOpts(o, a, kd, P){ const tab = ANTAB; let h = '';
-  if (tab === 'loop'){ const v = a.loopSpeed || 1; h += `<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T('سرعت', 'Speed')} · <span id="anVal">${spdTxt(v)}</span></legend><input id="anRange" type="range" min="0.25" max="3" step="0.05" value="${v}" class="${RNG_CLS}" oninput="animSlide('loopSpeed', +this.value)" onchange="animSlideDone()"></fieldset>`; }
+  if (tab === 'loop'){ const v = a.loopSpeed || 1; h += `<fieldset class="fieldset"><legend class="${AN_LG}">${T('سرعت', 'Speed')}<span id="anVal" class="${AN_RV}">${spdTxt(v)}</span>${animRst((a.loopSpeed || 1) !== 1, 'loopSpeed')}</legend><input id="anRange" type="range" min="0.25" max="3" step="0.05" value="${v}" class="${RNG_CLS}" oninput="animSlide('loopSpeed', +this.value)" onchange="animSlideDone()"></fieldset>`; }
   else { const T0 = animTimes(o, a, kd), max = Math.max(0.1, Math.min(4, T0.D / 2)), key = tab + 'Dur', v = Math.min(a[key] ?? P.d, max);
-    h += `<fieldset class="fieldset"><legend class="fieldset-legend text-xs font-medium text-base-content/70">${T('مدت', 'Duration')} · <span id="anVal">${durTxt(v)}</span></legend><input id="anRange" type="range" min="0.1" max="${max.toFixed(2)}" step="0.05" value="${v}" class="${RNG_CLS}" oninput="animSlide('${key}', +this.value)" onchange="animSlideDone()"><p class="label text-[11px]">${T('حداکثر نصفِ زمانِ این شیء', 'At most half of this object’s time')}</p></fieldset>`; }
-  if (kd === 't' && P.by && P.by.length > 1){ const key = tab + 'By'; h += animSeg(T('واحد', 'By'), P.by.map(b => [b, T(AN_BY[b][0], AN_BY[b][1])]), byOf(kd, P, a[key]), `animSet('${key}', '#')`); }
-  if (P.dir){ const key = tab + 'Dir', ar = d => `<svg class="size-4"><use href="${({ left: '#i-arrow-left', right: '#i-arrow-right', up: '#i-arrow-up', down: '#i-arrow-down' })[d]}"/></svg>`; h += animSeg(tab === 'in' ? T('از سمتِ', 'From') : tab === 'out' ? T('به سمتِ', 'Towards') : T('جهت', 'Direction'), [['left', ar('left')], ['right', ar('right')], ['up', ar('up')], ['down', ar('down')]], a[key] || defDir(o, tab), `animSet('${key}', '#')`, true); }
-  if (kd === 'p' && tab !== 'loop' && P.obj){ const key = tab + 'Each'; h += `<label class="flex w-full cursor-pointer items-center justify-between gap-3 text-sm"><span>${T('یکی‌یکی، به ترتیبِ گوینده‌ها', 'One speaker after another')}</span><input type="checkbox" class="toggle toggle-sm toggle-primary" ${a[key] ? 'checked' : ''} onchange="animSet('${key}', this.checked)"></label>`; }
+    h += `<fieldset class="fieldset"><legend class="${AN_LG}">${T('مدت', 'Duration')}<span id="anVal" class="${AN_RV}">${durTxt(v)}</span>${animRst(a[key] != null && Math.abs(a[key] - P.d) > 1e-6, key)}</legend><input id="anRange" type="range" min="0.1" max="${max.toFixed(2)}" step="0.05" value="${v}" class="${RNG_CLS}" oninput="animSlide('${key}', +this.value)" onchange="animSlideDone()"><p class="label text-[11px]">${T('حداکثر نصفِ زمانِ این شیء', 'At most half of this object’s time')}</p></fieldset>`; }
+  if (kd === 't' && P.by && P.by.length > 1){ const key = tab + 'By'; h += animSeg(T('واحد', 'By'), P.by.map(b => [b, T(AN_BY[b][0], AN_BY[b][1])]), byOf(kd, P, a[key]), `animSet('${key}', '#')`, false, animRst(a[key] != null, key)); }
+  if (P.dir){ const key = tab + 'Dir', ar = d => `<svg class="size-4"><use href="${({ left: '#i-arrow-left', right: '#i-arrow-right', up: '#i-arrow-up', down: '#i-arrow-down' })[d]}"/></svg>`; h += animSeg(tab === 'in' ? T('از سمتِ', 'From') : tab === 'out' ? T('به سمتِ', 'Towards') : T('جهت', 'Direction'), [['left', ar('left')], ['right', ar('right')], ['up', ar('up')], ['down', ar('down')]], a[key] || defDir(o, tab), `animSet('${key}', '#')`, true, animRst(a[key] != null, key)); }
+  if (kd === 'p' && tab !== 'loop' && P.obj){ const key = tab + 'Each'; h += `<label class="flex w-full cursor-pointer items-center gap-3 text-sm"><span class="flex-1">${T('یکی‌یکی، به ترتیبِ گوینده‌ها', 'One speaker after another')}</span>${animRst(!!a[key], key)}<input type="checkbox" class="toggle toggle-sm toggle-primary" ${a[key] ? 'checked' : ''} onchange="animSet('${key}', this.checked)"></label>`; }
   return h; }
 function animBgOpts(o, a){ const key = ANTAB === 'in' ? 'bgIn' : 'bgOut', cur = a[key] || 'follow', at = a[key + 'At'] || 'with';
   let h = `<div class="divider my-0"></div><div class="flex items-center gap-2"><svg class="size-4 text-secondary"><use href="#i-square"/></svg><span class="text-sm font-semibold">${T('پس‌زمینهٔ متن', 'Text background')}</span></div>`;
-  h += `<div class="grid grid-cols-3 gap-1.5">${AN_BG.map(([id, fa, en, ic]) => animTile(id, T(fa, en), ic, cur === id, 'animBgPick', 'animBgHover')).join('')}</div>`;
-  if (cur !== 'follow' && cur !== 'none') h += animSeg(T('ترتیب', 'Order'), ANTAB === 'in' ? [['before', T('اول پس‌زمینه', 'Background first')], ['with', T('همزمان', 'Together')], ['after', T('اول متن', 'Text first')]] : [['after', T('اول پس‌زمینه', 'Background first')], ['with', T('همزمان', 'Together')], ['before', T('اول متن', 'Text first')]], at, `animSet('${key}At', '#')`);
+  const openBg = ANADJ === animAdjKey(objById(vSel), 'bg');
+  h += `<div class="grid grid-cols-3 gap-1.5">${AN_BG.map(([id, fa, en, ic]) => animTile(id, T(fa, en), ic, cur === id, 'animBgPick', 'animBgHover', cur === id && id !== 'follow' && id !== 'none' ? adjIcon(true, openBg, "animAdj('bg')") : '')).join('')}</div>`;
   return h; }
+function animBgOrder(a){ const key = ANTAB === 'in' ? 'bgIn' : 'bgOut', at = a[key + 'At'] || 'with';
+  return animSeg(T('ترتیب', 'Order'), ANTAB === 'in' ? [['before', T('اول پس‌زمینه', 'Background first')], ['with', T('همزمان', 'Together')], ['after', T('اول متن', 'Text first')]] : [['after', T('اول پس‌زمینه', 'Background first')], ['with', T('همزمان', 'Together')], ['before', T('اول متن', 'Text first')]], at, `animSet('${key}At', '#')`, false, animRst(at !== 'with', key + 'At')); }
 function animRowFill(){ const el = $('iv-animrow'); if (!el) return; const o = vSel && vSel !== 'SUB' ? objById(vSel) : null, kd = animKind(o), ap = $('iv-anim');
   if (!o || !kd || mode !== 'video' || (ap && !ap.classList.contains('hidden'))){ el.classList.add('hidden'); return; }
   const a = animOf(o) || ANNONE, nm = (k, src) => a[k] && a[k] !== 'none' && src[a[k]] && src[a[k]].k.includes(kd) ? animName(src[a[k]], k) : null;
   const parts = [[T('ورود', 'In'), nm('in', AN)], [T('خروج', 'Out'), nm('out', AN)], [T('حلقه', 'Loop'), nm('loop', ANL)]].filter(x => x[1]);
   el.classList.remove('hidden');
   el.innerHTML = `<button class="flex w-full items-center gap-2 px-4 py-3 text-start hover:bg-base-content/5" onclick="openAnim()"><svg class="size-4 shrink-0 text-secondary"><use href="#i-wand-sparkles"/></svg><span class="text-sm font-bold">${T('انیمیشن', 'Animation')}</span><span class="ms-auto truncate text-xs text-base-content/60">${parts.length ? parts.map(([k, v]) => `${k}: ${escapeHtml(v)}`).join(' · ') : T('بدون انیمیشن', 'None')}</span><svg class="size-4 shrink-0 opacity-60 rtl:-scale-x-100"><use href="#i-chevron-right"/></svg></button>`; }
-function animTab(k){ ANTAB = k; animPreviewStop(); fillAnim(objById(vSel)); }
-function animPick(id){ const o = objById(vSel); if (!o) return; clearTimeout(ANHOV); remember(); const a = migrateAnim(o); a[ANTAB] = id; VVER++; fillAnim(o); autosave(); if (id !== 'none') animPreview(o, ANTAB, a, false); else { animPreviewStop(true); vDraw(); } }
-function animBgPick(id){ const o = objById(vSel); if (!o) return; clearTimeout(ANHOV); remember(); const a = migrateAnim(o); a[ANTAB === 'in' ? 'bgIn' : 'bgOut'] = id; VVER++; fillAnim(o); autosave(); animPreview(o, ANTAB, a, false); }
+function animTab(k){ ANTAB = k; ANADJ = null; animPreviewStop(); fillAnim(objById(vSel)); }
+function animPick(id){ const o = objById(vSel); if (!o) return; clearTimeout(ANHOV); remember(); const a = migrateAnim(o); if (a[ANTAB] !== id) ANADJ = null; a[ANTAB] = id; VVER++; fillAnim(o); autosave(); if (id !== 'none') animPreview(o, ANTAB, a, false); else { animPreviewStop(true); vDraw(); } }
+function animBgPick(id){ const o = objById(vSel); if (!o) return; clearTimeout(ANHOV); remember(); const a = migrateAnim(o); if ((a[ANTAB === 'in' ? 'bgIn' : 'bgOut'] || 'follow') !== id) ANADJ = null; a[ANTAB === 'in' ? 'bgIn' : 'bgOut'] = id; VVER++; fillAnim(o); autosave(); animPreview(o, ANTAB, a, false); }
 function animSet(key, val){ const o = objById(vSel); if (!o) return; remember(); const a = migrateAnim(o); a[key] = val; VVER++; fillAnim(o); autosave(); animPreview(o, ANTAB, a, false); }
 function animSlide(key, val){ const o = objById(vSel); if (!o) return; if (!ANSLIDE){ remember(); ANSLIDE = true; } const a = migrateAnim(o); a[key] = val; VVER++;
   const lab = $('anVal'); if (lab) lab.textContent = key === 'loopSpeed' ? spdTxt(val) : durTxt(val); if (!ANPV || !ANPV.loop) animPreview(o, ANTAB, a, true); }
-function animSlideDone(){ ANSLIDE = false; autosave(); animPreviewStop(); }
+function animSlideDone(){ ANSLIDE = false; autosave(); animPreviewStop(); animRstSync(); }
+function animRstSync(){ const o = objById(vSel), b = document.querySelector('#animBody .adjrst'); if (!o || !b || !ANADJ) return; const a = migrateAnim(o), w = ANADJ.endsWith('|bg') ? 'bg' : 'main';
+  const SRC = ANTAB === 'loop' ? ANL : AN, P = w === 'bg' ? { d: 0.6 } : (SRC[a[ANTAB]] || { d: 0.6 }), on = animChanged(a, P, w); b.classList.toggle('text-primary', on); b.classList.toggle('opacity-50', !on);
+  const r = $('anRange'), rb = r && r.closest('fieldset').querySelector('legend .xrst'); if (rb){ const k = ANTAB === 'loop' ? 'loopSpeed' : ANTAB + 'Dur'; rstMark(rb, ANTAB === 'loop' ? (a.loopSpeed || 1) !== 1 : (a[k] != null && Math.abs(a[k] - P.d) > 1e-6)); } }
 function animClear(){ const o = objById(vSel); if (!o) return; remember(); o.anim = { v: 2 }; VVER++; animPreviewStop(true); fillAnim(o); vDraw(); autosave(); }
 function animHover(id){ clearTimeout(ANHOV); ANHOV = setTimeout(() => { const o = objById(vSel); if (!o) return; animPreview(o, ANTAB, { ...migrateAnim(o), [ANTAB]: id }, true); }, 140); }
 function animBgHover(id){ clearTimeout(ANHOV); ANHOV = setTimeout(() => { const o = objById(vSel); if (!o) return; animPreview(o, ANTAB, { ...migrateAnim(o), [ANTAB === 'in' ? 'bgIn' : 'bgOut']: id }, true); }, 140); }

@@ -1,6 +1,6 @@
 AVA FULL BUILD — deploy checklist
 ======================================================================
-This zip is the COMPLETE application source as of update 178.
+This zip is the COMPLETE application source as of update 181.
 
 Replace these files in the repo (paths identical):
   app.py            – window + API bridge (90: voice library + Google keys endpoints)
@@ -35,6 +35,115 @@ Replace these files in the repo (paths identical):
               @melloware/coloris 0.25.0 (MIT) — run npm install in tools/ui-build before building the page
   177 — ui/previews/ is COMPLETE now (the founder's samples, levelled): 77 chatterbox/, 77 fish/, 3 light/, 30 per Google model
   178 — ui/previews/ REPLACED: the same 247 files at 128 kb/s (copy the whole folder over the repo's)
+
+  181 — NEW: tools/ava-crown.png (the founder's high-quality crown — the icon tool's source; build-time only, never shipped).
+        CHANGED: ava-doc.png, ava-doc.icns, ava-doc.ico (the .ava icon in neutral greys — replace all three),
+        tools/make_doc_icon.py, build.spec (the Mac bundle's version is the build number), app.py (Windows: the icon's
+        fingerprint), ui-src/speakers.js and ui/index.html (a new speaker is shown at once), engines.py and ui/gate.html
+        (the build number).
+  180 — NEW (repo root, beside icon.png): ava-doc.png, ava-doc.icns, ava-doc.ico — the .ava document icon — and
+        tools/make_doc_icon.py (makes them from the crown logo; build-time only). CHANGED: build.spec (the .ava type and its
+        icon), app.py, ui-src/editor.js, ui-src/speakers.js, ui-src/video.js, tools/ui-build/input12p.css, ui/index.html,
+        ui/gate.html, engines.py (the build number). The three icon files MUST be in the repo or the build fails.
+  179 — no files added or removed: engines.py, en_strings.py, app.py (a comment), ui-src/*, tools/ui-build/input12p.css and
+        build-editor.py (four more icons), ui/index.html, ui/gate.html changed. ui/previews and voices/ are unchanged.
+
+WHAT CHANGED IN 181 (on top of 180) — the .ava icon, the founder's way
+  · THE .ava ICON IN NEUTRAL GREYS, the way Finder draws its own document icons (his examples: Finder's audio and ZIP icons;
+    his choice of the four designs shown: C): a white page with a folded corner and the app's crown on it as three flat
+    greys — like the note on Finder's audio icon — no label, no colour. Made from his high-quality crown
+    (tools/ava-crown.png — the header logo's own crown, the same shape, now sharp at every size): each part of the crown
+    takes the grey of its own lightness. The sizes of 48 px and less use darker greys, a firmer page edge and a slightly
+    bigger crown, so it still reads at 16 px. Every size each system uses (macOS 16 … 1024 px, Windows 16 … 256 px).
+  · THE NEW ICON REPLACES 180's AFTER THE UPDATE. Windows keeps an icon it has drawn even when the file behind it changes
+    (the registry still points to the same place), so the app now keeps a fingerprint of its icon beside the .ava type: at
+    the first launch of a build with a new icon it is written again and Explorer is told to redraw the icons. macOS: the
+    bundle now carries the build number as its version (181 — Finder's Get Info shows it), so macOS takes the update for a
+    new version and reads the app's document icon again (if Finder still shows the old one, relaunching Finder or a
+    restart clears its cache).
+  · «ADD A SPEAKER…» SHOWS THE NEW SPEAKER AT ONCE (180's change, finished): when the Speakers section was closed, its
+    content still slid open (daisyUI slides the content, and 180 had switched the slide off on the section only), so the
+    panel started scrolling to the new speaker a frame or more late, while the section was still growing — in a slow
+    moment the speaker was not in view yet. The section now opens at once, content and all, and the scroll starts on the
+    next frame.
+  Tests: t42 (waits for the smooth scroll instead of a fixed 1.3 s; a closed section opens at once, content and all — new
+  check 10b; the highlight's 2.8 s measured from the click) · e180_filetype (the icon's greys and no colour at every size of both files, its source and shape, the shipped files
+  are what the tool makes now, the crown still showing at 16 and 32 px, the fingerprint and the redraw after an update,
+  the bundle's version from BUILD_NUMBER or engines.py) + every earlier suite + the engine checks and test sets 146–160.
+
+WHAT CHANGED IN 180 (on top of 179) — the founder's check of 179 and his three requests
+  · .ava FILES HAVE THEIR OWN ICON, on Mac and Windows: a page with a faint copy of the app's own crown (the transparent crown
+    of the header logo — not just any crown), a little stronger at the smallest sizes so it still reads; every size each
+    system uses (macOS 16 … 1024 px, Windows 16 … 256 px). Double-clicking a .ava file opens that project in the app.
+    macOS: the app declares .ava as its own document type (Info.plist, through build.spec); Finder shows the icon once the
+    new app has been opened (if an old icon lingers, Finder relaunches or a restart clears its cache); Finder's «open this
+    file» reaches the app through its delegate — a file double-clicked while the app is open opens in it too.
+    Windows: the app ships without an installer, so at launch it registers .ava for the current user (no admin rights:
+    HKCU\Software\Classes — the icon, «Avaye Javid Shah project», and «open» with the app; written again only when
+    something changed, e.g. the app folder moved) and tells Explorer to redraw the icons. The file arrives in the app's
+    arguments and opens as soon as the page is ready (the same way as «Open…», without the dialog).
+  · «ADD A SPEAKER…» IN A LINE'S SPEAKER MENU GOES TO THE PROJECT LEVEL AT ONCE: the line and its clip are deselected, the
+    project tab comes up with Speakers open, and the new speaker is expanded, scrolled into view and highlighted for a
+    moment (the primary ring and tint a selected line has), its name selected to type over; its voice settings are right
+    under it. Behind the old behaviour: a closed Speakers section renders nothing until it has opened (daisyUI's collapse),
+    so focusing and scrolling to the new speaker did nothing and it was added out of sight. The section now opens at once
+    and the speaker is shown the moment it is on screen. The section's own «Add speaker» shows the new one the same way.
+  · THE CANVAS IS BLACK BY DEFAULT (it was navy #0C1230): new projects, the colour field's default (its reset icon) and the
+    first of its swatches. A project saved with the old default navy opens black; a colour that was chosen stays.
+  · THE LISTS, CHECKED ONE BY ONE in both languages (66 lists and menus, opened by real clicks: the inspectors for every
+    engine, the line, the speakers, the video panels, the dialogs, the bars, the chip menus; tool: vis179_lists.py in the dev
+    kit). Two things were off and are fixed: a speaker's own engine and style lists showed Persian in English; a field's
+    label followed its text's direction instead of the interface's (a Latin voice name in Persian, or a Persian name in
+    English, started at the far side, against the chevron) — it now sits where its list's rows do.
+  Tests: t42 (add a speaker from a line, the black canvas, the speaker lists in English, field labels) + every earlier
+  suite + the engine checks and test sets 146–160.
+
+WHAT CHANGED IN 179 (on top of 178) — the founder's 25 points on 178 (restated, corrected and confirmed) and his additions
+  · CHATTERBOX MEMORY IS A SHARE OF THE COMPUTER'S MEMORY, on Mac and Windows alike — no fixed 9 / 12 GB — and reaching it
+    never ends the job: the text goes sentence by sentence; between two sentences a worker past 33 % of the computer's
+    memory (or one that has grown while free memory is under 15 %) hands back what it made and its memory goes back to
+    the system, and a fresh worker carries on from the next sentence (it reloads from the files on the computer, without
+    the network check of the first load); in the middle of a sentence the guard stops it past 50 % (or when free memory
+    falls under 6 %) and that sentence is made again — in two halves after a second stop; the GPU running out of memory
+    (MPS / CUDA) is handled the same way. While other programs hold the memory it waits and says so, then carries on.
+    48 GB: flush ≈ 16 GB, stop at 24 GB · 16 GB: ≈ 9.6 / 11 GB · 8 GB: ≈ 7 GB (the free-memory shares act first). Windows
+    counts private bytes (as macOS counts the footprint Activity Monitor shows). Low free memory no longer refuses to start
+    (a warning only); the whole-app memory warning is at a quarter of the computer's memory. The only endings left: a
+    sentence that does not fit even in halves, free memory that never comes back (2 minutes), a crash twice in a row.
+  · ONE LIST FOR THE WHOLE APP (daisyUI dropdown + menu, styled after the editor's speaker list, which is unchanged): every
+    list in the inspectors, the dialogs and the bars opens the same panel — never the system's list. Groups nest (voices,
+    fonts): a group opens its submenu beside it (hover with intent, or →/← in Persian ←/→); ▶ on every voice row, pin and
+    trash where they apply, recent picks on top; fonts are shown in their own face; at most 380 px tall, it opens toward
+    the side with room and stays on screen; a search field when it has more than 12 entries (typing searches; a short
+    list jumps to the typed letters); ↑ ↓ Home End PageUp PageDown Enter Esc; inside a dialog it opens inside the dialog;
+    while it is open the canvas keys (arrows, space, Esc) leave the canvas alone. Each list keeps its own width.
+  · MENUS (Export, File): one column, above the canvas bar's icons (they were two columns and mixed with them).
+  · PRESETS (transitions, animations): choosing one applies it and opens nothing; only the chosen tile carries an adjust
+    icon; that icon opens its settings at the foot of the inspector, as before, under the preset's name with a reset-all
+    icon (grey at the defaults, orange when changed) and a close button; Esc closes it; choosing the same preset again
+    keeps its settings; another preset closes it. Each value inside has its own reset icon too, as everywhere — the
+    transition sliders keep theirs, and the animation's duration / speed (its value now at the legend's end like every
+    slider), unit, direction, order and «one speaker after another» get one; the loop's direction is part of reset-all.
+  · PODCAST: the Quote design and the «Big quote» layout are gone (Minimal shows only whoever speaks; old projects move
+    over); the gradient moves like a video — 0–150 %, 100 % = one full loop in 3 s, still at 0, and only while playing
+    (paused, it is the frame at the playhead); a solid name pill has its colour field (the same field as every colour);
+    the circular bars grow with the avatar and what sits under it moves down; a bigger name grows from its top edge.
+  · TEXT EDITOR: margins wider on both sides; the speakers sit in the right margin; a reaction STARTS at the caret's letter
+    (its badge's start edge there, its clip at that letter's moment, its voice at the clip's start — the silence before
+    the voice is skipped) and, once moved on the timeline, follows its clip; a badge never goes into the right margin (the
+    left one is fine); the apron is gone; a pronunciation tag opens its dialog (change it, or Delete it).
+  · TIMELINES: new music starts at the playhead; the handle's right-click opens a menu — Reset sizes, Largest timeline,
+    Shortest timeline («تایملاین») — and changes nothing by itself; every clip shows its length, selected or not, and hides
+    it only while it is too short at the zoom; both halves of a split are complete (a split put the second half twice in
+    its layer, which also dropped its transition — fixed); the folded bar's canvas-size icon sits on the same side as in
+    the full bar and opens the same list.
+  · RESET ICONS are always there: grey at the default, orange when changed.
+  · Fixed along the way: Esc on a menu deselected the line; undo left an open panel's list showing the old value;
+    re-choosing a transition reset its settings.
+  Tests: t37 (the list), t38 (presets), t39 (podcast), t40 (text editor, reactions, pronunciation), t41 (timelines, handle
+  menu, clip lengths, split, reset icons), e179_mem (Chatterbox memory by shares, flush and carry on — the real worker
+  code with a stand-in model; replaces e177_mem) + every earlier suite (t4, t6, t7, t9, t13, t17, t18, t22, t25, t30,
+  t33, t34, t36, vis177c updated to the new list, presets and badges) + the engine checks and test sets 146–160.
 
 WHAT CHANGED IN 178 (on top of 177) — the founder's checks of 177 and his new requests
   · VIDEO STARTS EMPTY: a new project's video has no podcast and no title until you add them.

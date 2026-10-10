@@ -104,9 +104,41 @@ function setSpk(i, k, v){ remember(); const sp = spkList()[i]; sp[k] = v; markDi
 function delSpeaker(i){ remember(); const sp = spkList()[i]; spkList().splice(i, 1); Object.values(S.lines).forEach(L => { if (L.spk === sp.id){ L.spk = undefined; L.dirty = true; } }); SPK_OPEN = null; renderSpeakers(); renderScript(); autosave(); }
 let SPK_OPEN = null;
 function toggleSpkEdit(id){ SPK_OPEN = SPK_OPEN === id ? null : id; renderSpeakers(); }
-function addSpeaker(){ remember(); const n = spkList().length + 1, sp = SPK0(T(`گوینده ${FA(n)}`, `Speaker ${n}`)); spkList().push(sp); SPK_OPEN = sp.id; renderSpeakers(); autosave();
-  const box = $('spkOpen'); if (box) box.checked = true; setTimeout(() => { const el = document.querySelector(`#spkList [data-edit="${sp.id}"] input`); if (el){ el.focus(); el.select(); } }, 30); }
-function openSpeakers(addNew){ showInsp('proj', true); const box = $('spkOpen'); if (box) box.checked = true; if (addNew) addSpeaker(); }
+function addSpeaker(){ remember(); const n = spkList().length + 1, sp = SPK0(T(`گوینده ${FA(n)}`, `Speaker ${n}`)); spkList().push(sp); SPK_OPEN = sp.id;
+  // 179: a closed Speakers section renders nothing until it has opened (daisyUI's collapse: content-visibility, then a 0.2 s
+  //      slide), so focusing or scrolling to the new speaker right away did nothing (the founder: «added, but no name or voice
+  //      to set»). The section opens at once here, and the speaker is shown the moment it is really on screen.
+  // 181: the slide is switched off on the section's content too — daisyUI puts it there (content-visibility, min-height and
+  //      padding), so in 180 the content still stayed hidden for a frame or more and grew for 0.2 s while the panel was
+  //      already scrolling to the new speaker (in a slow moment the speaker was not in view yet). The section opens by its
+  //      class (collapse-open, kept in step with the checkbox — design.js), set here at once; the new style is taken while
+  //      the slide is off, and the slide comes back on the next frame (nothing is left to slide by then).
+  const box = $('spkOpen'), col = box && box.closest('.collapse'), cnt = col && col.querySelector(':scope > .collapse-content');
+  const els = box && !box.checked ? [col, cnt].filter(Boolean) : [];
+  if (els.length){ els.forEach(e => { e.style.transition = 'none'; }); box.checked = true; col.classList.add('collapse-open'); els.forEach(e => void e.offsetHeight); }
+  spkFlash(sp.id); autosave();
+  if (els.length){ els.forEach(e => void e.offsetHeight); requestAnimationFrame(() => els.forEach(e => { e.style.transition = ''; })); }
+  requestAnimationFrame(() => { const row = document.querySelector(`#spkList [data-spk-row="${sp.id}"]`), ed = document.querySelector(`#spkList [data-edit="${sp.id}"]`), el = ed && ed.querySelector('input'); if (!row) return;
+    whenShown(el || row, () => { row.scrollIntoView({ block: 'start', behavior: 'smooth' }); if (el){ el.focus({ preventScroll: true }); el.select(); } }); });
+  return sp; }
+// runs fn once el is really on screen (rendered, not hidden), checking each frame for about a second
+function whenShown(el, fn, tries = 60){ let ok = false;
+  try { ok = el.checkVisibility ? el.checkVisibility({ visibilityProperty: true, contentVisibilityAuto: true }) : false; } catch (e) {}
+  if (!ok){ const r = el.getBoundingClientRect(); ok = r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden' && !(el.checkVisibility); }
+  if (ok || tries <= 0) return fn(); requestAnimationFrame(() => whenShown(el, fn, tries - 1)); }
+// 179 · a new speaker is highlighted for a moment (the primary ring and tint the editor gives a selected line)
+var SPK_HL = null, SPK_HL_T = 0;   // var: renderSpeakers may run before this line does
+function spkFlash(id){ clearTimeout(SPK_HL_T); SPK_HL = { id, until: performance.now() + 2800 }; renderSpeakers();
+  SPK_HL_T = setTimeout(() => { SPK_HL = null; const row = document.querySelector(`#spkList [data-spk-row="${id}"]`); if (row) row.classList.remove('bg-primary/10', 'ring-2', 'ring-inset', 'ring-primary'); }, 2800); }
+// 179 · «Add a speaker…» in a line's speaker menu: a speaker is set up on the project level, so the app goes there at once —
+//       the line and its clip are let go, the project tab comes up with Speakers open, and the new speaker is expanded,
+//       scrolled into view and highlighted, its name selected to type over
+function addSpeakerFromLine(){
+  closeDD();
+  try { const a = document.activeElement; if (a && a.closest && a.closest('#editor')) a.blur(); const s = getSelection(); if (s) s.removeAllRanges(); } catch (e) {}
+  sel = new Set(); selClip = null; paintSel(); if (typeof placeClipBar === 'function') placeClipBar(); renderTimeline();
+  showInsp('proj', true); addSpeaker(); }
+function openSpeakers(addNew){ if (addNew) return addSpeakerFromLine(); showInsp('proj', true); const box = $('spkOpen'); if (box) box.checked = true; }
 // 168: speaker colours come from the theme (8 warm-leaning colours, light and dark tones); a speaker may carry a photo
 const spkN = k => ((k % 8) + 8) % 8 + 1;
 const spkBg = k => `background:var(--spk${spkN(k)});color:var(--spk${spkN(k)}-on)`;
@@ -124,16 +156,17 @@ function setSpkPhoto(i, url){ const sp = spkList()[i]; if (!sp) return; remember
 function renderSpeakers(){
   const box = $('spkList'); if (!box) return; const L = spkList(); if ($('spkCount')) $('spkCount').textContent = FA(L.length);
   box.innerHTML = L.map((sp, i) => { const e = spkEngine(sp), vo = spkVoiceOptions(sp), vk = SPK_VKEY[e], open = SPK_OPEN === sp.id;
-    return `<li class="list-row items-center gap-3 py-2">
+    const hl = SPK_HL && SPK_HL.id === sp.id && performance.now() < SPK_HL.until;
+    return `<li class="list-row items-center gap-3 py-2 transition-[box-shadow,background-color] duration-700 ${hl ? 'bg-primary/10 ring-2 ring-inset ring-primary' : ''}" data-spk-row="${sp.id}">
         <div class="group/av relative shrink-0"><button class="grid size-10 place-items-center overflow-hidden rounded-full text-sm font-bold" style="${spkBg(i)}" onclick="pickSpkPhoto(${i})" data-tip="${sp.photo ? 'عوض کردنِ عکس' : 'افزودنِ عکس'}" data-tip-en="${sp.photo ? 'Change photo' : 'Add a photo'}" aria-label="photo">${spkFace(sp)}</button>${sp.photo ? `<div class="spkph-act pointer-events-none absolute inset-0 flex items-center justify-center gap-0.5 rounded-full bg-black/55 opacity-0 transition-opacity group-hover/av:pointer-events-auto group-hover/av:opacity-100"><button class="grid size-5 place-items-center rounded-full text-white hover:bg-white/25" onclick="pickSpkPhoto(${i})" data-tip="عوض کردنِ عکس" data-tip-en="Change photo" aria-label="change photo"><svg class="size-3"><use href="#i-refresh-cw"/></svg></button><button class="grid size-5 place-items-center rounded-full text-white hover:bg-white/25" onclick="setSpkPhoto(${i}, null)" data-tip="حذفِ عکس" data-tip-en="Remove photo" aria-label="remove photo"><svg class="size-3"><use href="#i-trash-2"/></svg></button></div>` : `<span class="pointer-events-none absolute -bottom-0.5 -end-0.5 grid size-4 place-items-center rounded-full bg-base-100 text-base-content/70 opacity-0 shadow-sm transition-opacity group-hover/av:opacity-100"><svg class="size-2.5"><use href="#i-camera"/></svg></span>`}</div>
         <button class="min-w-0 cursor-pointer text-start" onclick="toggleSpkEdit('${sp.id}')"><div class="truncate text-sm font-semibold">${escapeHtml(sp.name || T('بی‌نام', 'Unnamed'))}</div><div class="truncate text-xs text-base-content/60">${escapeHtml(spkSummary(sp))}</div></button>
         <button class="btn btn-ghost btn-sm btn-circle" onclick="previewSpeaker(${i})" data-tip="شنیدنِ صدا" data-tip-en="Hear the voice" aria-label="play"><svg class="size-4"><use href="#i-play"/></svg></button>
       </li>${open ? `<li class="space-y-2 border-t border-base-300 px-3 pb-3 pt-2" data-edit="${sp.id}">
         <input class="input input-sm w-full" dir="auto" value="${escapeHtml(sp.name)}" placeholder="${T('نام', 'Name')}" onchange="setSpk(${i}, 'name', this.value.trim())">
-        <select class="select select-sm w-full" onchange="setSpk(${i}, 'engine', this.value)"><option value="">${T('موتورِ پروژه', "The project's engine")}</option>${ENGINES.map(([v, l]) => `<option value="${v}" ${v === sp.engine ? 'selected' : ''}>${escapeHtml(l)}</option>`).join('')}</select>
+        <select class="select select-sm w-full" onchange="setSpk(${i}, 'engine', this.value)"><option value="">${T('موتورِ پروژه', "The project's engine")}</option>${ENGINES.map(([v, l]) => `<option value="${v}" ${v === sp.engine ? 'selected' : ''}>${escapeHtml(tr(l))}</option>`).join('')}</select>
         ${e === 'google' ? `<select class="select select-sm w-full" onchange="setSpk(${i}, 'gModel', this.value)"><option value="">${T('مدلِ پروژه', "The project's model")}: ${escapeHtml(modelShort(S.proj.g_model))}</option>${MODELS.map(m => `<option value="${m[0]}" ${m[0] === sp.gModel ? 'selected' : ''}>${escapeHtml(modelShort(m[0]))}</option>`).join('')}</select>` : ''}
         ${vo ? `<select class="select select-sm w-full" data-spk-voice="${i}" data-preview="${e}" onchange="setSpk(${i}, '${vk}', this.value)">${vo}</select>` : ''}
-        ${e === 'google' || e === 'fish' ? `<select class="select select-sm w-full" onchange="setSpk(${i}, 'gPreset', this.value)"><option value="">${T('سبکِ پروژه', "The project's style")}</option>${G_PRESETS.map(p => `<option value="${escapeHtml(p[0])}" ${p[0] === sp.gPreset ? 'selected' : ''}>${escapeHtml(p[1])}</option>`).join('')}</select>` : ''}
+        ${e === 'google' || e === 'fish' ? `<select class="select select-sm w-full" onchange="setSpk(${i}, 'gPreset', this.value)"><option value="">${T('سبکِ پروژه', "The project's style")}</option>${G_PRESETS.map(p => `<option value="${escapeHtml(p[0])}" ${p[0] === sp.gPreset ? 'selected' : ''}>${escapeHtml(tr(p[1]))}</option>`).join('')}</select>` : ''}
         <div class="flex justify-end"><button class="btn btn-ghost btn-sm gap-1.5 text-error" onclick="delSpeaker(${i})"><svg class="size-4"><use href="#i-trash-2"/></svg>${T('حذفِ گوینده', 'Remove speaker')}</button></div></li>` : ''}`; }).join('')
     || `<li class="px-3 py-3 text-xs text-base-content/60">${T('هنوز گوینده‌ای نیست؛ همهٔ خط‌ها با صدای پروژه خوانده می‌شوند.', "No speakers yet; every line uses the project's voice.")}</li>`;
   box.querySelectorAll('select').forEach(el => { enh(el); if (el.dataset.spkVoice !== undefined){ const i = +el.dataset.spkVoice; el._preview = v => previewVoice(spkEngine(spkList()[i]), v || null); } });
@@ -167,7 +200,20 @@ function setTagAt(id, k, raw, to){ const L = S.lines[id]; if (!L) return; const 
   L.text = to ? text.slice(0, a) + to + text.slice(b) : (text.slice(0, a).replace(/[ \u00a0]+$/, '') + (text.slice(b).match(/^[ \u00a0]*/)[0] ? ' ' : '') + text.slice(b).replace(/^[ \u00a0]+/, '')).replace(/^ +/, '');
   if (typeof afterChange === 'function') afterChange(); else { renderScript(); autosave(); } }
 document.addEventListener('click', ev => { const pill = ev.target.closest && ev.target.closest('#editor .tagpill[data-tagchip]'); if (!pill) return; ev.preventDefault(); ev.stopPropagation(); openTagChip(pill); }, true);
-document.addEventListener('mousedown', ev => { if (ev.target.closest && ev.target.closest('#editor .tagpill[data-tagchip]')) ev.preventDefault(); }, true);   // the caret stays where it was
+document.addEventListener('mousedown', ev => { if (ev.target.closest && ev.target.closest('#editor .tagpill[data-tagchip], #editor .tagpill.ipa')) ev.preventDefault(); }, true);   // the caret stays where it was
+// 179 · A PRONUNCIATION TAG OPENS ITS DIALOG — the same one that made it, with its pronunciation in it: change it, or Delete
+//       (the tag goes, the word stays)
+const IPA_RE = /(^|\s)\/([^/\s][^/]{0,60}?)\//g;
+async function editIPA(pill){ const ln = pill.closest('.ln'), id = ln ? +ln.dataset.id : null, L = id != null ? S.lines[id] : null; if (!L) return;
+  const k = [...ln.querySelectorAll('.lt .tagpill.ipa')].indexOf(pill), raw = pill.textContent.trim(), cur = raw.replace(/^\/|\/$/g, '');
+  const v = await askText(T('تلفظِ واژه به الفبای آوایی بین‌المللی (IPA)، بدونِ اسلش:', 'The word\'s pronunciation in IPA, without slashes:'), '', cur, { del: true, ok: T('ذخیره', 'Save') });
+  if (v === null) return; if (v === ASK_DEL) setIpaAt(id, k, ''); else if (v.trim() && v.trim() !== cur) setIpaAt(id, k, '/' + v.trim().replace(/^\/|\/$/g, '') + '/'); }
+function setIpaAt(id, k, to){ const L = S.lines[id]; if (!L) return; const text = L.text || ''; let n = -1, m, hit = null; IPA_RE.lastIndex = 0;
+  while ((m = IPA_RE.exec(text))){ n++; if (n === k){ hit = m; break; } } if (!hit) return; remember();
+  const a = hit.index + hit[1].length, b = hit.index + hit[0].length;   // the /…/ itself (the space before it belongs to the word)
+  L.text = to ? text.slice(0, a) + to + text.slice(b) : (text.slice(0, hit.index) + (hit[1] && /^[ \u00a0]/.test(text.slice(b)) ? '' : hit[1]) + text.slice(b)).replace(/^ +/, '');
+  if (typeof afterChange === 'function') afterChange(); else { renderScript(); autosave(); } }
+document.addEventListener('click', ev => { const pill = ev.target.closest && ev.target.closest('#editor .tagpill.ipa'); if (!pill) return; ev.preventDefault(); ev.stopPropagation(); editIPA(pill); }, true);
 // sound tags <…>, backchannels |…| and IPA /…/ as pills — the raw characters stay in the text (hidden), so offsets never move
 function pills(html){
   return html.split(/(<[^>]+>)/).map(part => part.startsWith('<') ? part : part
@@ -188,7 +234,7 @@ function openSpkMenu(ev, id){
   ev.stopPropagation(); const L = spkList(), cur = (S.lines[id] || {}).spk || '';
   const row = (sp, k) => `<li><a data-spk="${sp ? sp.id : ''}" class="gap-2 ${cur === (sp ? sp.id : '') ? 'menu-active' : ''}">${sp ? `<span class="grid size-6 shrink-0 place-items-center overflow-hidden rounded-full text-[10px] font-bold" style="${spkBg(k)}">${spkFace(sp)}</span><span class="min-w-0 flex-1"><span class="block font-semibold">${escapeHtml(sp.name)}</span><span class="block truncate text-xs text-base-content/60">${escapeHtml(spkSummary(sp))}</span></span>` : `<span class="size-6 shrink-0 rounded-full border border-dashed border-base-content/30"></span><span class="flex-1">${T('بدونِ گوینده — صدای پروژه', "No speaker — the project's voice")}</span>`}</a></li>`;
   lineMenu(ev.currentTarget, `<ul class="menu menu-sm w-full p-1">${cur ? `<li class="mb-1 border-b border-base-300 pb-1"><a data-spk="" class="gap-2 text-error"><svg class="size-4"><use href="#i-trash-2"/></svg>${T('حذفِ گوینده از این خط', 'Remove the speaker from this line')}</a></li>` : ''}${L.map(row).join('')}${row(null)}<li class="mt-1 border-t border-base-300 pt-1"><a data-spk-add class="gap-2"><svg class="size-4"><use href="#i-plus"/></svg>${T('افزودنِ گوینده…', 'Add a speaker…')}</a></li></ul>`, e => {
-    const a = e.target.closest('[data-spk]'), add = e.target.closest('[data-spk-add]'); if (add){ closeDD(); openSpeakers(true); return; } if (!a) return;
+    const a = e.target.closest('[data-spk]'), add = e.target.closest('[data-spk-add]'); if (add){ addSpeakerFromLine(); return; } if (!a) return;
     remember(); linesFor(id).forEach(x => { const LL = S.lines[x]; if (!LL) return; const was = LL.spk || ''; LL.spk = a.dataset.spk || undefined; if (was !== (a.dataset.spk || '')){ const [, c] = clipOfLine(x); if (c && !c.unvoiced) LL.dirty = true; } });
     closeDD(); renderScript(); autosave(); if (typeof VVER !== 'undefined') VVER++; });
 }
@@ -365,12 +411,18 @@ const rSpoken = r => (r.mood && rVoice(r).engine === 'google' && /3\.8/.test(rVo
 const rHasAudio = r => r.gulp != null && !!(AUD.get(r.gulp) || {}).buf;
 const rVoiced = r => rHasAudio(r) && r.made === rKey(r);
 const rLen = r => rHasAudio(r) ? AUD.get(r.gulp).buf.duration : Math.max(0.5, 0.3 + 0.075 * String(r.text || '').replace(/\s/g, '').length);
+// 179 · where a reaction's voice actually starts in its audio (the take has a little silence first): the playhead reaching
+//       the badge is the voice starting (the founder: the caret passed «نه بابا!» before it was heard). Measured once per take.
+function rLead(r){ const a = rHasAudio(r) ? AUD.get(r.gulp) : null; if (!a || !a.buf) return 0; if (a.lead != null) return a.lead;
+  const b = a.buf, ch = b.getChannelData(0), sr = b.sampleRate, win = Math.max(1, Math.round(sr * 0.01)); let lead = 0;
+  for (let i = 0; i + win <= ch.length; i += win){ let e = 0; for (let k = i; k < i + win; k++) e += ch[k] * ch[k]; if (Math.sqrt(e / win) > 0.01){ lead = Math.max(0, i / sr - 0.03); break; } }   // −40 dB, 30 ms of air kept
+  return (a.lead = Math.min(lead, Math.max(0, b.duration - 0.2))); }
 function hostOf(id){ const [, c] = clipOfLine(id); return c && !c.type && c.lines.length === 1 ? c : null; }
 function rFind(rid){ for (const k of Object.keys(S.lines)){ const r = reactsOf(+k).find(x => x.id === rid); if (r) return [+k, r]; } return [null, null]; }
 // where a reaction sits on the timeline: its time in the line's voice; after the line is re-voiced, the letter it was on
 function rAt(id, r){ const c = hostOf(id); if (!c) return null; const text = (S.lines[id] || {}).text || '';
   if (!c.unvoiced && c.gulp != null){
-    if (r.t == null || r.hostGulp !== c.gulp){ r.t = charTime(c, text, Math.max(0, Math.min(r.pos || 0, text.length))); r.hostGulp = c.gulp; }
+    if (r.t == null || r.hostGulp !== c.gulp){ r.t = charTime(c, text, Math.max(0, Math.min(r.pos || 0, text.length))); r.hostGulp = c.gulp; r.anch = 'pos'; }   // a new take of its line: it stays on its letter
     return c.at + (r.t - c.in); }
   return c.at + dur(c) * Math.min(1, Math.max(0, (r.pos || 0) / Math.max(1, text.length))); }
 // old documents and pasted scripts: every |Name: {mood} text| becomes a reaction at that letter (its audio kept)
@@ -391,17 +443,19 @@ syncOvlClips = function(){
   const old = new Map(); S.tracks.forEach(t => t.clips.forEach(c => { if (c.type === 'ovl') old.set(c.rid || c.id, t); })); S.tracks.forEach(t => { t.clips = t.clips.filter(c => c.type !== 'ovl'); });
   orderedLines().forEach(id => { const L = S.lines[id]; if (!L || !Array.isArray(L.reacts) || !L.reacts.length) return; const host = hostOf(id); if (!host) return; const [ht] = clipOfLine(id), hti = S.tracks.indexOf(ht);
     L.reacts.forEach(r => { const at = rAt(id, r); if (at == null) return;
-      if (!host.unvoiced && r.t != null) r.pos = timeToChar(host, L.text || '', r.t - 0.001);   // the time rules; the letter follows it (just before the letter heard then)
+      if (!host.unvoiced && r.t != null && r.anch !== 'pos') r.pos = timeToChar(host, L.text || '', r.t - 0.001);   // moved on the timeline: the time rules and the letter follows it (179: a reaction put at the caret keeps its letter)
       if (at < host.at - 0.05 || at > host.at + dur(host) + 0.05) return;   // trimmed out of its line: not heard, not shown
-      const c = { id: r.id, rid: r.id, type: 'ovl', lines: [], line: id, gulp: rHasAudio(r) ? r.gulp : null, in: 0, out: rLen(r), at: Math.max(0, at), gain: r.gain ?? 1, name: r.text, pending: !rVoiced(r) };
+      const c = { id: r.id, rid: r.id, type: 'ovl', lines: [], line: id, gulp: rHasAudio(r) ? r.gulp : null, in: rLead(r), out: rLen(r), at: Math.max(0, at), gain: r.gain ?? 1, name: r.text, pending: !rVoiced(r) };   // 179: its voice starts at its letter (the silence before the voice is skipped)
       const pref = r.track && S.tracks.find(t => t.id === r.track), prev = old.get(r.id);
       let t = [pref, prev].find(x => x && S.tracks.includes(x) && x.kind === 'speech' && x !== ht && trackFree(x, c));
       for (let i = hti + 1; !t && i < S.tracks.length; i++) if (S.tracks[i].kind === 'speech' && S.tracks[i] !== ht && trackFree(S.tracks[i], c)) t = S.tracks[i];
       if (!t) t = newTrack(hti + 1, 'speech');
       r.track = t.id; t.clips.push(c); t.clips.sort((a, b) => a.at - b.at); }); });
 };
-// the badge over the text: at the letter heard at the reaction's moment, raised 90% above the line (177), with its apron —
-// the badge's width, from its middle down to the foot of the line, solid to 80% then fading out
+// the badge over the text (179): it STARTS where the reaction starts — at the caret's letter when it is added, at its clip's
+// start once moved on the timeline — and runs on in the reading direction (its width is its words, not its sound); raised
+// 90% above the line (177); no apron (the founder: removed). The speakers sit in the right margin, so a badge on a line's
+// first word starts inside the text and never reaches that margin; only the left margin can take a badge's end.
 function drawReactBadges(){
   const ed = $('editor'); if (!ed) return; let layer = $('rxLayer'); if (!layer){ layer = document.createElement('div'); layer.id = 'rxLayer'; layer.className = 'pointer-events-none absolute inset-0 z-20'; ed.appendChild(layer); }
   else if (layer.parentElement !== ed) ed.appendChild(layer);
@@ -409,18 +463,15 @@ function drawReactBadges(){
   orderedLines().forEach(id => { const L = S.lines[id], rs = reactsOf(id); const ln = ed.querySelector(`.ln[data-id="${id}"]`); if (ln) ln.classList.toggle('rxroom', rs.length > 0); if (!rs.length || !ln) return;
     const lt = ln.querySelector('.lt'), host = hostOf(id), text = L.text || ''; if (!lt) return;
     rs.forEach(r => { let pos = Math.max(0, Math.min(text.length, r.pos || 0));
-      if (host && !host.unvoiced && r.t != null && r.hostGulp === host.gulp) pos = timeToChar(host, text, r.t - 0.001);
+      if (r.anch !== 'pos' && host && !host.unvoiced && r.t != null && r.hostGulp === host.gulp) pos = timeToChar(host, text, r.t - 0.001);   // moved on the timeline: the time rules
       const tw = document.createTreeWalker(lt, NodeFilter.SHOW_TEXT); let node, left = pos, last = null;
       while ((node = tw.nextNode())){ last = node; if (left <= node.length) break; left -= node.length; }
       const rg = document.createRange(); if (node) rg.setStart(node, left); else if (last) rg.setStart(last, last.length); else rg.setStart(lt, 0); rg.collapse(true);
-      const rc = rg.getClientRects()[0] || rg.getBoundingClientRect(); if (!rc || (!rc.height && !rc.width && !rc.left)) return;
-      const sp = rSpk(r), k = sp ? spkList().indexOf(sp) : -1, x = rc.left - er.left, y = rc.top - er.top + rc.height * 0.1, yBot = rc.bottom - er.top;   /* 177: 90% above the line */
+      const rcs = rg.getClientRects(), rc = rcs[rcs.length - 1] || rg.getBoundingClientRect(); if (!rc || (!rc.height && !rc.width && !rc.left)) return;   // at a line's wrap, the caret's later box (the next visual line) is where the letter is
+      const sp = rSpk(r), k = sp ? spkList().indexOf(sp) : -1, x = rc.left - er.left, y = rc.top - er.top + rc.height * 0.1;   /* 177: 90% above the line */
       const on = selClip === r.id, pend = !rVoiced(r);
-      html += `<span class="rxapron pointer-events-none absolute" data-ap="${r.id}" style="left:${x}px;top:${y}px;width:0;height:0"></span>`;
-      html += `<button data-bot="${yBot}" class="rxbadge pointer-events-auto absolute flex max-w-[14rem] -translate-x-1/2 -translate-y-full items-center gap-1 rounded-full border bg-base-100 py-0.5 pe-2 ps-0.5 text-[11px] font-semibold leading-none shadow-sm ${pend ? 'border-dashed border-base-content/40 text-base-content/70' : 'border-primary/40 text-primary'} ${on ? 'ring-2 ring-primary' : ''}" style="left:${x}px;top:${y}px" data-rx="${r.id}" data-line="${id}" contenteditable="false" onmousedown="event.preventDefault()" title="${escapeHtml(r.text)}"><span class="grid size-4 shrink-0 place-items-center overflow-hidden rounded-full text-[8px] font-bold" style="${k >= 0 ? spkVars(k) + ';background:var(--sc);color:var(--so)' : ''}">${k >= 0 ? spkFace(sp) : '<svg class="size-2.5"><use href="#i-user"/></svg>'}</span><span class="ui truncate" dir="auto">${escapeHtml(r.text)}</span>${pend ? '<svg class="size-3 shrink-0 opacity-70"><use href="#i-refresh-cw"/></svg>' : ''}</button>`; }); });
-  layer.innerHTML = html;
-  layer.querySelectorAll('.rxbadge').forEach(b => { const ap = layer.querySelector(`.rxapron[data-ap="${b.dataset.rx}"]`); if (!ap) return;   /* the apron: the badge's own width, from its middle to the line's foot */
-    const w = b.offsetWidth, h = b.offsetHeight, top = parseFloat(b.style.top) - h / 2, bot = +b.dataset.bot; Object.assign(ap.style, { width: w + 'px', left: (parseFloat(b.style.left) - w / 2) + 'px', top: top + 'px', height: Math.max(0, bot - top) + 'px' }); }); }
+      html += `<button class="rxbadge pointer-events-auto absolute flex max-w-[14rem] -translate-x-full -translate-y-full items-center gap-1 rounded-full border bg-base-100 py-0.5 pe-2 ps-0.5 text-[11px] font-semibold leading-none shadow-sm ${pend ? 'border-dashed border-base-content/40 text-base-content/70' : 'border-primary/40 text-primary'} ${on ? 'ring-2 ring-primary' : ''}" style="left:${x}px;top:${y}px" data-rx="${r.id}" data-line="${id}" contenteditable="false" onmousedown="event.preventDefault()" title="${escapeHtml(r.text)}"><span class="grid size-4 shrink-0 place-items-center overflow-hidden rounded-full text-[8px] font-bold" style="${k >= 0 ? spkVars(k) + ';background:var(--sc);color:var(--so)' : ''}">${k >= 0 ? spkFace(sp) : '<svg class="size-2.5"><use href="#i-user"/></svg>'}</span><span class="ui truncate" dir="auto">${escapeHtml(r.text)}</span>${pend ? '<svg class="size-3 shrink-0 opacity-70"><use href="#i-refresh-cw"/></svg>' : ''}</button>`; }); });
+  layer.innerHTML = html; }
 document.addEventListener('click', ev => { const b = ev.target.closest('.rxbadge'); if (!b) return; ev.preventDefault(); ev.stopPropagation(); editReact(+b.dataset.line, b.dataset.rx); }, true);
 const _renderScript176 = renderScript;
 renderScript = function(){ try { migrateReacts(); } catch (err) { console.warn(err); } const r = _renderScript176.apply(this, arguments); try { drawReactBadges(); } catch (err) { console.warn(err); } return r; };
@@ -466,7 +517,7 @@ function caretPosIn(id){ const lt = document.querySelector(`#editor .ln[data-id=
   const r = document.createRange(); r.selectNodeContents(lt); r.setEnd(rng.startContainer, rng.startOffset); return Math.min((L.text || '').length, r.toString().length); }
 async function insertReact(preset){ const id = caretLine(); if (!id) return say(T('اول در یک خط کلیک کنید.', 'Click in a line first.'), 'err');
   const pos = caretPosIn(id), own = speakerOfLine(id), res = await askReact(own, null, typeof preset === 'string' ? preset : ''); if (!res || !res.text) return; remember();
-  const L = S.lines[id], host = hostOf(id), r = { id: 'rx' + (++uid), text: res.text, spk: res.spk ? res.spk.id : '', mood: res.mood || '', pos, t: null, hostGulp: null, gulp: null, made: null, gain: 1, track: null };
+  const L = S.lines[id], host = hostOf(id), r = { id: 'rx' + (++uid), text: res.text, spk: res.spk ? res.spk.id : '', mood: res.mood || '', pos, anch: 'pos', t: null, hostGulp: null, gulp: null, made: null, gain: 1, track: null };   // 179: it starts at the caret
   if (host && !host.unvoiced && host.gulp != null){ r.t = charTime(host, L.text || '', pos); r.hostGulp = host.gulp; }
   (L.reacts = L.reacts || []).push(r); selClip = r.id; renderScript(); renderTimeline(); autosave();
   await voiceReactUI(r, false); }
@@ -547,7 +598,7 @@ function placeReact(r, id, T0){ const cands = speechClips().filter(s => s.lines.
   const text = S.lines[id2].text || '';
   if (host.unvoiced || host.gulp == null){ r.t = null; r.hostGulp = null; r.pos = Math.round(Math.max(0, Math.min(1, (T0 - host.at) / Math.max(0.05, dur(host)))) * text.length); }
   else { r.t = host.in + (T0 - host.at); r.hostGulp = host.gulp; r.pos = timeToChar(host, text, r.t - 0.001); }
-  return true; }
+  r.anch = 't'; return true; }   // 179: moved by hand on the timeline — from now on its clip's start places its badge
 ovlMoveTo = function(c, T0, ti){ const [id, r] = rFind(c.rid || c.id); if (!r) return renderTimeline();
   if (!placeReact(r, id, T0)){ say(T('واکنش باید روی یک خط بیفتد.', 'A reaction has to sit over a line.'), 'err'); return renderTimeline(); }
   if (ti != null && S.tracks[ti] && S.tracks[ti].kind === 'speech') r.track = S.tracks[ti].id;
